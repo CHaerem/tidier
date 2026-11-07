@@ -137,11 +137,10 @@ img { filter: drop-shadow(0 0 .6px light-dark(rgb(40 30 20 / .3), rgb(255 255 25
 .row:hover .close { visibility: visible; opacity: 1; }
 .row .close:hover, .row .sound:hover, #new-folder:hover { background: var(--press); color: var(--text); }
 
-/* Sound: at the row's end, where it stays (its speaker is drawn by sound.js, see below). A
- * mark you go for must not slide away from under the pointer, with the close button in its
- * place: on a row with a mark, the close button comes in just before it. */
+/* Sound: where the close button is, and one place in when that comes (its speaker is
+ * drawn by sound.js, see below). */
 .row .sound { margin-right: -3px; }
-.row:has(.sound) .close { right: calc(var(--button-inset) + var(--button)); }
+.row.tab:hover .sound { transform: translateX(-24px); }
 
 /* --- Folders: an icon in the icons' column, its tabs indented only in their content,
  * so every card in the list has the same two edges. ------------------------------- */

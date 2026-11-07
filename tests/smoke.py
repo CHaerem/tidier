@@ -2813,7 +2813,19 @@ def sidebar_press(m, find):
         return None
     into_page(m, "/sidebar/sidebar.html")
     mouse = lambda *actions: m.cmd("WebDriver:PerformActions", {"actions": [{"type": "pointer", "id": "mouse", "parameters": {"pointerType": "mouse"}, "actions": list(actions)}]})
-    mouse({"type": "pointerMove", "duration": 0, "x": at["x"], "y": at["y"]}, {"type": "pointerDown", "button": 0})
+    # The pointer first, and then where it is under the pointer: a row's marks make room for its
+    # close button while the pointer is on the row (sidebar.css), as a hand sees before it clicks.
+    mouse({"type": "pointerMove", "duration": 0, "x": at["x"], "y": at["y"]})
+    time.sleep(.3)
+    try:  # (an expression that uses the sidebar page's own helpers is found where it was)
+        now = m.cmd("WebDriver:ExecuteScript", {"script": f"""const page = window.wrappedJSObject || window, doc = page.document, e = {find}, box = e?.getBoundingClientRect();
+          return box ? {{x: Math.round(box.left + box.width / 2), y: Math.round(box.top + box.height / 2)}} : null;""", "args": []})
+    except RuntimeError:
+        now = None
+    if now and (now["x"], now["y"]) != (at["x"], at["y"]):
+        at = {**at, **now}
+        mouse({"type": "pointerMove", "duration": 0, "x": at["x"], "y": at["y"]})
+    mouse({"type": "pointerDown", "button": 0})
 
     def let_go(x=None, y=None):
         mouse(*([{"type": "pointerMove", "duration": 0, "x": x, "y": y}] if x is not None else []), {"type": "pointerUp", "button": 0})
