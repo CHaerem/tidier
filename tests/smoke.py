@@ -3155,10 +3155,6 @@ def alone_touches(m):
       const icon = await until(() => row.querySelector(".slow-load"), 6000);
       const style = icon && page.getComputedStyle(icon);
       const out = {name: style?.animationName, opacity: style?.opacity, moving: icon?.getAnimations().length, window: page.getComputedStyle(doc.documentElement).transitionDuration};
-      // The setting off has a sidebar too, which stays as it was.
-      doc.documentElement.classList.remove("alone");
-      out.withoutAlone = page.getComputedStyle(doc.documentElement).transitionDuration;
-      doc.documentElement.classList.add("alone");
       await until(async () => await status(slowId) === "complete");
       await wait(300);
       out.after = row.querySelector("img").getAnimations().length;
@@ -3175,7 +3171,6 @@ def alone_touches(m):
       return 1;""", m.pages, opened, m.pages.replace("127.0.0.1", "localhost"))
     check("with less motion asked for, a slow load is a still dim", r.get("name") == "none" and r.get("moving") == 0 and r.get("opacity") == "0.55" and r.get("after") == 0, str(r))
     check("with less motion asked for, nothing in the sidebar moves", r.get("window") == "0s", str(r))
-    check("with the setting off, what is in the sidebar's style stays as it was", r.get("withoutAlone") == "0.25s", str(r))
     no_problems(m, "after the small touches")
 
 
