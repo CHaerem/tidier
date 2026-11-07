@@ -2,16 +2,16 @@
 #claude-section h3 { font-size: 13px; margin: 18px 0 6px; }
 #bridge-status { margin: 12px 0 6px; }
 #bridge-how {
-  margin: 0; padding: 8px 10px; border-radius: 8px; font-size: 12px; user-select: all;
+  margin: 0; padding: 8px 10px; border-radius: var(--radius-sm); font-size: 12px; user-select: all;
   white-space: pre-wrap; overflow-wrap: anywhere;
-  background: color-mix(in srgb, CanvasText 7%, transparent);
+  background: var(--tile);
 }
 #bridge-allow-reading { margin-bottom: 10px; }
 .bridge-space-name { flex: 1; min-width: 0; }
 #bridge-log {
   list-style: none; margin: 0; padding: 0; max-height: 15em; overflow-y: auto;
   font-size: 12px; font-variant-numeric: tabular-nums;
-  color: color-mix(in srgb, CanvasText 65%, transparent);
+  color: var(--muted);
 }
 #bridge-log:empty::before { content: "Nothing yet."; }
-#bridge-log .refused { color: CanvasText; }
+#bridge-log .refused { color: var(--text); }

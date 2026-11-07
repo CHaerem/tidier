@@ -309,7 +309,8 @@ test("a snapshot's closed folders are read, with what did not change looked up f
   const ff = machine();
   const x = ff.boot();
   const closed = plain(x.js("closedFolders")(fixture(), id => id));
-  assert.deepEqual(closed.sort(), [`${C1}|group.html#Later`, `${C1}|group.html#Reading`]);
+  // "Both" is closed in one window and open in the other, as a new window opens every folder: closed.
+  assert.deepEqual(closed.sort(), [`${C1}|group.html#Both`, `${C1}|group.html#Later`, `${C1}|group.html#Reading`]);
   x.kill();
 });
 
@@ -319,7 +320,7 @@ test("a snapshot that cannot be read gives way to the one before; none at all is
   const closed = x.js("closedFolders");
   const backup = fixture();
   backup.snapshots.push({ id: "broken", time: 3000, tabs: [[[-1, -1, -1, -1, -1, -1, -1]]] }); // more unchanged tabs than ever existed
-  assert.equal(plain(closed(backup, id => id)).length, 2);
+  assert.equal(plain(closed(backup, id => id)).length, 3);
   assert.equal(closed({}, id => id), null);
   assert.equal(closed({ snapshots: [] }, id => id), null);
   assert.equal(closed({ snapshots: [{ tabs: [[[-1]]] }] }, id => id), null);
@@ -345,8 +346,15 @@ test("folds wait for the move, and the move applies them", async () => {
   x.b.runtime.reload = () => {};
   const r = plain(await x.js("importSidebery")(fixture()));
   assert.equal(r.folds, 2, "two of these folders are closed");
+  assert.equal(r.newFolds, 2);
   assert.equal(ff.synced.R.collapsed, undefined, "and Sidebery's folders are left alone until the move");
-  assert.equal(ff.store.importedFolds.length, 2);
+  assert.equal(ff.store.importedFolds.length, 3, "Both, closed in one window, too");
+  assert.ok(ff.store.sideberyImported, "step 1 of moving over is done");
+  const again = plain(await x.js("importSidebery")(fixture()));
+  assert.deepEqual([again.rules, again.order, again.newFolds], [0, 0, 0], "the same export again is nothing new");
+  // Sidebery off, as the settings page has it before the move, and Tidier may see that.
+  ff.sidebery = "off";
+  ff.grant("management");
   await x.js("moveOver")();
   const all = ff.store.syncedTabs;
   assert.equal(all.R.collapsed, true);
