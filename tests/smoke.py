@@ -3931,7 +3931,8 @@ def alone_requests(m):
       const n = wins().flatMap(x => x.gBrowser.tabs).find(x => url(x).includes("rule-typed"));
       const all = (await storage(args[1], ["syncedTabs"])).syncedTabs, entry = all[JSON.parse(key(w, t) || "null")] ?? {};
       return {shows: url(t), kept: t.isConnected, ctx: t.userContextId, new: n.userContextId, selected: w.gBrowser.selectedTab === n,
-              first: w.gBrowser.tabs.find(x => !x.pinned && x.userContextId === n.userContextId && !all[JSON.parse(key(w, x) ?? "null")]?.parentKey) === n, parent: entry.parentKey, saved: entry.saved?.url};""", f"{base}/r/rule-typed", EXT_ID)
+              first: w.gBrowser.tabs.find(x => !x.pinned && x.userContextId === n.userContextId && !all[JSON.parse(key(w, x) || "null")]?.parentKey) === n,
+              before: url(w.gBrowser.tabs.find(x => !x.pinned && x.userContextId === n.userContextId && !all[JSON.parse(key(w, x) || "null")]?.parentKey) ?? n).slice(-40), parent: entry.parentKey, saved: entry.saved?.url};""", f"{base}/r/rule-typed", EXT_ID)
     check("an address typed in a saved tab that a rule sends elsewhere: the saved tab stays as it was", r["kept"] and "saved-one" in r["shows"] and r["ctx"] == space and r["parent"] == folder and "saved-one" in (r["saved"] or ""), str(r))
     check("and the address opens selected, in the rule's space, where new tabs go", r["new"] == other and r["selected"] and r["first"], str(r))
     only("rule-typed", there, "and goes out with that space's cookie, from the first request on")
