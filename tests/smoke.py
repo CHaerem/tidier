@@ -1302,7 +1302,8 @@ def move_over(m):
     check("after moving over, Tidier's keys are given", keys["tab-1"] == "Ctrl+1" and keys["space-1"] == "MacCtrl+1" and keys["next-tab"] == "Ctrl+MacCtrl+Down", str(keys))
     # A placeholder made from here on has no page, and Sidebery draws the tab itself:
     # after moving back it has its icon.
-    icon_key = m.js(H + """const t = main().gBrowser.addTrustedTab(args[0] + "/icon", {userContextId: 1, inBackground: true}); await wait(4000); return JSON.parse(key(main(), t));""", m.pages)
+    # (/icon-png: Firefox shows an SVG icon through an address of its own, not as data:.)
+    icon_key = m.js(H + """const t = main().gBrowser.addTrustedTab(args[0] + "/icon-png", {userContextId: 1, inBackground: true}); await wait(4000); return JSON.parse(key(main(), t));""", m.pages)
     # And back: Sidebery on first, and its folder pages return.
     m.js(H + """const {AddonManager} = ChromeUtils.importESModule("resource://gre/modules/AddonManager.sys.mjs");
       await (await AddonManager.getAddonByID("%s")).enable(); await wait(4000); return 1;""" % SIDEBERY_ID)
