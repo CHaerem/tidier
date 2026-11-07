@@ -3911,7 +3911,10 @@ def alone_requests(m):
     # An address typed in a saved tab, selected, in a folder: the tab stays as it was.
     rules()
     visit(m, space, f"{base}/r/saved-one")
-    time.sleep(2.5)  # registered as a tab of the record
+    # Registered as a tab of the record, in every window: waited for, since a fixed pause was
+    # too short once in the whole chain, and the tab was then moved before Tidier knew it.
+    m.js(ISOLATION_JS + """const k = () => { const t = main().gBrowser.tabs.find(x => url(x).includes("saved-one")); return t && key(main(), t); };
+      await until(() => k() && wins().every(w => w.gBrowser.tabs.some(x => key(w, x) === k())), 10000); await wait(300); return 1;""")
     tab = m.js(ISOLATION_JS + """const {ExtensionParent} = ChromeUtils.importESModule("resource://gre/modules/ExtensionParent.sys.mjs");
       return ExtensionParent.apiManager.global.tabTracker.getId(main().gBrowser.tabs.find(x => url(x).includes("saved-one")));""")
     folder = sidebar_page(m, """
@@ -3926,7 +3929,7 @@ def alone_requests(m):
       w.gBrowser.selectedTab = t; await wait(800);
       typed(t, args[0]); await until(() => containersOf("rule-typed").length); await wait(1500);
       const n = wins().flatMap(x => x.gBrowser.tabs).find(x => url(x).includes("rule-typed"));
-      const all = (await storage(args[1], ["syncedTabs"])).syncedTabs, entry = all[JSON.parse(key(w, t))];
+      const all = (await storage(args[1], ["syncedTabs"])).syncedTabs, entry = all[JSON.parse(key(w, t) || "null")] ?? {};
       return {shows: url(t), kept: t.isConnected, ctx: t.userContextId, new: n.userContextId, selected: w.gBrowser.selectedTab === n,
               first: w.gBrowser.tabs.find(x => !x.pinned && x.userContextId === n.userContextId && !all[JSON.parse(key(w, x) ?? "null")]?.parentKey) === n, parent: entry.parentKey, saved: entry.saved?.url};""", f"{base}/r/rule-typed", EXT_ID)
     check("an address typed in a saved tab that a rule sends elsewhere: the saved tab stays as it was", r["kept"] and "saved-one" in r["shows"] and r["ctx"] == space and r["parent"] == folder and "saved-one" in (r["saved"] or ""), str(r))
