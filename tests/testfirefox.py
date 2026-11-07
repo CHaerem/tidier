@@ -316,7 +316,13 @@ class TestFirefox:
         prefs += "".join(f"user_pref({json.dumps(k)}, {json.dumps(v)});\n" for k, v in {**TEST_PREFS, "marionette.port": self.port}.items())
         open(f"{self.dir}/user.js", "w").write(prefs)
         shutil.copy(f"{DOTFILES}/userChrome.css", f"{self.dir}/chrome/userChrome.css")
-        shutil.copy(f"{DOTFILES}/customKeys.json", f"{self.dir}/customKeys.json")
+        # Firefox's own keys, as about:keyboard has them. A machine on Tidier alone clears more
+        # (⌘1 to ⌘9, ⌘D, ⌘T: customKeys-alone.json in the dotfiles, merged in by firefox.nix),
+        # which the daily browser on Sidebery must keep.
+        keys = json.load(open(f"{DOTFILES}/customKeys.json"))
+        if self.alone and os.path.exists(f"{DOTFILES}/customKeys-alone.json"):
+            keys.update(json.load(open(f"{DOTFILES}/customKeys-alone.json")))
+        json.dump(keys, open(f"{self.dir}/customKeys.json", "w"))
         shutil.copy(f"{FIXTURES}/containers.json", f"{self.dir}/containers.json")
         # Sidebery's managed storage, built like dotfiles' home/firefox.nix does.
         os.makedirs(f"{self.dir}/managed/ManagedStorage")
@@ -326,6 +332,9 @@ class TestFirefox:
         }}, open(f"{self.dir}/managed/ManagedStorage/{SIDEBERY_ID}.json", "w"))
         # Tidier's sidebar look (tidier.css), the same way, where dotfiles has one.
         tidier = {"tidierAlone": True} if self.alone else {}
+        # What about:keyboard was told, for Tidier to know which of Firefox's keys are cleared
+        # (keys-commands.js): no extension can read about:keyboard itself.
+        tidier["firefoxKeys"] = keys
         if os.path.exists(f"{DOTFILES}/tidier.css"):
             tidier["sidebarCSS"] = open(f"{DOTFILES}/tidier.css").read()
         json.dump({"name": EXT_ID, "description": "test", "type": "storage", "data": tidier},

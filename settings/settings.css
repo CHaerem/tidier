@@ -61,8 +61,9 @@ label:has(input[type=file]) {
   max-width: 100%; height: auto; min-height: 30px; padding-block: 5px;
 }
 input[type=file] { position: absolute; width: 1px; height: 1px; opacity: 0; }
-:focus-visible { outline: 2px solid var(--accent-line); outline-offset: 1px; }
-label:has(input:focus-visible) { outline: 2px solid var(--accent-line); outline-offset: 1px; }
+:root { --focus-ring: color-mix(in srgb, var(--accent) 55%, var(--text)); } /* the page has no space's colour, and its grey alone was faint on dark */
+:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 1px; }
+label:has(input:focus-visible) { outline: 2px solid var(--focus-ring); outline-offset: 1px; }
 
 /* A line of controls: they wrap when the page is too narrow to share it. */
 .line { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-bottom: 4px; color: var(--text); }
@@ -130,6 +131,8 @@ h3 { margin: 14px 0 6px; font-size: var(--size); line-height: 20px; font-weight:
 .key { min-width: 38px; padding: 2px 8px; border: 1px solid transparent; border-radius: 6px; background: color-mix(in srgb, CanvasText 7%, transparent); color: inherit; text-align: center; font-variant-numeric: tabular-nums; cursor: pointer; }
 .key:hover { background: color-mix(in srgb, CanvasText 12%, transparent); }
 .key.none { color: color-mix(in srgb, CanvasText 45%, transparent); }
+/* Firefox's own still: shown, but not as a key that works (the line under it says why). */
+.key.firefox { background: none; border-color: color-mix(in srgb, CanvasText 18%, transparent); border-style: dashed; color: color-mix(in srgb, CanvasText 55%, transparent); }
 .key.recording { border-color: color-mix(in srgb, CanvasText 45%, transparent); background: transparent; }
 .key-note { margin: 0 0 6px; color: color-mix(in srgb, CanvasText 60%, transparent); font-size: 13px; }
 #keys-back { margin-top: 10px; }

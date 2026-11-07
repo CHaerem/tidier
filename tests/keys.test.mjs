@@ -12,7 +12,7 @@ const entry = (url, more = {}) => ({ url, title: url, cookieStoreId: C1, parentK
 const folder = (name, rank, more = {}) => ({ group: true, own: true, name, cookieStoreId: C1, parentKey: null, rank, added: 1, ...more });
 
 async function alone(ff) {
-  ff.managed = { tidierAlone: true };
+  ff.managed = { ...ff.managed, tidierAlone: true };
   const x = ff.boot();
   x.b.runtime.onStartup.fire({});
   await wait(1200);
@@ -217,6 +217,7 @@ test("in a small window the keys do nothing, and copying the address still does"
   assert.equal(x.js("activeSpace").get(w.id), C1);
   assert.ok(!Object.values(ff.synced).some(e => e.group && e.name === "New folder"));
   assert.deepEqual(copied, ["https://small.example/"]);
+  assert.equal(x.js("noteFor")(small.id)?.text, "Address copied", "and says so: from a key nothing else shows that it worked");
   assert.ok(tab);
   await press("next-tab");
   assert.equal(selected(), "t2", "the normal window's keys still work");
@@ -259,6 +260,7 @@ test("with the setting off, the new keys do nothing, and copying the address sti
   x.b.commands.onCommand.fire("copy-url", ff.snap(a));
   await wait(100);
   assert.deepEqual(copied, ["https://a.example/"]);
+  assert.equal(x.js("quietNotes").size, 0, "with Sidebery it says nothing: there is no line of Tidier's to say it in");
   x.kill();
 });
 
@@ -458,6 +460,55 @@ test("the settings page's list says what each key is now and whether it was chan
   assert.equal(of("tab-1").pretty, "");
   assert.equal(of("tab-1").changed, true);
   assert.equal(of("copy-url").pretty, "⇧⌘C");
+  x.kill();
+});
+
+test("a key Firefox still has is not shown as Tidier's, until the dotfiles say about:keyboard cleared it", async () => {
+  const listed = async firefoxKeys => {
+    const ff = new FakeFirefox();
+    ff.commands = commandsOf();
+    const w = ff.addWindow({ focused: true });
+    ff.addTab(w.id, { url: "https://a.example/", active: true, cookieStoreId: C1 });
+    if (firefoxKeys) ff.managed = { firefoxKeys }; // read once, as Tidier starts
+    const x = await alone(ff);
+    ff.commands = commandsOf(ff.commandsSet);
+    const list = await x.js("commandKeys")();
+    const working = await x.js("workingShortcuts")(ff.commands, "mac");
+    x.kill();
+    return { of: name => list.find(c => c.name === name), working };
+  };
+  const before = await listed(null);
+  assert.match(before.of("tab-1").firefox, /Firefox's own ⌘1 .* acts too until it is cleared in about:keyboard/);
+  assert.match(before.of("toggle-essential").firefox, /Firefox's own ⌘D .* comes first/);
+  assert.match(before.of("command-bar-t").firefox, /⌘T \(a new tab\)/);
+  assert.equal(before.of("next-tab").firefox, null, "⌃⌘↓ is no key of Firefox's");
+  assert.equal(before.working.has("toggle-essential"), false, "the command bar does not show ⌘D");
+  assert.equal(before.working.has("tab-3"), false);
+  assert.equal(before.working.get("next-tab"), "Ctrl+MacCtrl+Down");
+  // What the dotfiles' customKeys.json clears, handed over in managed storage.
+  const cleared = Object.fromEntries(["key_selectTab1", "key_selectTab2", "key_selectTab3", "key_selectTab4", "key_selectTab5", "key_selectTab6", "key_selectTab7", "key_selectTab8",
+    "key_selectLastTab", "addBookmarkAsKb", "key_newNavigatorTab", "key_inspectorMac"].map(id => [id, {}]));
+  const after = await listed(cleared);
+  for (const name of ["tab-1", "tab-9", "toggle-essential", "command-bar-t", "copy-url"]) {
+    assert.equal(after.of(name).firefox, null, name);
+    assert.ok(after.working.has(name), name);
+  }
+});
+
+test("Copy for Claude's keys are in the same list once it is on, with no key of their own", async () => {
+  const ff = new FakeFirefox();
+  ff.commands = commandsOf();
+  const w = ff.addWindow({ focused: true });
+  ff.addTab(w.id, { url: "https://a.example/", active: true, cookieStoreId: C1 });
+  const x = await alone(ff);
+  ff.commands = commandsOf({ ...ff.commandsSet, "claude-ask": "Alt+Shift+A" });
+  const names = async () => (await x.js("commandKeys")()).filter(c => c.name.startsWith("claude-"));
+  assert.equal((await names()).length, 0, "off: not there");
+  x.js("claudeCopyOn = true");
+  const listed = await names();
+  assert.equal(JSON.stringify(listed.map(c => c.label)), JSON.stringify(["Copy this page for Claude", "Copy this space's tabs for Claude", "Ask Claude about this page"]));
+  assert.ok(listed.every(c => !c.changed), "a key you gave one is yours, not a change from a usual one");
+  assert.equal(listed.find(c => c.name === "claude-ask").pretty, "⌥⇧A");
   x.kill();
 });
 

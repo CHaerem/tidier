@@ -332,7 +332,9 @@ async function barSnapshot(bar) {
     barTabItems(ctx), barArchivedItems(), barUses.get(), browser.storage.local.get(BAR_ASKED),
     browser.commands.getAll(), browser.runtime.getPlatformInfo(),
   ]);
-  const shortcuts = new Map(commands.map(c => [c.name, c.shortcut]));
+  // Only keys that work: one Firefox still has for itself (⌘D until about:keyboard clears it)
+  // would be a promise the key does not keep (keys-commands.js).
+  const shortcuts = await workingShortcuts(commands, os);
   const space = ctx.spaces.find(s => s.id === ctx.space);
   // A tab you closed is in Firefox's list and in Tidier's archive list (archivelist.js) at
   // once. Firefox's brings it back with its history, as ⌘⇧T does: that one is shown.

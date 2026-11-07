@@ -184,7 +184,7 @@ const C1 = "firefox-container-1", C2 = "firefox-container-2";
 
 // One window in the first space and a second window: the same tabs as placeholders.
 function world(ff) {
-  ff.managed = { tidierAlone: true };
+  ff.managed = { tidierAlone: true, ...ff.managedMore };
   ff.store.essentials = [{ key: "e1", url: "https://essential.example/", title: "Mail", icon: "data:mail", cookieStoreId: C2 }];
   ff.store.syncedTabs = {
     here: { url: "https://here.example/", title: "Here", cookieStoreId: C1, parentKey: null, added: 1 },
@@ -486,7 +486,9 @@ test("a search opens a tab in the active space first, as Firefox's search cannot
 
 test("the commands table: only what applies, each with a name and a label, the most used first", async () => {
   const ff = new FakeFirefox();
-  ff.commands = [{ name: "copy-url", shortcut: "Ctrl+Shift+C" }];
+  ff.commands = [{ name: "copy-url", shortcut: "Ctrl+Shift+C" }, { name: "toggle-essential", shortcut: "Ctrl+D" }];
+  // What the dotfiles cleared in about:keyboard (keys-commands.js): ⌘⇧C's picker, not ⌘D's bookmark.
+  ff.managedMore = { firefoxKeys: { key_inspectorMac: {} } };
   const { w } = world(ff);
   const x = await started(ff);
   let page = await openBar(ff, x, w.id);
@@ -499,6 +501,7 @@ test("the commands table: only what applies, each with a name and a label, the m
   assert.ok(commands.every(c => c.title && c.id), "every command has a label");
   assert.deepEqual(Array.from(commands.filter(c => c.name === "go-to-space"), c => c.value).sort(), ["firefox-container-2", "firefox-container-3"]);
   assert.equal(commands.find(c => c.name === "copy-url").shortcut, "Ctrl+Shift+C");
+  assert.equal(commands.find(c => c.name === "toggle-essential").shortcut, null, "a key Firefox still has is not shown as working");
   assert.equal(new Set(commands.map(c => c.id)).size, commands.length);
   assert.ok(!names.includes("move-to-folder"), "no folder in this space, and the tab in none: nothing to choose from");
   assert.deepEqual(Array.from(commands.find(c => c.name === "move-to-space").list, c => c.value).sort(), ["firefox-container-2", "firefox-container-3"]);
@@ -851,7 +854,7 @@ test("moving several to a space keeps their order, as the tab menu does", async 
 
 test("a command with nothing to choose from is left out, and the folder a tab is in is not a choice", async () => {
   const ff = new FakeFirefox({ containers: ["firefox-default", "firefox-container-1"] });
-  ff.managed = { tidierAlone: true };
+  ff.managed = { tidierAlone: true, ...ff.managedMore };
   ff.store.syncedTabs = {
     t: { url: "https://t.example/", title: "T", cookieStoreId: C1, parentKey: "f1", added: 1 },
     f1: { group: true, own: true, name: "One", cookieStoreId: C1, parentKey: null, rank: 1, added: 1 },

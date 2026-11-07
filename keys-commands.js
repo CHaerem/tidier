@@ -58,7 +58,7 @@ async function newFolderHere(windowId) {
 // why "has none" alone is not enough, and the names given are kept).
 const KEYS_GIVEN = "keysGiven";
 
-// ⌃ exists only on a Mac; elsewhere those keys are Ctrl, and ⌘⌃ becomes Ctrl and Alt.
+// ⌃ exists only on a Mac; elsewhere those keys are Ctrl, and ⌃⌘ becomes Ctrl and Alt.
 const keyForSystem = (key, os) => os === "mac" ? key : key.replace("Ctrl+MacCtrl", "Ctrl+Alt").replace("MacCtrl", "Ctrl");
 
 // Two ways of writing one key compare equal: on a Mac Firefox reads Ctrl as Command,
@@ -131,9 +131,9 @@ function prettyKey(shortcut, os) {
 // about:keyboard has no say over them (ShortcutUtils.getSystemActionForEvent).
 const FIREFOX_ONLY = new Set(["Alt+Command+Up", "Alt+Command+Down", "Alt+Command+Left", "Alt+Command+Right", "MacCtrl+PageUp", "MacCtrl+PageDown", "MacCtrl+Shift+PageUp", "MacCtrl+Shift+PageDown"]);
 // Firefox's own keys on a Mac, for the note when you choose one. Those it never lets a
-// page see (⌘T, ⌘W, ⌘N, ⌘Q, ⌘⇧W, ⌘⇧P) cannot be chosen here at all.
+// page see (⌘T, ⌘W, ⌘N, ⌘Q, ⇧⌘W, ⇧⌘P) cannot be chosen here at all.
 const FIREFOX_KEYS = {
-  "Command+L": "the address bar", "Command+K": "search", "Alt+Command+F": "search", "Command+J": "downloads", "Command+Shift+A": "add-ons", "Command+O": "opening a file",
+  "Command+Shift+C": "the developer tools' element picker", "Command+L": "the address bar", "Command+K": "search", "Alt+Command+F": "search", "Command+J": "downloads", "Command+Shift+A": "add-ons", "Command+O": "opening a file",
   "Command+P": "printing", "MacCtrl+M": "muting a tab", "Command+Z": "undo", "Command+Shift+Z": "redo", "Command+X": "cut", "Command+C": "copy", "Command+V": "paste", "Command+A": "select all",
   "Command+Left": "back", "Command+Right": "forward", "Command+Y": "history", "Command+MacCtrl+F": "full screen", "Command+Shift+F": "full screen", "Command+R": "reload", "Command+Shift+R": "reload",
   "Command+U": "the page's source", "Command+I": "page info", "Command+F": "find", "Command+G": "find again", "Command+Shift+G": "find again", "Command+E": "find the selection",
@@ -146,15 +146,61 @@ const FIREFOX_KEYS = {
   "F3": "find again", "Shift+F3": "find again", "F5": "reload", "F11": "full screen", "F12": "the developer tools", "Shift+F5": "the developer tools", "Shift+F7": "the developer tools", "Shift+F9": "the developer tools", "Shift+F12": "the developer tools",
 };
 
-// What the settings page lists: every command with a key to give, and that key now.
+// --- Which of Firefox's own keys are cleared ---------------------------------------
+// ⌘1 to ⌘9, ⌘D and ⌘T are Firefox's until they are cleared in about:keyboard, and until then
+// ⌘D and ⌘T never reach Tidier and ⌘1 acts twice (shortcuts.js): in Work it went to the
+// window's first tab, another space's essential. No extension can read about:keyboard, so the
+// dotfiles hand Tidier what they gave it, the same customKeys.json, in managed storage
+// ({ firefoxKeys: { key_selectTab1: {}, … } }, firefox.nix). A key that is not cleared there
+// is not shown as Tidier's: the settings page says so, and the command bar leaves it out.
+// Firefox reads that file once at each start (README), so it is read once here too.
+const FIREFOX_KEY_IDS = {
+  ...Object.fromEntries([1, 2, 3, 4, 5, 6, 7, 8].map(n => [`Command+${n}`, `key_selectTab${n}`])),
+  "Command+9": "key_selectLastTab", "Command+D": "addBookmarkAsKb", "Command+T": "key_newNavigatorTab",
+  "Command+Shift+C": "key_inspectorMac", "Command+S": "key_savePage", "Command+B": "viewBookmarksSidebarKb",
+  "Command+Shift+H": "key_gotoHistory", "Command+L": "focusURLBar", "Command+K": "key_search",
+};
+const firefoxKeysCleared = browser.storage.managed.get("firefoxKeys").then(({ firefoxKeys }) => (firefoxKeys && typeof firefoxKeys === "object" ? firefoxKeys : {}), () => ({}));
+
+// Whether Firefox still has this key for itself, as far as Tidier can know: one of its own
+// that about:keyboard has not been told to clear or move. Only on a Mac, where these are known.
+async function firefoxHasKey(shortcut, os) {
+  const id = keyId(shortcut, os);
+  if (os !== "mac" || !shortcut || !(FIREFOX_KEYS[id] || FIREFOX_KEY_IDS[id])) return false;
+  const known = FIREFOX_KEY_IDS[id];
+  return !(known && Object.hasOwn(await firefoxKeysCleared, known));
+}
+
+// What the settings page says under a key Firefox still has: a letter is Firefox's alone,
+// a digit acts twice. ⌘T is the one a page is never told of.
+function firefoxKeyNote(shortcut, os) {
+  const id = keyId(shortcut, os), pretty = prettyKey(shortcut, os);
+  const use = id === "Command+T" ? "a new tab" : FIREFOX_KEYS[id];
+  return /\+[A-Z]$/.test(id)
+    ? `Firefox's own ${pretty} (${use}) comes first until it is cleared in about:keyboard.`
+    : `Firefox's own ${pretty} (${use}) acts too until it is cleared in about:keyboard.`;
+}
+
+// The keys of these commands that are Tidier's in fact: without the ones Firefox still has.
+async function workingShortcuts(commands, os) {
+  const out = new Map();
+  for (const c of commands) if (c.shortcut && !(await firefoxHasKey(c.shortcut, os))) out.set(c.name, c.shortcut);
+  return out;
+}
+
+// What the settings page lists: every command with a key to give, and that key now. Copy
+// for Claude's three too, once that is on (bridge.js): they come with no key, so every key is
+// still set in one place. One you gave them is yours, and not "changed" from a usual one.
 async function commandKeys() {
   if (!tidierAlone) return null;
   const { os } = await browser.runtime.getPlatformInfo();
   const have = await browser.commands.getAll(), first = firstKeys(os);
-  return COMMANDS.filter(c => c.key).map(({ name, label }) => {
+  const listed = COMMANDS.filter(c => c.key || (claudeCopyOn && c.name.startsWith("claude-")));
+  return Promise.all(listed.map(async ({ name, label, key }) => {
     const shortcut = have.find(x => x.name === name)?.shortcut ?? "";
-    return { name, label, pretty: prettyKey(shortcut, os), changed: keyId(shortcut, os) !== keyId(first.get(name), os) };
-  });
+    const firefox = (await firefoxHasKey(shortcut, os)) ? firefoxKeyNote(shortcut, os) : null;
+    return { name, label: label.replace(/ \(once turned on in Tidier's settings\)$/, ""), pretty: prettyKey(shortcut, os), changed: !!key && keyId(shortcut, os) !== keyId(first.get(name), os), firefox };
+  }));
 }
 
 // A key you chose. Refused if it could not work or another command has it, and said if
@@ -169,7 +215,7 @@ async function setCommandKey(name, shortcut) {
   }
   try { await browser.commands.update({ name, shortcut }); } catch (err) { return { refused: `${pretty} cannot be used for a shortcut.` }; }
   const use = os === "mac" && FIREFOX_KEYS[id];
-  if (!use) return {};
+  if (!use || !(await firefoxHasKey(shortcut, os))) return {}; // cleared in about:keyboard: Tidier's alone
   return { note: /\+[A-Z]$/.test(id)
     ? `Firefox uses ${pretty} for ${use}, and comes first until you clear it in about:keyboard.`
     : `Firefox uses ${pretty} for ${use} too, and both happen until you clear it in about:keyboard.` };
