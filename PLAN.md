@@ -30,7 +30,7 @@ Rules for all of it:
 - [x] An error during a start does not leave Tidier off; an essential in a removed
       container does not stop it.
 - [x] A tab whose real page was in a closed window is not archived without a trace.
-- [x] ⌘⇧T on an essential does not double it, and doubles cannot lose another.
+- [x] ⇧⌘T on an essential does not double it, and doubles cannot lose another.
 - [x] Placeholders do not stay loaded when a new window gets many tabs, and the
       test no longer calls that a Sidebery bug.
 - [x] A check of an update over a running session: same tabs, essentials and
@@ -73,6 +73,9 @@ A first version of all of it works in the test Firefox, without Sidebery.
 - [x] **Using it.** Drag tabs, into and out of folders, between essentials and tabs and to
       other spaces; the order follows in every window. A new tab button. Tidier's own
       menu on tabs, tiles, folders, spaces and the list. Sound indicator and mute. Keys.
+- [x] **By keyboard and for a screen reader.** One place for the keyboard in the sidebar,
+      a button's own Enter, menus by key, the essentials' grid, F2 to rename; rows,
+      folders, essentials and spaces named, with what is selected and open.
 - [x] **Rules.** An address always opens in a given space, edited in Tidier.
 - [x] **Settings in Tidier.** A page for the rules, spaces' names, archiving, copies and
       moving over.
@@ -99,7 +102,14 @@ links from real apps, real sound and calls, and real Firefox Sync between two ma
 - [ ] It gets Firefox as default, and the Firefox files from dotfiles, declared in its
       own configuration. Its commits are signed: an unsigned commit in dotfiles
       stops the Firefox updates on the daily Mac.
-- [ ] Tidier alone from a clean Firefox, from what is written down, with no Sidebery.
+- [ ] Tidier alone from a clean Firefox, from what is written down, with no Sidebery. Its
+      host in the dotfiles says it runs Tidier alone (`tidier.alone`), which clears ⌘1 to
+      ⌘9, ⌘D and ⌘T in `about:keyboard` there and tells Tidier so, and `user.js` stops
+      Firefox from guessing a link's container (README, Keys and Isolation).
+- [ ] Measured there, where the test Firefox cannot: switching space, a new window, the
+      command bar opening; and whether quick presses of ⌃⌘↓ are lost while the tab just
+      selected starts loading (about 1 in 8 in the slowed-down test Firefox, none with
+      Firefox's own ⌃Page Down). If they are, tab stepping goes another way.
 - [ ] Used for real for a while; what is missing goes in here and in FEATURES.md.
 
 ## D. Moving the daily browser
@@ -133,6 +143,9 @@ click stops it.
 
 - [x] All of it is there with Tidier alone, off by default, and checked; not yet tried with
       Claude Code itself.
+- [x] The log says what happened, once, and what was refused, in plain words with the space
+      it tried, file: addresses included; closing a space ends what waits there; each agent
+      has its own last tab; with agents off, what an agent left you stays on the bar.
 
 ## F. After that
 
@@ -179,3 +192,9 @@ Changed by saying so. All of them can be reversed.
   moved together keep their order.
 - Small windows for links from other apps have one on-off on the settings page, to be looked
   at again after the second Mac.
+- Firefox's own ⌘1 to ⌘9, ⌘D and ⌘T are cleared only on a machine on Tidier alone, by its
+  dotfiles; the daily browser on Sidebery needs them. No extension can read about:keyboard,
+  so the dotfiles tell Tidier what they cleared (managed storage), and a key they did not
+  clear is shown as Firefox's, not as Tidier's.
+- An address the MCP server refuses (file:, about:) still goes to Tidier, marked as refused
+  and with nothing to carry out, so that the attempt is in the log.
