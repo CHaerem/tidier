@@ -504,10 +504,14 @@ async function fillIfOpen(windowId, options) {
 // moz-extension address), in the tab strip, ⌃Tab and Sidebery. Its placeholder is loaded once
 // more to set the title, and unloads itself again.
 async function titlesBack() {
-  // (Not a hidden one with Tidier alone: nothing shows its title but Tidier's sidebar, which has
-  // it from the record, and loading it would wake a tab resting in a closed folder.)
-  for (const t of await browser.tabs.query(tidierAlone ? { discarded: true, hidden: false } : { discarded: true }).catch(() => [])) {
-    if (isGhostUrl(t.url) && (!t.title || t.title.includes("ghost.html"))) await browser.tabs.update(t.id, { url: t.url }).catch(() => {});
+  // With Tidier alone, only what ⌃Tab can show: a tab of the space you are in (known by now),
+  // and not one resting in a closed folder, which loading would wake. Tidier's own sidebar has
+  // every title from the record. (At an update Firefox shows every hidden tab for a moment.)
+  const all = tidierAlone ? await getSynced() : null;
+  for (const t of await browser.tabs.query({ discarded: true }).catch(() => [])) {
+    if (!isGhostUrl(t.url) || (t.title && !t.title.includes("ghost.html"))) continue;
+    if (tidierAlone && (t.hidden || t.cookieStoreId !== activeSpace.get(t.windowId) || restsInFolder(all, syncKeyByTab.get(t.id)))) continue;
+    await browser.tabs.update(t.id, { url: t.url }).catch(() => {});
   }
 }
 
@@ -976,7 +980,10 @@ function refreshGhostsSoon(key) {
     const reps = await repsNow(key);
     if (!reps.length) return; // closed while this waited in the queue: nothing to remember it for
     lastRefresh.set(key, Date.now());
+    // (Not a hidden one with Tidier alone: only ⌃Tab shows a placeholder's own title, and none
+    // that is hidden; and one resting in a closed folder would wake, foldrest.js.)
     for (const t of reps) {
+      if (tidierAlone && t.hidden) continue;
       if (t.discarded && syncRoleByTab.get(t.id) === "ghost") await browser.tabs.update(t.id, { url: ghostUrl("ghost", key) }).catch(() => {});
     }
   }), wait));
