@@ -32,14 +32,18 @@ concurrency:
 
 jobs:
   smoke:
-    name: Firefox ${{ matrix.firefox }}
+    name: Firefox ${{ matrix.firefox }}, ${{ matrix.part }}
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: macos-15
-    timeout-minutes: 45  # a run takes about 10; twice that with the second try, and GitHub cancels silently
+    # The Sidebery groups take about 10 minutes on a Mac, the Tidier-alone chain about 45,
+    # and GitHub's runner is slower; twice that with the second try, and GitHub cancels
+    # silently. So each part has a runner of its own and a limit of its own.
+    timeout-minutes: ${{ matrix.part == 'alone' && 200 || 45 }}
     strategy:
       fail-fast: false
       matrix:
         firefox: ["latest", "latest-devedition"]
+        part: ["sidebery", "alone"]
     steps:
       - name: Check out Tidier
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -63,8 +67,8 @@ jobs:
       - name: Unit tests
         working-directory: tidier
         run: node --test
-      # One test Firefox at a time (--serial): GitHub's runner is slower than
-      # a Mac, and three at once there would test the runner, not Tidier.
+      # One test Firefox per runner (--part, one half of --serial): GitHub's runner
+      # is slower than a Mac, and three at once there would test the runner, not Tidier.
       #
       # A failure gets one more try, in the same job: on GitHub's slower machines
       # a new window's essentials can land in the wrong space (a Sidebery bug, with
@@ -80,6 +84,6 @@ jobs:
           TIDIER_MUST_RESTART: ${{ matrix.firefox == 'latest-devedition' && '1' || '' }}
         run: |
           echo "Firefox ${{ steps.firefox.outputs.firefox-version }} at $TIDIER_FIREFOX"
-          python3 -I tidier/tests/smoke.py --serial && exit 0
-          echo "::warning::The smoke test failed on its first try in Firefox ${{ matrix.firefox }}; trying once more"
-          python3 -I tidier/tests/smoke.py --serial
+          python3 -I tidier/tests/smoke.py --part ${{ matrix.part }} && exit 0
+          echo "::warning::The smoke test (${{ matrix.part }}) failed on its first try in Firefox ${{ matrix.firefox }}; trying once more"
+          python3 -I tidier/tests/smoke.py --part ${{ matrix.part }}

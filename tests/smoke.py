@@ -9433,6 +9433,18 @@ def main():
         run_groups(set(GROUPS), xpi, port)
         run_alone(set(ALONE_GROUPS), xpi, port)
         passed, total, known_bugs = sum(results), len(results), len(known)
+    elif "--part" in args:
+        # One half of --serial, so that GitHub can run the two on runners of their own:
+        # the Tidier-alone chain alone takes longer than a job may for both.
+        part = args[args.index("--part") + 1]
+        if part not in ("sidebery", "alone"):
+            raise SystemExit("--part is sidebery or alone")
+        print(f"Testing {xpi or EXT_DIR} in a test Firefox: the {part} part", flush=True)
+        if part == "sidebery":
+            run_groups(set(GROUPS), xpi, port)
+        else:
+            run_alone(set(ALONE_GROUPS), xpi, port)
+        passed, total, known_bugs = sum(results), len(results), len(known)
     else:
         print(f"Testing {xpi or EXT_DIR} in {len(SHARDS)} test Firefoxes at once", flush=True)
         passed, total, known_bugs = run_parallel(passthrough, port)
