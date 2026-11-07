@@ -4,20 +4,20 @@ Everything that has to be done, in order, with what "done" means. The goal and
 the background are in the README, and the features to aim for in FEATURES.md.
 Tick things off here as they land, so the next person can see where things are.
 
-**In short:** Tidier takes over from Sidebery step by step, while the daily
-Firefox keeps working as it does today. A second Mac runs Tidier alone first.
+**In short:** Tidier took over from Sidebery step by step, while the daily
+Firefox kept working as it did. A second Mac runs Tidier alone first.
 The daily browser moves over when Tidier alone is good enough, and only then is
-Sidebery removed and sync added.
+Sidebery removed (part E, built and waiting for that move) and sync added.
 
 Rules for all of it:
 
-- **Every commit on main reaches the daily browser**, so everything for Tidier
-  alone sits behind a setting that is off by default. With it off, nothing changes.
-- **Every step has a check**, in the test Firefox with Sidebery or without it.
-- **Nothing that exists only for Sidebery gets better from here.** It is kept
-  working until it can be removed.
+- **Every commit on main reaches the daily browser.** Until part E, everything for
+  Tidier alone sat behind a setting that was off by default; with part E there is no
+  setting, and a browser that never moved over is moved at its first start.
+- **Every step has a check**, in the test Firefox.
 - **Nothing can lose tabs without a way back.** Moving the daily browser is
-  explicit, can be resumed, and can be undone.
+  explicit, can be resumed, and is preceded by a copy; so is the move a browser makes
+  by itself.
 
 ## A. A safe core (needed with or without Sidebery)
 
@@ -115,9 +115,14 @@ links from real apps, real sound and calls, and real Firefox Sync between two ma
 
 ## E. Without Sidebery, everywhere
 
-- [ ] Sidebery and all that exists because of it removed: folders first, its tree
+- [x] Sidebery and all that exists because of it removed: folders first, its tree
       rules, waiting for its sidebar, `tests/fixtures/sidebery.json`, `tools/fix_spaces.py`,
-      and its files in dotfiles (in that order, or releases stop).
+      the setting, moving back. A browser that never moved over is moved at its first
+      start, with a copy first. On the branch `wip/no-sidebery`, to be merged only once
+      the daily browser has moved over (part D).
+- [ ] Then its files in dotfiles (`sidebery.css`, `sidebery-settings.json`, their managed
+      storage, the lines of `user.js` and `customKeys.json` that were for Sidebery): only
+      after the branch is on main, whose smoke test reads them until then, or releases stop.
 - [x] Essentials, folders and spaces on every machine by Firefox Sync, within its limits.
       Built and checked in a test Firefox, off by default; real Firefox Sync between two
       machines is not tried yet.
@@ -142,24 +147,23 @@ What FEATURES.md has as Later, starting with what is missed most in use.
 
 Changed by saying so. All of them can be reversed.
 
-- A tab that is only a placeholder is archived like any other (Tidier alone), the time counting
-  from when it became one, since Tidier's own list holds its address and can bring it back. With
-  Sidebery it is kept until you have selected it: Recently Closed would have nothing of it.
+- A tab that is only a placeholder is archived like any other, the time counting from when it
+  became one, since Tidier's own list holds its address and can bring it back.
 - Closing the last window and quitting brings your tabs back unloaded.
 - A failed smoke test gets one more try, marked with a warning. To be looked at
   again once it is known how often the first try fails.
 - A failure in Developer Edition only stops releases until restart is also
   tested in release Firefox; then it only warns.
 - Archiving counts clock time: a night away closes yesterday's ordinary tabs.
-- `tabHide` is optional, asked for when Tidier alone is turned on, so that no update
-  ever waits for a click. Firefox shows hidden tabs again at each update, so
-  Tidier hides them again when it starts.
+- `tabHide` is optional, asked for in the sidebar, so that no update ever waits for a
+  click. Firefox shows hidden tabs again at each update, so Tidier hides them again
+  when it starts. A browser moved over by itself has not been asked yet: its sidebar asks.
 - Essentials stay pinned tabs, so other spaces' essentials stay in ⌃Tab; Firefox
   cannot hide a pinned tab.
-- A link opened from a tab in a folder is an ordinary tab, as in Arc (Tidier alone).
+- A link opened from a tab in a folder is an ordinary tab, as in Arc.
 - No page's first request goes out in the wrong container: it is stopped before it
-  leaves, as Sidebery does. That takes access to all websites, so it is optional, asked
-  for in the same click as hiding tabs. Without it a link's first request goes out with
+  leaves, as Sidebery did. That takes access to all websites, so it is optional, asked
+  for in the sidebar after hiding tabs. Without it a link's first request goes out with
   no container before it is opened in its space, as before: it carries no login.
 - An address that belongs in another space opens there, and the tab it was typed in stays
   if it holds anything: a page's history or a saved tab is not lost for it. A rule's

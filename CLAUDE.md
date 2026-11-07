@@ -3,8 +3,9 @@
 Read the README first: **The goal** and **Where it stands** say what Tidier is
 for; PLAN.md is everything that has to be done, in order; FEATURES.md lists what
 to aim for from Zen, Arc and Sidebery. In short: Firefox and Tidier only, with as
-much as possible in Tidier itself, and Sidebery being replaced by Tidier's own
-sidebar. Nothing that exists only for Sidebery gets better from here.
+much as possible in Tidier itself. Sidebery has been replaced by Tidier's own
+sidebar; what is left of it is taking in its export, and moving a browser that
+still had it over at its first start (`moveover.js`).
 
 ## Never touch the user's own Firefox
 
@@ -34,18 +35,17 @@ tests/smoke.py                                # everything, several Firefoxes at
   two runs in parallel (load makes timing bugs show), and compare with the
   last release (`git archive` it into a temporary folder and run the same
   groups there) before deciding whose bug it is.
-- A check marked KNOWN is a reported Sidebery bug (KNOWN_SIDEBERY_BUGS).
 
 ## Code
 
 - The background scripts are plain scripts sharing one scope
   (manifest.json, background.scripts): a top-level name defined twice
   silently replaces the first. A unit test stops that.
-- Comments in English, explaining *why*: what Firefox or Sidebery does that
-  makes the code necessary. They are the documentation for the next person.
+- Comments in English, explaining *why*: what Firefox does that makes the code
+  necessary. They are the documentation for the next person.
 - Behaviour goes in Tidier, not in Firefox settings, unless an extension
   cannot do it; then it goes in the dotfiles (`~/src/private/dotfiles`,
-  `home/firefox/`: user.js, userChrome.css, tidier.css, sidebery.css).
+  `home/firefox/`: user.js, userChrome.css, tidier.css, customKeys.json).
 - New behaviour gets a check: a unit test where no Firefox is needed, else a
   smoke check. Memory and idle work are checked too (many_tabs): with nothing
   happening, Tidier must do nothing.
