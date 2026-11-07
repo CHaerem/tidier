@@ -504,7 +504,9 @@ async function fillIfOpen(windowId, options) {
 // moz-extension address), in the tab strip, ⌃Tab and Sidebery. Its placeholder is loaded once
 // more to set the title, and unloads itself again.
 async function titlesBack() {
-  for (const t of await browser.tabs.query({ discarded: true }).catch(() => [])) {
+  // (Not a hidden one with Tidier alone: nothing shows its title but Tidier's sidebar, which has
+  // it from the record, and loading it would wake a tab resting in a closed folder.)
+  for (const t of await browser.tabs.query(tidierAlone ? { discarded: true, hidden: false } : { discarded: true }).catch(() => [])) {
     if (isGhostUrl(t.url) && (!t.title || t.title.includes("ghost.html"))) await browser.tabs.update(t.id, { url: t.url }).catch(() => {});
   }
 }
