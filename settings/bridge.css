@@ -8,8 +8,11 @@
 }
 #bridge-allow-reading { margin-bottom: 10px; }
 .bridge-space-name { flex: 1; min-width: 0; }
+#bridge-copy-how { margin-top: 6px; }
+#bridge-copy-how[hidden] { display: none; }
+/* Ten whole lines, then it scrolls: a height in lines never cuts the last one in half. */
 #bridge-log {
-  list-style: none; margin: 0; padding: 0; max-height: 15em; overflow-y: auto;
+  list-style: none; margin: 0; padding: 0; line-height: 1.5em; max-height: 15em; overflow-y: auto;
   font-size: 12px; font-variant-numeric: tabular-nums;
   color: color-mix(in srgb, CanvasText 65%, transparent);
 }

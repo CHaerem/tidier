@@ -37,6 +37,8 @@ const OPEN_MOST = 100; // tabs in a space beyond which an agent opens no more: a
 const SHOT_MOST = 8 * 1024 * 1024; // a screenshot, in base64
 const NOTE_MOST = 200, TYPE_MOST = 20000, ASK_MOST = 1000;
 const NO_SUCH_TAB = "No such tab in a space open to agents."; // the same for a tab not open and one not there: nothing to learn from it
+const READ_ONLY = "This space is open to you for reading only."; // only about a tab it can read anyway
+const NOT_WEB = "Refused: only http and https addresses. file:, about: and extension pages are never open to agents.";
 
 // { copy, bridge, agentSpace, agentName, allowed: { [container]: { mode: "read"|"write", name } } }
 const claudeSettings = storedValue("claude", () => ({}));
@@ -64,11 +66,14 @@ function bridgeAllows(tool, space, settings) {
 // Agents go to web pages only: never file:, about:, an extension's pages, javascript:,
 // data: and so on. The same rule as web_address in native/tidier-mcp.py. An address
 // with a name and password in it is not one you would give an agent, so also not that.
+// Written out with its two slashes and a host: Firefox's parser makes "http:///etc/passwd"
+// into a host named etc, and "https:example.org" into a site, where Python's sees none.
+const BRIDGE_WEB_TEXT = /^https?:\/\/[^/\\?#@\s]/i;
 function bridgeWebUrl(url) {
   let parsed = null;
   try { parsed = new URL(String(url ?? "").trim()); } catch (err) { /* below */ }
-  if (typeof url !== "string" || !parsed || !/^https?:$/.test(parsed.protocol) || !parsed.hostname || parsed.username || parsed.password) {
-    throw bridgeRefusal("Refused: only http and https addresses. file:, about: and extension pages are never open to agents.");
+  if (typeof url !== "string" || !BRIDGE_WEB_TEXT.test(url.trim()) || !parsed || !/^https?:$/.test(parsed.protocol) || !parsed.hostname || parsed.username || parsed.password) {
+    throw bridgeRefusal(NOT_WEB);
   }
   return parsed.href;
 }
@@ -92,7 +97,8 @@ const bridgeHost = url => { try { return isWeb(url) ? new URL(url).hostname : ""
 
 // The tab that really holds this tab's page (or, if none does, the tab itself).
 async function bridgeRealTab(tabId) {
-  const tab = await browser.tabs.get(tabId).catch(() => null);
+  // Firefox throws at once, not as a refusal, for an id it cannot take (-1), with its own words.
+  const tab = Number.isSafeInteger(tabId) && tabId >= 0 ? await browser.tabs.get(tabId).catch(() => null) : null;
   if (!tab || tab.incognito) return null;
   const key = syncKeyByTab.get(tab.id);
   if (key) {
@@ -118,23 +124,25 @@ function bridgeFacts(tab, all, list) {
 // One small table; native/tidier-mcp.py has the same names, with what an agent is told.
 // `level`: what the tool needs of a space. `on: "tab"`: its tab is looked up and checked
 // before it runs. `page`: its answer comes from a page, so it is marked as such.
-// `says`: what the sidebar's line and the log show.
+// `says`: what the sidebar's line and the log show once it is done, `doing` what the line
+// shows while it is under way, and `tried` what they show when it was refused, in plain
+// words, not the tool's name.
 //
 // A tool never waits for a page inside serial(): that would hold up all of Tidier.
 const BRIDGE_TOOLS = {
-  list_spaces: { level: "read", says: "looked at the spaces", run: bridgeListSpaces },
-  list_tabs: { level: "read", page: true, says: "looked at the tabs", run: bridgeListTabs },
-  open_tab: { level: "write", says: "opened", run: bridgeOpenTab },
-  navigate: { level: "write", on: "tab", says: "went to", run: bridgeNavigate },
-  select_tab: { level: "read", on: "tab", says: "turned to", run: bridgeSelectTab },
-  close_tab: { level: "write", on: "tab", says: "closed", run: bridgeCloseTab },
-  read_page: { level: "read", on: "tab", page: true, says: "read", run: bridgeReadPage },
-  screenshot: { level: "read", on: "tab", page: true, says: "looked at", run: bridgeScreenshot },
-  find: { level: "read", on: "tab", page: true, says: "looked through", run: ctx => bridgeOnPage(ctx, { op: "find", selector: bridgeAskText(ctx.args.selector), text: bridgeAskText(ctx.args.text), limit: ctx.args.limit }).then(found => ({ text: JSON.stringify(found) })) },
-  click: { level: "write", on: "tab", page: true, says: "clicked on", run: ctx => bridgeOnPage(ctx, { op: "click", ref: ctx.args.ref, selector: bridgeAskText(ctx.args.selector), text: bridgeAskText(ctx.args.text) }).then(done => ({ text: JSON.stringify(done) })) },
-  type: { level: "write", on: "tab", page: true, says: "typed on", run: bridgeType },
-  wait_for: { level: "read", on: "tab", says: "waited for", run: bridgeWaitFor },
-  leave_for_you: { level: "write", on: "tab", says: "left you a tab from", run: bridgeLeaveForYou },
+  list_spaces: { level: "read", says: "looked at the spaces", doing: "looking at the spaces", tried: "look at the spaces", run: bridgeListSpaces },
+  list_tabs: { level: "read", page: true, says: "looked at the tabs", doing: "looking at the tabs", tried: "look at the tabs", run: bridgeListTabs },
+  open_tab: { level: "write", says: "opened", doing: "opening", tried: "open", run: bridgeOpenTab },
+  navigate: { level: "write", on: "tab", says: "went to", doing: "going to", tried: "go to", run: bridgeNavigate },
+  select_tab: { level: "read", on: "tab", says: "turned to", doing: "turning to", tried: "turn to a tab", run: bridgeSelectTab },
+  close_tab: { level: "write", on: "tab", says: "closed", doing: "closing", tried: "close a tab", run: bridgeCloseTab },
+  read_page: { level: "read", on: "tab", page: true, says: "read", doing: "reading", tried: "read a page", run: bridgeReadPage },
+  screenshot: { level: "read", on: "tab", page: true, says: "looked at", doing: "looking at", tried: "look at a page", run: bridgeScreenshot },
+  find: { level: "read", on: "tab", page: true, says: "looked through", doing: "looking through", tried: "look through a page", run: ctx => bridgeOnPage(ctx, { op: "find", selector: bridgeAskText(ctx.args.selector), text: bridgeAskText(ctx.args.text), limit: ctx.args.limit }).then(found => ({ text: JSON.stringify(found) })) },
+  click: { level: "write", on: "tab", page: true, says: "clicked on", doing: "clicking on", tried: "click on a page", run: ctx => bridgeOnPage(ctx, { op: "click", ref: ctx.args.ref, selector: bridgeAskText(ctx.args.selector), text: bridgeAskText(ctx.args.text) }).then(done => ({ text: JSON.stringify(done) })) },
+  type: { level: "write", on: "tab", page: true, says: "typed on", doing: "typing on", tried: "type on a page", run: bridgeType },
+  wait_for: { level: "read", on: "tab", says: "waited for", doing: "waiting for", tried: "wait for a page", run: bridgeWaitFor },
+  leave_for_you: { level: "write", on: "tab", says: "left you a tab from", doing: "leaving you a tab from", tried: "leave you a tab", run: bridgeLeaveForYou },
 };
 
 const bridgeAskText = text => (typeof text === "string" ? text.slice(0, ASK_MOST) : undefined);
@@ -366,7 +374,7 @@ async function bridgeLeaveForYou(ctx) {
     await moveTab(ctx.tab.windowId, ctx.tab.id, null, folder);
     forYouCount(all);
   });
-  say(await bridgeWindow(), "An agent left you a tab");
+  // No quiet line besides: the agent's own line says it in every sidebar, and the dot keeps a mark.
   pushAgentState();
   return { text: "Left in the folder For you." };
 }
@@ -430,15 +438,23 @@ browser.tabs.onRemoved.addListener(id => bridgeDriven.delete(id));
 const bridgeKeeps = tab => bridgeDriven.has(tab.id) || (!!agentSpaceId && tab.cookieStoreId === agentSpaceId);
 
 // With the bridge off and nothing in it, the Agent space rests: no dot on the bar for
-// something you tried once. Its logins stay, for when it is turned on again.
-const bridgeRests = spaceId => spaceId === agentSpaceId && !bridgeWanted;
+// something you tried once. Its logins stay, for when it is turned on again. With tabs in
+// it, and above all a tab left For you, it stays: off is when you look at what an agent
+// did, and without its dot the sidebar would show another space's list while one of its
+// tabs is in front. Asked of Firefox, not of `used`: with Tidier alone a view does not
+// look at the other spaces' tabs (viewFor). One query, only once the bridge was used.
+async function bridgeRestingSpace() {
+  if (!agentSpaceId || bridgeWanted) return null;
+  const tabs = await browser.tabs.query({ cookieStoreId: agentSpaceId }).catch(() => []);
+  return tabs.length ? null : agentSpaceId;
+}
 
 // --- The port to the native host ---------------------------------------------------------
 let bridgePort = null; // only while the bridge is on
 let bridgeWanted = false; // on, whether or not the host is there right now
 let bridgeReady = false;
 let bridgeEpoch = 0; // grows at every stop: what an agent had under way goes no further
-const bridgeCalls = new Set(); // how to end each call under way, so that a Stop ends what is waiting at once
+const bridgeCalls = new Map(); // how to end each call under way -> its ctx, so that a Stop, or closing its space, ends what is waiting at once
 let bridgeTries = 0, bridgeRetry = null;
 let bridgeServer = null; // where the MCP server is, for the settings page
 // The line to give to Claude Code. Quoted when it has to be: this folder can have a space in it.
@@ -519,7 +535,7 @@ function bridgeCut() {
   bridgeReady = false;
   bridgeCurrent = null;
   bridgeProblem = null;
-  for (const end of bridgeCalls) end(bridgeRefusal("The bridge was stopped."));
+  for (const end of [...bridgeCalls.keys()]) end(bridgeRefusal("The bridge was stopped."));
   bridgeCalls.clear();
   try { port?.disconnect(); } catch (err) { /* already gone */ }
   setNotice("bridge", null);
@@ -530,28 +546,30 @@ function bridgeCut() {
 // something on that promise that holds its result, so every page and picture an agent
 // read would stay in memory until a Stop. And every call ends: one that waits for ever on
 // Firefox (a picture of a tab that hangs) would keep the ring and the line on for good.
-function bridgeUntilStopped(call) {
+function bridgeUntilStopped(call, ctx) {
   return new Promise((resolve, reject) => {
     const ended = () => { clearTimeout(limit); bridgeCalls.delete(end); };
     const end = err => { ended(); reject(err); };
     const limit = setTimeout(() => end(bridgeRefusal("That took too long.")), BRIDGE_CALL_MOST_MS);
-    bridgeCalls.add(end);
+    bridgeCalls.set(end, ctx);
     call.then(value => { ended(); resolve(value); }, end);
   });
 }
 
 async function bridgeAnswer(port, msg) {
   const name = typeof msg.tool === "string" ? msg.tool : "";
-  const ctx = { name, epoch: bridgeEpoch, args: msg.args && typeof msg.args === "object" && !Array.isArray(msg.args) ? msg.args : {}, settings: null, tab: null };
+  // `refused`: the MCP server refused it already (an address that is not on the web), and
+  // says so only for your log. It can make a call be refused, never let one through.
+  const ctx = { name, epoch: bridgeEpoch, args: msg.args && typeof msg.args === "object" && !Array.isArray(msg.args) ? msg.args : {}, settings: null, tab: null, refusedBefore: msg.refused === true };
   bridgeBusy++;
   let reply;
   try {
-    reply = await bridgeUntilStopped(bridgeRun(name, ctx));
+    reply = await bridgeUntilStopped(bridgeRun(name, ctx), ctx);
   } catch (err) {
     if (port !== bridgePort) return; // stopped meanwhile: nothing goes back, and nothing shows
     if (!err?.refused) console.warn("Tidier: an agent's call", name, err);
     reply = { ok: false, error: String(err?.message ?? err) };
-    agentDid(name, ctx, err?.message);
+    await agentDid(name, ctx, true).catch(noteError);
   } finally {
     bridgeBusy--;
     // Not only on this port: with a host that died during a call, the line must still go.
@@ -566,17 +584,24 @@ async function bridgeRun(name, ctx) {
   if (!tool) throw bridgeRefusal("There is no such tool.");
   ctx.settings = await claudeSettings.get();
   if (!ctx.settings.bridge) throw bridgeRefusal("The bridge is off.");
+  if (ctx.refusedBefore) throw bridgeRefusal(NOT_WEB);
   if (tool.on === "tab") {
     const id = ctx.args.tab ?? bridgeCurrent;
     if (id === null || id === undefined) throw bridgeRefusal("No tab: name one, or open or select one first.");
-    const tab = Number.isInteger(id) ? await bridgeRealTab(id) : null;
+    const tab = await bridgeRealTab(id);
     // Checked on the tab that holds the page, and a placeholder has the same container.
-    if (!tab || !bridgeAllows(name, tab.cookieStoreId, ctx.settings)) throw bridgeRefusal(NO_SUCH_TAB);
+    if (!tab) throw bridgeRefusal(NO_SUCH_TAB);
+    if (!bridgeAllows(name, tab.cookieStoreId, ctx.settings)) {
+      ctx.triedSpace = tab.cookieStoreId; // for your log only: the agent learns nothing of it
+      // A tab it may read says why it may not act there; any other is no tab at all to it.
+      throw bridgeRefusal(bridgeAccess(tab.cookieStoreId, ctx.settings) === "read" ? READ_ONLY : NO_SUCH_TAB);
+    }
     ctx.tab = tab;
   }
-  agentDid(name, ctx);
+  agentAtWork(ctx); // the ring shows while it works; the log has it once it is known how it went
   const answer = await tool.run(ctx);
   bridgeAlive(ctx);
+  await agentDid(name, ctx);
   return { ok: true, text: tool.page ? markUntrusted(answer.text) : answer.text, ...(answer.image ? { image: answer.image } : {}) };
 }
 
@@ -587,20 +612,53 @@ const agentPorts = new Set(); // sidebars and the settings page
 const agentLog = [];
 let agentLine = null, agentLastSpace = null, agentTimer = null;
 
-function agentDid(name, ctx, refused) {
+// The space it works in: one it names only if it may (else that is refused, and shows on its own).
+function agentSpaceOf(ctx) {
+  const named = ctx.settings && bridgeAccess(ctx.args.space, ctx.settings) ? ctx.args.space : null;
+  return ctx.tab?.cookieStoreId ?? named ?? ctx.settings?.agentSpace ?? agentLastSpace;
+}
+
+// Where it works: a site's name only. An address only from the tools that go to one: the
+// line must show where it really is, whatever else an agent passes along. Capped, since it
+// chooses what it passes as an address. (A tab just opened has no address yet.)
+function agentText(name, ctx, tool, form) {
+  const where = bridgeHost((name === "open_tab" || name === "navigate" ? ctx.args.url : null) ?? ctx.tab?.url).slice(0, 100);
+  return `${tool[form]} ${where || (tool.on === "tab" ? "a page" : "")}`.trim();
+}
+
+// While a call is under way, before it is known how it goes: the ring and the line show
+// what an agent is doing, and nothing goes in the log yet. A wait can take half a minute.
+function agentAtWork(ctx) {
+  agentLine = agentText(ctx.name, ctx, BRIDGE_TOOLS[ctx.name], "doing");
+  agentLastSpace = agentSpaceOf(ctx);
+  clearTimeout(agentTimer);
+  agentTimer = null;
+  pushAgentState();
+}
+
+// What a refused call tried, for you: the space by its name, and the site, or the kind of
+// address (file:) it was. Never the site of your own tab, and never the agent's own words.
+async function agentTried(name, ctx, tool) {
+  const space = ctx.triedSpace ?? (typeof ctx.args.space === "string" && name === "open_tab" ? ctx.args.space : null);
+  const spaceName = space && space !== ctx.settings?.agentSpace ? (await containerSpaces()).find(s => s.id === space)?.name : null;
+  const where = spaceName ? ` in ${spaceName.slice(0, 60)}` : "";
+  if (name !== "open_tab" && name !== "navigate") return `could not ${tool.tried}${where}`;
+  const url = typeof ctx.args.url === "string" ? ctx.args.url.trim() : "";
+  const scheme = /^([a-z][a-z0-9+.-]{0,19}):/i.exec(url)?.[1].toLowerCase();
+  const host = bridgeHost(url).slice(0, 100);
+  const what = host && BRIDGE_WEB_TEXT.test(url) ? host : scheme && !/^https?$/.test(scheme) ? `${/^[aeiou]/.test(scheme) ? "an" : "a"} ${scheme}: address` : "an address";
+  return `could not ${tool.tried} ${what}${where}`;
+}
+
+// What an agent did, or could not do, once it is known: one line, and one entry in the log.
+async function agentDid(name, ctx, refused = false) {
   const tool = Object.hasOwn(BRIDGE_TOOLS, name) ? BRIDGE_TOOLS[name] : null;
   // Only the name of a site: nothing a page wrote gets here.
   if (!tool) return;
-  // An address only from the tools that go to one: the line must show where it really is,
-  // whatever else an agent passes along. Capped, since it chooses what it passes as an address.
-  const where = bridgeHost((name === "open_tab" || name === "navigate" ? ctx.args.url : null) ?? ctx.tab?.url).slice(0, 100);
-  // (A tab just opened has no address yet.)
-  const text = refused ? `refused: ${name}${where ? " on " + where : ""}` : `${tool.says} ${where || (tool.on === "tab" ? "a page" : "")}`.trim();
+  const text = refused ? await agentTried(name, ctx, tool) : agentText(name, ctx, tool, "says");
   agentLine = text;
-  // The space it works in: one it names only if it may (else that is refused, and shows on its own).
-  const named = ctx.settings && bridgeAccess(ctx.args.space, ctx.settings) ? ctx.args.space : null;
-  agentLastSpace = ctx.tab?.cookieStoreId ?? named ?? ctx.settings?.agentSpace ?? agentLastSpace;
-  agentLog.push({ when: Date.now(), text, refused: !!refused });
+  agentLastSpace = agentSpaceOf(ctx);
+  agentLog.push({ when: Date.now(), text, refused });
   if (agentLog.length > AGENT_LOG) agentLog.shift();
   clearTimeout(agentTimer);
   agentTimer = null;
@@ -663,7 +721,9 @@ async function claudeRead(tabId, { text = true } = {}) {
   if (!tab) return null;
   const facts = bridgeFacts(tab, await getSynced(), await getList());
   if (!facts.address) return null;
-  if (!text || !isWeb(tab.url) || !bridgeIsLoaded(tab) || !(await browser.permissions.contains(READ_PAGES))) return { ...facts, text: null };
+  if (!text) return { ...facts, text: null };
+  if (!isWeb(tab.url) || !bridgeIsLoaded(tab)) return { ...facts, text: null, why: "not loaded" };
+  if (!(await browser.permissions.contains(READ_PAGES))) return { ...facts, text: null, why: "reading pages is off" };
   const page = await bridgeInPage(tab.id, { op: "read", offset: 0, max: COPY_MOST }, PAGE_CALL_MS).catch(() => null);
   return { ...facts, title: facts.title || page?.title, text: page?.error ? null : page?.text ?? null };
 }
@@ -675,7 +735,8 @@ async function claudeCopy(tabIds, windowId) {
     const page = await claudeRead(ids[0]);
     if (!page) return;
     await navigator.clipboard.writeText(claudePageText(page));
-    say(windowId, page.text ? "Copied for Claude" : "Copied only its title and address: it is not loaded, or reading pages is not allowed");
+    // Which of the two it was, short enough for a narrow sidebar's line.
+    say(windowId, page.text ? "Copied for Claude" : `Copied its title and address: ${page.why ?? "no text"}`);
   } else if (ids.length) {
     const tabs = (await Promise.all(ids.map(id => claudeRead(id, { text: false })))).filter(Boolean);
     await navigator.clipboard.writeText(tabs.map(t => `- ${claudeLink(t)}`).join("\n") + "\n");
@@ -781,6 +842,7 @@ async function bridgeTurn(on) {
     settings.bridge = bridgeWanted = false;
     claudeSettings.set(settings);
     await flushWrites(); // a stop must last, also if Firefox goes down right after it
+    if (agentSpaceId) viewAllSoon(); // an empty Agent space rests now (bridgeRestingSpace)
   }
   pushAgentState();
 }
@@ -793,6 +855,11 @@ async function bridgeAllowSpace(space, mode) {
   if (mode === "read" || mode === "write") settings.allowed[space] = { mode, name: container.name };
   else delete settings.allowed[space];
   claudeSettings.set(settings);
+  // What an agent has under way there ends now, as a Stop ends it: a wait would otherwise go
+  // on watching the page until its time is up. (ctx.settings is this same object.)
+  for (const [end, ctx] of [...bridgeCalls]) {
+    try { if (ctx.settings) bridgeAlive(ctx); } catch (err) { end(err); }
+  }
   await flushWrites(); // closing a space must last, also if Firefox goes down right after it
 }
 
@@ -864,7 +931,7 @@ async function startBridge() {
   if (!BAR_COMMANDS.includes(CLAUDE_BAR_COMMANDS[0])) BAR_COMMANDS.push(...CLAUDE_BAR_COMMANDS); // commandbar.js, loaded by now
   if (agentSpaceId) {
     await forYouLoad();
-    viewAllSoon(); // a sidebar drawn before now did not know this space may be resting (bridgeRests)
+    viewAllSoon(); // a sidebar drawn before now did not know this space may be resting (bridgeRestingSpace)
   }
   pushAgentState();
   if (settings.bridge) await bridgeSet(true);

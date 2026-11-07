@@ -10,7 +10,9 @@ what the agent can see, which spaces, read or write. Nothing here can allow more
 
 This part only refuses what no agent should ever be told is possible (going to file:,
 about: or an extension's pages; the extension refuses those too), and keeps answers
-to a size an agent can take.
+to a size an agent can take. Such an address is still passed on, marked as refused here
+and with nothing to carry out, so that the person sees the attempt in Tidier's log: an
+agent steered by a page to open ~/.ssh is what they most want to know about.
 """
 import json
 import os
@@ -86,13 +88,25 @@ TOOLS = [
          {"tab": TAB, "note": {"type": "string", "description": "What you want them to know.", "maxLength": 200}}, read_only=False),
 ]
 TOOL_NAMES = {t["name"] for t in TOOLS}
+TAB_TOOLS = {t["name"] for t in TOOLS if "tab" in t["inputSchema"]["properties"]}
+NO_TAB = "No tab: name one, or open or select one first."
+
+# "The tab you opened or selected last" is this agent's own: each agent runs its own copy of
+# this server, while the extension sees one bridge for all of them. Kept there, two Claude Code
+# sessions would act in each other's tabs. So the tab is always named on the way out.
+current_tab = None
 
 
 def web_address(url):
-    """Whether an address is one an agent may go to; the same rule as bridgeWebUrl in bridge.js."""
+    """Whether an address is one an agent may go to; the same rule as bridgeWebUrl in bridge.js:
+    http or https, written out with its two slashes and a host right after them."""
     try:
-        parts = urlsplit(url.strip())
-        return parts.scheme.lower() in ("http", "https") and bool(parts.hostname) and not parts.username and not parts.password
+        text = url.strip()
+        parts = urlsplit(text)
+        after = text[len(parts.scheme) + 3:len(parts.scheme) + 4]
+        return (parts.scheme.lower() in ("http", "https") and text[len(parts.scheme):len(parts.scheme) + 3] == "://"
+                and after not in ("", "/", "\\", "?", "#", "@") and not after.isspace()
+                and bool(parts.hostname) and not parts.username and not parts.password)
     except (AttributeError, ValueError):
         return False
 
@@ -130,9 +144,9 @@ def connect():
         os.close(folder)
 
 
-def ask_bridge(name, args):
-    """The answer of the extension: {ok, text, image} or {ok: false, error}."""
-    request = json.dumps({"id": 1, "tool": name, "args": args}).encode() + b"\n"
+def ask_bridge(name, args, refused=False):
+    """The answer of the extension: {ok, text, image} or {ok: false, error}. `refused`: only for its log."""
+    request = json.dumps({"id": 1, "tool": name, "args": args, **({"refused": True} if refused else {})}).encode() + b"\n"
     if len(request) > MAX_REQUEST:
         return {"ok": False, "error": "That request is too big."}
     conn = connect()
@@ -162,12 +176,38 @@ def capped(text):
     return text[:MAX_TEXT] + f"\n[cut here: {len(text) - MAX_TEXT} more characters]"
 
 
+REFUSED_ADDRESS = "Refused: only http and https addresses. file:, about: and extension pages are never open to agents."
+
+
+def refusal(text):
+    return {"content": [{"type": "text", "text": text}], "isError": True}
+
+
+def remember_tab(name, args, answer):
+    """The tab the next tools work on when none is named: the one opened or selected, until closed."""
+    global current_tab
+    if name in ("open_tab", "navigate", "select_tab"):
+        try:
+            tab = json.loads(answer.get("text", ""))["tab"]
+            current_tab = tab if isinstance(tab, int) and not isinstance(tab, bool) else current_tab
+        except (ValueError, TypeError, KeyError):
+            pass
+    elif name == "close_tab" and args.get("tab") == current_tab:
+        current_tab = None
+
+
 def call_tool(name, args):
+    if name in TAB_TOOLS and args.get("tab") is None and name != "open_tab":
+        if current_tab is None:
+            return refusal(NO_TAB)
+        args = {**args, "tab": current_tab}
     if name in ("open_tab", "navigate") and not web_address(args.get("url")):
-        return {"content": [{"type": "text", "text": "Refused: only http and https addresses. file:, about: and extension pages are never open to agents."}], "isError": True}
+        ask_bridge(name, args, refused=True)  # for the log; whatever it answers, this is refused
+        return refusal(REFUSED_ADDRESS)
     answer = ask_bridge(name, args)
     if not answer.get("ok"):
-        return {"content": [{"type": "text", "text": capped(str(answer.get("error") or "It did not work."))}], "isError": True}
+        return refusal(capped(str(answer.get("error") or "It did not work.")))
+    remember_tab(name, args, answer)
     content = [{"type": "text", "text": capped(str(answer.get("text", "")))}]
     image = answer.get("image")
     if isinstance(image, dict) and image.get("data") and image.get("mimeType"):
