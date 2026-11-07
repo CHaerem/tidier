@@ -160,7 +160,7 @@ img { filter: drop-shadow(0 0 .6px light-dark(rgb(40 30 20 / .3), rgb(255 255 25
  * can always see where you are. Nothing unfolds and nothing is stored: it goes when you
  * leave the tab. (With Sidebery the whole box stays hidden, as ever.) */
 .folder.collapsed > .children > .tab:not(.active), html:not(.alone) .folder.collapsed > .children { display: none; }
-.folder.collapsed > .children > .tab { scroll-margin-top: var(--row); } /* scrolled into view, it brings its head along */
+.folder.collapsed > .children > .tab { scroll-margin-top: calc(var(--row) + var(--row-gap)); } /* scrolled into view, it brings its head along */
 .folder > .children { transition: opacity var(--soft); @starting-style { opacity: 0; } }
 .row .count { flex: none; min-width: var(--icon); text-align: center; color: var(--muted); font-size: var(--size-small); font-variant-numeric: tabular-nums; }
 .row .count:empty { display: none; }
