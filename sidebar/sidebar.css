@@ -137,10 +137,11 @@ img { filter: drop-shadow(0 0 .6px light-dark(rgb(40 30 20 / .3), rgb(255 255 25
 .row:hover .close { visibility: visible; opacity: 1; }
 .row .close:hover, .row .sound:hover, #new-folder:hover { background: var(--press); color: var(--text); }
 
-/* Sound: where the close button is, and one place in when that comes (its speaker is
- * drawn by sound.js, see below). */
+/* Sound: at the row's end, where it stays (its speaker is drawn by sound.js, see below). A
+ * mark you go for must not slide away from under the pointer, with the close button in its
+ * place: on a row with a mark, the close button comes in just before it. */
 .row .sound { margin-right: -3px; }
-.row.tab:hover .sound { transform: translateX(-24px); }
+.row:has(.sound) .close { right: calc(var(--button-inset) + var(--button)); }
 
 /* --- Folders: an icon in the icons' column, its tabs indented only in their content,
  * so every card in the list has the same two edges. ------------------------------- */
@@ -304,7 +305,7 @@ img { filter: drop-shadow(0 0 .6px light-dark(rgb(40 30 20 / .3), rgb(255 255 25
 .row .rename, #name-box { outline: none; } /* the border already says where you type; a ring around it is one mark too many */
 .row.renaming .close { display: none; } /* so the box has the row's width */
 .tile.renaming { outline: 2px solid color-mix(in srgb, var(--accent) 60%, transparent); outline-offset: -2px; }
-#name-box { flex: none; box-sizing: border-box; width: 100%; height: calc(12px * 1.3 + 8px); margin: 0; padding: 0 7px; font: inherit; font-size: 12px; font-weight: 600; color: inherit; background: var(--selected); border: 1px solid var(--accent); border-radius: 5px; }
+#name-box { flex: none; box-sizing: border-box; width: 100%; height: 24px; margin: 0; padding: 0 7px; font: inherit; font-size: 12px; letter-spacing: inherit; color: inherit; background: var(--selected); border: 1px solid var(--accent); border-radius: var(--radius-sm); } /* the space name's line is 24 px */
 /* The menu's own parts (menu.js, tabmenu.js, spacemenu.js): it fits in the sidebar, an item
  * has room for a dot and a sign that more follows, and the keys move through it. */
 #menu {
