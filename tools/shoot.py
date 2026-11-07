@@ -4,7 +4,7 @@
     nice -n 19 taskpolicy -b tools/shoot.py FOLDER                     # everything, two minutes (one without taskpolicy)
     nice -n 19 taskpolicy -b tools/shoot.py FOLDER --only hover,menu   # only names with these words in them
 
-It starts the test Firefox with Tidier alone (tests/testfirefox.py: headless, a
+It starts the test Firefox (tests/testfirefox.py: headless, a
 throwaway profile, never your own Firefox) from the folder this file is in, so a
 worktree shoots its own code. It fills it with made-up tabs, none of them yours,
 and writes PNGs at twice the size, as on a Retina screen:
@@ -142,7 +142,7 @@ SPACES = [
 ]
 EMPTY = {"ctx": 4, "slug": "travel", "name": "Travel"}  # nothing in it, until the pictures of empty spaces
 
-testfirefox.SEED_TABS_ALONE = "return 1;"  # no test tabs: the ones above
+testfirefox.SEED_TABS = "return 1;"  # no test tabs: the ones above
 
 
 # --- Scripts in the chrome and in the sidebar's page ---------------------------------
@@ -614,13 +614,13 @@ def icons_that_vanish(cam):
     cam.shoot("state-black-and-white-icons")
 
 
-# What the page shows only now and then, with made-up words: a notice, the move to Tidier
-# alone and back, what a report says, a copy to take in.
+# What the page shows only now and then, with made-up words: a notice, the line after a move
+# from Sidebery, what its export brought, a copy to take in.
 SETTINGS_IN_FULL = """
   const $ = id => document.getElementById(id), add = (parent, tag, cls, text) => { const e = document.createElement(tag); e.className = cls; e.textContent = text; parent.append(e); return e; };
   add($("notices"), "p", "notice", "Tidier could not read the record of its folders, and is working from the copy made this morning.");
-  $("allow-hiding").hidden = $("move").hidden = $("move-back").hidden = $("merge").hidden = false;
-  $("alone-state").textContent = "This browser uses Sidebery for its tab list, spaces and folders.";
+  $("allow-hiding").hidden = $("moved").hidden = $("merge").hidden = false;
+  $("moved").textContent = "Sidebery's folders became Tidier's own on 7 November 2026 at 09:12, after a copy was taken. Sidebery can be removed in about:addons.";
   $("sidebery-result").textContent = "Imported 2 rules and the order of 3 spaces.";
   for (const [name, on] of [["Personal: 7 essentials, 3 folders, 12 saved tabs", true], ["Work: 12 essentials, 2 folders, 30 saved tabs", false]]) {
     const line = add($("merge-spaces"), "label", "line", "");
@@ -721,7 +721,7 @@ def main():
         # for a moment when a list changes size, and the blink of a caret.
         "ui.scrollbarFadeBeginDelay": 0, "ui.scrollbarFadeDuration": 0, "ui.caretBlinkTime": 0,
     })
-    with TestFirefox(port=port, alone=True) as m:
+    with TestFirefox(port=port) as m:
         m.cmd("WebDriver:SetWindowRect", {"width": WINDOW[0], "height": WINDOW[1]})
         fill(m)
         filled = time.time()

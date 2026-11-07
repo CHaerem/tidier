@@ -1,9 +1,8 @@
 #!/usr/bin/python3
 """A long run in a real Firefox: Tidier used at random, checked as it goes.
 
-    tests/soak.py                        # with Sidebery, 5 minutes, a random seed
-    tests/soak.py --alone                # Tidier alone (no Sidebery)
-    tests/soak.py --alone --minutes 30 --seed 7 --port 4410
+    tests/soak.py                        # 5 minutes, a random seed
+    tests/soak.py --minutes 30 --seed 7 --port 4410
 
 The chaos test (tests/chaos.test.mjs) does this on a fake Firefox, fast. This does
 it in the real one, slowly, for what a fake cannot show: timing, Firefox's own
@@ -24,7 +23,7 @@ what must always hold, in the real browser:
   - the sidebar shows exactly what the window has;
   - placeholders are unloaded, and a page is loaded only once;
   - no selected tab is left blank in the window you are using;
-  - with Tidier alone, a space's tabs in the same order in every window (counted, not failed);
+  - a space's tabs in the same order in every window (counted, not failed);
   - no error inside Tidier (`problems`), or in the browser console from its pages.
 
 A violation counts only if it is still there after waiting: Tidier is allowed to be
@@ -47,7 +46,7 @@ import time
 import traceback
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from testfirefox import EXT_ID, PORT, SIDEBERY_ID, TestFirefox  # noqa: E402
+from testfirefox import EXT_ID, PORT, TestFirefox  # noqa: E402
 
 # How much is going on: it keeps to about this many tabs, so that memory can be
 # compared over time. Tabs and windows open and close around these numbers.
@@ -62,15 +61,8 @@ GROWTH_MIN_MB = 5         # growth smaller than this is noise (runs of up to 30 
 SPARE_ENTRIES = 25        # what a list in memory may hold beyond the tabs and windows there are
 
 
-# Sidebery alone decides these, and they are counted, not failed: what a real tab's space
-# is once Sidebery has put it somewhere is out of Tidier's hands (README, "Tabs in the wrong
-# space"), and this is not the setup Tidier is going to. The pin race is reported upstream
-# (KNOWN_SIDEBERY_BUGS in smoke.py). In a soak, windows and tabs come and go faster than its
-# sidebar settles them; tools/fix_spaces.py exists for the daily browser.
-# It also keeps pinned tabs by space, and moves them itself at times.
-SIDEBERY_SAYS = {"an essential is in another space (pin race)", "a tab is in another space", "essentials not in the list's order"}
-# Counted, not failed, with or without Sidebery: no tab is lost by it. A new window's own first
-# tab, given an address, is first there and last elsewhere, as is a tab moved with Firefox's menu.
+# Counted, not failed: no tab is lost by it. A new window's own first tab, given an address,
+# is first there and last elsewhere, as is a tab moved with Firefox's menu.
 ORDER = "a space's tabs have another order than in the first window"
 
 
@@ -78,12 +70,11 @@ def growth(rows):
     """How much memory grew over a run at the same number of tabs, in MB, or None if the run
     is too short to say. `rows`: (minutes, tabs, MB allocated), one per sample.
 
-    Memory follows the tabs: with Sidebery 36 MB with one window and 80 with four. They come
-    and go at random, so high and low samples mean little by themselves, and a limit that
-    allows for them lets a real leak through. So the part that follows the tabs is taken out
-    first, and what is left is compared with time (a regression on both). Also returned is
-    how far the samples lie from that line (their standard deviation), which is the noise
-    any growth has to stand out from: more with Sidebery, whose memory is in the same process.
+    Memory follows the tabs and the windows. They come and go at random, so high and low
+    samples mean little by themselves, and a limit that allows for them lets a real leak
+    through. So the part that follows the tabs is taken out first, and what is left is
+    compared with time (a regression on both). Also returned is how far the samples lie from
+    that line (their standard deviation), which is the noise any growth has to stand out from.
     """
     rows = rows[MEMORY_WARMUP:]
     if len(rows) < GROWTH_MIN_SAMPLES:
@@ -234,7 +225,7 @@ AGENT = r"""(() => {
 
 # Shared by everything that runs in the browser (args[0] is what Python passes).
 LIB = r"""
-  const a = args[0], EXT = "$EXT", SB = "$SB", ALONE = a.alone;
+  const a = args[0], EXT = "$EXT";
   const {setTimeout: sT, clearTimeout: cT} = ChromeUtils.importESModule("resource://gre/modules/Timer.sys.mjs");
   const wait = ms => new Promise(r => sT(r, ms));
   const {ExtensionStorageIDB} = ChromeUtils.importESModule("resource://gre/modules/ExtensionStorageIDB.sys.mjs");
@@ -254,7 +245,6 @@ LIB = r"""
   const essentialOf = (w, t) => value(w, t, "essentialKey");
   const url = t => { try { return t.linkedBrowser.currentURI.spec; } catch (e) { return ""; } };
   const isGhost = t => url(t).includes("/ghost.html?") && !/kind=(test|soak)/.test(url(t));
-  const isGroup = t => url(t).includes("/sidebery/group.html");
   const ctxName = c => c ? "firefox-container-" + c : "firefox-default";
 
   // A command in one of Tidier's own pages (AGENT).
@@ -353,7 +343,7 @@ ACTIONS = r"""
   const otherWindow = w => pick(normal().filter(x => x !== w));
   const usable = t => !t.closing && t.linkedBrowser && !/kind=(test|soak)/.test(url(t));
   const plainTabs = w => [...w.gBrowser.tabs].filter(t => usable(t) && !t.pinned);
-  const syncedTabs = w => plainTabs(w).filter(t => keyOf(w, t) && !isGroup(t));
+  const syncedTabs = w => plainTabs(w).filter(t => keyOf(w, t));
   const pins = w => [...w.gBrowser.tabs].filter(t => usable(t) && t.pinned);
   const space = w => w.gBrowser.selectedTab.userContextId || 1;
   const short = t => {
@@ -423,7 +413,7 @@ ACTIONS = r"""
       return "Firefox unloads " + short(t);
     },
     close_tab() {
-      const w = anyWindow(), t = pick(plainTabs(w).filter(x => !isGroup(x) && !x.hidden));
+      const w = anyWindow(), t = pick(plainTabs(w).filter(x => !x.hidden));
       if (!t) return null;
       closing(w, t);
       const what = short(t) + " (" + roleOf(w, t) + (t.linkedPanel ? ", loaded)" : ", unloaded)");
@@ -431,7 +421,7 @@ ACTIONS = r"""
       return "close " + what;
     },
     close_hidden_tab() {
-      const w = anyWindow(), t = pick(plainTabs(w).filter(x => !isGroup(x) && x.hidden));
+      const w = anyWindow(), t = pick(plainTabs(w).filter(x => x.hidden));
       if (!t) return null;
       closing(w, t);
       w.gBrowser.removeTab(t);
@@ -440,7 +430,7 @@ ACTIONS = r"""
     close_selected() {
       // ⌘W
       const w = here(), t = w.gBrowser.selectedTab;
-      if (!usable(t) || isGroup(t) || w.gBrowser.tabs.length < 2) return null;
+      if (!usable(t) || w.gBrowser.tabs.length < 2) return null;
       closing(w, t);
       const what = short(t);
       w.gBrowser.removeTab(t);
@@ -494,18 +484,6 @@ ACTIONS = r"""
       w.gBrowser.unpinTab(t);
       return "unpin " + what;
     },
-    move_tab() {
-      // With Sidebery a tab is dragged in the tab strip or in its sidebar. With Tidier
-      // alone only the sidebar moves tabs (the tab strip is not there).
-      if (ALONE) return null;
-      const w = here(), t = pick(syncedTabs(w));
-      if (!t) return null;
-      const same = plainTabs(w).filter(x => x.userContextId === t.userContextId && !isGroup(x));
-      const to = pick(same);
-      if (!to || to === t) return null;
-      w.gBrowser.moveTabTo(t, {tabIndex: w.gBrowser.tabs.indexOf(to)});
-      return "move " + short(t);
-    },
     move_essential() {
       const w = here(), list = pins(w), t = pick(list);
       if (list.length < 2) return null;
@@ -514,11 +492,10 @@ ACTIONS = r"""
     },
     to_other_window() {
       // Dragged from the tab strip, or Firefox's own "Move Tab" menu.
-      const w = anyWindow(), there = otherWindow(w), t = pick(plainTabs(w).filter(x => !isGroup(x)));
+      const w = anyWindow(), there = otherWindow(w), t = pick(plainTabs(w));
       if (!there || !t || w.gBrowser.tabs.length < 2) return null;
       const what = short(t) + " (" + roleOf(w, t) + ")";
-      // Next to its own space's tabs: Sidebery gives a tab that another extension moves
-      // the space of the tab it lands on (README), and its own drag does not do that.
+      // Next to its own space's tabs.
       const same = [...there.gBrowser.tabs].filter(x => x.userContextId === t.userContextId).at(-1);
       there.gBrowser.adoptTab(t, {tabIndex: same ? there.gBrowser.tabs.indexOf(same) + 1 : there.gBrowser.tabs.length});
       return "to another window: " + what;
@@ -532,7 +509,7 @@ ACTIONS = r"""
     },
     async tear_off() {
       if (a.windows >= $MAX_WINDOWS) return null;
-      const w = anyWindow(), t = pick(plainTabs(w).filter(x => !isGroup(x)));
+      const w = anyWindow(), t = pick(plainTabs(w));
       if (!t || plainTabs(w).length < 2) return null;
       const what = short(t) + " (" + roleOf(w, t) + ")";
       w.gBrowser.replaceTabWithWindow(t);
@@ -581,7 +558,7 @@ ACTIONS = r"""
       return "reopen a closed window";
     },
 
-    // ---- The real sidebar, in the window you are using (Tidier alone) ----
+    // ---- The real sidebar, in the window you are using ----
     async sb_select() {
       const w = here(), v = await sb(w, "view"), id = v && pick([...v.tiles, ...rowsOf(v)]);
       if (!id) return null;
@@ -590,14 +567,14 @@ ACTIONS = r"""
     },
     async sb_close() {
       const w = here(), v = await sb(w, "view"), id = v && pick(rowsOf(v)), t = id && inThisSidebar(w, id);
-      if (!t || isGroup(t)) return null;
+      if (!t) return null;
       closing(w, t);
       await sb(w, "click", {sel: `${row(id)} .close`});
       return "sidebar: × on " + short(t);
     },
     async sb_middle_click() {
       const w = here(), v = await sb(w, "view"), id = v && pick(rowsOf(v)), t = id && inThisSidebar(w, id);
-      if (!t || isGroup(t)) return null;
+      if (!t) return null;
       closing(w, t);
       await sb(w, "middle", {sel: row(id)});
       return "sidebar: middle click on " + short(t);
@@ -799,13 +776,13 @@ INVARIANTS = LIB + r"""
   const shown = [];
   for (const [wi, w] of ws.entries()) {
     const sel = w.gBrowser.selectedTab, space = sel.userContextId ? ctxName(sel.userContextId) : null;
-    if (ALONE && space) {
+    if (space) {
       for (const x of tabs.filter(x => x.wi === wi && !x.pinned)) {
         if (x.ctx !== space && x.ctx !== "firefox-default" && !x.hidden && !x.selected) bad("another space's tab is shown", x.label, x.ctx + " in " + space);
         if (x.ctx === space && x.hidden) bad("a tab of the active space is hidden", x.label);
       }
     }
-    if (ALONE && sidebarShown(w)) {
+    if (sidebarShown(w)) {
       const v = await sb(w, "view");
       if (!v) { bad("the sidebar does not answer", "window " + wi); continue; }
       if (v.renaming) continue;
@@ -826,27 +803,15 @@ INVARIANTS = LIB + r"""
       shown.push(v.plain.length + v.folders.flatMap(f => f.tabs).length);
     }
   }
-  if (!ALONE) {
-    const panels = {};
-    for (const p of Object.values((await storage(["sidebar"], SB)).sidebar.panels)) if (p.type === 2 && p.newTabCtx && p.newTabCtx !== "none") panels[p.newTabCtx] = p.id;
-    for (const x of tabs) {
-      if (!x.t.userContextId || !panels[x.ctx]) continue;
-      let panel;
-      try { panel = JSON.parse(x.w.SessionStore.getCustomTabValue(x.t, "extension:" + SB + ":data") || "{}").panelId; } catch (e) { continue; }
-      if (panel && panel !== panels[x.ctx]) bad(x.pinned ? "an essential is in another space (pin race)" : "a tab is in another space", x.label, x.ctx + " in window " + x.wi + ", role " + x.role + ", at " + x.w.gBrowser.tabs.indexOf(x.t) + " among " + x.w.gBrowser.tabs.map(t => t.userContextId).join(""));
-    }
-  }
   // --- Order: every window shows the same tabs in the same order ---
   const ORDER = "a space's tabs have another order than in the first window";
-  if (ALONE) {
-    for (const ctx of new Set(tabs.map(x => x.ctx))) {
-      const orderIn = wi => tabs.filter(x => x.wi === wi && x.ctx === ctx && !x.pinned && x.key && all[x.key]).map(x => x.key);
-      const first = orderIn(0);
-      for (let wi = 1; wi < ws.length; wi++) {
-        const here = orderIn(wi), common = new Set(here.filter(k => first.includes(k)));
-        const a1 = first.filter(k => common.has(k)), a2 = here.filter(k => common.has(k));
-        if (JSON.stringify(a1) !== JSON.stringify(a2)) bad(ORDER, ctx + " window " + wi, a1.map(k => all[k].url?.split("/").pop()).join(" ") + " vs " + a2.map(k => all[k].url?.split("/").pop()).join(" "));
-      }
+  for (const ctx of new Set(tabs.map(x => x.ctx))) {
+    const orderIn = wi => tabs.filter(x => x.wi === wi && x.ctx === ctx && !x.pinned && x.key && all[x.key]).map(x => x.key);
+    const first = orderIn(0);
+    for (let wi = 1; wi < ws.length; wi++) {
+      const here = orderIn(wi), common = new Set(here.filter(k => first.includes(k)));
+      const a1 = first.filter(k => common.has(k)), a2 = here.filter(k => common.has(k));
+      if (JSON.stringify(a1) !== JSON.stringify(a2)) bad(ORDER, ctx + " window " + wi, a1.map(k => all[k].url?.split("/").pop()).join(" ") + " vs " + a2.map(k => all[k].url?.split("/").pop()).join(" "));
     }
   }
   const errors = control().__soakErrors.splice(0);
@@ -857,7 +822,6 @@ INVARIANTS = LIB + r"""
     violations: out,
     names: Object.fromEntries(entries.map(([k, e]) => [k, (e.url || e.name || "").split(/[/?]/).pop()])),
     keys: entries.filter(([, e]) => !e.group).map(([k]) => k),
-    noContainer: entries.filter(([, e]) => e.cookieStoreId === "firefox-default").map(([k]) => k),
     savedKeys: entries.filter(([, e]) => e.saved).map(([k]) => k),
     essentials: keys,
     folders: entries.filter(([, e]) => e.own).map(([k]) => k),
@@ -911,9 +875,9 @@ FOCUS = LIB + r"""
 """
 
 # A window has a sidebar in real use, which a new window takes from the window that
-# opened it; Sidebery places tabs only where its sidebar runs.
+# opened it.
 SHOW_SIDEBARS = LIB + r"""
-  const wanted = ALONE ? "_6844a953-9931-4334-9ff6-257c246485cb_-sidebar-action" : "_3c078156-979c-498b-8990-85f7987dd929_-sidebar-action";
+  const wanted = "_6844a953-9931-4334-9ff6-257c246485cb_-sidebar-action";
   for (const w of normal()) {
     if (w.SidebarController.currentID !== wanted || w.SidebarController.browser.hidden) { await w.SidebarController.show(wanted); await wait(300); }
     // Who closes what, for when a tab goes without an action having closed it.
@@ -939,7 +903,7 @@ CLOSES_OF = LIB + r"""
 ASK = LIB + "return await ask(a.msg);"
 
 
-def weights(alone, pop):
+def weights(pop):
     """How likely each action is now: use as it might be, kept around MAX_TABS."""
     tabs, essentials, windows = pop["tabs"], pop["essentials"], pop["windows"]
     many = tabs >= MAX_TABS
@@ -963,7 +927,6 @@ def weights(alone, pop):
         "switch_window": 2,
         "pin": 0 if essentials >= MAX_ESSENTIALS else (2 if essentials <= MIN_ESSENTIALS else 0.6),
         "unpin": 0 if essentials <= MIN_ESSENTIALS else 0.6,
-        "move_tab": 1.5,
         "move_essential": 0.8,
         "to_other_window": 0.6,
         "essential_to_other_window": 0.3,
@@ -974,14 +937,13 @@ def weights(alone, pop):
         "reopen_tab": 0.8,
         "reopen_window": 0.2,
     }
-    if alone:
-        w.update({
-            "sb_select": 5, "sb_close": 0 if few else (5 if many else 1.5), "sb_middle_click": 0 if few else 0.5, "sb_new_tab": 0 if many else 0.8,
-            "sb_new_folder": 0.3, "sb_rename_folder": 0.2, "sb_fold": 0.6, "sb_delete_folder": 0.12, "sb_space": 2.5, "sb_keys": 0.8,
-            "sb_drag_into_folder": 1.2, "sb_drag_tab": 1.5, "sb_drag_out_of_folder": 0.6, "sb_drag_to_space": 0.5,
-            "sb_drag_to_essentials": 0 if essentials >= MAX_ESSENTIALS else 0.3, "sb_drag_essential_out": 0 if essentials <= MIN_ESSENTIALS else 0.3,
-            "sb_drag_essential": 0.5, "sb_drag_folder": 0.2,
-        })
+    w.update({
+        "sb_select": 5, "sb_close": 0 if few else (5 if many else 1.5), "sb_middle_click": 0 if few else 0.5, "sb_new_tab": 0 if many else 0.8,
+        "sb_new_folder": 0.3, "sb_rename_folder": 0.2, "sb_fold": 0.6, "sb_delete_folder": 0.12, "sb_space": 2.5, "sb_keys": 0.8,
+        "sb_drag_into_folder": 1.2, "sb_drag_tab": 1.5, "sb_drag_out_of_folder": 0.6, "sb_drag_to_space": 0.5,
+        "sb_drag_to_essentials": 0 if essentials >= MAX_ESSENTIALS else 0.3, "sb_drag_essential_out": 0 if essentials <= MIN_ESSENTIALS else 0.3,
+        "sb_drag_essential": 0.5, "sb_drag_folder": 0.2,
+    })
     return w
 
 
@@ -999,7 +961,7 @@ class Soak:
         self.restarts = self.segment = 0
         self.raw, self.offset = {}, {}
         self.violations = {}    # (kind, subject) -> the first detail, when
-        self.known = {}         # the same for what is counted, not failed (SIDEBERY_SAYS, ORDER)
+        self.known = {}         # the same for what is counted, not failed (ORDER)
         self.action_failures = {}
         self.samples = []
         self.count = {}
@@ -1009,8 +971,8 @@ class Soak:
         self.t0 = time.time()
 
     def call(self, script, **more):
-        return self.m.js(script.replace("$EXT", EXT_ID).replace("$SB", SIDEBERY_ID).replace("$MAX_WINDOWS", str(MAX_WINDOWS)),
-                         {"alone": self.args.alone, "agent": AGENT, "pages": self.pages, **more})
+        return self.m.js(script.replace("$EXT", EXT_ID).replace("$MAX_WINDOWS", str(MAX_WINDOWS)),
+                         {"agent": AGENT, "pages": self.pages, **more})
 
     def say(self, text):
         line = f"{time.time() - self.t0:7.1f}  {text}"
@@ -1021,7 +983,7 @@ class Soak:
         return self.call(ASK, msg=msg)
 
     def action(self):
-        table = weights(self.args.alone, self.pop)
+        table = weights(self.pop)
         names = list(table)
         for _ in range(20):
             name = self.rng.choices(names, [table[k] for k in names])[0]
@@ -1071,7 +1033,7 @@ class Soak:
         id_ = (kind, subject)
         if id_ in self.violations or id_ in self.known:
             return
-        if kind == ORDER or (kind in SIDEBERY_SAYS and not self.args.alone):
+        if kind == ORDER:
             self.known[id_] = detail
             self.say(f"KNOWN {kind}: {subject} ({detail})")
             return
@@ -1106,10 +1068,7 @@ class Soak:
                 # (An unloaded tab just moved has its address for a title, with the key in it.)
                 if any(name in label or k in label for label in self.closed_labels):
                     continue
-                # With Sidebery, a tab without a container is Sidebery's to reopen in the active
-                # space, which it does by closing that tab; Tidier then closes it everywhere.
-                if self.args.alone or k not in self.prev["noContainer"]:
-                    self.violation("a synced tab is gone, and nothing closed it", self.prev["names"].get(k, k), self.call(CLOSES_OF, keys=[k])[0])
+                self.violation("a synced tab is gone, and nothing closed it", self.prev["names"].get(k, k), self.call(CLOSES_OF, keys=[k])[0])
             for k in set(self.prev["essentials"]) - set(r["essentials"]) - self.unpinned:
                 self.violation("an essential is gone, and nothing unpinned it", k)
             for k in set(self.prev["folders"]) - set(r["folders"]) - self.deleted:
@@ -1180,7 +1139,7 @@ class Soak:
         args = self.args
         server, self.pages = serve_pages()
         self.errors_seen = 0
-        print(f"Seed {args.seed}, {args.minutes} minutes, {'Tidier alone' if args.alone else 'with Sidebery'}, on port {args.port}. Every action: {self.logfile}", flush=True)
+        print(f"Seed {args.seed}, {args.minutes} minutes, on port {args.port}. Every action: {self.logfile}", flush=True)
         r = self.call(SETUP)
         if not r.get("ok"):
             raise SystemExit(f"Could not set up: {r}")
@@ -1268,7 +1227,7 @@ class Soak:
             s = self.samples[-1]
             print(f"In {s['t'] / 60:.1f} minutes: {s['actions']} actions, {s['jobs']} jobs, queue busy {s['queue']:.0f} s, {s['cpu']:.0f} s CPU in the extension process, {s['errors']} errors", flush=True)
         if self.known:
-            print(f"KNOWN  {len(self.known)} things that are counted, not failed (SIDEBERY_SAYS, ORDER; see the log)", flush=True)
+            print(f"KNOWN  {len(self.known)} things that are counted, not failed (ORDER; see the log)", flush=True)
         if self.violations:
             print(f"\n{len(self.violations)} violations, seed {self.args.seed}:", flush=True)
             for (kind, subject), (detail, when) in self.violations.items():
@@ -1280,7 +1239,6 @@ class Soak:
 
 def main():
     parser = argparse.ArgumentParser(description="A long run in a real (test) Firefox, used at random.")
-    parser.add_argument("--alone", action="store_true", help="Tidier alone, without Sidebery")
     parser.add_argument("--seed", type=int, default=None, help="decides the choices; printed, so that a run can be repeated")
     parser.add_argument("--minutes", type=float, default=5)
     parser.add_argument("--every", type=float, default=60, help="seconds between checks")
@@ -1292,7 +1250,7 @@ def main():
     if args.seed is None:
         args.seed = random.randrange(1_000_000)
     ok = False
-    with TestFirefox(port=args.port, alone=args.alone) as m:
+    with TestFirefox(port=args.port) as m:
         soak = Soak(m, args)
         try:
             soak.run()
