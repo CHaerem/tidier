@@ -5035,11 +5035,7 @@ def alone_shortcuts(m):
           and keys.get("space-1") == "⌃1" and keys.get("toggle-essential") == "⌘D" and keys.get("copy-url") == "⇧⌘C" and len(keys) >= 20, str(listed))
 
     def in_settings():
-        m.cmd("Marionette:SetContext", {"value": "content"})
-        for h in m.cmd("WebDriver:GetWindowHandles"):
-            m.cmd("WebDriver:SwitchToWindow", {"handle": h, "focus": False})
-            if "/settings/settings.html" in m.cmd("WebDriver:GetCurrentURL"):
-                break
+        into_page(m, "/settings/settings.html")  # not through every tab's handle, which would load them all
 
     went_away = []
 
@@ -5684,11 +5680,7 @@ def bridge_shot(m, name, path="/sidebar/sidebar.html"):
     ext_page(m, path, """if (doc.getElementById("spaces").tagName === "NAV") doc.body.style.maxWidth = "300px"; await wait(100); return 1;""")
 
     def shoot(suffix):
-        m.cmd("Marionette:SetContext", {"value": "content"})
-        for h in m.cmd("WebDriver:GetWindowHandles"):
-            m.cmd("WebDriver:SwitchToWindow", {"handle": h, "focus": False})
-            if path in m.cmd("WebDriver:GetCurrentURL"):
-                break
+        into_page(m, path)  # not through every tab's handle, which would load them all
         open(os.path.join(folder, name + suffix + ".png"), "wb").write(base64.b64decode(m.cmd("WebDriver:TakeScreenshot", {"full": "settings" in path})))
         m.chrome()
 
@@ -8167,6 +8159,8 @@ def bar_open(m, window="main()"):
 
 def bar_keys(m, keys, *mods):
     """Real key events, to the bar's window. Any of them may close it, before the rest of them or the release have been sent."""
+    # The chrome windows' handles (bar_page ends in chrome): walking those loads no tab.
+    m.chrome()
     for h in m.cmd("WebDriver:GetWindowHandles"):
         m.cmd("WebDriver:SwitchToWindow", {"handle": h, "focus": False})
         if m.js("return !window.toolbar.visible;"):
@@ -8186,18 +8180,24 @@ def bar_keys(m, keys, *mods):
 
 
 def to_bar_page(m):
-    """Marionette to the bar's own page, in content. The handles are every tab of every window, and
-    one can be going away meanwhile: a placeholder unloading itself, or a tab closing."""
+    """Marionette to the bar's own page, in content. Its handle is asked for, as in into_page:
+    switching through every tab's handle loads every unloaded tab on the way, a closed
+    folder's too, which then no longer rest. The bar can be closing meanwhile."""
+    m.chrome()
+    handle = m.js(BAR + """const {NavigableManager} = ChromeUtils.importESModule("chrome://remote/content/shared/NavigableManager.sys.mjs");
+      const t = bar()?.gBrowser.tabs.find(t => url(t).includes("/commandbar/commandbar.html"));
+      return t ? NavigableManager.getIdForBrowser(t.linkedBrowser) : null;""")
+    if not handle:
+        return False
     m.cmd("Marionette:SetContext", {"value": "content"})
-    for h in m.cmd("WebDriver:GetWindowHandles"):
-        try:
-            m.cmd("WebDriver:SwitchToWindow", {"handle": h, "focus": False})
-            if "/commandbar/commandbar.html" in m.cmd("WebDriver:GetCurrentURL"):
-                return True
-        except RuntimeError as err:
-            if "no such window" not in str(err):
-                raise
-    return False
+    try:
+        m.cmd("WebDriver:SwitchToWindow", {"handle": handle, "focus": False})
+    except RuntimeError as err:
+        if "no such window" not in str(err):
+            raise
+        m.chrome()
+        return False
+    return True
 
 
 def bar_page(m, script, *args):
