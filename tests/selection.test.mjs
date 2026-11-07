@@ -32,7 +32,7 @@ async function sidebar({ os = "mac", alone = true, rows = [1, 2, 3, 4, 5], tiles
   const listeners = {}, sent = [], viewListeners = [];
   const ctx = {
     view: { alone, space: "s" }, kept, send: m => sent.push(m), closeMenu() {}, cursor: null, moveCursor(c) { ctx.cursor = c || null; },
-    reachable: () => els, dragging: null, marks() {}, dropAt: () => null,
+    reachable: () => els, dragging: null, marks() {}, dropAt: () => null, secondClick: { acted() {} },
     nextTab: e => { const list = els.filter(x => x.classes.has("tab")); return list[list.indexOf(e) + 1] ?? null; },
     port: { onMessage: { addListener: f => viewListeners.push(f) } },
     browser: { runtime: { getPlatformInfo: async () => ({ os }) } },

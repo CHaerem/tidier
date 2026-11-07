@@ -143,6 +143,7 @@
       else addOrRemove(item);
     } else if (item && button?.classList.contains("close") && picked.has(idOf(item))) {
       take(e);
+      secondClick.acted(e); // the rows go: a second click would land on what comes there
       closePicked();
     } else if (!adding && !e.shiftKey && !e.target.closest?.(KEEPS)) clear();
   }, true);
@@ -151,6 +152,7 @@
     const item = e.target.closest?.("[data-tab]");
     if (e.button !== 1 || !view?.alone || !item || !picked.has(idOf(item))) return;
     e.stopPropagation();
+    secondClick.acted(e);
     closePicked();
   }, true);
 

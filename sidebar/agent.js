@@ -21,7 +21,7 @@ const agentStop = document.createElement("button");
 agentStop.className = "agent-stop";
 agentStop.textContent = "Stop";
 agentStop.title = "Cut the bridge at once. It stays off until you turn it on in the settings.";
-agentStop.onclick = () => agentPort.postMessage({ type: "stop" });
+agentStop.onclick = secondClick.acts(() => agentPort.postMessage({ type: "stop" })); // its line goes, and a second click would reach a row
 agentStop.onkeydown = e => e.stopPropagation(); // Enter is for this button here, not for the list (keys.js)
 agentLineBox.append(agentLineText, agentStop);
 document.getElementById("spaces").before(agentLineBox);

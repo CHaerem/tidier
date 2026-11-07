@@ -2643,6 +2643,209 @@ def alone_tab_menu(m):
     no_problems(m, "after the tab menu")
 
 
+# --- The sidebar under your hand (Tidier alone) -------------------------------------------
+# Real pointer and keys, from Firefox's own input, on the real sidebar in the window: what a
+# double click, a middle click or a click a little late does, as a hand does them.
+def hand(m, *acts):
+    """A real pointer in the main window: WebDriver pointer actions at the window's coordinates."""
+    m.js(H + """main().focus(); return 1;""")
+    m.cmd("WebDriver:PerformActions", {"actions": [{"type": "pointer", "id": "mouse", "parameters": {"pointerType": "mouse"}, "actions": list(acts)}]})
+    m.cmd("WebDriver:ReleaseActions")
+
+
+def hand_to(p, dx=0, dy=0):
+    return {"type": "pointerMove", "x": int(p["x"] + dx), "y": int(p["y"] + dy), "duration": 0, "origin": "viewport"}
+
+
+def hand_click(button=0, hold=0):
+    return [{"type": "pointerDown", "button": button}, *([{"type": "pause", "duration": hold}] if hold else []), {"type": "pointerUp", "button": button}]
+
+
+def hand_pause(ms):
+    return {"type": "pause", "duration": ms}
+
+
+# In the real sidebar: rows by title, boxes, and a point in the window's coordinates.
+HAND_JS = """const row = t => [...doc.querySelectorAll("#tabs .tab")].find(r => r.title.split("\\n")[0] === t);
+  const box = e => { const b = e.getBoundingClientRect(); return {x: b.x + b.width / 2, y: b.y + b.height / 2, top: Math.round(b.top), bottom: Math.round(b.bottom), left: b.left, right: b.right}; };"""
+
+
+def hand_spot(m, body, *args):
+    """What `body` (a function body in the real sidebar, with HAND_JS) returns, its x and y moved into the window."""
+    p = in_sidebar(m, "(...args) => { " + HAND_JS + body + " }", *args)
+    if not isinstance(p, dict) or "x" not in p:
+        return p
+    o = m.js(SIDEBAR_AT)
+    return {**p, "x": o["x"] + p["x"], "y": o["y"] + p["y"]}
+
+
+def alone_hand(m):
+    m.js(H + """const w = main(); w.focus(); for (const t of [...w.gBrowser.tabs]) if (/sidebar\\/sidebar\\.html|settings\\/settings\\.html/.test(url(t))) w.gBrowser.removeTab(t);
+      Services.prefs.setBoolPref("general.autoScroll", true); // Firefox's own default on a Mac, which the dotfiles leave
+      await wait(300); return 1;""")
+    here = sidebar_until(m, """() => doc.querySelector("#spaces .space.active")?.dataset.space""")
+    m.js(H + """const w = main(), [pages, ctx] = args;
+      for (let i = 1; i <= 12; i++) { w.gBrowser.addTrustedTab(pages + "/titled?hand-" + i, {userContextId: ctx, inBackground: true}); await wait(80); }
+      for (let i = 0; i < 100 && w.gBrowser.tabs.filter(t => t.label.startsWith("hand-")).length < 12; i++) await wait(100);
+      await wait(2500); return 1;""", m.pages, int(here.split("-")[-1]))
+    away = m.js(H + """const w = main(), s = w.SidebarController.browser.getBoundingClientRect(); return {x: s.right + 300, y: s.top + 200};""")
+    hands = lambda: m.js(H + """return main().gBrowser.tabs.filter(t => t.label.startsWith("hand-")).map(t => t.label).sort();""")
+    sidebar_until(m, """() => [...doc.querySelectorAll("#tabs .tab")].filter(r => r.title.startsWith("hand-")).length >= 12""")
+
+    # A double click on × closes one tab: the row below stays where it was while the pointer
+    # is in the list, so the second click lands on nothing. Once the pointer leaves, it comes up.
+    p = hand_spot(m, """const r = row("hand-3"); r.scrollIntoView({block: "center"}); const c = box(r.querySelector(".close")), b = r.nextElementSibling;
+      return {x: c.x, y: c.y, below: b.title.split("\\n")[0], top: box(b).top};""")
+    hand(m, hand_to(p), hand_pause(300), *hand_click(), hand_pause(60), *hand_click())
+    time.sleep(1.5)
+    after = hand_spot(m, """const b = row(args[0]); return {top: b && box(b).top, room: !!doc.querySelector("#tabs .room"), gone: !row("hand-3")};""", p["below"])
+    left = hands()
+    hand(m, hand_to(away))
+    time.sleep(0.5)
+    later = hand_spot(m, """const b = row(args[0]); return {top: b && box(b).top, room: !!doc.querySelector("#tabs .room")};""", p["below"])
+    check("a double click on × closes one tab", "hand-3" not in left and len(left) == 11 and after["gone"], f"{left} {after}")
+    check("the row below stays under the pointer while it is in the list, and comes up when it leaves", after["top"] == p["top"] and after["room"] and later["top"] == p["top"] - 32 and not later["room"], f"{p} {after} {later}")
+
+    # A middle click closes, with Firefox's autoscroll on, and the next click works. (Firefox
+    # starts it only in what can scroll, so the list gets room at its end for this.)
+    p = hand_spot(m, """doc.getElementById("tabs").style.paddingBottom = "2000px"; const r = row("hand-5"); r.scrollIntoView({block: "center"}); return box(r);""")
+    hand(m, hand_to(p), hand_pause(200), *hand_click(1, hold=80))
+    time.sleep(1)
+    scrolling = m.js(H + """return main().SidebarController.browser.contentDocument.getElementById("autoscroller")?.state ?? "none";""")
+    in_sidebar(m, """() => { doc.getElementById("tabs").style.paddingBottom = ""; return 1; }""")
+    q = hand_spot(m, """const r = row("hand-6"); r.scrollIntoView({block: "nearest"}); return box(r);""")
+    hand(m, hand_to(q), *hand_click())
+    selected = m.js(H + """const w = main(); for (let i = 0; i < 30 && w.gBrowser.selectedTab.label !== "hand-6"; i++) await wait(100); return w.gBrowser.selectedTab.label;""")
+    check("a middle click on a row closes its tab, with autoscroll on", "hand-5" not in hands() and scrolling != "open", f"{hands()} {scrolling}")
+    check("and the click after it is not lost", selected == "hand-6", selected)
+
+    # The speaker stays where it is under the pointer: a click on the one you see mutes.
+    m.js(H + """const w = main(), t = w.gBrowser.tabs.find(x => x.label === "hand-6"); t.toggleAttribute("soundplaying", true); w.gBrowser._tabAttrModified(t, ["soundplaying"]); return 1;""")
+    hand(m, hand_to(away))
+    sidebar_until(m, """() => !![...doc.querySelectorAll("#tabs .tab")].find(r => r.title.startsWith("hand-6"))?.querySelector(".sound")""")
+    rest = hand_spot(m, """const r = row("hand-6"); r.scrollIntoView({block: "nearest"}); return box(r.querySelector(".sound"));""")
+    hand(m, hand_to(rest), hand_pause(150))
+    over = hand_spot(m, """return box(row("hand-6").querySelector(".sound"));""")
+    hand(m, hand_to(away), hand_to(rest), hand_pause(150), *hand_click())  # (a chain starts where the last one left the pointer: it is told again)
+    s = m.js(H + """const w = main(), t = w.gBrowser.tabs.find(x => x.label === "hand-6"); for (let i = 0; i < 30 && t && !t.muted; i++) await wait(100);
+      return {open: w.gBrowser.tabs.includes(t), muted: !!t?.muted};""")
+    check("a click on a playing tab's speaker, where it was before the pointer came, mutes it", s == {"open": True, "muted": True} and over["x"] == rest["x"], f"{s} {rest} {over}")
+    m.js(H + """const w = main(), t = w.gBrowser.tabs.find(x => x.label === "hand-6"); t.toggleAttribute("soundplaying", false); w.gBrowser._tabAttrModified(t, ["soundplaying"]); if (t.muted) t.toggleMuteAudio(); return 1;""")
+
+    def close_two(a, b):
+        p = hand_spot(m, """const [a, b] = args; row(a).scrollIntoView({block: "center"}); return {...box(row(a).querySelector(".close")), second: box(row(b).querySelector(".close"))};""", a, b)
+        o = m.js(SIDEBAR_AT)
+        hand(m, hand_to(p), hand_pause(150), *hand_click(), hand_to({"x": o["x"] + p["second"]["x"], "y": o["y"] + p["second"]["y"]}), *hand_click())
+        return sidebar_until(m, """() => doc.getElementById("note").classList.contains("shown") && doc.querySelector("#note .text").textContent""")
+
+    # The quiet line has a room of its own, waits while the pointer is on it, and goes a while after.
+    said = close_two("hand-1", "hand-2")
+    line = hand_spot(m, """const n = doc.querySelector("#note .line"), b = box(n), list = doc.getElementById("tabs").getBoundingClientRect();
+      return {x: b.left + 30, y: b.y, top: b.top, listBottom: Math.round(list.bottom), under: doc.elementFromPoint(b.right - 20, b.y)?.closest("#note") ? "note" : "other"};""")
+    hand(m, hand_to(line))
+    time.sleep(12)
+    held = in_sidebar(m, """() => doc.getElementById("note").classList.contains("shown")""")
+    hand(m, hand_to(away))
+    t0 = time.time()
+    sidebar_until(m, """() => !doc.getElementById("note").classList.contains("shown")""", timeout=15)
+    gone_after = round(time.time() - t0, 1)
+    check("two tabs closed with their × are one line, in a room of its own that covers no row", said == "2 tabs closed" and line["top"] >= line["listBottom"] and line["under"] == "note", f"{said} {line}")
+    check("the line waits while the pointer is on it, and goes on from there when it leaves, with two seconds at least", held and 1.5 <= gone_after <= 12, f"held {held}, gone {gone_after} s after")
+
+    # A click on Undo just after the line has faded lands on nothing. (One while it fades still
+    # brings them back: the line was there to be clicked, quiet.test.mjs.)
+    close_two("hand-4", "hand-7")
+    undo = hand_spot(m, """return box(doc.querySelector("#note .act"));""")
+    before = (hands(), m.js(H + """return main().gBrowser.selectedTab.label;"""))
+    hand(m, hand_to(away))
+    sidebar_until(m, """() => !doc.getElementById("note").classList.contains("shown")""", timeout=20)
+    time.sleep(0.25)  # its fade takes 0.2 s
+    hand(m, hand_to(undo), *hand_click())
+    time.sleep(1.5)
+    after = (hands(), m.js(H + """return main().gBrowser.selectedTab.label;"""))
+    hand(m, hand_to(away))
+    check("a click on Undo just after the line faded closes, brings back and selects nothing", after == before, f"{before} -> {after}")
+
+    # ⌘Z in the sidebar, while the line offers Undo.
+    close_two("hand-8", "hand-9")
+    n = len(hands())
+    m.js(FOCUS_SIDEBAR)
+    press(m, "z", CMD)
+    back = m.js(H + """const w = main(); for (let i = 0; i < 50 && w.gBrowser.tabs.filter(t => /^hand-[89]$/.test(t.label)).length < 2; i++) await wait(100);
+      return w.gBrowser.tabs.filter(t => /^hand-[89]$/.test(t.label)).length;""")
+    check("⌘Z in the sidebar undoes what the line offers", back == 2 and len(hands()) == n + 2 and not in_sidebar(m, """() => doc.getElementById("note").classList.contains("shown")"""), f"{back} {n} {hands()}")
+
+    # ⌘W, with Firefox's closing animation: the row goes at once and does not come back.
+    gone = m.js(H + IN_SIDEBAR + """const w = main(); Services.prefs.setIntPref("ui.prefersReducedMotion", 0); await wait(200);
+      const t = w.gBrowser.tabs.find(x => x.label === "hand-10"); w.gBrowser.selectedTab = t; await wait(1500);
+      w.gBrowser.removeTab(t, {animate: true});
+      const animating = w.gBrowser.tabs.includes(t), seen = [];
+      for (let i = 0; i < 25; i++) { await wait(100); seen.push(await inSidebar(() => !![...doc.querySelectorAll("#tabs .tab")].find(r => r.title.startsWith("hand-10")))); }
+      Services.prefs.clearUserPref("ui.prefersReducedMotion");
+      return {animating, seen: seen.join("").replace(/true/g, "1").replace(/false/g, "0")};""")
+    check("⌘W's row goes at once, though Firefox keeps the tab a moment for its animation", gone["animating"] and "1" not in gone["seen"][10:], str(gone))
+
+    # A double click on a menu item that draws a list in its place chooses nothing from that list.
+    sidebar_mouse(m, """[...doc.querySelectorAll("#tabs .tab")].find(r => r.title.startsWith("hand-6"))""", 2)
+    sidebar_until(m, """() => labels().includes("Move to space")""")
+    item = hand_spot(m, """return box([...doc.querySelectorAll("#menu .item")].find(i => i.textContent === "Move to space"));""")
+    hand(m, hand_to(item), hand_pause(100), *hand_click(), hand_pause(60), *hand_click())
+    time.sleep(1)
+    r = in_sidebar(m, """() => ({labels: labels(), back: !!doc.querySelector("#menu:not([hidden]) .item.back"), still: !![...doc.querySelectorAll("#tabs .tab")].find(r => r.title.startsWith("hand-6"))})""")
+    sidebar_key(m, ESC)
+    check("a double click on Move to space shows the spaces and chooses none", r["still"] and r["back"] and len(r["labels"]) > 2, str(r))
+
+    # A saved tab's ×: it says it unloads, and the row stays as quiet as it now is under the pointer.
+    folder = sidebar_page(m, """const space = spaces().find(s => s.active).id;
+      send({type: "newFolder", space, name: "Hand"});
+      for (let i = 0; i < 50 && !folders().some(f => f.name === "Hand"); i++) await wait(100);
+      const key = [...doc.querySelectorAll("#tabs .folder .head")].find(h => h.querySelector(".title").textContent === "Hand").dataset.folderHead;
+      for (const name of ["hand-11", "hand-12"]) send({type: "moveTab", tabId: Number([...doc.querySelectorAll("#tabs .tab")].find(r => r.title.startsWith(name)).dataset.tab), folder: key, before: null});
+      for (let i = 0; i < 50 && folders().find(f => f.name === "Hand").tabs.length < 2; i++) await wait(100);
+      return key;""")
+    m.js(H + """const w = main(); for (const t of [...w.gBrowser.tabs]) if (url(t).includes("/sidebar/sidebar.html")) w.gBrowser.removeTab(t); await wait(800); return 1;""")
+    p = hand_spot(m, """const r = row("hand-11"); r.scrollIntoView({block: "center"}); const c = r.querySelector(".close"); return {...box(c), tip: c.title, loaded: !r.classList.contains("unloaded")};""")
+    hand(m, hand_to(p), hand_pause(200), *hand_click())
+    r = sidebar_until(m, """() => { const r = [...doc.querySelectorAll("#tabs .tab")].find(r => r.title.startsWith("hand-11")); if (!r?.classList.contains("unloaded")) return null;
+      const muted = content.getComputedStyle(doc.documentElement).getPropertyValue("--muted"), probe = doc.createElement("span"); probe.style.color = muted; doc.body.append(probe);
+      const out = {dim: r.classList.contains("still-dim"), quiet: content.getComputedStyle(r.querySelector(".title")).color === content.getComputedStyle(probe).color, tip: r.querySelector(".close").title, inFolder: !!r.closest(".folder")};
+      probe.remove(); return out; }""")
+    hand(m, hand_to(away))
+    awake = in_sidebar(m, """() => [...doc.querySelectorAll("#tabs .tab")].find(r => r.title.startsWith("hand-11"))?.classList.contains("still-dim")""")
+    check("× on a loaded saved tab says it unloads, and afterwards that it removes", p["loaded"] and p["tip"].startswith("Unload") and r and r["tip"] == "Remove from the folder", f"{p} {r}")
+    check("the row it unloads stays dim under the pointer, in its folder, until the pointer leaves", r and r["dim"] and r["quiet"] and r["inFolder"] and awake is False, f"{r} {awake}")
+
+    # A closed folder shows its selected tab; a click on another row leaves that row there,
+    # so the row clicked does not jump up under the pointer, until the pointer leaves the list.
+    m.js(H + """const w = main(); w.gBrowser.selectedTab = w.gBrowser.tabs.find(t => t.label === "hand-12"); await wait(1500); return 1;""")
+    head = hand_spot(m, """const h = [...doc.querySelectorAll("#tabs .folder .head")].find(h => h.title === "Hand"); h.scrollIntoView({block: "center"}); return box(h);""")
+    hand(m, hand_to(head), *hand_click())
+    sidebar_until(m, """() => [...doc.querySelectorAll("#tabs .folder")].find(f => f.querySelector(".head").title === "Hand")?.classList.contains("collapsed")""")
+    time.sleep(1)
+    p = hand_spot(m, """const r = row("hand-6"); r.scrollIntoView({block: "nearest"}); return {...box(r), shown: row("hand-12")?.offsetParent !== null};""")
+    hand(m, hand_to(p), *hand_click())
+    m.js(H + """const w = main(); for (let i = 0; i < 30 && w.gBrowser.selectedTab.label !== "hand-6"; i++) await wait(100); await wait(800); return 1;""")
+    clicked = hand_spot(m, """return {top: box(row("hand-6")).top, shown: row("hand-12")?.offsetParent !== null};""")
+    hand(m, hand_to(away))
+    time.sleep(0.5)
+    left = hand_spot(m, """return {top: box(row("hand-6")).top, shown: row("hand-12")?.offsetParent !== null};""")
+    check("a click below a closed folder leaves its selected tab's row there until the pointer leaves the list", p["shown"] and clicked["shown"] and clicked["top"] == p["top"] and not left["shown"], f"{p} {clicked} {left}")
+
+    # A double click on a folder's head renames it, with nothing folding first.
+    in_sidebar(m, """() => { const f = [...doc.querySelectorAll("#tabs .folder")].find(f => f.querySelector(".head").title === "Hand");
+      doc.documentElement.dataset.folds = ""; new content.MutationObserver(() => { doc.documentElement.dataset.folds += f.classList.contains("collapsed") ? "c" : "o"; }).observe(f, {attributes: true, attributeFilter: ["class"]});
+      return f.classList.contains("collapsed"); }""")
+    head = hand_spot(m, """return box([...doc.querySelectorAll("#tabs .folder .head")].find(h => h.title === "Hand"));""")
+    hand(m, hand_to(head), hand_pause(100), *hand_click(), hand_pause(80), *hand_click())
+    r = sidebar_until(m, """() => doc.querySelector("#tabs .folder.renaming input") && {folds: doc.documentElement.dataset.folds, collapsed: doc.querySelector("#tabs .folder.renaming").classList.contains("collapsed")}""")
+    sidebar_key(m, ESC)
+    check("a double click on a closed folder's head renames it, and nothing folds or unfolds first", r and r["collapsed"] and "o" not in r["folds"], str(r))
+    hand(m, hand_to(away))
+
+    sidebar_page(m, """send({type: "deleteFolder", key: args[0]}); await wait(800); return 1;""", folder)
+    m.js(H + """Services.prefs.clearUserPref("general.autoScroll"); await removeWhere((w, t) => t.label.startsWith("hand-") || url(t).includes("/sidebar/sidebar.html")); return 1;""")
+
+
 def alone_new_tab(m):
     # New tabs have one place, the top of today's tabs, for the button, ⌘T and a link
     # from another app. Each tab's row is read from the real sidebar, once it has settled.
@@ -9308,6 +9511,7 @@ ALONE_GROUPS = (alone_setup, alone_second_window, alone_spaces, alone_keys, alon
                 alone_selection,
                 alone_space_menu,
                 alone_stay_put,
+                alone_hand,
                 alone_new_tab,
                 alone_folds_rest,
                 alone_sound,

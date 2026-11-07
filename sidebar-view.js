@@ -71,12 +71,27 @@ function recordIcon(entry) {
 
 const folderName = url => decodeURIComponent((url.split("#")[1] || "").replace(/~!.*!~$/, "")) || "Folder";
 
+// A tab you close with ⌘W (or Firefox's own ways) plays a short animation first, and all that
+// time Firefox still lists it (tabs.query goes by the tab strip, which holds it until the
+// end). The view asked for by onRemoved comes in that moment, and no event follows when the
+// tab has really gone: its row would stay, dead, and a saved tab's would be there twice,
+// with its new placeholder. So a tab Firefox has said is removed is never in a view, for
+// REMOVED_KEPT_MS, which is far longer than the animation. (× closes with tabs.remove, which
+// has no animation; with less motion asked for, nothing has.)
+const REMOVED_KEPT_MS = 5000;
+const removedTabs = new Set();
+browser.tabs.onRemoved.addListener(tabId => {
+  removedTabs.add(tabId);
+  setTimeout(() => removedTabs.delete(tabId), REMOVED_KEPT_MS);
+});
+const queryShown = async query => (await browser.tabs.query(query)).filter(t => !removedTabs.has(t.id));
+
 async function viewFor(windowId) {
   await aloneRead;
   const list = await getList();
   // Firefox builds a full description of every tab it is asked for, so a view asks only
   // for the space it shows, unless the bar itself depends on the other tabs (spaceList).
-  const whole = !tidierAlone || Array.isArray(await declaredSpaces()) ? await browser.tabs.query({ windowId }) : null;
+  const whole = !tidierAlone || Array.isArray(await declaredSpaces()) ? await queryShown({ windowId }) : null;
   // Spaces in use: a container with essentials or tabs (with Tidier alone, also the empty ones).
   const used = new Set(whole ? [...list.map(e => e.cookieStoreId), ...whole.map(t => t.cookieStoreId)] : []);
   const spaces = await spaceList(used);
@@ -84,7 +99,7 @@ async function viewFor(windowId) {
   for (const s of spaces) s.news = s.id !== space && spaceHasNews(s.id); // the space you are in shows it in its list
   // Of the space shown: its own tabs, those without a container, and a hidden space's
   // (shownInSpace, hiddenspaces.js), which show wherever you are.
-  const tabs = (whole ?? await browser.tabs.query({ windowId, cookieStoreId: [...(space ? [space] : []), NO_CONTAINER, ...hiddenSpaceIds] })).sort((a, b) => a.index - b.index);
+  const tabs = (whole ?? await queryShown({ windowId, cookieStoreId: [...(space ? [space] : []), NO_CONTAINER, ...hiddenSpaceIds] })).sort((a, b) => a.index - b.index);
   // Asked now, of the same moment as `tabs`: once the tab is gone it is no longer in newTabs,
   // and by the line that uses this it may be, while `tabs` still has it.
   const reopening = new Set(tabs.filter(reopensSoon).map(t => t.id));
@@ -193,6 +208,8 @@ browser.runtime.onConnect.addListener(port => {
       await browser.tabs.update(msg.tabId, { muted: msg.muted }).catch(() => {});
     } else if (msg.type === "undo") {
       await undoNote(windowId, msg.note); // quiet.js: taken at once, carried out in the queue
+    } else if (msg.type === "holdNote") {
+      holdNote(windowId, msg.note, msg.held); // quiet.js: the line waits while you are on it
     } else if (msg.type === "goToSound") {
       await goToSound(windowId, msg.tabId); // sounds.js; like select, not behind what the queue is doing
     } else if (msg.type === "warmup") {

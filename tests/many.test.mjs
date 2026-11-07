@@ -280,7 +280,7 @@ test("an address in the record that cannot be read does not stop the sidebar, an
 
 // The sidebar's own script, with just enough of a page around it.
 function sidebarPage() {
-  const element = () => ({ dataset: {}, style: { setProperty() {} }, classList: { toggle() {}, add() {}, remove() {}, contains: () => false }, append() {}, replaceWith() {}, replaceChildren() {} });
+  const element = () => ({ dataset: {}, style: { setProperty() {} }, classList: { toggle() {}, add() {}, remove() {}, contains: () => false }, append() {}, replaceWith() {}, replaceChildren() {}, addEventListener() {} });
   const ctx = vm.createContext({
     browser: { runtime: { connect: () => ({ onMessage: { addListener() {} }, postMessage() {} }) }, windows: { getCurrent: async () => ({ id: 1 }) }, storage: { managed: { get: async () => ({}) } } },
     document: { createElement: element, getElementById: element, documentElement: element(), head: element(), addEventListener() {} },
@@ -356,6 +356,35 @@ test("a page in another space builds no view, a page in this one does", async ()
   x.b.tabs.onUpdated.fire(here.id, { title: "changes" }, ff.snap(ff.tabs.get(here.id)));
   await until(() => views() > before);
   assert.ok(views() > before, "drawn");
+  x.kill();
+});
+
+test("a tab Firefox still lists while it plays its closing animation is not drawn", async () => {
+  // ⌘W: Firefox says the tab is removed and goes on listing it for half a second or so, and
+  // no event comes when it has really gone. Drawn then, its row would stay, dead.
+  const ff = new FakeFirefox();
+  const w = manyTabs(ff, 6);
+  const x = await alone(ff);
+  const bar = await sidebar(x, w.id);
+  await wait(300);
+  const animating = new Set();
+  ff.rm = id => {
+    const t = ff.tabs.get(id);
+    if (!t || animating.has(id)) return;
+    animating.add(id);
+    x.b.tabs.onRemoved.fire(id, { windowId: t.windowId, isWindowClosing: false });
+    setTimeout(() => { const order = ff.wins.get(t.windowId).order; order.splice(order.indexOf(id), 1); ff.tabs.delete(id); ff.values.delete(id); }, 400);
+  };
+  const closing = ff.list(w.id).find(t => t.cookieStoreId === C1 && !t.active);
+  const before = bar.views.length;
+  await x.b.tabs.remove(closing.id);
+  await until(() => bar.views.length > before);
+  assert.ok(ff.tabs.has(closing.id), "Firefox still lists it");
+  assert.ok(bar.views.length > before, "a view came");
+  for (const view of bar.views.slice(before)) assert.ok(!view.tabs.some(t => t.id === closing.id), JSON.stringify(view.tabs));
+  await until(() => !ff.tabs.has(closing.id), 3000);
+  await wait(6000);
+  assert.equal(x.js("removedTabs").size, 0, "nothing is kept of it");
   x.kill();
 });
 

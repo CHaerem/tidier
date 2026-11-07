@@ -50,6 +50,7 @@ async function deleteFolder(key, windowId) {
   if (!isOwnFolder(all[key])) return;
   const undo = windowId === undefined ? undefined : await rememberFolder(all, key, windowId);
   const gone = Object.keys(all).filter(k => all[k].parentKey === key);
+  const space = all[key].cookieStoreId;
   for (const k of gone) {
     if (all[k].liveFolder && await closesQuietly(k)) { await closeEverywhere(k, { dismiss: false }); continue; }
     Object.assign(all[k], { parentKey: all[key].parentKey ?? null, added: Date.now() });
@@ -60,7 +61,21 @@ async function deleteFolder(key, windowId) {
   noteSaved(all);
   saveSynced(all);
   await foldChanged(key); // a closed folder's tabs were hidden
+  if (windowId !== undefined) await toTopOfTodayAll(windowId, gone.filter(k => all[k]), space);
   if (undo) say(windowId, "Folder deleted", { undo });
+}
+
+// The tabs of a folder deleted stay where it was: first among today's tabs, right under the
+// folders, in their order, in every window (moveTab). Where they lay in the window they would
+// be drawn at the very end of the list, out of sight, as if they had gone with it: a tab moved
+// into a folder lies last in the window.
+async function toTopOfTodayAll(windowId, keys, space) {
+  const moving = new Set(keys);
+  const tabs = (await browser.tabs.query({ windowId })).sort((a, b) => a.index - b.index);
+  const shown = drawnToday(await getSynced(), space); // newtabs.js
+  const first = tabs.find(t => shown(t) && !moving.has(syncKeyByTab.get(t.id)));
+  if (!first) return; // they are all of today's tabs
+  for (const t of tabs.filter(t => moving.has(syncKeyByTab.get(t.id)))) await moveTab(windowId, t.id, first.id);
 }
 
 // A folder moved among its space's folders (`beforeKey` null: last).

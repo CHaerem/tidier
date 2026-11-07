@@ -14,23 +14,96 @@
   const ownKeys = e => e.stopPropagation();
   act.onkeydown = ownKeys;
 
+  // The line has a room of its own between the list and the bar, so it lies over no row
+  // and no row's ×. The list ends above it; the rows do not move, only less of the list
+  // shows for a while. When it goes it fades in its room, and the room stays a moment
+  // longer (ROOM_AFTER_MS), and for as long as the pointer is in it: a click meant for
+  // Undo that comes too late lands on nothing, never on a row come into its place. A
+  // click while it fades still counts (goneNotes, quiet.js): it was there to be clicked.
+  // Once faded it is out of reach by its own class, not by the fade's end: Firefox moves a
+  // transition on only as it draws, and a window it is not drawing would keep Undo there.
+  const FADE_MS = 200, ROOM_AFTER_MS = 400; // the fade is sidebar.css's
+  const ROOM_PX = 32;
+  let roomTimer = null, roomDue = false;
+  let going = null; // the note that has just gone, while its line fades
+  const faded = () => {
+    going = null;
+    box.classList.add("faded");
+    roomTimer = setTimeout(closeRoom, ROOM_AFTER_MS);
+  };
+
+  // When the room goes, the list grows into it. Scrolled to its end, Firefox would then
+  // move every row down to fill the list: instead the list keeps that much room at its end
+  // until the pointer has left it (letRoomsGo, sidebar.js), so nothing moves under the pointer.
+  const closeRoom = () => {
+    roomTimer = null;
+    if (box.matches(":hover")) { roomDue = true; return; }
+    roomDue = false;
+    const spare = tabsList.scrollHeight - tabsList.scrollTop - tabsList.clientHeight;
+    if (tabsList.scrollTop > 0 && spare < ROOM_PX) tabsList.style.setProperty("--held", ROOM_PX - spare + "px");
+    box.classList.remove("in-room");
+  };
+  box.addEventListener("mouseleave", () => { if (roomDue) closeRoom(); });
+
   // The text stays while the line fades out; only its being shown changes. It is set once
   // per note: a screen reader says it again whenever it is set, and every view brings it.
   let shown = null;
   const drawNote = note => {
     const same = note?.id === shown?.id;
+    if (shown && !note) {
+      going = shown;
+      clearTimeout(roomTimer);
+      roomTimer = setTimeout(faded, FADE_MS);
+    }
     shown = note;
     box.classList.toggle("shown", !!note);
+    if (note) {
+      clearTimeout(roomTimer);
+      roomTimer = null;
+      roomDue = false;
+      going = null;
+      box.classList.remove("faded");
+      box.classList.add("in-room");
+    }
+    tellHeld();
     if (!note || same) return;
     text.textContent = note.text;
     text.title = note.text;
     act.hidden = !note.undo;
   };
-  act.onclick = () => {
-    if (!shown) return;
-    send({ type: "undo", note: shown.id });
-    drawNote(null); // the tabs take a moment to come back; the line goes at once
+
+  // While the pointer or the keyboard is on the line, its time stands still (holdNote,
+  // quiet.js), so it waits for you. Told only when that changes.
+  let held = null; // the note's id, while it is held
+  const tellHeld = () => {
+    const now = shown && (box.matches(":hover") || box.contains(document.activeElement)) ? shown.id : null;
+    if (now === held) return;
+    if (held !== null) send({ type: "holdNote", note: held, held: false });
+    held = now;
+    if (held !== null) send({ type: "holdNote", note: held, held: true });
   };
+  box.addEventListener("mouseenter", tellHeld);
+  box.addEventListener("mouseleave", tellHeld);
+  box.addEventListener("focusin", tellHeld);
+  box.addEventListener("focusout", () => setTimeout(tellHeld)); // where the focus went is known after the event
+
+  // The line goes at once: the tabs take a moment to come back. Its room stays as always,
+  // and a double click's second click lands on nothing (secondclick.js).
+  const undo = () => {
+    const note = shown ?? going;
+    if (!note?.undo) return false;
+    send({ type: "undo", note: note.id });
+    drawNote(null);
+    going = null;
+    return true;
+  };
+  act.onclick = secondClick.acts(undo);
+
+  // ⌘Z (Ctrl+Z elsewhere) while the line offers Undo, with the keyboard in the sidebar.
+  addEventListener("keydown", e => {
+    if (e.key.toLowerCase() !== "z" || !(e.metaKey || e.ctrlKey) || e.shiftKey || e.altKey || e.target.closest?.("input")) return;
+    if (undo()) e.preventDefault();
+  });
 
   const clear = () => send({ type: "clearSpace", space: view.space });
 
@@ -42,7 +115,7 @@
     if (!divider.firstChild) {
       const reach = el("div", "clear-reach"), button = el("button", "clear", "Clear");
       button.title = "Close today's tabs, except the one you are on";
-      button.onclick = clear;
+      button.onclick = secondClick.acts(clear); // the rows below go, and a second click would reach what comes up
       button.onkeydown = ownKeys;
       reach.oncontextmenu = e => openMenu(e, listMenu());
       reach.append(button);

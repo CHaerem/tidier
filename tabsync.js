@@ -383,7 +383,8 @@ browser.runtime.onMessage.addListener((msg, sender) => {
     activeSpace, newTabs, firstPage, showTimers, closedIn, sidebarPorts, viewTimers, viewRest, viewsBuilding, requestOfTab,
     unruled,
     earlyKeys,
-    quietNotes, closeGroups,
+    quietNotes, goneNotes, closeGroups,
+    removedTabs, // sidebar-view.js
     closingOrder,
     successorDue,
     newsMarks, newsSeen,

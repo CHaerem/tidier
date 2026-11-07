@@ -405,9 +405,11 @@ export function generate(seed, alone) {
 // --- What must always hold ----------------------------------------------------------------
 // (Lists other packages keep are here too: a new list in memory belongs in one of these.)
 const TAB_SETS = ["syncKeyByTab", "syncRoleByTab", "keyByTab", "createdAt", "staleOpener", "firstPage", "newTabs", "newsSeen", "requestOfTab", "settled", "newBlanks", "unruled", "earlyKeys"];
-const WINDOW_SETS = ["lastOrder", "activeSpace", "viewRest", "quietNotes", "closeGroups", "littles"];
+const WINDOW_SETS = ["lastOrder", "activeSpace", "viewRest", "quietNotes", "goneNotes", "closeGroups", "littles"];
 const EMPTY_WHEN_IDLE = ["syncBusy", "busy", "pending", "movedTabs", "moveTimers", "orderQueries", "refreshTimers", "showTimers", "viewTimers", "closedIn", "newTabs", "toForget", "awaitingIcon", "foldersTimers", "ownFolderMoves", "ownMoves",
   "ownPins", "viewsBuilding", "successorDue", "closingOrder", "loadedSeen"];
+// (removedTabs, sidebar-view.js, holds a closed tab for a few seconds: it empties by itself,
+// and a check comes sooner than that after the last close.)
 function logical(all, list) {
   const tabs = {};
   for (const [key, e] of Object.entries(all)) tabs[key] = { group: !!e.group, parentKey: e.parentKey ?? null, saved: e.saved?.url ?? null, name: e.own ? e.name : undefined, cookieStoreId: e.cookieStoreId, rank: e.rank };

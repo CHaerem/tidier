@@ -26,10 +26,26 @@ askLine.append(askButton, askNo);
 document.getElementById("hiding").after(askLine);
 // Asking needs your click, so it is here and not in the background.
 askButton.onclick = () => browser.permissions.request(ISOLATION_ASK).then(readPermissions);
-askNo.onclick = () => {
+askNo.onclick = secondClick.acts(() => {
   try { localStorage.setItem(DECLINED, "1"); } catch (err) { /* then it asks again next time */ }
-  askLine.hidden = true;
-};
+  goQuietly(askLine);
+});
+
+// A notice you dismiss fades where it is and keeps its room until the pointer has left it,
+// so the essentials below do not come up under the pointer at the moment of the click.
+function goQuietly(notice) {
+  notice.classList.add("going");
+  const pointerIn = e => { const r = notice.getBoundingClientRect(); return e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom; };
+  const gone = () => {
+    notice.hidden = true;
+    notice.classList.remove("going");
+    removeEventListener("mousemove", moved, true);
+    document.documentElement.removeEventListener("mouseleave", gone);
+  };
+  const moved = e => { if (!pointerIn(e)) gone(); };
+  addEventListener("mousemove", moved, true);
+  document.documentElement.addEventListener("mouseleave", gone);
+}
 
 // Each view only looks at this: permissions change rarely, and views come all the time.
 let isolationGiven = true;
@@ -39,6 +55,7 @@ async function readPermissions() {
   drawAskLine();
 }
 function drawAskLine() {
+  if (askLine.classList.contains("going")) return; // it goes by itself
   let declined = false;
   try { declined = !!localStorage.getItem(DECLINED); } catch (err) { /* asks then */ }
   // One thing to click at a time: the line about hiding tabs comes first.
@@ -50,7 +67,7 @@ browser.permissions.onRemoved.addListener(readPermissions);
 readPermissions();
 
 // A lasting notice about a space that came back goes when you have seen it.
-document.getElementById("problem").addEventListener("click", () => isolationTell("seen"));
+document.getElementById("problem").addEventListener("click", secondClick.acts(() => isolationTell("seen"))); // and then it goes: a second click would reach what comes up
 
 // --- Menus ------------------------------------------------------------------------------
 const spacesOtherThan = id => (view?.spaces ?? []).filter(s => s.id !== id);

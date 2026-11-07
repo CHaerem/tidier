@@ -632,6 +632,24 @@ test("Clear and Rename are there once what they use is, and go to it", async () 
   x.kill();
 });
 
+test("while the quiet line offers Undo, the bar does too, and it undoes that", async () => {
+  const ff = new FakeFirefox();
+  const { w } = world(ff);
+  const x = await started(ff);
+  let page = await openBar(ff, x, w.id);
+  assert.ok(!page.sent[0].items.some(i => i.name === "undo"), "nothing to undo");
+  await page.tell({ type: "close", refocus: true });
+  x.js(`globalThis.undone = 0; say(${w.id}, "2 tabs closed", { undo: async () => { undone++; } })`);
+  page = await openBar(ff, x, w.id);
+  const undo = page.sent[0].items.find(i => i.name === "undo");
+  assert.equal(undo?.title, "Undo: 2 tabs closed");
+  await page.tell({ type: "choose", row: undo });
+  await wait(200);
+  assert.equal(x.js("undone"), 1);
+  assert.equal(x.js("noteFor")(w.id), null, "and the line goes");
+  x.kill();
+});
+
 test("what you selected in the sidebar is what the commands act on", async () => {
   const ff = new FakeFirefox();
   const { w, a } = world(ff);

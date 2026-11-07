@@ -173,6 +173,10 @@ const BAR_COMMANDS = [
   { name: "go-to-space", each: ctx => ctx.spaces.filter(s => s.id !== ctx.space).map(s => ({ label: `Go to ${s.name}`, value: s.id, space: s.id })),
     run: (ctx, space) => switchSpace(ctx.windowId, space) },
   { name: "clear-today", label: "Clear today's tabs", run: ctx => clearSpace(ctx.windowId, ctx.space) },
+  // While the sidebar's quiet line offers Undo, here too, for the same note (quiet.js). Not
+  // in the queue: Undo puts itself there.
+  { name: "undo", each: ctx => { const note = quietNotes.get(ctx.windowId); return note?.undo ? [{ label: `Undo: ${note.text}`, value: String(note.id) }] : []; }, free: true,
+    run: (ctx, id) => undoNote(ctx.windowId, Number(id)) },
   { name: "copy-url", label: ctx => barCount(ctx, "Copy address", "Copy # addresses"), when: ctx => ctx.addresses.length > 0,
     run: ctx => navigator.clipboard.writeText(ctx.addresses.join("\n")) },
   { name: "rename-tab", label: "Rename this tab", when: ctx => barOnlyThisTab(ctx) && barIsKept(ctx),
