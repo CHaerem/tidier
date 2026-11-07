@@ -27,11 +27,12 @@ function holdMenu(e) {
   browser.menus.overrideContext({ showDefaults: false });
 }
 
+// `byKey`: opened from the keys (keys.js), so its first item has the keyboard at once.
 let menuAt = { x: 0, y: 0 };
-function showMenu(items, x, y) {
+function showMenu(items, x, y, byKey = false) {
   menuAt = { x, y };
   closeMenu();
-  drawMenu(items);
+  drawMenu(items, null, byKey);
 }
 
 function drawMenu(items, back = null, byKey = false) {
@@ -78,10 +79,20 @@ function drawMenu(items, back = null, byKey = false) {
   (byKey ? menu.querySelector(".item:not(.back)") : menu).focus({ preventScroll: true });
 }
 
+// What had the keyboard when a menu was opened from the keys (keys.js): it gets it back when
+// the menu closes, as with Firefox's own menus, rather than leaving it nowhere.
+let menuReturn = null;
 const closeMenu = () => {
-  document.getElementById("menu").hidden = true;
+  const menu = document.getElementById("menu"), hadKeys = !!menu.contains?.(document.activeElement);
+  menu.hidden = true;
   menuFor = [];
   for (const e of document.querySelectorAll(".menu-for")) e.classList.remove("menu-for");
+  const back = menuReturn;
+  menuReturn = null;
+  if (hadKeys && back?.isConnected) {
+    back.focus({ preventScroll: true });
+    if (back.matches(".tile, .row")) moveCursor(back); // keys.js
+  }
 };
 addEventListener("blur", closeMenu);
 addEventListener("keydown", e => { if (e.key === "Escape") closeMenu(); });

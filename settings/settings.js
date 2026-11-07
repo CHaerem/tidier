@@ -104,7 +104,7 @@ const mergeLine = ([id, n]) => {
   const text = [...comes, ...(n.isNew ? ["a new space"] : [])].join(", ") || "nothing new";
   return el("label", { className: "line" },
     el("input", { type: "checkbox", checked: true, value: id }),
-    el("span", { textContent: "●", style: `color:${n.color}` }),
+    el("span", { textContent: "●", ariaHidden: "true", style: `color:${n.color}` }),
     `${n.name}: ${text}`);
 };
 $("copy-file").onchange = e => orSay($("merge-result"), async () => {

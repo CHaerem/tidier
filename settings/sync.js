@@ -32,7 +32,7 @@ function drawSpacesHere(r) {
     const last = !s.hidden && showing < 2; // a window needs a space to show
     const tick = el("input", { type: "checkbox", checked: !s.hidden, disabled: last, title: last ? "A window needs a space to show" : "" });
     tick.onchange = async () => drawSync(await browser.runtime.sendMessage({ type: "sync:hide", space: s.id, hidden: !tick.checked }));
-    return el("label", { className: "line" }, tick, el("span", { textContent: "●", style: `color:${s.color}` }), s.name);
+    return el("label", { className: "line" }, tick, el("span", { textContent: "●", ariaHidden: "true", style: `color:${s.color}` }), s.name);
   });
   box.replaceChildren(
     el("h3", { textContent: "Shown on this machine" }),

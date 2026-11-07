@@ -30,7 +30,7 @@ async function drawSpaces(force) {
     $("spaces").replaceChildren(...state.spaces.map(s => {
       const name = el("input", { type: "text", value: s.name });
       name.onchange = () => ask("space", { id: s.id, changes: { name: name.value } });
-      return el("div", { className: "line" }, el("span", { textContent: "●", style: `color:${s.color}` }), name);
+      return el("div", { className: "line" }, el("span", { textContent: "●", ariaHidden: "true", style: `color:${s.color}` }), name);
     }));
     return;
   }
@@ -42,7 +42,7 @@ async function drawSpaces(force) {
 
 function spaceCard(s) {
   const open = moreOpen.has(s.id);
-  const name = el("input", { type: "text", value: s.name, ariaLabel: "Name" });
+  const name = el("input", { type: "text", value: s.name, ariaLabel: `Name of ${s.name}` }); // four fields called "Name" say nothing
   name.dataset.nameOf = s.id;
   name.onchange = () => ask("space", { id: s.id, changes: { name: name.value.trim() || s.name } });
   const more = el("button", { className: "quiet more", textContent: open ? "Less" : "More", ariaExpanded: String(open) });

@@ -22,6 +22,7 @@ const askButton = el("button", "", "Stop pages loading in the wrong space");
 askButton.title = "Firefox will ask to let Tidier see where pages go, on all websites. Nothing leaves your machine.";
 const askNo = el("button", "ask-no", "×");
 askNo.title = "Not now (it can be given on the settings page)";
+askNo.setAttribute("aria-label", "Not now"); // not "×"
 askLine.append(askButton, askNo);
 document.getElementById("hiding").after(askLine);
 // Asking needs your click, so it is here and not in the background.

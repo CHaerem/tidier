@@ -35,14 +35,19 @@ const el = (tag, cls, text) => {
   return e;
 };
 
-// Put `nodes` in `parent` in this order, touching only what is out of place.
+// Put `nodes` in `parent` in this order, touching only what is out of place. What goes is
+// taken out first: with a row gone, each row after it would otherwise be moved up past it,
+// and a row that is moved loses the keyboard's focus (keys.js) and a press under way.
 function place(parent, nodes) {
+  const wanted = new Set(nodes);
   let at = parent.firstChild;
+  const skipGone = () => { while (at && !wanted.has(at)) { const next = at.nextSibling; at.remove(); at = next; } };
   for (const n of nodes) {
+    skipGone();
     if (n === at) at = at.nextSibling;
     else parent.insertBefore(n, at);
   }
-  while (at) { const next = at.nextSibling; at.remove(); at = next; }
+  skipGone();
 }
 
 // The kept element for `id`, its content drawn again only if `state` changed.
@@ -106,6 +111,7 @@ function tile(item) {
   const e = keep("tile:" + item.id, () => {
     const t = el("div");
     t.dataset.tab = item.id;
+    t.setAttribute("role", "option"); // the essentials are a list to choose from (sidebar.html)
     t.draggable = !!view?.alone;
     t.onclick = () => send({ type: "select", tabId: item.id });
     t.onauxclick = e => { if (e.button === 1) send({ type: "close", tabId: item.id }); };
@@ -114,6 +120,9 @@ function tile(item) {
     return t;
   }, { ...item, tip: undefined }, t => {
     t.className = "tile" + (item.active ? " active" : "") + (item.loaded ? "" : " unloaded");
+    // Named by its title alone: the tooltip with the address is its description.
+    t.setAttribute("aria-label", item.title || "");
+    t.setAttribute("aria-selected", String(!!item.active));
     t.replaceChildren(icon(item), ...(view.alone ? soundMark(item) : []));
   });
   e.title = item.tip || item.title;
@@ -125,6 +134,7 @@ function row(item, folderKey) {
   const r = keep("tab:" + item.id, () => {
     const e = el("div");
     e.dataset.tab = item.id;
+    e.setAttribute("role", "treeitem"); // a flat tree, by level: folders' heads and loose tabs 1, their tabs 2
     e.draggable = !!view?.alone;
     e.onclick = () => send({ type: "select", tabId: item.id });
     e.onauxclick = ev => { if (ev.button === 1) send({ type: "close", tabId: item.id }); };
@@ -133,6 +143,8 @@ function row(item, folderKey) {
     return e;
   }, { ...item, tip: undefined }, e => { // a tooltip is not drawn: some pages change their address as you scroll, and a row drawn again can lose a click or a drag
     e.className = "row tab" + (item.active ? " active" : "") + (item.loaded ? "" : " unloaded");
+    e.setAttribute("aria-label", item.title || "");
+    e.setAttribute("aria-selected", String(!!item.active));
     const parts = [icon(item), el("span", "title", item.title)];
     parts.push(...soundMark(item));
     const close = el("button", "close", "×");
@@ -143,6 +155,8 @@ function row(item, folderKey) {
   });
   r.title = item.tip || item.title;
   r.dataset.folder = folderKey ?? "";
+  const level = folderKey == null ? "1" : "2";
+  if (r.getAttribute("aria-level") !== level) r.setAttribute("aria-level", level); // only when it moved: a view comes with every tab event
   return r;
 }
 
@@ -153,8 +167,11 @@ function folder(f) {
   const closed = view.alone ? foldsWaiting.get(f.key) ?? f.collapsed : collapsed.has(f.key);
   const box = keep("folder:" + f.key, () => {
     const b = el("div", "folder");
+    b.setAttribute("role", "none");
     const head = el("div", "row head");
     head.dataset.folderHead = f.key;
+    head.setAttribute("role", "treeitem");
+    head.setAttribute("aria-level", "1");
     // A double click renames, but its first click has closed the folder by then, and that
     // unloads the tabs in it (foldrest.js): a new name must not cost you your pages. So a
     // click with the mouse closes the row at once and tells the background only once no
@@ -173,10 +190,12 @@ function folder(f) {
         foldsWaiting.set(f.key, closing);
         foldSoon = setTimeout(fold, DOUBLE_CLICK_MS);
         b.classList.toggle("collapsed", closing);
+        head.setAttribute("aria-expanded", String(!closing));
         head.querySelector(".count").textContent = closing && b.lastChild.children.length || "";
       } else {
         if (collapsed.has(f.key)) collapsed.delete(f.key); else collapsed.add(f.key);
         b.classList.toggle("collapsed");
+        head.setAttribute("aria-expanded", String(!collapsed.has(f.key)));
       }
     };
     head.ondblclick = () => {
@@ -187,13 +206,17 @@ function folder(f) {
     head.oncontextmenu = e => { if (view.alone) openMenu(e, folderMenu(f.key, f.live)); };
     head.draggable = !!view?.alone;
     head.ondragstart = e => startDrag(e, { kind: "folder", key: f.key });
-    b.append(head, el("div", "children"));
+    const children = el("div", "children");
+    children.setAttribute("role", "none");
+    b.append(head, children);
     return b;
   }, { name: f.name, closed, live: f.live, n: f.tabs.length, sound: f.sound, soundTabId: f.soundTabId }, b => {
     b.classList.toggle("collapsed", closed);
     b.classList.toggle("live", !!f.live);
     b.dataset.key = f.key;
     b.firstChild.title = f.name;
+    b.firstChild.setAttribute("aria-label", f.name);
+    b.firstChild.setAttribute("aria-expanded", String(!closed));
     b.firstChild.replaceChildren(el("span", "chevron", "▾"), el("span", "title", f.name), ...soundMark(f), el("span", "count", closed && f.tabs.length ? String(f.tabs.length) : ""));
   });
   place(box.lastChild, f.tabs.map(t => row(t, f.key)));
@@ -250,7 +273,7 @@ function render(next) {
   document.getElementById("space-name").textContent = view.alone ? space?.name || "" : "";
 
   const list = view.folders.map(folder);
-  if (view.folders.length && view.tabs.length) list.push(keep("divider", () => el("div", "divider"), 0, () => {}));
+  if (view.folders.length && view.tabs.length) list.push(keep("divider", () => { const d = el("div", "divider"); d.setAttribute("role", "none"); return d; }, 0, () => {}));
   list.push(...view.tabs.map(t => row(t, null)));
   place(document.getElementById("tabs"), list);
 
@@ -263,6 +286,10 @@ function render(next) {
   }, { s, active: s.id === view.space }, b => {
     b.classList.toggle("active", s.id === view.space);
     b.title = s.name;
+    // Named by its space, whatever marks it has (a speaker's own tooltip was its name), and
+    // the one you are in said to be so.
+    b.setAttribute("aria-label", s.name);
+    if (s.id === view.space) b.setAttribute("aria-current", "true"); else b.removeAttribute("aria-current");
     b.style.setProperty("--color", s.color);
     spaceSound(b, s);
   })));

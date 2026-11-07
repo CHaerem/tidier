@@ -16,7 +16,7 @@
 
   // The text stays while the line fades out; only its being shown changes. It is set once
   // per note: a screen reader says it again whenever it is set, and every view brings it.
-  let shown = null;
+  let shown = null, undoNext = false;
   const drawNote = note => {
     const same = note?.id === shown?.id;
     shown = note;
@@ -25,14 +25,22 @@
     text.textContent = note.text;
     text.title = note.text;
     act.hidden = !note.undo;
+    // Cleared from the keys: the keyboard goes to Undo, right there, not nowhere.
+    if (undoNext && note.undo) act.focus();
+    undoNext = false;
   };
-  act.onclick = () => {
+  act.onclick = e => {
     if (!shown) return;
     send({ type: "undo", note: shown.id });
     drawNote(null); // the tabs take a moment to come back; the line goes at once
+    // From the keys, the keyboard stays in the sidebar, on the list (keys.js shows where).
+    if (!e.detail) document.getElementById("tabs").focus();
   };
 
-  const clear = () => send({ type: "clearSpace", space: view.space });
+  const clear = e => {
+    undoNext = !e?.detail; // Clear goes once it has nothing more to clear, and with it the keyboard
+    send({ type: "clearSpace", space: view.space });
+  };
 
   // Clear shows only with the pointer near the line between folders and today's tabs.
   // The area it listens on lies over that gap, so nothing is taller for it.

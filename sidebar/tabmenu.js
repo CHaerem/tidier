@@ -82,11 +82,17 @@ function tabMenuItems(tabs) {
 let tabMenuAsked = 0;
 function openTabMenu(e, id) {
   holdMenu(e);
+  openTabMenuAt(id, e.clientX, e.clientY);
+}
+// Also from the keys (keys.js), where there is no click to hold Firefox's own menu back in.
+function openTabMenuAt(id, x, y, byKey = false) {
   const ids = selectedTabs(id); // selection.js
-  const asked = ++tabMenuAsked, { clientX: x, clientY: y } = e;
+  const asked = ++tabMenuAsked;
   browser.runtime.sendMessage({ type: "tabMenu", tabIds: ids }).then(tabs => {
     if (asked !== tabMenuAsked || !tabs?.length) return; // a newer click, or the tab is gone
-    showMenu(tabMenuItems(tabs), x, y);
+    const back = menuReturn; // showMenu closes what was open, and with it what it would give back
+    showMenu(tabMenuItems(tabs), x, y, byKey);
+    menuReturn = back;
     // Which tabs it is about, while the pointer is away from them: a tile has no text.
     menuFor = tabs.map(t => t.id);
     markMenuFor();

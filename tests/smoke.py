@@ -5113,6 +5113,105 @@ def alone_shortcuts(m):
     m.js(custom_keys, firefox_keys, "resetKey")
 
 
+def alone_keyboard(m):
+    """The sidebar by the keyboard alone, in the real panel: one place for the keyboard, a button's own
+    keys, menus by key, the essentials' grid, renaming, and names and states for a screen reader."""
+    ENTER, DOWN, UP, RIGHT, HOME, END, F2, F10, SPACE, BACKSPACE = "\ue007", "\ue015", "\ue013", "\ue014", "\ue011", "\ue010", "\ue032", "\ue03a", "\ue00d", "\ue003"
+    into_panel = H + """const w = main(), outer = w.SidebarController.browser; w.focus(); outer.focus(); await wait(100);
+      outer.contentDocument.getElementById("webext-panels-browser").focus(); await wait(400); return 1;"""
+    # The real panel's page, from Tidier's sidebar page in a tab (the same process); a tab in the background,
+    # so the keyboard stays where it is.
+    the_panel = """const v = page.browser.extension.getViews({type: "sidebar", windowId: (await page.browser.windows.getCurrent()).id})[0], d = v.document;
+      const at = () => { const a = d.activeElement; return {cursor: a?.classList.contains("cursor") ?? false, tab: a?.dataset?.tab ?? null, head: a?.dataset?.folderHead ?? null,
+        tile: a?.classList.contains("tile") ?? false, id: a?.id ?? "", menu: !!a?.closest?.("#menu"), rings: d.querySelectorAll(".cursor").length, focus: d.hasFocus()}; };"""
+
+    def panel(script, *args):
+        return sidebar_page(m, the_panel + script, *args)
+
+    m.js(H + """await removeWhere((x, t) => /\\/(settings\\/settings|sidebar\\/sidebar)\\.html/.test(url(t))); return 1;""")
+    panel("await wait(300); return 1;")  # the test's page, made once: from here on it is a row in the background
+
+    # A button you Tab to is pressed by Enter, and the arrows take the keyboard to the list: one place, one ring.
+    m.js(into_panel)
+    before = m.js(H + "return main().gBrowser.tabs.length;")
+    panel("""d.getElementById("new-tab").focus(); await wait(100); return 1;""")
+    press(m, DOWN)
+    r = panel("await wait(200); return at();")
+    check("with a button focused, ↓ takes the keyboard to the list: one place and one ring", r["cursor"] and r["rings"] == 1 and r["id"] != "new-tab", str(r))
+    panel("""d.getElementById("new-tab").focus(); await wait(100); return 1;""")
+    press(m, ENTER)
+    after = m.js(H + "for (let i = 0; i < 30 && main().gBrowser.tabs.length === args[0]; i++) await wait(100); return main().gBrowser.tabs.length;", before)
+    check("Enter presses a button you tabbed to (New tab)", after == before + 1, f"{before} -> {after}")
+    m.js(H + """const w = main(), t = w.gBrowser.selectedTab; if (/about:(newtab|home|blank)/.test(url(t))) w.gBrowser.removeTab(t); await wait(800); return 1;""")
+
+    # Menus by key, and the keyboard back where it was.
+    m.js(into_panel)
+    press(m, DOWN)
+    r0 = panel("await wait(200); return at();")
+    press(m, F10, SHIFT)
+    r = panel("await wait(500); return {...at(), shown: !d.getElementById('menu').hidden, items: [...d.querySelectorAll('#menu .item')].map(b => b.textContent)};")
+    check("⇧F10 opens the menu of the cursor's row, with the keyboard on its first item", r["shown"] and r["menu"] and r["items"], str(r))
+    press(m, ESC)
+    r = panel("await wait(300); return {...at(), shown: !d.getElementById('menu').hidden};")
+    check("Esc closes it and gives the keyboard back to that row", not r["shown"] and r["tab"] == r0["tab"] and r["cursor"], f"{r0} {r}")
+    press(m, ENTER, CTRL)
+    r = panel("await wait(500); const shown = !d.getElementById('menu').hidden; return {...at(), shown};")
+    check("⌃↵ opens it too", r["shown"] and r["menu"], str(r))
+    press(m, ESC)
+
+    # The essentials' grid, Home and End.
+    tiles = panel("await wait(200); return [...d.querySelectorAll('#essentials .tile')].map(t => t.dataset.tab);")
+    press(m, HOME)
+    r1 = panel("await wait(200); return at();")
+    press(m, RIGHT)
+    r2 = panel("await wait(200); return at();")
+    press(m, DOWN)
+    r3 = panel("await wait(200); return {...at(), last: [...d.querySelectorAll('#essentials .tile')].map(t => t.getBoundingClientRect().top).every((y, i, a) => y === a[0])};")
+    press(m, END)
+    r4 = panel("""await wait(200); const all = [...d.querySelectorAll(".tile, #tabs .head, #tabs .tab")].filter(e => e.offsetParent !== null); return {...at(), last: all.at(-1)?.dataset.tab ?? all.at(-1)?.dataset.folderHead};""")
+    check("Home goes to the first essential, and → along the grid", len(tiles) >= 2 and r1["tile"] and r1["tab"] == tiles[0] and r2["tab"] == tiles[1], f"{tiles} {r1} {r2}")
+    check("↓ from the grid's last row goes into the list", r3["last"] is False or (not r3["tile"] and r3["cursor"]), str(r3))
+    check("End goes to the last row", r4["cursor"] and (r4["tab"] or r4["head"]) == r4["last"], str(r4))
+
+    # F2 renames a folder; Esc keeps its name.
+    panel("""send({type: "newFolder", space: spaces().find(s => s.active).id, name: "Keys F2"}); await wait(800); return 1;""")
+    r = panel("""await wait(200); const head = [...d.querySelectorAll("#tabs .folder .head")].find(h => h.querySelector(".title").textContent === "Keys F2"); if (!head) return {none: true};
+      v.moveCursor(head); return {name: head.querySelector(".title").textContent, key: head.dataset.folderHead};""")
+    press(m, F2)
+    box = panel("await wait(400); const a = d.activeElement; return {box: a?.classList.contains('rename') ?? false, value: a?.value ?? null};")
+    check("F2 renames the folder under the cursor", box["box"] and box["value"] == r.get("name"), f"{r} {box}")
+    press(m, ESC)
+    panel("""send({type: "deleteFolder", key: args[0]}); await wait(600); return 1;""", r.get("key"))
+
+    # ⌫ on a tab that is not the selected one: the keyboard stays, on the next row.
+    space = m.js(H + "return main().gBrowser.selectedTab.userContextId;")
+    m.js(H + """const w = main(); w.gBrowser.addTrustedTab(args[0] + "/?smoke-keyboard-close", {userContextId: args[1], inBackground: true}); await wait(1500); return 1;""", m.pages, space)
+    m.js(into_panel)
+    r = panel("""await wait(300); const row = [...d.querySelectorAll("#tabs .tab")].find(x => x.title.includes("smoke-keyboard-close")); if (!row) return null;
+      v.moveCursor(row); return row.dataset.tab;""")
+    press(m, BACKSPACE)
+    r2 = panel("await wait(1500); return {...at(), gone: !d.querySelector(`[data-tab=\"${args[0]}\"]`)};", r)
+    check("⌫ on a tab you are not on closes it, and the keyboard stays in the list, on the next row", r and r2["gone"] and r2["focus"] and r2["cursor"], f"{r} {r2}")
+
+    # What a screen reader is told: a tree of tabs and folders, essentials to choose from, spaces by name.
+    r = panel("""await wait(200); const rows = [...d.querySelectorAll("#tabs .tab")], heads = [...d.querySelectorAll("#tabs .head")], dots = [...d.querySelectorAll("#spaces .space")];
+      return {tree: d.getElementById("tabs").getAttribute("role"), grid: d.getElementById("essentials").getAttribute("role"),
+        rows: rows.every(x => x.getAttribute("role") === "treeitem" && x.getAttribute("aria-label") === x.querySelector(".title").textContent && ["true", "false"].includes(x.getAttribute("aria-selected"))),
+        selected: rows.filter(x => x.getAttribute("aria-selected") === "true").length, heads: heads.every(x => ["true", "false"].includes(x.getAttribute("aria-expanded"))),
+        tiles: [...d.querySelectorAll("#essentials .tile")].every(x => x.getAttribute("role") === "option"),
+        dots: dots.every(b => b.getAttribute("aria-label") === b.title), current: dots.filter(b => b.getAttribute("aria-current") === "true").length};""")
+    check("a screen reader is told what each row is: a tree of tabs and folders, with what is selected and open", r["tree"] == "tree" and r["rows"] and r["selected"] <= 1 and r["heads"], str(r))
+    check("and the essentials are a list to choose from, and a space's dot is named by its space, the one you are in marked", r["grid"] == "listbox" and r["tiles"] and r["dots"] and r["current"] == 1, str(r))
+    m.js(H + """await removeWhere((x, t) => /\\/sidebar\\/sidebar\\.html|smoke-keyboard-close/.test(url(t))); return 1;""")
+
+    # A key Firefox still has is not shown as Tidier's: what about:keyboard was told, as the dotfiles hand it over.
+    cleared = json.load(open(m.tidier_managed))["data"].get("firefoxKeys", {})
+    marked = ext_page(m, "/settings/settings.html", """await wait(800); return Object.fromEntries([...doc.querySelectorAll("#keys [data-command]")].map(k => [k.dataset.command, k.classList.contains("firefox")]));""")
+    want = {"toggle-essential": "addBookmarkAsKb" not in cleared, "tab-1": "key_selectTab1" not in cleared, "command-bar-t": "key_newNavigatorTab" not in cleared, "next-tab": False}
+    check("the settings page marks a key Firefox still has, and only that", all(marked.get(k) == v for k, v in want.items()), f"{want} {marked}")
+    m.js(H + """await removeWhere((x, t) => url(t).includes("/settings/settings.html")); return 1;""")
+
+
 def until(m, script, *args, tries=150):
     """Run a chrome script returning {ok, ...} until it is ok, and return its last answer: wait for a state, not a time."""
     return m.js(H + "let got; for (let i = 0; i < args[0]; i++) { got = await (async () => { " + script + " })(); if (got.ok) return got; await wait(200); } return got;", tries, *args)
@@ -5438,10 +5537,15 @@ def alone_bridge(m):
     ref = next(e["ref"] for e in button["elements"] if e.get("text") == "Add a line")
 
     # Doing.
+    t0 = time.time()
     text, is_error, _ = client.call("click", tab=tab, ref=ref)
     check("click works", not is_error and "clicked" in text, text)
     text, is_error, _ = client.call("wait_for", tab=tab, text="It came later", timeout_s=8)
+    waited = round((time.time() - t0) * 1000)
     check("wait_for waits for what comes later", '"found":true' in text, text)
+    # In a tab in the background (the Agent space is not shown), where Firefox stretches timers to a
+    # second: the page's own 0.3 s already takes one, and a wait on a timer of its own took two.
+    check(f"in a background tab it answers as soon as the page has it, not on a stretched timer ({waited} ms)", waited < 1900, str(waited))
     text, is_error, _ = client.call("wait_for", tab=tab, selector="#never", timeout_s=1)
     check("wait_for gives up in time", '"found":false' in text, text)
     text, is_error, _ = client.call("type", tab=tab, selector="#pw", text="x")
@@ -5514,6 +5618,8 @@ def alone_bridge(m):
         check(f"{name} on a space not allowed is refused", is_error and "No such tab" in text, text)
     direct = raw_bridge(sock, "open_tab", {"url": "file:///etc/passwd"})
     check("the extension refuses file: too, past the MCP server", not direct["ok"] and "Refused" in direct["error"], str(direct))
+    text, is_error, _ = client.call("open_tab", url="file:///Users/someone/.ssh/id_rsa")
+    check("the MCP server refuses file: itself", is_error and "Refused" in text, text)
     direct = raw_bridge(sock, "open_tab", {"url": "about:config"})
     check("the extension refuses about: too", not direct["ok"] and "Refused" in direct["error"], str(direct))
     r = raw_bridge(sock, "navigate", {"tab": tab, "url": "moz-extension://" + m.js("return JSON.parse(Services.prefs.getStringPref('extensions.webextensions.uuids'))[args[0]];", EXT_ID) + "/settings/settings.html"})
@@ -5536,7 +5642,7 @@ def alone_bridge(m):
     check("a space you open read-only can be read", not is_error and "<untrusted" in text, text[:200])
     check("the agent is told which it is", "read only" in client.call("list_spaces")[0])
     text, is_error, _ = client.call("click", tab=other_tab, selector="a")
-    check("a read-only space cannot be touched", is_error and "No such tab" in text, text)
+    check("a read-only space cannot be touched, and the agent is told why", is_error and "reading only" in text, text)
     open_as("")
     text, is_error, _ = client.call("read_page", tab=other_tab)
     check("closed again, at once", is_error and "No such tab" in text, text)
@@ -5580,8 +5686,10 @@ def alone_bridge(m):
     check("what an agent does shows: its last action, a Stop, and a ring on its space's dot", r["shown"] and r["text"].startswith("Agent:") and r["stop"] and r["ring"] and r["others"] == 1, str(r))
     log = ext_page(m, "/settings/settings.html", """await wait(300); return [...doc.querySelectorAll("#bridge-log li")].map(l => l.textContent);""")
     bridge_shot(m, "bridge-settings", "/settings/settings.html")
-    check("the settings page has a short log, with refusals", any("read" in l for l in log) and any("refused" in l for l in log), str(log[:6]))
-    check("the log holds no address, only sites", not any("/agent" in l or "?" in l for l in log), str(log[:6]))
+    check("the settings page has a short log, with refusals", any("read" in l for l in log) and any("could not" in l for l in log), str(log[:6]))
+    check("the log holds no address, only sites", not any("/agent" in l or "?" in l or ".ssh" in l for l in log), str(log[:6]))
+    check("an address the MCP server refused is in the log too, by its kind", any("could not open a file: address" in l for l in log), str(log))
+    check("a refused call is in the log once, not first as done (two tries of file: above)", sum("could not open a file: address" in l for l in log) == 2, str(log))
 
     # Leaving you a tab: the folder For you, with a note, and a still mark on the space's dot.
     text, is_error, _ = client.call("leave_for_you", tab=second, note="Please look at this one")
@@ -5629,6 +5737,8 @@ def alone_bridge(m):
     check("after Stop, an agent can do nothing", is_error and "off" in text, text)
     check("and it stays off", not os.path.exists(sock) and not running())
     check("what the agent had open is still there for you to see", m.js(H + """return wins().flatMap(w => w.gBrowser.tabs).filter(t => t.userContextId === args[0]).length;""", context) >= 1)
+    r = sidebar_page(m, """await wait(800); return [...doc.querySelectorAll("#spaces .space")].some(b => b.dataset.space === args[0]);""", agent["id"])
+    check("with agents off, the Agent space stays on the bar while it has tabs", r is True, str(r))
 
     # Copy for Claude, by the same page.
     m.js(H + """const w = main(); w.focus(); return 1;""")
@@ -5904,11 +6014,11 @@ def alone_drag(m):
       out.unpinned = tiles().length === tiles0;
       send({type: "deleteFolder", key: head().dataset.folderHead});
       await wait(1000);
-      // Keys: down to a tab, Enter selects it.
+      // Keys: down to a tab, Enter selects it. (Home to the top; in the essentials' grid ↓ goes a row at a time.)
       const key = k => page.dispatchEvent(new page.KeyboardEvent("keydown", {key: k, bubbles: true, cancelable: true}));
       const reach = [...doc.querySelectorAll(".tile, #tabs .head, #tabs .tab")];
-      for (let i = 0; i <= reach.length; i++) key("ArrowUp");  // to the top, from wherever the first key starts
-      for (let i = 0; i < reach.indexOf(plainTabs()[0]); i++) key("ArrowDown");
+      key("Home");
+      for (let i = 0; i < reach.length && doc.querySelector(".cursor") !== plainTabs()[0]; i++) key("ArrowDown");
       const chosen = doc.querySelector(".cursor");
       out.cursor = chosen === plainTabs()[0];
       await wait(100);
@@ -9321,6 +9431,7 @@ ALONE_GROUPS = (alone_setup, alone_second_window, alone_spaces, alone_keys, alon
                 alone_command_bar,
                 alone_bar_edges,
                 alone_shortcuts,
+                alone_keyboard,
                 alone_sync_hide,
                 alone_bridge,
                 alone_many,
