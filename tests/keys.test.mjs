@@ -269,7 +269,9 @@ const commandsOf = (over = {}) => Object.entries(manifest.commands).map(([name, 
 test("the table and the manifest agree, and no new command has a suggested key", async () => {
   const { x } = await aWindow();
   const table = x.js("COMMANDS");
-  for (const c of table) if (c.key) assert.equal(c.label, manifest.commands[c.name]?.description, c.name);
+  // Firefox's shortcuts page lists them in the daily browser on Sidebery too, where only copying the address works.
+  for (const c of table) if (c.key) assert.equal(c.label + (c.always ? "" : " (with Tidier alone)"), manifest.commands[c.name]?.description, c.name);
+  for (const [name, c] of Object.entries(manifest.commands)) if (name !== "copy-url") assert.match(c.description, /\(with Tidier alone[,)]/, name);
   for (const name of Object.keys(manifest.commands)) assert.ok(table.some(c => c.name === name), name);
   for (const [name, c] of Object.entries(manifest.commands)) if (name !== "copy-url") assert.equal(c.suggested_key, undefined, name);
   x.kill();
