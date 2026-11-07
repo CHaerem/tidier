@@ -18,15 +18,16 @@ function startDrag(e, what) {
   pressed = null;
   if (!view?.alone || onButton) { e.preventDefault(); return; }
   dragging = what;
+  dragging.source = e.currentTarget; // what the drag is from, kept in the page while it is carried to another space
   e.dataTransfer.effectAllowed = "move";
   e.dataTransfer.setData("text/plain", ""); // Firefox starts no drag without data
   e.stopPropagation();
 }
-addEventListener("dragend", () => { dragging = null; settleDrag(); });
+addEventListener("dragend", () => { dragging = null; settleDrag(); carried.replaceChildren(); });
 // Past the sidebar's edge a drop does nothing here, and no more dragover comes to take
 // the mark away. (A leave with no next element is the leaving of the page itself.)
 addEventListener("dragleave", e => { if (!e.relatedTarget) settleDrag(); });
-const settleDrag = () => { marks(); dragScroll(0); };
+const settleDrag = () => { marks(); dragScroll(0); holdOver(null); };
 
 const MARKS = ["drop-before", "drop-after", "drop-left", "drop-right", "drop-into"];
 const MARKED = MARKS.map(c => "." + c).join();
@@ -36,18 +37,56 @@ function marks(target, cls) {
   if (target && !target.classList.contains(cls)) target.classList.add(cls);
 }
 
-// What is being dragged, as drawn now.
-const draggedNow = () => kept.get(dragging.kind === "folder" ? "folder:" + dragging.key : (dragging.kind === "essential" ? "tile:" : "tab:") + dragging.tabId);
+// What is being dragged, as drawn now. A tab carried to another space is drawn nowhere.
+const draggedNow = () => (dragging.away ? dragging.source : kept.get(dragging.kind === "folder" ? "folder:" + dragging.key : (dragging.kind === "essential" ? "tile:" : "tab:") + dragging.tabId));
 
 // A tab event can take it away during the drag (the tab closed, or went to another window
 // or space). Its dragend then goes to the removed element and never reaches us. That
 // ends the drag here, or a tab coming back later would be moved by the next drag from a
 // page that happens to be dropped on the sidebar.
+//
+// A tab you carried to another space (below) is not drawn there, so its row is kept in the
+// page, out of sight: its dragend then still reaches everything here that waits for it. Back
+// in its own space it is a tab like any other again.
+const carried = el("div");
+carried.hidden = true;
+document.body.append(carried);
 port.onMessage.addListener(() => {
+  if (dragging?.away && view.space === dragging.away) dragging.away = null;
+  if (dragging?.away && !dragging.source.isConnected) carried.append(dragging.source);
   if (!dragging || draggedNow()) return;
   dragging = null;
   settleDrag();
 });
+
+// --- Held over a closed folder or another space ------------------------------------
+// A tab held still for a moment over a closed folder opens it, and over another space's dot
+// goes to that space, as in Finder and Arc: so it can be put anywhere there. The tab then
+// belongs to a space the list does not show (dragging.away: the space it is from), and a drop
+// in the list moves it to this one, to that place (moveToSpace, ownfolders.js).
+const HOLD_MS = 700;
+let holding = null; // { target, timer }
+function holdOver(target, then) {
+  if (holding?.target === target) return;
+  clearTimeout(holding?.timer);
+  holding = target ? { target, timer: setTimeout(() => { holding = null; then(); }, HOLD_MS) } : null;
+}
+// What a tab is held over that opens: a closed folder that could take it, another space it
+// could go to. A new tab page has no page another space could open (dropAt).
+function springAt(e) {
+  if (dragging?.kind !== "tab") return null;
+  const over = e.target.closest ? e.target : e.target.parentElement;
+  const head = over?.closest?.("[data-folder-head]");
+  if (head && head.parentElement.classList.contains("collapsed") && !head.parentElement.classList.contains("live")) {
+    return { target: head, then: () => { head.parentElement.classList.remove("collapsed"); send({ type: "foldFolder", key: head.dataset.folderHead, collapsed: false }); } };
+  }
+  const dot = over?.closest?.("#spaces .space");
+  const bare = [...view.essentials, ...view.tabs].some(i => i.id === dragging.tabId && !i.page);
+  if (dot && dot.dataset.space !== view.space && !bare) {
+    return { target: dot, then: () => { if (!dragging) return; dragging.away ??= view.space; send({ type: "space", space: dot.dataset.space }); } };
+  }
+  return null;
+}
 
 // --- The list scrolls at its edges ------------------------------------------------
 // Firefox has a scroll of its own during a drag (ScrollContainerFrame::DragScroll), but it
@@ -112,8 +151,18 @@ function tilePlace(e) {
   return { tile, cls: right ? "drop-right" : "drop-left", before: right ? tile.nextElementSibling : tile };
 }
 
-// What dropping here would do: { target, cls, msg }, or null if it would do nothing.
+// What dropping here would do: { target, cls, msg }, or null if it would do nothing. A tab
+// carried from another space goes to this one, to the place in the list where it is dropped;
+// among the essentials it would be an essential of its own space, out of sight.
 function dropAt(e) {
+  const drop = dropHere(e);
+  if (!drop || !dragging?.away) return drop;
+  if (drop.msg.type === "moveToSpace") return drop.msg.space === dragging.away ? null : drop;
+  if (drop.msg.type !== "moveTab") return null;
+  const { tabId, before, folder } = drop.msg;
+  return { ...drop, msg: { type: "moveToSpace", tabId, space: view.space, at: { before: before ?? null, folder: folder ?? null } } };
+}
+function dropHere(e) {
   // A drag event can be aimed at the text under the pointer, which has no closest().
   const over = e.target.closest ? e.target : e.target.parentElement;
   let t = over?.closest("[data-tab], [data-folder-head], #essentials, #space-name, #tabs, .space");
@@ -185,6 +234,8 @@ addEventListener("dragover", e => {
   const drop = dropAt(e);
   marks(drop?.target, drop?.cls);
   dragScroll(dragEdgeSpeed(e));
+  const spring = springAt(e);
+  holdOver(spring?.target ?? null, spring?.then);
   if (drop) { e.preventDefault(); e.dataTransfer.dropEffect = "move"; }
 });
 addEventListener("drop", e => {

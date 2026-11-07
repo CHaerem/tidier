@@ -269,7 +269,7 @@ const commandsOf = (over = {}) => Object.entries(manifest.commands).map(([name, 
 test("the table and the manifest agree, and no new command has a suggested key", async () => {
   const { x } = await aWindow();
   const table = x.js("COMMANDS");
-  for (const c of table) if (c.key) assert.equal(c.label, manifest.commands[c.name]?.description, c.name);
+  for (const c of table) if (c.key !== undefined) assert.equal(c.label, manifest.commands[c.name]?.description, c.name);
   for (const name of Object.keys(manifest.commands)) assert.ok(table.some(c => c.name === name), name);
   for (const [name, c] of Object.entries(manifest.commands)) if (name !== "copy-url") assert.equal(c.suggested_key, undefined, name);
   x.kill();
@@ -458,6 +458,27 @@ test("the settings page's list says what each key is now and whether it was chan
   assert.equal(of("tab-1").pretty, "");
   assert.equal(of("tab-1").changed, true);
   assert.equal(of("copy-url").pretty, "⇧⌘C");
+  x.kill();
+});
+
+test("commands that start with no key are listed apart, get none, and lose one you gave when keys go back", async () => {
+  const ff = new FakeFirefox();
+  ff.commands = commandsOf();
+  const w = ff.addWindow({ focused: true });
+  ff.addTab(w.id, { url: "https://a.example/", active: true, cookieStoreId: C1 });
+  const x = await alone(ff);
+  assert.equal(ff.commandsSet["sort-name"], undefined, "none is given");
+  ff.commands = commandsOf({ ...ff.commandsSet, "close-others": "Alt+Shift+W" });
+  const list = await x.js("commandKeys")();
+  const of = name => list.find(c => c.name === name);
+  assert.equal(of("sort-name").more, true);
+  assert.equal(of("sort-name").pretty, "");
+  assert.equal(of("sort-name").changed, false);
+  assert.equal(of("close-others").pretty, "⌥⇧W");
+  assert.equal(of("close-others").changed, true, "so Back to the usual keys shows");
+  assert.equal(of("next-tab").more, undefined);
+  await x.js("keysBackToFirst")();
+  assert.equal(ff.commandsSet["close-others"], "");
   x.kill();
 });
 

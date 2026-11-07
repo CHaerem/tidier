@@ -105,7 +105,7 @@ const firstKeys = os => new Map(keysToGive(COMMANDS, COMMANDS.map(({ name }) => 
 // Back to Sidebery: the keys are the manifest's again, and a move over later gives them anew.
 // Not the key to copy an address, which is the one command Sidebery's browser has too.
 async function takeKeysBack() {
-  for (const { name, key, always } of COMMANDS) if (key && !always) await browser.commands.reset(name).catch(() => {});
+  for (const { name, key, always } of COMMANDS) if (key !== undefined && !always) await browser.commands.reset(name).catch(() => {});
   await browser.storage.local.set({ [KEYS_GIVEN]: [] });
 }
 
@@ -146,14 +146,15 @@ const FIREFOX_KEYS = {
   "F3": "find again", "Shift+F3": "find again", "F5": "reload", "F11": "full screen", "F12": "the developer tools", "Shift+F5": "the developer tools", "Shift+F7": "the developer tools", "Shift+F9": "the developer tools", "Shift+F12": "the developer tools",
 };
 
-// What the settings page lists: every command with a key to give, and that key now.
+// What the settings page lists: every command with a key to give, and that key now. Those
+// that start with none (`key: ""`) are `more`: the page keeps them out of sight until asked.
 async function commandKeys() {
   if (!tidierAlone) return null;
   const { os } = await browser.runtime.getPlatformInfo();
   const have = await browser.commands.getAll(), first = firstKeys(os);
-  return COMMANDS.filter(c => c.key).map(({ name, label }) => {
+  return COMMANDS.filter(c => c.key !== undefined).map(({ name, label, key }) => {
     const shortcut = have.find(x => x.name === name)?.shortcut ?? "";
-    return { name, label, pretty: prettyKey(shortcut, os), changed: keyId(shortcut, os) !== keyId(first.get(name), os) };
+    return { name, label, pretty: prettyKey(shortcut, os), changed: keyId(shortcut, os) !== keyId(first.get(name), os), ...(key ? {} : { more: true }) };
   });
 }
 
@@ -179,5 +180,5 @@ async function setCommandKey(name, shortcut) {
 // other's way, as they would be one by one through setCommandKey.
 async function keysBackToFirst() {
   const first = firstKeys((await browser.runtime.getPlatformInfo()).os);
-  for (const { name, key } of COMMANDS) if (key) await browser.commands.update({ name, shortcut: first.get(name) ?? "" }).catch(noteError);
+  for (const { name, key } of COMMANDS) if (key !== undefined) await browser.commands.update({ name, shortcut: first.get(name) ?? "" }).catch(noteError);
 }

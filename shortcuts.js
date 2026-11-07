@@ -45,6 +45,17 @@ function oncePerPress(fn) {
 
 const ORDINAL = ["first", "second", "third", "fourth", "fifth", "sixth", "seventh", "eighth", "ninth"];
 
+// What the sidebar has selected, else the tab you are on (barPickedTabs, commandbar.js),
+// for a command that acts on tabs. One list, so that it acts once.
+async function pickedIn(windowId) {
+  const tabs = await browser.tabs.query({ windowId });
+  return (await barPickedTabs(windowId, tabs.find(t => t.active), tabs)).map(t => t.id);
+}
+const onPicked = (action, more = {}) => async windowId => {
+  const tabIds = await pickedIn(windowId); // not in the queue: the sidebar answers at once
+  await serial(() => tabAction(windowId, { action, tabIds, ...more })); // tabactions.js
+};
+
 const COMMANDS = [
   { name: "next-tab", label: "Next tab", key: "Ctrl+MacCtrl+Down", action: inQueue(w => stepTab(w, 1)) },
   { name: "previous-tab", label: "Previous tab", key: "Ctrl+MacCtrl+Up", action: inQueue(w => stepTab(w, -1)) },
@@ -62,6 +73,27 @@ const COMMANDS = [
   // to the bar as soon as Firefox lets go of it (customKeys.json in the dotfiles).
   { name: "command-bar", label: "Open or close the command bar", key: "Ctrl+Shift+K" },
   { name: "command-bar-t", label: "The command bar's second key, once Firefox lets go of it", key: "Ctrl+T" },
+  // What the tab menu's More has (listactions.js). `key: ""`: listed on the settings page
+  // with no key, for you to give one. Moving up and down is ⌥↑ and ⌥↓ in the sidebar too.
+  { name: "sort-name", label: "Sort today's tabs or this folder by name", key: "", action: onPicked("sort", { by: "name" }) },
+  { name: "sort-site", label: "Sort today's tabs or this folder by site", key: "", action: onPicked("sort", { by: "site" }) },
+  { name: "sort-used", label: "Sort today's tabs or this folder by last use", key: "", action: onPicked("sort", { by: "used" }) },
+  { name: "move-top", label: "Move to the top", key: "", action: onPicked("top") },
+  { name: "move-bottom", label: "Move to the bottom", key: "", action: onPicked("bottom") },
+  { name: "move-up", label: "Move up one place", key: "", action: onPicked("step", { by: -1 }) },
+  { name: "move-down", label: "Move down one place", key: "", action: onPicked("step", { by: 1 }) },
+  { name: "take-out", label: "Take out of its folder", key: "", action: onPicked("takeOut") },
+  { name: "folder-from-selection", label: "New folder with these tabs", key: "", action: oncePerPress(async windowId => {
+    const tabIds = await pickedIn(windowId);
+    await tabAction(windowId, { action: "newFolder", tabIds, space: activeSpace.get(windowId) });
+  }) },
+  { name: "copy-markdown", label: "Copy as Markdown links", key: "", action: onPicked("copyMarkdown") },
+  { name: "close-duplicates", label: "Close duplicate tabs", key: "", action: onPicked("closeDuplicates") },
+  { name: "close-others", label: "Close other tabs", key: "", action: onPicked("closeOthers") },
+  { name: "close-above", label: "Close tabs above", key: "", action: onPicked("closeAbove") },
+  { name: "close-below", label: "Close tabs below", key: "", action: onPicked("closeBelow") },
+  { name: "recent-back", label: "Back to the tab used before", key: "", action: inQueue(w => stepRecent(w, 1)) },
+  { name: "recent-forward", label: "Forward to the tab used after", key: "", action: inQueue(w => stepRecent(w, -1)) },
   // Copy for Claude, carried out by bridge.js once turned on, with a key only if you give it one.
   { name: "claude-copy-page", label: "Copy this page for Claude (once turned on in Tidier's settings)" },
   { name: "claude-copy-tabs", label: "Copy this space's tabs for Claude (once turned on in Tidier's settings)" },

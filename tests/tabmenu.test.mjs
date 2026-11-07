@@ -147,6 +147,53 @@ test("items send one list, and Close one message per tab", () => {
   ]);
 });
 
+// --- More (sidebar/moremenu.js) ------------------------------------------------------
+// The tab menu with More, on a list drawn as `folders` and today's `tabs` (ids).
+function withMore({ folders = [], tabs = [] } = {}) {
+  const sent = [];
+  const view = { space: C1, spaces: [{ id: C1, name: "One" }], folders: folders.map(f => ({ ...f, tabs: f.tabs.map(id => ({ id })) })), tabs: tabs.map(id => ({ id })) };
+  const ctx = vm.createContext({ view, send: m => sent.push(m), renameNext: false, document: {}, browser: {}, navigator: {}, console });
+  ctx.window = ctx;
+  for (const f of ["../sidebar/tabmenu.js", "../sidebar/moremenu.js"]) vm.runInContext(readFileSync(new URL(f, import.meta.url), "utf8"), ctx);
+  const items = vm.runInContext("tabMenuItems", ctx);
+  const labels = list => Array.from(list, i => (i ? i[0] : "|"));
+  const more = list => items(list).find(i => i?.[0] === "More")?.[1];
+  return { sent, items, labels, more, sentCopy: () => JSON.parse(JSON.stringify(sent)) };
+}
+
+test("More comes last, after a line, and holds what applies to a tab among today's", () => {
+  const m = withMore({ tabs: [1, 2, 3, 4] });
+  const all = m.labels(m.items([row({ id: 2, duplicates: 1 })]));
+  assert.deepEqual(all.slice(-3), ["Close", "|", "More"]);
+  assert.deepEqual(m.labels(m.more([row({ id: 2, duplicates: 1 })])),
+    ["Sort today's tabs", "Move to the top", "Move to the bottom", "|", "Copy as Markdown link", "|", "Close 1 duplicate", "Close other tabs", "Close tabs above", "Close tabs below"]);
+  assert.deepEqual(m.labels(m.more([row({ id: 1 })])), ["Sort today's tabs", "Move to the bottom", "|", "Copy as Markdown link", "|", "Close other tabs", "Close tabs below"], "the first: nothing above, already at the top");
+  assert.deepEqual(m.labels(m.more([row({ id: 1 }), row({ id: 2 })])).slice(0, 3), ["Sort today's tabs", "Move 2 tabs to the bottom", "|"], "two together at the top");
+  const sort = m.more([row({ id: 3 })])[0][1];
+  assert.deepEqual(m.labels(sort), ["By name", "By site", "By last use"]);
+  sort[1][1]();
+  assert.deepEqual(m.sentCopy(), [{ type: "tabAction", action: "sort", tabIds: [3], by: "site" }]);
+});
+
+test("in a folder: sort the folder and take a tab out, and nothing closes around it", () => {
+  const m = withMore({ folders: [{ key: "F", tabs: [5, 6] }, { key: "L", live: "prs", tabs: [7, 8] }], tabs: [1, 2] });
+  assert.deepEqual(m.labels(m.more([row({ id: 6, folder: "F", kept: true })])), ["Sort this folder", "Move to the top", "Take out of folder", "|", "Copy as Markdown link"]);
+  assert.deepEqual(m.labels(m.more([row({ id: 7, folder: "L", liveFolder: true })])), ["Copy as Markdown link"], "a live folder's order is the search's");
+  m.more([row({ id: 6, folder: "F", kept: true })]).find(i => i?.[0] === "Take out of folder")[1]();
+  assert.deepEqual(m.sentCopy(), [{ type: "tabAction", action: "takeOut", tabIds: [6] }]);
+});
+
+test("More with several tabs acts on the list once, and a tile has only the copy", () => {
+  const m = withMore({ tabs: [1, 2, 3, 4, 5] });
+  const tabs = [row({ id: 2 }), row({ id: 4 })];
+  const more = m.more(tabs);
+  assert.deepEqual(m.labels(more), ["Sort today's tabs", "Move 2 tabs to the top", "Move 2 tabs to the bottom", "|", "Copy 2 as Markdown links", "|", "Close other tabs", "Close tabs above", "Close tabs below"]);
+  for (const label of ["Move 2 tabs to the top", "Copy 2 as Markdown links", "Close other tabs", "Close tabs above"]) more.find(i => i?.[0] === label)[1]();
+  assert.deepEqual(m.sentCopy().map(x => [x.action, x.tabIds]), [["top", [2, 4]], ["copyMarkdown", [2, 4]], ["closeOthers", [2, 4]], ["closeAbove", [2, 4]]]);
+  assert.deepEqual(m.labels(m.more([tile({ id: 9 })])), ["Copy as Markdown link"]);
+  assert.equal(m.more([tile({ id: 9, address: null, loaded: true })]), undefined, "nothing in it: no More");
+});
+
 // --- Good names and anchored rules -----------------------------------------------------
 test("a new folder's name: the site, what the titles share, the shared site, the first title", () => {
   const ff = new FakeFirefox(), x = ff.boot(), name = x.js("folderNameFor");
@@ -294,7 +341,7 @@ test("what the menu is told is about the real tab", async () => {
   const { x, ghost, live } = await twoWindows(ff);
   live.mutedInfo = { muted: true };
   const [facts] = await x.send({ type: "tabMenu", tabIds: [ghost.id] });
-  assert.deepEqual(JSON.parse(JSON.stringify(facts)), { id: ghost.id, tile: false, active: false, kept: false, loaded: true, muted: true, address: "https://a.example/page", folder: null, liveFolder: false, space: C1, ruled: false });
+  assert.deepEqual(JSON.parse(JSON.stringify(facts)), { id: ghost.id, tile: false, active: false, kept: false, loaded: true, muted: true, address: "https://a.example/page", folder: null, liveFolder: false, space: C1, ruled: false, duplicates: 0 });
   assert.equal((await x.send({ type: "tabMenu", tabIds: [ghost.id, 9999] })).length, 1, "a tab closed meanwhile is left out");
   x.kill();
 });

@@ -108,7 +108,8 @@ async function viewFor(windowId) {
   const loose = [];
   for (const t of here) {
     if (isSideberyGroup(t.url)) continue;
-    const folder = byKey.get(folderKeyOf(all, rowKey.get(t.id)));
+    // A new tab made in a folder has no record until it has a page (comingIntoFolder, listactions.js).
+    const folder = byKey.get(folderKeyOf(all, rowKey.get(t.id)) ?? (rowKey.has(t.id) ? null : comingIntoFolder.get(t.id)));
     const record = all[rowKey.get(t.id)];
     (folder ? folder.tabs : loose).push(tabItem(t, record?.name || record?.title, record));
   }
@@ -222,12 +223,14 @@ async function sidebarAction(windowId, msg) {
   else if (msg.type === "clearSpace") await clearSpace(windowId, msg.space); // quiet.js
   else if (msg.type === "moveFolder") await moveFolder(msg.key, msg.before ?? null);
   else if (msg.type === "moveTab") await moveTab(windowId, msg.tabId, msg.before ?? null, msg.folder);
-  else if (msg.type === "moveToSpace") await moveToSpace(msg.tabId, msg.space, msg.leaving);
+  else if (msg.type === "moveToSpace") await moveToSpace(msg.tabId, msg.space, msg.leaving, msg.at); // `at`: a place there, after a drag went to that space
   else if (msg.type === "pin") await pinFromSidebar(msg.tabId, msg.pinned, msg.before);
   else if (msg.type === "moveEssential") await moveEssential(windowId, msg.tabId, msg.before ?? null);
   else if (msg.type === "tabAction") await tabAction(windowId, msg); // tabactions.js
   else if (msg.type === "renameTab") await renameTab(msg.tabId, msg.name);
   else if (msg.type === "unloadSpace") await unloadSpace(msg.space);
+  else if (msg.type === "spaceAction") await spaceAction(windowId, msg); // listactions.js
+  else if (msg.type === "newTabInFolder") await newTabInFolder(windowId, msg.key);
   else if (msg.type === "renameSpace") await renameSpace(msg.space, msg.name);
   else if (msg.type.startsWith("little:")) await littleAction(windowId, msg); // littlewindow.js
   viewSoon(windowId);

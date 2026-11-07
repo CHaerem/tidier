@@ -546,8 +546,9 @@ async function register(tabId) {
   tab = await browser.tabs.get(tabId).catch(() => null);
   if (!tab || syncKeyByTab.has(tab.id) || !syncable(tab)) return;
   const key = crypto.randomUUID();
-  // Sidebery keeps a tab's opener equal to its parent; the opener alone says nothing.
-  const parentKey = tab.openerTabId && !tidierAlone ? syncKeyByTab.get(tab.openerTabId) || null : null;
+  // Sidebery keeps a tab's opener equal to its parent; the opener alone says nothing. With
+  // Tidier alone a tab made in a folder goes there now that it has a page (listactions.js).
+  const parentKey = tidierAlone ? folderComingFor(tab.id, all) : tab.openerTabId ? syncKeyByTab.get(tab.openerTabId) || null : null;
   const entry = { url: tab.url, title: tab.title, icon: tab.favIconUrl, cookieStoreId: tab.cookieStoreId, parentKey, group: isSideberyGroup(tab.url), added: Date.now() };
   all[key] = entry;
   noteSaved(all, [key]); // nothing else has changed, and this is once per new tab

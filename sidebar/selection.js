@@ -154,11 +154,64 @@
     closePicked();
   }, true);
 
+  // ⌘A (Ctrl+A elsewhere) takes every tab the list shows, or every essential if that is where
+  // you are. Firefox would select the sidebar's text.
+  function pickAll() {
+    const k = (cursor ?? document.querySelector("[data-tab].active"))?.classList.contains("tile") ? "tile" : "tab";
+    const all = shown(k);
+    if (!all.length) return;
+    clear();
+    kind = k;
+    startedOn = selectedTab();
+    picked = new Set(all.map(idOf));
+    base = new Set(picked);
+    anchor = idOf(all[0]);
+    paint();
+  }
+
+  // ⇧↓ and ⇧↑ take the next row too, from where the keys' cursor is (keys.js), else from the
+  // tab you are on, as a ⇧-click there would: the range from where it began.
+  function pickOn(by) {
+    const k = picked.size ? kind : (cursor ?? document.querySelector("[data-tab].active"))?.classList.contains("tile") ? "tile" : "tab";
+    const rows = shown(k);
+    const here = rows.includes(cursor) ? cursor : rows.find(r => r.classList.contains("active"));
+    if (!here) { if (rows.length) moveCursor(rows[by > 0 ? 0 : rows.length - 1]); return; }
+    if (!picked.size) {
+      clear();
+      kind = k;
+      startedOn = selectedTab();
+      anchor = idOf(here);
+      picked = new Set([anchor]);
+    }
+    const next = rows[rows.indexOf(here) + by];
+    moveCursor(next ?? here);
+    if (next) pickRange(next);
+    else paint();
+  }
+
+  // ⌥↑ and ⌥↓ move the selection one place along its list, else the row under the cursor, else
+  // the tab you are on. In the background, from what is drawn when it gets there, so that a key
+  // held down moves on from where the last press left them (step, listactions.js).
+  function nudge(by) {
+    const cursorTab = cursor?.classList.contains("tab") ? [idOf(cursor)] : null;
+    const active = document.querySelector("#tabs .tab.active");
+    const ids = picked.size ? (kind === "tab" ? inOrder() : []) : cursorTab ?? (active ? [idOf(active)] : []);
+    if (ids.length) send({ type: "tabAction", action: "step", tabIds: ids, by });
+  }
+
   // Esc goes back one step at a time: the menu (menu.js), then the selection, then the
   // keys' cursor. ⌫ on a picked row closes them all; on any other row it is that row's.
   addEventListener("keydown", e => {
     if (!view?.alone || e.target.closest?.("input") || !document.getElementById("menu").hidden) return;
-    if (e.key === "Escape") {
+    const mod = mac ? e.metaKey : e.ctrlKey, arrow = { ArrowDown: 1, ArrowUp: -1 }[e.key];
+    const mine = mod && !e.altKey && !e.shiftKey && String(e.key ?? "").toLowerCase() === "a" ? pickAll
+      : arrow && e.shiftKey && !mod && !e.altKey ? () => pickOn(arrow) // not on to keys.js, which would only move the cursor
+      : arrow && e.altKey && !mod && !e.shiftKey ? () => nudge(arrow) : null;
+    if (mine) {
+      e.preventDefault();
+      e.stopPropagation();
+      mine();
+    } else if (e.key === "Escape") {
       if (picked.size) clear();
       else if (cursor) moveCursor(null);
       else return;

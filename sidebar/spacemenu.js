@@ -26,18 +26,27 @@ addEventListener("contextmenu", e => {
   if (!view?.alone) return;
   const dot = e.target.closest?.("#spaces .space");
   if (!dot && e.target.id !== "space-name") return;
-  openMenu(e, spaceMenu(dot ? dot.dataset.space : view.space));
-  markSpaceDot(dot);
-  if (dot) aboveTheBar();
+  openSpaceMenu(e, dot ? dot.dataset.space : view.space, dot);
 }, true);
 
-// A menu at the pointer would cover the bar and with it the dot it belongs to. Above
-// the bar, the dot stays in sight, marked as long as the menu or its box is open.
-const spaceMenuBox = document.getElementById("menu");
-function aboveTheBar() {
-  const bar = document.getElementById("spaces").getBoundingClientRect();
-  spaceMenuBox.style.top = Math.max(4, bar.top - spaceMenuBox.offsetHeight - 4) + "px";
+// With More at its end (moremenu.js), which needs to know what the space's pages are doing:
+// they can be loaded in any window. So it is shown once the background has said, a few
+// milliseconds later; Firefox's own menu is held back in the click itself.
+let spaceMenuAsked = 0;
+const spaceMenuWindow = browser.windows.getCurrent().then(w => w.id);
+async function openSpaceMenu(e, space, dot) {
+  holdMenu(e);
+  const asked = ++spaceMenuAsked, { clientX: x, clientY: y } = e;
+  const facts = await browser.runtime.sendMessage({ type: "spaceFacts", space, windowId: await spaceMenuWindow }).catch(() => null);
+  if (asked !== spaceMenuAsked || !view.spaces.some(s => s.id === space)) return; // a newer click, or the space is gone
+  const more = spaceMore(space, facts);
+  // A menu at the pointer would cover the bar and with it the dot it belongs to. Above the
+  // bar, the dot stays in sight, marked as long as the menu or its box is open.
+  const bar = dot ? document.getElementById("spaces").getBoundingClientRect().top - 4 : null;
+  showMenu([...spaceMenu(space), ...(more.length ? [null, ["More", more]] : [])], x, y, bar);
+  markSpaceDot(dot);
 }
+
 function markSpaceDot(dot) {
   for (const d of document.querySelectorAll("#spaces .menu-for")) d.classList.remove("menu-for");
   dot?.classList.add("menu-for");

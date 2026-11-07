@@ -26,6 +26,12 @@ on the second Mac (PLAN.md, part C).
 | Drag tabs to reorder, into and out of folders | Z A S | Done | Tidier alone, checked, every window follows; also to a place among the essentials and to a space; marks only where a drop does something; the list scrolls at its edges |
 | Select several tabs (⇧/⌘ click) and act on them | Z A S | Done | Tidier alone, checked: move, close, drag and the menu; the selection lives in the sidebar only |
 | Context menu on tabs, folders and spaces | Z A S | Done | Tidier alone, checked: Tidier's own short menu on tabs, tiles, folders, spaces and the list |
+| Sort tabs, close duplicates, close the tabs above, below or around one, to the top or bottom | S | Done | Tidier alone, checked: under More at the end of a tab's, a folder's and a space's menu, in the command bar, and keys if you give them; what closes has Undo |
+| Reload, mute or unload a whole folder or space | S | Done | Tidier alone, checked: More in its menu; a few pages at a time |
+| Copy tabs as Markdown links | | Done | Tidier alone, checked: More, and the command bar |
+| Select all, and extend or move the selection with the keys | S | Done | Tidier alone, checked: ⌘A, ⇧↑ ⇧↓, ⌥↑ ⌥↓ in the sidebar, in every window |
+| Back and forward through the tabs used recently | A Z | Done | Tidier alone, checked: by each page's real last use, this space as drawn; a command with no key until you give one |
+| A dragged tab held over a closed folder or another space opens it | S A | Done | Tidier alone, checked with synthetic drags; a real trackpad waits for the second Mac |
 | Keyboard navigation in the sidebar | S | Done | Tidier alone: ↑↓, Enter, ⌫, ←→ |
 | Search/filter the tabs | S A | Done | Tidier alone, checked, in the command bar (⌘⇧K) |
 | Sound indicator and mute on a tab | Z A S | Done | Tidier alone, checked: a mark and mute on a row, a tile and a closed folder, and on a space's dot, whose mark goes to the tab that plays |
@@ -90,6 +96,7 @@ on the second Mac (PLAN.md, part C).
 | Folders inside folders | A | Later | none today, and a tree is what is left out |
 | A closed folder rests: hidden from ⌃Tab and unloaded | S | Done | Tidier alone, checked; the selected tab, sound and unsaved input stay |
 | New folder with a good name, ready to rename | S | Done | Tidier alone: from the menu, a key, or a selection, which names it after what the tabs share |
+| New tab in a folder | S | Done | Tidier alone, checked: New tab here in its menu; saved there once it has a page |
 | Live folders (GitHub pull requests) | A | Done | |
 | Folder state (open/closed) kept per space and window | Z A S | Partly | Tidier alone: kept per folder, the same in every window |
 

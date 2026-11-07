@@ -1,9 +1,27 @@
 // --- A small menu, drawn by Tidier ---------------------------------------------------
 function folderMenu(key, live) {
   return live ? [["Delete folder", () => send({ type: "deleteFolder", key })]] : [
+    ["New tab here", () => send({ type: "newTabInFolder", key })],
+    null,
     ["Rename", () => rename(key)],
     ["Delete folder (its tabs stay)", () => send({ type: "deleteFolder", key })],
   ];
+}
+
+// A folder's menu, with More at its end (moremenu.js), which needs to know what its tabs'
+// pages are doing: a row here is often a placeholder of a page loaded in another window. So,
+// as the tab menu, it is shown once the background has said, a few milliseconds later; Firefox's
+// own menu is held back in the click itself.
+let folderMenuAsked = 0;
+function openFolderMenu(e, key, live) {
+  holdMenu(e);
+  const asked = ++folderMenuAsked, { clientX: x, clientY: y } = e;
+  const ids = view.folders.find(f => f.key === key)?.tabs.map(t => t.id) ?? [];
+  (ids.length ? browser.runtime.sendMessage({ type: "tabMenu", tabIds: ids }) : Promise.resolve([])).then(facts => {
+    if (asked !== folderMenuAsked || !view.folders.some(f => f.key === key)) return; // a newer click, or the folder is gone
+    const more = folderMore(key, live, facts ?? []); // moremenu.js
+    showMenu([...folderMenu(key, live), ...(more.length ? [null, ["More", more]] : [])], x, y);
+  }, err => console.error("Tidier: folder menu", err));
 }
 const listMenu = () => [
   ["New folder", () => { renameNext = true; send({ type: "newFolder", space: view.space }); }],
@@ -27,9 +45,11 @@ function holdMenu(e) {
   browser.menus.overrideContext({ showDefaults: false });
 }
 
-let menuAt = { x: 0, y: 0 };
-function showMenu(items, x, y) {
-  menuAt = { x, y };
+// `above`: a line the menu must stay above, also once a list in it has replaced it (a space's
+// menu, so that its dot stays in sight).
+let menuAt = { x: 0, y: 0, above: null };
+function showMenu(items, x, y, above = null) {
+  menuAt = { x, y, above };
   closeMenu();
   drawMenu(items);
 }
@@ -54,7 +74,7 @@ function drawMenu(items, back = null, byKey = false) {
     if (Array.isArray(act)) {
       b.classList.add("more");
       b.setAttribute("aria-haspopup", "menu");
-      b.onclick = ev => drawMenu(act, { label, items }, !ev.detail);
+      b.onclick = ev => drawMenu(act, { label, items, back }, !ev.detail); // a list in a list goes back one step at a time
     } else {
       b.onclick = () => { closeMenu(); act(); };
     }
@@ -64,7 +84,7 @@ function drawMenu(items, back = null, byKey = false) {
     const b = el("button", "item back");
     b.setAttribute("role", "menuitem");
     b.append(el("span", "label", back.label));
-    b.onclick = ev => drawMenu(back.items, null, !ev.detail);
+    b.onclick = ev => drawMenu(back.items, back.back ?? null, !ev.detail);
     rows.unshift(b, el("div", "line"));
   }
   menu.replaceChildren(...rows);
@@ -72,7 +92,7 @@ function drawMenu(items, back = null, byKey = false) {
   // Measured from the corner: where it stood last would limit how wide it can be.
   menu.style.left = menu.style.top = "0";
   menu.style.left = Math.max(4, Math.min(menuAt.x, innerWidth - menu.offsetWidth - 4)) + "px";
-  menu.style.top = Math.max(4, Math.min(menuAt.y, innerHeight - menu.offsetHeight - 4)) + "px";
+  menu.style.top = Math.max(4, Math.min(menuAt.y, (menuAt.above ?? innerHeight - 4) - menu.offsetHeight)) + "px";
   menu.scrollTop = 0;
   // In the menu, so the arrow keys are for it (keys.js leaves them alone there).
   (byKey ? menu.querySelector(".item:not(.back)") : menu).focus({ preventScroll: true });

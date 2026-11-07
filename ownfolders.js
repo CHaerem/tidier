@@ -131,7 +131,11 @@ async function moveInWindow(tabs, tabId, beforeId) {
 // The address is the page's own while it is loaded: the record follows a page once it
 // has finished loading, and a tab can be moved before that. A placeholder's own address
 // says nothing, so then it is the record's.
-async function moveToSpace(tabId, space, leaving = []) {
+//
+// `at` ({ before, folder }): a place in that space's list, where a drag that went to the
+// space put it. The new tab is moved there before it has a record, so its folder is kept
+// for it until it has one (comingIntoFolder, listactions.js).
+async function moveToSpace(tabId, space, leaving = [], at = null) {
   const tab = await browser.tabs.get(tabId).catch(() => null);
   if (!tab || tab.cookieStoreId === space || tab.pinned) return;
   const key = syncKeyByTab.get(tabId), live = await pageTab(tab, key);
@@ -144,6 +148,11 @@ async function moveToSpace(tabId, space, leaving = []) {
   if (!(await leavesQuietly(live, key, leaving))) return sayStayed(tab.windowId);
   const opened = await openUnruled({ windowId: tab.windowId, cookieStoreId: space, url, active: false }).catch(() => null);
   if (!opened) return noSpace();
+  if (at) {
+    if (at.folder) comingIntoFolder.set(opened.id, at.folder);
+    const here = await browser.tabs.query({ windowId: tab.windowId });
+    await moveInWindow(here, opened.id, at.before ?? null);
+  }
   // (A live folder's pull request counts as closed, or the next search brings it back.)
   if (key) await closeEverywhere(key);
   else await browser.tabs.remove(tabId).catch(() => {});

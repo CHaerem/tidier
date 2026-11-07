@@ -125,8 +125,11 @@ async function barContext(windowId) {
   const picked = await barPickedTabs(windowId, tab, tabs);
   const closed = (await browser.sessions.getRecentlyClosed({ maxResults: CLOSED_LOOKED_AT }).catch(() => []))
     .filter(c => c.tab && isWeb(c.tab.url));
+  // What is drawn where, for the commands that act on a part of the list (listactions.js).
+  const view = await viewFor(windowId);
   return {
-    windowId, spaces, space, tab, picked, closed, all, list,
+    windowId, spaces, space, tab, picked, closed, all, list, view,
+    doubles: doublesIn(view, all), pages: await spacePages(space),
     addresses: picked.map(t => barAddressOf(t, all, list)).filter(Boolean),
     key: tab ? syncKeyByTab.get(tab.id) : undefined,
   };
@@ -214,8 +217,55 @@ const BAR_COMMANDS = [
         await closeFromSidebar(ctx.windowId, await closeTargetOf(t.id)); // what a saved placeholder with its page in another window closes (tabactions.js)
       }
     } },
+  ...barListCommands(),
   { name: "settings", label: "Settings", run: () => browser.runtime.openOptionsPage() },
 ];
+
+// What the tab menu's More has, and a folder's and a space's menus (listactions.js), each by
+// the name it has in the shortcut table, so that its key shows. Through tabAction, as the
+// menu's: one list, the selection, else the tab.
+function barListCommands() {
+  const act = (action, more = {}) => ctx => tabAction(ctx.windowId, { action, tabIds: ctx.picked.map(t => t.id), ...more });
+  const ids = ctx => ctx.picked.map(t => t.id);
+  const along = ctx => groupsOf(ctx.view, ids(ctx)).some(g => !g.live && g.rows.length > 1);
+  const around = which => ctx => aroundIn(ctx.view, ids(ctx), which).length > 0;
+  const inFolders = ctx => { const groups = groupsOf(ctx.view, ids(ctx)); return groups.length > 0 && groups.every(g => g.key && !g.live) && groups.reduce((n, g) => n + g.mine.length, 0) === ctx.picked.length; };
+  const sortLabel = word => ctx => {
+    const groups = sortGroups(ctx.view, ids(ctx));
+    return groups.every(g => !g.key) ? `Sort today's tabs by ${word}` : groups.length === 1 ? `Sort this folder by ${word}` : `Sort by ${word}`;
+  };
+  const folderRows = ctx => ctx.view.folders.find(f => f.key === barFolderKey(ctx));
+  const onFolder = (action, more) => ctx => tabAction(ctx.windowId, { action, tabIds: folderRows(ctx).tabs.map(t => t.id), ...more });
+  const plural = (n, one, many) => (n === 1 ? one : many.replace("#", n));
+  return [
+    ...Object.entries(SORT_WORDS).map(([by, word]) => ({ name: `sort-${by}`, label: sortLabel(word), when: ctx => sortGroups(ctx.view, ids(ctx)).length > 0, run: act("sort", { by }) })),
+    { name: "move-top", label: ctx => barCount(ctx, "Move to the top", "Move # tabs to the top"), when: along, run: act("top") },
+    { name: "move-bottom", label: ctx => barCount(ctx, "Move to the bottom", "Move # tabs to the bottom"), when: along, run: act("bottom") },
+    { name: "move-up", label: ctx => barCount(ctx, "Move up one place", "Move # tabs up one place"), when: along, run: act("step", { by: -1 }) },
+    { name: "move-down", label: ctx => barCount(ctx, "Move down one place", "Move # tabs down one place"), when: along, run: act("step", { by: 1 }) },
+    { name: "take-out", label: ctx => barCount(ctx, "Take out of its folder", "Take # tabs out of their folders"), when: inFolders, run: act("takeOut") },
+    { name: "folder-from-selection", label: ctx => barCount(ctx, "New folder with this tab", "New folder with these # tabs"),
+      when: ctx => barMovable(ctx) && ctx.addresses.length === ctx.picked.length && groupsOf(ctx.view, ids(ctx)).every(g => !g.live),
+      run: ctx => tabAction(ctx.windowId, { action: "newFolder", tabIds: ids(ctx), space: ctx.space }) },
+    { name: "copy-markdown", label: ctx => barCount(ctx, "Copy as Markdown link", "Copy # as Markdown links"), when: ctx => ctx.addresses.length > 0, run: act("copyMarkdown") },
+    { name: "close-duplicates", label: ctx => plural(ctx.doubles.length, "Close 1 duplicate tab", "Close # duplicate tabs"), when: ctx => ctx.doubles.length > 0, run: act("closeDuplicates") },
+    { name: "close-others", label: "Close other tabs", when: around("others"), run: act("closeOthers") },
+    { name: "close-above", label: "Close tabs above", when: around("above"), run: act("closeAbove") },
+    { name: "close-below", label: "Close tabs below", when: around("below"), run: act("closeBelow") },
+    { name: "recent-back", label: "Back to the tab used before", when: ctx => tabsAsDrawn(ctx.view).length > 1, run: ctx => stepRecent(ctx.windowId, 1) },
+    { name: "recent-forward", label: "Forward to the tab used after", when: ctx => walkedBack(ctx.windowId), run: ctx => stepRecent(ctx.windowId, -1) },
+    // The folder of the tab you are on, as a whole.
+    { name: "folder-new-tab", label: "New tab in this folder", when: ctx => !!folderRows(ctx) && !folderRows(ctx).live, run: ctx => newTabInFolder(ctx.windowId, barFolderKey(ctx)) },
+    { name: "folder-reload", label: "Reload this folder", when: ctx => folderRows(ctx)?.tabs.length > 0, run: onFolder("reload") },
+    { name: "folder-unload", label: "Unload this folder", when: ctx => folderRows(ctx)?.tabs.length > 0, run: onFolder("unload") },
+    { name: "folder-close", label: "Close this folder's tabs", when: ctx => folderRows(ctx)?.tabs.length > 0 && !folderRows(ctx).live, run: onFolder("closeAll") },
+    // The space you are in, as a whole: its pages that are loaded, wherever.
+    { name: "space-reload", label: "Reload this space", when: ctx => ctx.pages.length > 0, run: ctx => spaceAction(ctx.windowId, { action: "reload", space: ctx.space }) },
+    { name: "space-mute", label: "Mute this space", when: ctx => ctx.pages.some(t => !t.mutedInfo?.muted), run: ctx => spaceAction(ctx.windowId, { action: "mute", space: ctx.space }) },
+    { name: "space-unmute", label: "Unmute this space", when: ctx => ctx.pages.some(t => t.mutedInfo?.muted), run: ctx => spaceAction(ctx.windowId, { action: "unmute", space: ctx.space }) },
+    { name: "space-unload", label: "Unload this space", when: ctx => ctx.pages.length > 0, run: ctx => unloadSpace(ctx.space) },
+  ];
+}
 
 const barFolderKey = ctx => folderKeyOf(ctx.all, ctx.key);
 const barOwnFolderOf = ctx => { const f = ctx.all[barFolderKey(ctx)]; return isOwnFolder(f) && !f.live ? f : null; };

@@ -184,7 +184,7 @@ function folder(f) {
       foldsWaiting.delete(f.key);
       if (view.alone && !f.live) rename(f.key);
     };
-    head.oncontextmenu = e => { if (view.alone) openMenu(e, folderMenu(f.key, f.live)); };
+    head.oncontextmenu = e => { if (view.alone) openFolderMenu(e, f.key, f.live); }; // menu.js
     head.draggable = !!view?.alone;
     head.ondragstart = e => startDrag(e, { kind: "folder", key: f.key });
     b.append(head, el("div", "children"));
