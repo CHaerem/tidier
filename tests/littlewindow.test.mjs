@@ -706,6 +706,22 @@ test("a closed small window reopened (⌘⇧T, ⌘⇧N) is one again; a sign-in'
   x.kill();
 });
 
+test("a reopened small window whose mark Firefox puts in place a moment late is one again", async () => {
+  const ff = new FakeFirefox();
+  session(ff);
+  const x = await start(ff);
+  const back = ff.addWindow({ type: "popup" });
+  ff.addTab(back.id, { url: LINK, title: "Link", cookieStoreId: C1, active: true });
+  x.b.windows.onCreated.fire({ id: back.id, type: "popup" });
+  await wait(500);
+  assert.equal(x.js(`littles.has(${back.id})`), false, "no mark yet");
+  ff.winValues.set(`${back.id}/little`, true); // the rest of the window's state, restored after the event
+  await wait(2000);
+  assert.equal(x.js(`littles.has(${back.id})`), true);
+  assert.equal(back.titlePreface, `${C1} · `);
+  x.kill();
+});
+
 test("a private window's link goes nowhere else", async () => {
   const ff = new FakeFirefox();
   const { on } = session(ff);

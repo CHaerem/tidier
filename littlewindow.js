@@ -176,7 +176,24 @@ async function openLittle(fromWindowId, where, space, pageWidth) {
 
 browser.windows.onRemoved.addListener(windowId => { if (littles.delete(windowId)) viewAllSoon(); });
 // ⌘⇧T right after closing one, or ⌘⇧N: Firefox brings it back, with its mark but not its title.
-browser.windows.onCreated.addListener(win => { if (tidierAlone && started && win.type === "popup") serial(() => adoptLittle(win)); });
+// The mark comes with the rest of the window's state, which Firefox can put in place a moment
+// after it tells of the window (seen in Developer Edition on a busy machine): asked at once, the
+// window stayed a plain popup, with no row and no Keep. So it is asked again for a few seconds,
+// outside the queue, and only for a popup; one that closes meanwhile (the command bar) ends it.
+const LITTLE_MARK_ASKED_MS = [0, 100, 300, 700, 1500, 3000];
+browser.windows.onCreated.addListener(win => {
+  if (!tidierAlone || !started || win.type !== "popup") return;
+  (async () => {
+    let at = 0;
+    for (const next of LITTLE_MARK_ASKED_MS) {
+      await sleep(next - at);
+      at = next;
+      if (littles.has(win.id)) return; // one Tidier opened itself, or already taken back
+      if (await browser.sessions.getWindowValue(win.id, LITTLE_KEY).catch(() => undefined)) return serial(() => adoptLittle(win));
+      if (!(await browser.windows.get(win.id).catch(() => null))) return;
+    }
+  })().catch(noteError);
+});
 browser.tabs.onUpdated.addListener((tabId, change, tab) => { if (littles.has(tab.windowId)) viewAllSoon(); }, { properties: ["title", "favIconUrl"] });
 
 // --- Keeping it ----------------------------------------------------------------------
