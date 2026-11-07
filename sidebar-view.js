@@ -130,7 +130,8 @@ const earlyKeys = new Map(); // tabId -> its key, until Tidier has started
 browser.tabs.onRemoved.addListener(tabId => earlyKeys.delete(tabId)); // also with no view to clear it after the start
 async function rowKeys(tabs) {
   if (started || !tidierAlone) { earlyKeys.clear(); return syncKeyByTab; }
-  await Promise.all(tabs.filter(t => !earlyKeys.has(t.id)).map(async t => earlyKeys.set(t.id, await browser.sessions.getTabValue(t.id, SYNC_KEY).catch(() => undefined))));
+  // (Not for a tab closed meanwhile: nothing would take it out again.)
+  await Promise.all(tabs.filter(t => !earlyKeys.has(t.id)).map(t => browser.sessions.getTabValue(t.id, SYNC_KEY).then(key => earlyKeys.set(t.id, key), () => {})));
   return earlyKeys;
 }
 

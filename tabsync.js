@@ -1117,6 +1117,7 @@ function noteOrder(windowId) {
     if (!tabs.length || orderQueries.get(windowId) === "gone") { lastOrder.delete(windowId); return; }
     lastOrder.set(windowId, tabs.sort((a, b) => a.index - b.index)
       .map(t => ({ id: t.id, cookieStoreId: t.cookieStoreId, unloaded: t.discarded || isGhostUrl(t.url) })));
+    for (const t of tabs) if (loadedSeen.get(t.id)?.at <= t0) loadedSeen.delete(t.id); // this look has seen that change
   }, () => lastOrder.delete(windowId)).finally(() => {
     setTimeout(() => {
       const again = orderQueries.get(windowId);
@@ -1132,9 +1133,10 @@ browser.tabs.onDetached.addListener((tabId, { oldWindowId }) => noteOrder(oldWin
 // Whether a tab is loaded, as its last change said, is kept at once: it decides whether a
 // saved tab you close is unloaded or closed (closedPlace), and the look that would see it
 // may be resting, or may have asked Firefox just before the change. Its place can wait.
-const loadedSeen = new Map(); // tabId -> whether it is unloaded
+// Kept only until a look that began after the change has seen it.
+const loadedSeen = new Map(); // tabId -> { unloaded, at }
 browser.tabs.onUpdated.addListener((tabId, change, tab) => {
-  loadedSeen.set(tabId, tab.discarded || isGhostUrl(tab.url));
+  loadedSeen.set(tabId, { unloaded: tab.discarded || isGhostUrl(tab.url), at: performance.now() });
   noteOrder(tab.windowId);
 }, { properties: ["discarded", "url"] });
 browser.windows.onRemoved.addListener(windowId => { lastOrder.delete(windowId); if (orderQueries.has(windowId)) orderQueries.set(windowId, "gone"); });
@@ -1167,7 +1169,7 @@ function closedPlace(windowId, tabId) {
   // land on an unloaded one, which loads, and closed right after that it is a loaded tab. A saved
   // one must then go back to its saved address, not away (closeAction).
   const seen = lastOrder.get(windowId)?.find(t => t.id === tabId) ?? order[i];
-  return { unloaded: loadedSeen.get(tabId) ?? seen.unloaded, before: keysOf(order.slice(0, i).reverse()), after: keysOf(order.slice(i + 1)) };
+  return { unloaded: loadedSeen.get(tabId)?.unloaded ?? seen.unloaded, before: keysOf(order.slice(0, i).reverse()), after: keysOf(order.slice(i + 1)) };
 }
 
 // Selecting a ghost in the window you are using pulls the live tab in. (A pull
