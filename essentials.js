@@ -208,6 +208,11 @@ async function ensureWindow(windowId, settle) {
     if (!isWeb(entry.url) || isHiddenSpace(entry.cookieStoreId)) continue; // hiddenspaces.js
     missing.push({ entry, index: index++ });
   }
+  // A window that comes back (reopened, or restored late) has its copies in the order they had
+  // when it closed, and the list may have changed since: with Tidier alone they are put in its
+  // order. (Making the missing ones sorts them anyway. With Sidebery, which sorts by space
+  // itself, a window stays as it is.)
+  if (!missing.length && tidierAlone && copies.size) { await sortEssentials(windowId, list); return; }
   await createEssentials(windowId, missing, settle);
 }
 
