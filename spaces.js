@@ -3,11 +3,10 @@
 // a time. The active space follows the tab you select, and is kept with the window
 // (a sessions value), so it survives a restart.
 //
-// With Tidier alone (common.js), the other spaces' tabs are hidden (so ⌃Tab skips
-// them too), a tab opened without a container (⌘T, a link from another app) is
-// opened again in the space you are in, so logins never mix, and ⌃1/⌃2/⌃3 switch
-// space. Until then Sidebery does all that, and the two must not fight over the
-// tabs, so here the active space only decides what Tidier's sidebar shows.
+// The other spaces' tabs are hidden (so ⌃Tab skips them too), once Tidier may hide
+// tabs (an optional permission, asked for in the sidebar). A tab opened without a
+// container (⌘T, a link from another app) is opened again in the space you are in, so
+// logins never mix, and ⌃1/⌃2/⌃3 switch space.
 //
 // Firefox cannot hide a pinned tab, so other spaces' essentials stay in ⌃Tab;
 // selecting one takes you to its space.
@@ -17,8 +16,9 @@ const activeSpace = new Map(); // windowId -> cookieStoreId
 const SPACE_DEBOUNCE_MS = 30; // a burst of new tabs is hidden in one go
 
 // Which spaces there are, in the order of the bar: declared for a machine in
-// managed storage ({ spaces: [container ids] }), else Sidebery's order if imported,
-// else the ones the essentials have, in their order, then the other containers.
+// managed storage ({ spaces: [container ids] }), else the order taken in (from Sidebery's
+// export, a copy or another machine), else the ones the essentials have, in their order,
+// then the other containers.
 async function containerSpaces() {
   const ids = await browser.contextualIdentities.query({}).catch(() => []);
   return ids.map(c => ({ id: c.cookieStoreId, name: c.name, color: c.colorCode, icon: c.icon, iconUrl: c.iconUrl }));
@@ -26,9 +26,8 @@ async function containerSpaces() {
 const declaredSpaces = () => browser.storage.managed.get("spaces").then(stored => stored.spaces, () => undefined);
 async function spaceList(used) {
   const all = (await containerSpaces()).filter(s => !isHiddenSpace(s.id)); // hiddenspaces.js
-  if (!tidierAlone) return all.filter(s => used.has(s.id));
   const declared = await declaredSpaces();
-  const { spaceOrder } = await browser.storage.local.get("spaceOrder"); // from Sidebery's export (moveover.js)
+  const { spaceOrder } = await browser.storage.local.get("spaceOrder"); // moveover.js, copies.js, sync.js
   const first = Array.isArray(declared) ? declared : spaceOrder ?? (await getList()).map(e => e.cookieStoreId);
   const rank = new Map([...new Set(first)].map((id, i) => [id, i]));
   const listed = s => used.has(s.id) || (!bridgeRests(s.id) && (!Array.isArray(declared) || rank.has(s.id)));
@@ -72,7 +71,6 @@ async function setSpace(windowId, space) {
 // opened in the space, see below, or is a page that cannot be: about:, extensions'
 // pages). Firefox cannot hide a pinned tab or the selected one.
 async function showSpace(windowId) {
-  if (!tidierAlone) return;
   const space = activeSpace.get(windowId);
   if (!space) return;
   // Only tabs that may have to change, as this runs for every burst of new tabs: the hidden
@@ -138,7 +136,7 @@ async function switchSpace(windowId, space) {
   // And written here, since setSpace below now sees no change: this is what a restart reads.
   await browser.sessions.setWindowValue(windowId, SPACE_KEY, space).catch(() => {});
   if (last) await browser.tabs.update(last.id, { active: true }).catch(() => {});
-  else if (tidierAlone) await createTab({ windowId, cookieStoreId: space }).catch(ifGone); // common.js
+  else await createTab({ windowId, cookieStoreId: space }).catch(ifGone); // common.js
   if (activeSpace.has(windowId)) await setSpace(windowId, space); // else closed meanwhile
 }
 
@@ -156,7 +154,7 @@ async function switchToNth(windowId, n) {
 const closedIn = new Map(); // windowId -> { space } a tab was closed in, for a moment
 browser.tabs.onRemoved.addListener((tabId, { windowId, isWindowClosing }) => {
   // (Not while Firefox starts: restoring a session closes the window's first tab, which is no tab you left.)
-  if (!tidierAlone || !started || isWindowClosing || !activeSpace.has(windowId)) return;
+  if (!started || isWindowClosing || !activeSpace.has(windowId)) return;
   const closed = { space: activeSpace.get(windowId) };
   closedIn.set(windowId, closed);
   // Only its own moment: with several tabs closing, an earlier one's timer must not end
@@ -175,7 +173,7 @@ browser.tabs.onActivated.addListener(({ tabId, windowId }) => {
     if (tab.cookieStoreId === NO_CONTAINER) { await setSuccessor(tab); viewSoon(windowId); return; }
     if (littleHolds(tab)) { viewSoon(windowId); return; } // littlewindow.js
     if (isHiddenSpace(tab.cookieStoreId)) { viewSoon(windowId); return; } // what is left open of a hidden space is shown in every space (hiddenspaces.js)
-    if (tidierAlone && stay && stay !== tab.cookieStoreId) {
+    if (stay && stay !== tab.cookieStoreId) {
       const next = await nextAfterClosing(windowId, stay);
       if (next) { await browser.tabs.update(next.id, { active: true }).catch(() => {}); return; }
       // Refused when the space has just been removed (safemoves.js): then this tab's space it is.
@@ -192,7 +190,6 @@ browser.tabs.onActivated.addListener(({ tabId, windowId }) => {
 // settings) is shown in the space you are in, so closing it lands there too; left to
 // Firefox, it would land on whatever is beside it, an unloaded tab or a closed folder's.
 async function setSuccessor(tab) {
-  if (!tidierAlone) return;
   const space = tab.cookieStoreId === NO_CONTAINER ? activeSpace.get(tab.windowId) : tab.cookieStoreId;
   if (!space) return;
   const next = await nextAfterClosing(tab.windowId, space, tab.id);
@@ -207,7 +204,7 @@ async function setSuccessor(tab) {
 // it reads what is true when its turn comes, and only a change after that asks for another.
 const successorDue = new Set(); // windows with a look on its way
 function successorSoon(windowId) {
-  if (!tidierAlone || !started || successorDue.has(windowId)) return;
+  if (!started || successorDue.has(windowId)) return;
   successorDue.add(windowId);
   setTimeout(() => serial(async () => {
     successorDue.delete(windowId);
@@ -226,7 +223,7 @@ browser.tabs.onUpdated.addListener((tabId, change, tab) => { if ("discarded" in 
 // moved in) is hidden at once.
 const showTimers = new Map();
 function showSpaceSoon(windowId) {
-  if (!tidierAlone || !started) return;
+  if (!started) return;
   clearTimeout(showTimers.get(windowId));
   showTimers.set(windowId, setTimeout(() => { showTimers.delete(windowId); serial(() => showSpace(windowId)); }, SPACE_DEBOUNCE_MS));
 }
@@ -241,7 +238,7 @@ browser.windows.onRemoved.addListener(windowId => {
 });
 // A new window starts in the space you are in, and keeps Firefox's first tab there.
 browser.windows.onCreated.addListener(win => {
-  if (tidierAlone && activeSpace.has(focusedWindowId)) activeSpace.set(win.id, activeSpace.get(focusedWindowId));
+  if (activeSpace.has(focusedWindowId)) activeSpace.set(win.id, activeSpace.get(focusedWindowId));
 });
 
 // --- A tab without a container is opened again in the space you are in -----
@@ -258,7 +255,7 @@ const NEW_TAB_PAGES = new Set(["about:newtab", "about:home", "about:blank"]);
 const newTabs = new Map(); // tabId -> when it was created, for tabs that may need reopening
 
 browser.tabs.onCreated.addListener(tab => {
-  if (!tidierAlone || !started || tab.pinned || tab.incognito || syncBusy.has(tab.id)) return;
+  if (!started || tab.pinned || tab.incognito || syncBusy.has(tab.id)) return;
   if (!isWeb(tab.url) && !isGhostUrl(tab.url)) firstPage.add(tab.id);
   if (tab.cookieStoreId !== NO_CONTAINER) return;
   newTabs.set(tab.id, Date.now());
@@ -285,7 +282,7 @@ browser.tabs.onRemoved.addListener(tabId => { newTabs.delete(tabId); firstPage.d
 // link that started Firefox has no container, and would stay in none. Returns whether it
 // is being opened again, which then gets seen as a new tab.
 function seenLateInSpace(tab) {
-  if (!tidierAlone || tab.pinned || tab.incognito) return false;
+  if (tab.pinned || tab.incognito) return false;
   if (!isWeb(tab.url)) { if (!isGhostUrl(tab.url)) firstPage.add(tab.id); return false; }
   if (tab.cookieStoreId !== NO_CONTAINER) return false;
   // A loaded page is moved by moveStragglers (isolation.js), which keeps what the record
@@ -299,7 +296,7 @@ function seenLateInSpace(tab) {
 // A rule is text to find in the address, or /a regular expression/. It is looked at
 // for a tab's first page only (and, with the permission, when you type or choose an
 // address: isolation.js): a sign-in passing through the address on its way back to
-// the page you were on must not move your tab (with Sidebery's rules, which look at
+// the page you were on must not move your tab (with Sidebery's rules, which looked at
 // every address a tab loads, it did).
 const rulesList = storedValue("rules", () => []); // [{ url, space }]
 const firstPage = new Set(); // tabs that have not shown a web page yet
@@ -355,8 +352,7 @@ browser.permissions.onAdded.addListener(() => { if (started) serial(startSpaces)
 // Each window's active space, shown again: Firefox shows every hidden tab again
 // when an add-on with this permission as an optional one is updated.
 async function startSpaces() {
-  if (!tidierAlone) return takeKeysBackIfGiven(); // keys-commands.js
-  await giveKeys().catch(noteError); // here and not in the manifest, so that they are not taken from Sidebery while it is in use; keys must not stop the rest
+  await giveKeys().catch(noteError); // keys-commands.js; keys must not stop the rest
   await startLittleWindow(); // littlewindow.js
   for (const w of await normalWindows()) await startSpaceIn(w.id);
   await leaveHiddenSpaces(); // a window restored on a tab of a space that is hidden now
@@ -382,6 +378,6 @@ async function startSpaceIn(windowId) {
 // tabs of every space stay shown, and a new tab opens in no space, until a sidebar asks.
 // After the tabs it gets (tabsync.js adds its job first).
 browser.windows.onCreated.addListener(win => {
-  if (!tidierAlone || !started || win.type !== "normal" || win.incognito) return;
+  if (!started || win.type !== "normal" || win.incognito) return;
   setTimeout(() => serial(() => startSpaceIn(win.id)), NEW_WINDOW_DELAY_MS);
 });

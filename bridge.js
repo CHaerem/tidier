@@ -1,6 +1,6 @@
 // Working with Claude and other agents. Off by default, and per machine: nothing here
-// runs, shows or connects until you turn it on on the settings page, and only with
-// Tidier alone. The setting is kept out of the copies (copies.js), so it cannot travel.
+// runs, shows or connects until you turn it on on the settings page. The setting is kept
+// out of the copies (copies.js), so it cannot travel.
 //
 //   agent <-MCP-> native/tidier-mcp.py <-Unix socket-> native/tidier-bridge.py <-native port-> here
 //
@@ -709,10 +709,10 @@ async function claudeAsk(tabId, windowId) {
   await openUnruled(props);
 }
 
-// Your own keys, set in about:addons (no key comes with them: the manifest reaches
-// machines still on Sidebery).
+// Your own keys, set in about:addons: no key comes with them, since all of this is off
+// until you turn it on.
 browser.commands.onCommand.addListener(async (name, given) => {
-  if (!name.startsWith("claude-") || !tidierAlone || !claudeCopyOn) return;
+  if (!name.startsWith("claude-") || !claudeCopyOn) return;
   const [tab] = given ? [given] : await browser.tabs.query({ active: true, currentWindow: true });
   if (!tab) return;
   const act = name === "claude-copy-page" ? claudeCopy([tab.id], tab.windowId)
@@ -766,7 +766,7 @@ function bridgeSet(on) {
 
 async function bridgeTurn(on) {
   const settings = await claudeSettings.get();
-  if (on && tidierAlone) {
+  if (on) {
     settings.agentSpace = await agentSpaceEnsure(settings);
     agentSpaceId = settings.agentSpace;
     await bridgePrune(settings);
@@ -817,7 +817,7 @@ async function bridgeSettingsState() {
   const settings = await claudeSettings.get();
   const spaces = (await containerSpaces()).filter(s => s.id !== settings.agentSpace);
   return {
-    alone: tidierAlone, copy: !!settings.copy, bridge: !!settings.bridge,
+    copy: !!settings.copy, bridge: !!settings.bridge,
     reading: await browser.permissions.contains(READ_PAGES),
     spaces: spaces.map(s => ({ id: s.id, name: s.name, color: s.color, mode: bridgeAccess(s.id, settings) })),
   };
@@ -833,7 +833,7 @@ browser.runtime.onMessage.addListener((msg, sender) => {
       case "get": return bridgeSettingsState();
       case "copy": {
         const settings = await claudeSettings.get();
-        settings.copy = claudeCopyOn = !!msg.on && tidierAlone;
+        settings.copy = claudeCopyOn = !!msg.on;
         claudeSettings.set(settings);
         pushAgentState();
         return bridgeSettingsState();
@@ -855,9 +855,9 @@ function bridgeOutOfCopy(data) {
   return data;
 }
 
-// With Tidier started (tabsync.js). On every other machine this reads one value and is done.
+// With Tidier started (tabsync.js). On a machine that never turned it on this reads one
+// value and is done.
 async function startBridge() {
-  if (!tidierAlone) return;
   const settings = await claudeSettings.get();
   agentSpaceId = settings.agentSpace ?? null;
   claudeCopyOn = !!settings.copy;

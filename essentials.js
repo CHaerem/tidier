@@ -25,10 +25,9 @@ const busy = new Set();
 // Tab ID -> key, so we know which essential a closed tab was.
 const keyByTab = new Map();
 
-// Each space's essentials are kept together, the spaces in the order they
-// already have in the list: Sidebery shows pinned tabs by space, and when
-// Firefox starts it moves them so that each space's are together, in its
-// order of spaces, which would otherwise reorder the essentials.
+// Each space's essentials are kept together, the spaces in the order they already have in
+// the list, and so in every window's order of pinned tabs: Firefox cannot hide a pinned tab,
+// so ⌃Tab goes through every space's essentials, and they should come space by space.
 let spaceOrder = null; // containers, in the order of their essentials in the list
 async function getList() {
   const list = await essentialsList.get();
@@ -88,27 +87,22 @@ async function initList() {
   return list;
 }
 
-// Create essential copies as placeholder pages (see ghost.js): each shows the
-// real page's title and icon, unloads itself, and opens the real page when
-// you select it. They are created unpinned, so Sidebery puts each in its
-// container's space, and pinned together a moment later; a pinned tab keeps
-// its space (see PIN_SETTLE_MS). In a new window `settle` waits for Sidebery's
-// sidebar there first (see fillWindow), so it is passed in.
-async function createEssentials(windowId, items, settle = () => sleep(PIN_SETTLE_MS)) { // [{ entry, index }]
+// Create essential copies as placeholders (see ghost.js): unloaded, with the essential's
+// title for ⌃Tab, and no page, like a ghost (createRep, tabsync.js); a copy opens the real
+// page when you select it.
+async function createEssentials(windowId, items) { // [{ entry, index }]
   const tabs = [];
   const closedAlready = [];
   try {
     for (const { entry, index } of items) {
       // Refused if its container was removed while Tidier was not running. One bad
       // entry must not keep a window from getting the others, or stop Tidier starting.
-      // (Without Sidebery a copy needs no page, see placeholderWithoutPage in tabsync.js.
-      // Firefox refuses to create a tab both pinned and unloaded, so it is pinned next.)
-      const alone = tidierAlone ? { discarded: true, title: entry.name || entry.title || entry.url } : {};
+      // (Firefox refuses to create a tab both pinned and unloaded, so it is pinned next.)
       let refused = null;
       // (createTab, common.js: nothing if the window closes meanwhile, also before Firefox answers.)
       const tab = await createTab({
         windowId, url: ghostUrl("essential", entry.key), active: false,
-        cookieStoreId: entry.cookieStoreId, index, ...alone,
+        cookieStoreId: entry.cookieStoreId, index, discarded: true, title: entry.name || entry.title || entry.url,
       }).catch(err => { refused = err; return null; });
       if (!tab) {
         if (refused && await refusedInWindow(windowId, refused)) continue;
@@ -121,21 +115,16 @@ async function createEssentials(windowId, items, settle = () => sleep(PIN_SETTLE
       await tagTab(tab.id, entry.key);
       // Closed by you before it could be told apart: nothing brought it back.
       if (!keyByTab.has(tab.id)) closedAlready.push(entry.key);
-      else if (tidierAlone) {
+      else {
         ownPins.add(tab.id);
         await browser.tabs.update(tab.id, { pinned: true }).catch(() => {}).finally(() => ownPins.delete(tab.id));
       }
-      if (!tidierAlone) await sleep(CREATE_GAP_MS);
     }
     if (closedAlready.length) {
-      await ensureWindow(windowId, settle);
+      await ensureWindow(windowId);
       await forgetClosedPlaceholders("essential", closedAlready);
     }
     if (!tabs.length) return;
-    if (!tidierAlone) {
-      await settle(tabs);
-      await pinEssentialCopies(tabs);
-    }
     // Created unpinned, they could not be put among the pinned tabs, and
     // pinning puts each last: now each goes to its place in the list.
     await sortEssentials(windowId, await getList());
@@ -144,28 +133,8 @@ async function createEssentials(windowId, items, settle = () => sleep(PIN_SETTLE
   }
 }
 
-// Sidebery gives a tab that existed before a window's sidebar was ready the
-// last active space, ignoring its container rules, and a pinned tab keeps its
-// space (mbnuqw/sidebery#2497). Its container rules are applied again when an
-// unpinned tab's address changes, so each copy loads its placeholder once
-// more, gets a moment to be moved to its own space, and is pinned only then.
-async function pinEssentialCopies(tabs) {
-  await reloadPlaceholders(tabs);
-  await sleep(RULE_SETTLE_MS);
-  for (const { tab } of tabs) await browser.tabs.update(tab.id, { pinned: true }).catch(() => {});
-}
-
-// Load each copy's placeholder again (a new address, so Sidebery sees a change).
-let placedCount = 0;
-async function reloadPlaceholders(tabs) {
-  placedCount++;
-  for (const { tab, entry } of tabs) {
-    await browser.tabs.update(tab.id, { url: ghostUrl("essential", entry.key) + "&placed=" + placedCount }).catch(() => {});
-  }
-}
-
 // Add any essentials a window is missing. Safe to run repeatedly.
-async function ensureWindow(windowId, settle) {
+async function ensureWindow(windowId) {
   const list = await getList();
   if (!list.length) return;
   const win = await browser.windows.get(windowId).catch(() => null);
@@ -209,11 +178,10 @@ async function ensureWindow(windowId, settle) {
     missing.push({ entry, index: index++ });
   }
   // A window that comes back (reopened, or restored late) has its copies in the order they had
-  // when it closed, and the list may have changed since: with Tidier alone they are put in its
-  // order. (Making the missing ones sorts them anyway. With Sidebery, which sorts by space
-  // itself, a window stays as it is.)
-  if (!missing.length && tidierAlone && copies.size) { await sortEssentials(windowId, list); return; }
-  await createEssentials(windowId, missing, settle);
+  // when it closed, and the list may have changed since: they are put in its order. (Making
+  // the missing ones sorts them anyway.)
+  if (!missing.length && copies.size) { await sortEssentials(windowId, list); return; }
+  await createEssentials(windowId, missing);
 }
 
 async function ensureAllWindows() {
@@ -253,17 +221,10 @@ async function onPinned(tab) {
   // A tab reopened and pinned at once says it is a synced tab, and tab sync does not know yet.
   const wasSynced = syncKeyByTab.get(tab.id) ?? await browser.sessions.getTabValue(tab.id, SYNC_KEY).catch(() => undefined);
   if (wasSynced) await leaveSync(tab.id, wasSynced);
-  // The pinned placeholder becomes this essential's copy, still unloaded. With Tidier alone
-  // this is not marked as our own change: a placeholder's load is nothing the listeners act
-  // on, and an unpin in that moment (you changed your mind) would be ignored, leaving a stray
-  // placeholder as a tab. With Sidebery it stays as it was.
-  if (isGhostUrl(tab.url)) {
-    if (!tidierAlone) {
-      busy.add(tab.id);
-      setTimeout(() => busy.delete(tab.id), 1500);
-    }
-    await browser.tabs.update(tab.id, { url: ghostUrl("essential", key) }).catch(() => {});
-  }
+  // The pinned placeholder becomes this essential's copy, still unloaded. This is not marked
+  // as our own change: a placeholder's load is nothing the listeners act on, and an unpin in
+  // that moment (you changed your mind) would be ignored, leaving a stray placeholder as a tab.
+  if (isGhostUrl(tab.url)) await browser.tabs.update(tab.id, { url: ghostUrl("essential", key) }).catch(() => {});
   // Its own window too: the tab may have closed meanwhile.
   for (const w of await normalWindows()) await ensureWindow(w.id);
   await sortEssentials(tab.windowId, await getList()); // with the others of its space
@@ -323,18 +284,16 @@ async function onClosed(tabId, windowId) {
 // moment and then pinned again (Firefox moves it as a new tab), so an unpin
 // counts only if the tab is still unpinned UNPIN_SETTLE_MS later.
 const UNPIN_SETTLE_MS = 500;
-// With Tidier alone a pin counts even on a copy Tidier has just made (busy, for a moment):
-// dragged back to the list then, the tab would be neither an essential nor an ordinary tab,
-// with the essential still in the list. Only Tidier's own pin of a copy it makes is not
-// yours (ownPins; Firefox tells it before the call returns): taken for yours, and the copy
-// closed right after, the job would find the copy gone and forget whose it was, and nothing
-// would bring it back. With Sidebery, Tidier pins copies itself, so busy matters for a pin.
-// Tidier never unpins one, so an unpin is yours, also just after the copy appeared.
+// A pin counts even on a copy Tidier has just made (busy, for a moment): dragged back to
+// the list then, the tab would be neither an essential nor an ordinary tab, with the
+// essential still in the list. Only Tidier's own pin of a copy it makes is not yours
+// (ownPins; Firefox tells it before the call returns): taken for yours, and the copy closed
+// right after, the job would find the copy gone and forget whose it was, and nothing would
+// bring it back. Tidier never unpins one, so an unpin is yours, also just after the copy appeared.
 const ownPins = new Set();
-const pinIgnored = tabId => !tidierAlone && busy.has(tabId);
 browser.tabs.onUpdated.addListener((tabId, change, tab) => {
   if (!("pinned" in change)) return;
-  if (change.pinned) { if (!ownPins.has(tabId) && !pinIgnored(tabId)) serial(() => onPinned(tab)); return; }
+  if (change.pinned) { if (!ownPins.has(tabId)) serial(() => onPinned(tab)); return; }
   setTimeout(() => serial(async () => {
     const now = await browser.tabs.get(tabId).catch(() => null);
     if (now && !now.pinned) await onUnpinned(now);
@@ -393,8 +352,8 @@ browser.tabs.onRemoved.addListener((tabId, info) => {
 // ignored (ownMoves), so the windows do not answer each other.
 const ownMoves = new Set();
 browser.tabs.onMoved.addListener((tabId, info) => {
-  // (A copy just made is placed by Sidebery; without it, a move that is not Tidier's is yours.)
-  if (ownMoves.delete(tabId) || (busy.has(tabId) && !tidierAlone) || !keyByTab.has(tabId)) return;
+  // (A copy just made too: a move that is not Tidier's is yours.)
+  if (ownMoves.delete(tabId) || !keyByTab.has(tabId)) return;
   serial(() => onEssentialMoved(info.windowId));
 });
 
@@ -536,7 +495,7 @@ async function essentialShown(tab) {
   const others = await browser.tabs.query({ windowId: loaded.windowId, hidden: false });
   if (!others.some(t => t.id !== loaded.id)) {
     const entry = (await getList()).find(e => e.key === key);
-    await createEssentials(loaded.windowId, [{ entry, index: loaded.index + 1 }], () => Promise.resolve());
+    await createEssentials(loaded.windowId, [{ entry, index: loaded.index + 1 }]);
   }
   // Moved into the placeholder's place; onDetached gives the old window one.
   // Refused if you have just closed it: this placeholder then opens the page itself.
@@ -600,14 +559,6 @@ browser.tabs.onUpdated.addListener((tabId, change, tab) => {
   if (key) serial(() => oneLoaded(key));
 }, { properties: ["status"] });
 
-// With Sidebery a copy is created unpinned and pinned a moment later (see PIN_SETTLE_MS). If
-// something cut that off, it is pinned now, or closed if its essential has gone meanwhile.
-async function copyNotYetPinned(t) {
-  const { key } = placeholderOf(t.url);
-  if ((await getList()).some(e => e.key === key)) await browser.tabs.update(t.id, { pinned: true }).catch(ifGone);
-  else await removeTabs([t.id], busy);
-}
-
 // At a start, the list and the pinned tabs agree again. A pinned page the list does not know
 // is an essential whose making was cut off: the list is written a moment later, and an update
 // or a crash can come first. A placeholder of an essential that is not there has nothing to
@@ -631,16 +582,11 @@ async function essentialsAgree() {
     await removeTabs([t.id], busy);
     await forgetClosedPlaceholders("essential", [keys[i]]);
   }
-  // A copy not pinned. Tidier alone creates them pinned, so you unpinned it, in the moment of
-  // an update, and this is the rest of that. With Sidebery it is created unpinned and pinned
-  // a moment later (see PIN_SETTLE_MS), which the update cut off.
+  // A copy not pinned. Tidier creates them pinned, so you unpinned it, in the moment of an
+  // update, and this is the rest of that.
   for (const t of await browser.tabs.query({ pinned: false })) {
-    if (placeholderOf(t.url).kind !== "essential") continue;
-    if (tidierAlone) await onUnpinned(t);
-    else await copyNotYetPinned(t);
+    if (placeholderOf(t.url).kind === "essential") await onUnpinned(t);
   }
   // And a move in the moment a copy appeared is not looked at (see onMoved): the list decides.
-  // (Not with Sidebery: when Firefox starts it sorts them by its own order of spaces, and
-  // the two must not take turns moving them at every start.)
-  if (tidierAlone) for (const w of await normalWindows()) await sortEssentials(w.id, await getList());
+  for (const w of await normalWindows()) await sortEssentials(w.id, await getList());
 }

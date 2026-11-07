@@ -24,10 +24,6 @@ browser.storage.managed.get("sidebarCSS").then(({ sidebarCSS }) => {
 
 let view = null;
 const send = msg => port.postMessage(msg);
-// Folds with Sidebery's folder pages are kept for this sidebar only; Tidier's own
-// folders keep theirs in the record.
-const collapsed = new Set();
-
 const el = (tag, cls, text) => {
   const e = document.createElement(tag);
   if (cls) e.className = cls;
@@ -106,15 +102,15 @@ function tile(item) {
   const e = keep("tile:" + item.id, () => {
     const t = el("div");
     t.dataset.tab = item.id;
-    t.draggable = !!view?.alone;
+    t.draggable = true;
     t.onclick = () => send({ type: "select", tabId: item.id });
     t.onauxclick = e => { if (e.button === 1) send({ type: "close", tabId: item.id }); };
-    t.oncontextmenu = e => { if (view?.alone) openTabMenu(e, item.id); else browser.menus.overrideContext({ context: "tab", tabId: item.id }); };
+    t.oncontextmenu = e => openTabMenu(e, item.id);
     t.ondragstart = e => startDrag(e, { kind: "essential", tabId: item.id });
     return t;
   }, { ...item, tip: undefined }, t => {
     t.className = "tile" + (item.active ? " active" : "") + (item.loaded ? "" : " unloaded");
-    t.replaceChildren(icon(item), ...(view.alone ? soundMark(item) : []));
+    t.replaceChildren(icon(item), ...soundMark(item));
   });
   e.title = item.tip || item.title;
   return e;
@@ -125,10 +121,10 @@ function row(item, folderKey) {
   const r = keep("tab:" + item.id, () => {
     const e = el("div");
     e.dataset.tab = item.id;
-    e.draggable = !!view?.alone;
+    e.draggable = true;
     e.onclick = () => send({ type: "select", tabId: item.id });
     e.onauxclick = ev => { if (ev.button === 1) send({ type: "close", tabId: item.id }); };
-    e.oncontextmenu = ev => { if (view?.alone) openTabMenu(ev, item.id); else browser.menus.overrideContext({ context: "tab", tabId: item.id }); };
+    e.oncontextmenu = ev => openTabMenu(ev, item.id);
     e.ondragstart = ev => startDrag(ev, { kind: "tab", tabId: item.id });
     return e;
   }, { ...item, tip: undefined }, e => { // a tooltip is not drawn: some pages change their address as you scroll, and a row drawn again can lose a click or a drag
@@ -150,7 +146,7 @@ function row(item, folderKey) {
 const DOUBLE_CLICK_MS = 500; // the longest a second click usually takes (a Mac's default)
 const foldsWaiting = new Map(); // folder key -> whether a click closed it, while it waits for a second click
 function folder(f) {
-  const closed = view.alone ? foldsWaiting.get(f.key) ?? f.collapsed : collapsed.has(f.key);
+  const closed = foldsWaiting.get(f.key) ?? f.collapsed;
   const box = keep("folder:" + f.key, () => {
     const b = el("div", "folder");
     const head = el("div", "row head");
@@ -165,27 +161,22 @@ function folder(f) {
     let foldSoon = null;
     head.onclick = e => {
       if (b.classList.contains("renaming")) return;
-      if (view.alone) {
-        const closing = !b.classList.contains("collapsed");
-        const fold = () => { foldsWaiting.delete(f.key); send({ type: "foldFolder", key: f.key, collapsed: closing }); };
-        clearTimeout(foldSoon);
-        if (!e.detail) return fold();
-        foldsWaiting.set(f.key, closing);
-        foldSoon = setTimeout(fold, DOUBLE_CLICK_MS);
-        b.classList.toggle("collapsed", closing);
-        head.querySelector(".count").textContent = closing && b.lastChild.children.length || "";
-      } else {
-        if (collapsed.has(f.key)) collapsed.delete(f.key); else collapsed.add(f.key);
-        b.classList.toggle("collapsed");
-      }
+      const closing = !b.classList.contains("collapsed");
+      const fold = () => { foldsWaiting.delete(f.key); send({ type: "foldFolder", key: f.key, collapsed: closing }); };
+      clearTimeout(foldSoon);
+      if (!e.detail) return fold();
+      foldsWaiting.set(f.key, closing);
+      foldSoon = setTimeout(fold, DOUBLE_CLICK_MS);
+      b.classList.toggle("collapsed", closing);
+      head.querySelector(".count").textContent = closing && b.lastChild.children.length || "";
     };
     head.ondblclick = () => {
       clearTimeout(foldSoon);
       foldsWaiting.delete(f.key);
-      if (view.alone && !f.live) rename(f.key);
+      if (!f.live) rename(f.key);
     };
-    head.oncontextmenu = e => { if (view.alone) openMenu(e, folderMenu(f.key, f.live)); };
-    head.draggable = !!view?.alone;
+    head.oncontextmenu = e => openMenu(e, folderMenu(f.key, f.live));
+    head.draggable = true;
     head.ondragstart = e => startDrag(e, { kind: "folder", key: f.key });
     b.append(head, el("div", "children"));
     return b;
@@ -239,7 +230,6 @@ function render(next) {
   const space = view.spaces.find(s => s.id === view.space);
   document.documentElement.style.setProperty("--accent", space?.color || "#7a7a80");
   document.documentElement.dataset.space = view.space || "";
-  document.documentElement.classList.toggle("alone", !!view.alone);
 
   document.getElementById("hiding").hidden = !view.needsHiding;
   const problem = document.getElementById("problem");
@@ -247,7 +237,7 @@ function render(next) {
   problem.textContent = view.problem || "";
 
   place(document.getElementById("essentials"), view.essentials.map(tile));
-  document.getElementById("space-name").textContent = view.alone ? space?.name || "" : "";
+  document.getElementById("space-name").textContent = space?.name || "";
 
   const list = view.folders.map(folder);
   if (view.folders.length && view.tabs.length) list.push(keep("divider", () => el("div", "divider"), 0, () => {}));
@@ -276,7 +266,7 @@ function render(next) {
 document.getElementById("new-tab").onclick = () => send({ type: "newTab", space: view?.space });
 document.getElementById("new-folder").onclick = () => { renameNext = true; send({ type: "newFolder", space: view?.space }); };
 document.getElementById("tabs").oncontextmenu = e => {
-  if (view?.alone && e.target.id === "tabs") openMenu(e, listMenu());
+  if (view && e.target.id === "tabs") openMenu(e, listMenu());
 };
 // Asking needs your click, so it is here and not in the background.
 document.getElementById("allow-hiding").onclick = () => browser.permissions.request({ permissions: ["tabHide"] });

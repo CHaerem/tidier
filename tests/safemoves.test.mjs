@@ -10,7 +10,6 @@ const A = "firefox-container-1", B = "firefox-container-2", GONE = "firefox-cont
 const SITE = "https://work.example/page";
 
 async function alone(ff) {
-  ff.managed = { tidierAlone: true };
   const x = ff.boot();
   x.b.runtime.onStartup.fire({ reason: "update" });
   await wait(1200);
@@ -345,24 +344,6 @@ test("tabs Firefox closes with their container are no errors, in either order", 
   x.kill();
 });
 
-test("with the setting off, a removed container changes no rule or record", async () => {
-  const ff = new FakeFirefox();
-  const { w } = withSpace(ff);
-  const rules = ff.store.rules;
-  const x = ff.boot();
-  x.b.runtime.onStartup.fire({ reason: "update" });
-  await wait(1200);
-  for (let i = 0; i < 300 && !x.started(); i++) await wait(1000);
-  await wait(1000);
-  x.b.contextualIdentities.onRemoved.fire({ contextualIdentity: { cookieStoreId: B } });
-  await wait(500);
-  await x.js("flushWrites")();
-  assert.deepEqual(ff.store.rules, rules);
-  assert.ok(ff.synced.F && ff.synced.saved);
-  assert.equal(ff.list(w.id).length, 4);
-  x.kill();
-});
-
 // --- Found by trying to break it ---------------------------------------------------
 test("opening tabs keeps nothing of them: every move would otherwise add to what stays in memory", async () => {
   const ff = new FakeFirefox();
@@ -692,7 +673,6 @@ test("a live folder set up for a removed space does not come back in the record,
 // --- A sidebar open while Tidier starts -------------------------------------------
 // Boots the real scripts with Tidier's start held back, as in the seconds after Firefox starts.
 function bootHeld(ff) {
-  ff.managed = { tidierAlone: true };
   const x = ff.boot();
   x.js("startRequested = true");
   return x;
@@ -706,7 +686,7 @@ function withFolder(ff) {
   return made;
 }
 
-test("the first view, before Tidier has started, is the one that stays: the setting known, tabs in their folders", async () => {
+test("the first view, before Tidier has started, is the one that stays: tabs in their folders", async () => {
   const ff = new FakeFirefox();
   const { w, tab, other } = withFolder(ff);
   ff.containers.add("firefox-container-3");
@@ -716,7 +696,6 @@ test("the first view, before Tidier has started, is the one that stays: the sett
   assert.equal(x.started(), false);
   const plain = v => JSON.parse(JSON.stringify(v)); // (from the scripts' own realm)
   const first = plain(views[0]);
-  assert.equal(first.alone, true, "or its rows cannot be dragged");
   assert.deepEqual(first.folders.map(f => [f.name, f.tabs.map(t => t.id)]), [["Folder", [tab.id]]]);
   assert.deepEqual(first.tabs.map(t => t.id), [other.id]);
   assert.equal(first.spaces.length, 3, "empty spaces too, or they would appear later");

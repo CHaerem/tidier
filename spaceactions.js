@@ -1,5 +1,5 @@
 // What a space's menu does (sidebar/spacemenu.js), carried out through sidebarAction
-// in sidebar-view.js, so only with Tidier alone.
+// in sidebar-view.js.
 
 // Unload a space, to free its memory, without losing anything: a row dims and its
 // page comes back when you select it.

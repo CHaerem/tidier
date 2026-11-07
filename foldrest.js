@@ -1,6 +1,6 @@
-// A closed folder rests (Tidier alone): closed means out of the list, out of ⌃Tab and
-// out of memory. Sidebery has settings for those and a delay before it unloads; here it
-// is one fixed behaviour, with neither.
+// A closed folder rests: closed means out of the list, out of ⌃Tab and out of memory.
+// Sidebery had settings for those and a delay before it unloads; here it is one fixed
+// behaviour, with neither.
 //
 // Hiding is showSpace's (spaces.js): a tab in a closed folder is not `visible`. Firefox
 // cannot hide the selected tab, so that one goes when you leave it. Selecting a hidden
@@ -56,14 +56,12 @@ async function showSpaceEverywhere() {
 // A folder was closed, opened or deleted. Hidden first, so a folder with many tabs
 // looks closed at once. (Deleted, its tabs are ordinary tabs and come back.)
 async function foldChanged(key) {
-  if (!tidierAlone) return;
   await showSpaceEverywhere();
   if ((await getSynced())[key]?.collapsed) await restFolder(key);
 }
 
 // A tab moved in the sidebar: it may have come into a closed folder, or out of one.
 async function restMoved(key) {
-  if (!tidierAlone) return;
   await showSpaceEverywhere();
   await restIfInClosedFolder(key);
 }
@@ -74,7 +72,7 @@ async function restMoved(key) {
 // another window, as a pull does (tabsync.js), which also makes this event in the
 // window it leaves.
 browser.tabs.onActivated.addListener(async ({ previousTabId, windowId }) => {
-  if (!tidierAlone || !started) return;
+  if (!started) return;
   const key = syncKeyByTab.get(previousTabId);
   if (!key || !restsInFolder(await getSynced(), key)) return;
   serial(async () => {

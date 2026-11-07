@@ -58,7 +58,6 @@
       "bridge.js",
       "essentials.js",
       "tabsync.js",
-      "folders.js",
       "livefolders.js",
       "rulematch.js",
       "spaces.js",

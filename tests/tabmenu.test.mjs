@@ -13,7 +13,6 @@ const entry = (url, more = {}) => ({ url, title: url, cookieStoreId: C1, parentK
 const FOLDER = { group: true, own: true, name: "Work", cookieStoreId: C1, parentKey: null, rank: 1 };
 
 async function alone(ff) {
-  ff.managed = { tidierAlone: true };
   const x = ff.boot();
   x.b.runtime.onStartup.fire({ reason: "update" });
   await wait(1200);
@@ -701,43 +700,6 @@ test("Close acts on the page: a saved tab loaded elsewhere is unloaded, not remo
   assert.ok(!ff.tabs.has(live.id), "the page is gone");
   assert.ok(ff.tabs.has(ghost.id), "its placeholder stays");
   // Now nothing is loaded: closing it removes it for good, as README says.
-  assert.equal(await x.js("closeTargetOf")(ghost.id), ghost.id);
-  x.kill();
-});
-
-test("with the setting off, the sidebar's messages for the menu do nothing", async () => {
-  const ff = new FakeFirefox();
-  ff.store.syncedTabs = { a: entry("https://a.example/") };
-  const w = ff.addWindow({ focused: true });
-  const a = ff.addTab(w.id, { url: "https://a.example/", active: true, cookieStoreId: C1 }, { syncKey: "a", syncRole: "live" });
-  const x = ff.boot();
-  x.b.runtime.onStartup.fire({ reason: "update" });
-  await wait(1200);
-  for (let i = 0; i < 300 && !x.started(); i++) await wait(1000);
-  const port = { name: "sidebar", sender: { id: "tidier" }, onMessage: { ls: [], addListener(f) { this.ls.push(f); } }, onDisconnect: { addListener() {} }, postMessage() {} };
-  x.b.runtime.onConnect.fire(port);
-  await port.onMessage.ls[0]({ type: "hello", windowId: w.id });
-  ff.log.length = 0;
-  for (const action of ["reload", "duplicate", "essential", "unload"]) await port.onMessage.ls[0]({ type: "tabAction", action, tabIds: [a.id] });
-  await wait(500);
-  assert.deepEqual(ff.log, []);
-  assert.equal(ff.tabs.get(a.id).pinned, false);
-  x.kill();
-});
-
-test("with the setting off, a close is of the tab itself", async () => {
-  const ff = new FakeFirefox();
-  ff.store.syncedTabs = { a: entry("https://a.example/") };
-  const here = ff.addWindow({ focused: true }), there = ff.addWindow();
-  ff.addTab(here.id, { url: "about:blank", active: true, cookieStoreId: C1 });
-  ff.addTab(there.id, { url: "about:blank", active: true, cookieStoreId: C1 });
-  const ghost = ff.addTab(here.id, { url: GHOST("ghost", "a"), cookieStoreId: C1 }, { syncKey: "a", syncRole: "ghost" });
-  ff.addTab(there.id, { url: "https://a.example/", cookieStoreId: C1 }, { syncKey: "a", syncRole: "live" });
-  const x = ff.boot();
-  x.b.runtime.onStartup.fire({ reason: "update" });
-  await wait(1200);
-  for (let i = 0; i < 300 && !x.started(); i++) await wait(1000);
-  assert.equal(x.js("tidierAlone"), false);
   assert.equal(await x.js("closeTargetOf")(ghost.id), ghost.id);
   x.kill();
 });

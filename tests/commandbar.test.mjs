@@ -167,7 +167,7 @@ test("a key is shown as you know it", () => {
   assert.equal(prettyKey(null, true), "");
 });
 
-test("the manifest asks for nothing new: no key that could reach Sidebery's machines, and only optional permissions", () => {
+test("the manifest asks for nothing new: the keys are given at the first start, and only optional permissions", () => {
   const manifest = JSON.parse(readFileSync(new URL("../manifest.json", import.meta.url), "utf8"));
   for (const name of ["command-bar", "command-bar-t"]) {
     assert.ok(manifest.commands[name], name);
@@ -184,7 +184,6 @@ const C1 = "firefox-container-1", C2 = "firefox-container-2";
 
 // One window in the first space and a second window: the same tabs as placeholders.
 function world(ff) {
-  ff.managed = { tidierAlone: true };
   ff.store.essentials = [{ key: "e1", url: "https://essential.example/", title: "Mail", icon: "data:mail", cookieStoreId: C2 }];
   ff.store.syncedTabs = {
     here: { url: "https://here.example/", title: "Here", cookieStoreId: C1, parentKey: null, added: 1 },
@@ -238,20 +237,7 @@ async function openBar(ff, x, windowId) {
 }
 const barWindows = ff => [...ff.wins.values()].filter(w => w.type === "popup");
 
-test("with the setting off the command opens nothing and gets no key", async () => {
-  const ff = new FakeFirefox();
-  ff.commands = [{ name: "command-bar", shortcut: "" }, { name: "command-bar-t", shortcut: "" }];
-  const w = ff.addWindow({ focused: true });
-  ff.addTab(w.id, { url: "https://a.example/", active: true });
-  const x = await started(ff);
-  x.b.commands.onCommand.fire("command-bar", ff.snap(ff.tabs.get(w.order[0])));
-  await wait(300);
-  assert.equal(barWindows(ff).length, 0);
-  assert.equal(ff.commandsSet?.["command-bar"], undefined);
-  x.kill();
-});
-
-test("with Tidier alone the command gets its keys, and a key you changed stays", async () => {
+test("the command gets its keys, and a key you changed stays", async () => {
   const ff = new FakeFirefox();
   ff.commands = [{ name: "command-bar", shortcut: "" }, { name: "command-bar-t", shortcut: "Alt+T" }];
   world(ff);
@@ -851,7 +837,6 @@ test("moving several to a space keeps their order, as the tab menu does", async 
 
 test("a command with nothing to choose from is left out, and the folder a tab is in is not a choice", async () => {
   const ff = new FakeFirefox({ containers: ["firefox-default", "firefox-container-1"] });
-  ff.managed = { tidierAlone: true };
   ff.store.syncedTabs = {
     t: { url: "https://t.example/", title: "T", cookieStoreId: C1, parentKey: "f1", added: 1 },
     f1: { group: true, own: true, name: "One", cookieStoreId: C1, parentKey: null, rank: 1, added: 1 },
@@ -962,19 +947,6 @@ test("the sidebar answers with the selection, also when the tab you are on is no
   const link = sidebarLink({ selection: true, picked: [2] });
   await new Promise(r => setTimeout(r, 5));
   assert.equal(link({ type: "commandBarSelection", windowId: 8, tabId: 1 }), undefined, "another window's question");
-});
-
-test("moving back to Sidebery takes the bar's keys away again", async () => {
-  const ff = new FakeFirefox();
-  world(ff);
-  const x = await started(ff);
-  const reset = [];
-  x.b.commands.reset = async name => { reset.push(name); };
-  x.b.tabs.hide = async () => {};
-  x.b.runtime.reload = () => {};
-  await x.js("moveBack()");
-  assert.ok(reset.includes("command-bar") && reset.includes("command-bar-t"), reset.join());
-  x.kill();
 });
 
 test("closing a selected placeholder closes what the tab menu's rule says, where that is there", async () => {

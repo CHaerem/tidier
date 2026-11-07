@@ -2,9 +2,9 @@
  * selected tab is a soft card. The names and values are in tokens.css. */
 
 html { background: var(--frame); transition: background-color .25s ease; } /* as the window's own (userChrome.css) */
-/* With Tidier alone the tint comes from the space's own colour, so a new space has one
- * too, and tidier.css is no longer needed (a rule of its own there still wins). */
-html.alone { --frame: light-dark(color-mix(in srgb, var(--accent) 12%, #ececf0), color-mix(in srgb, var(--accent) 9%, #1f1f23)); }
+/* The tint comes from the space's own colour, so a new space has one too, and tidier.css
+ * is not needed (a rule of its own there still wins). */
+:root { --frame: light-dark(color-mix(in srgb, var(--accent) 12%, #ececf0), color-mix(in srgb, var(--accent) 9%, #1f1f23)); }
 html, body { height: 100%; margin: 0; }
 body {
   display: flex; flex-direction: column; box-sizing: border-box;
@@ -103,7 +103,6 @@ img { filter: drop-shadow(0 0 .6px light-dark(rgb(40 30 20 / .3), rgb(255 255 25
 /* Asked for less motion, in the system's settings: everything stands still, and a slow
  * load is only dimmed, as an unloaded tab's icon is. For whatever moves in this sidebar. */
 @media (prefers-reduced-motion: reduce) {
-  .alone, .alone *, .alone *::before, .alone *::after { animation: none !important; transition: none !important; }
   .slow-load { opacity: .55; }
 }
 
@@ -158,8 +157,8 @@ img { filter: drop-shadow(0 0 .6px light-dark(rgb(40 30 20 / .3), rgb(255 255 25
 .folder > .children .row { padding-left: calc(var(--pad) + var(--indent)); }
 /* A closed folder still shows the selected tab under its head, and only that, so you
  * can always see where you are. Nothing unfolds and nothing is stored: it goes when you
- * leave the tab. (With Sidebery the whole box stays hidden, as ever.) */
-.folder.collapsed > .children > .tab:not(.active), html:not(.alone) .folder.collapsed > .children { display: none; }
+ * leave the tab. */
+.folder.collapsed > .children > .tab:not(.active) { display: none; }
 .folder.collapsed > .children > .tab { scroll-margin-top: calc(var(--row) + var(--row-gap)); } /* scrolled into view, it brings its head along */
 .folder > .children { transition: opacity var(--soft); @starting-style { opacity: 0; } }
 .row .count { flex: none; min-width: var(--icon); text-align: center; color: var(--muted); font-size: var(--size-small); font-variant-numeric: tabular-nums; }
@@ -186,7 +185,7 @@ img { filter: drop-shadow(0 0 .6px light-dark(rgb(40 30 20 / .3), rgb(255 255 25
 .space.news::after { top: 7px; left: 20px; width: 5px; height: 5px; background: var(--color); }
 
 /* --- The space's name, and what makes a new thing ------------------------------- */
-#space-name:empty, #actions { display: none; }
+#space-name:empty { display: none; }
 /* Regular weight and a little of the space's colour: it says where you are without
  * being a heading over a form. */
 #space-name {
@@ -195,7 +194,7 @@ img { filter: drop-shadow(0 0 .6px light-dark(rgb(40 30 20 / .3), rgb(255 255 25
   color: var(--space-name); white-space: nowrap; overflow: hidden;
   mask-image: linear-gradient(to right, #000 calc(100% - 20px), transparent);
 }
-.alone #actions { display: block; position: relative; z-index: 1; }
+#actions { position: relative; z-index: 1; }
 #new-tab {
   width: 100%; height: var(--row); box-sizing: border-box;
   display: flex; align-items: center; gap: var(--icon-gap); padding: 0 var(--pad);

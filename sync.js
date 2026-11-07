@@ -1,6 +1,5 @@
 // The same essentials, folders, saved tabs, rules and spaces on every machine, through
-// Firefox Sync (browser.storage.sync). Only with Tidier alone, and only when turned on in
-// the settings page. Ordinary tabs are temporary and stay on each machine; what is open or
+// Firefox Sync (browser.storage.sync). Only when turned on in the settings page. Ordinary tabs are temporary and stay on each machine; what is open or
 // loaded, and which spaces are hidden here, are this machine's own.
 //
 // What is shared, and how two versions become one, is in syncmerge.js. This file reads
@@ -37,7 +36,7 @@ let syncStateWritten = null; // the state as last written: most rounds change no
 // Soon, batched: the first change starts the wait and later ones are taken along, so
 // that a stream of changes cannot put a round off for ever.
 function syncSoon() {
-  if (!syncIsOn || !tidierAlone || !started || syncTimer !== null) return;
+  if (!syncIsOn || !started || syncTimer !== null) return;
   syncTimer = setTimeout(() => {
     syncTimer = null;
     serial(syncRound).catch(() => {}); // logged by serial()
@@ -495,7 +494,7 @@ async function syncWrite(doc, items) {
 }
 
 async function syncRound() {
-  if (!syncIsOn || !tidierAlone) return;
+  if (!syncIsOn) return;
   try {
     const st = await syncStateNow();
     const items = await browser.storage.sync.get(null);
@@ -532,7 +531,6 @@ async function syncRound() {
 // both stay. What was deleted while it was off comes back rather than being deleted everywhere,
 // since "deleted" can only be known from what was seen a moment before.
 async function syncTurn(on) {
-  if (!tidierAlone) return;
   clearTimeout(syncTimer);
   syncTimer = null;
   syncIsOn = !!on;
@@ -547,15 +545,9 @@ async function syncTurn(on) {
   if (syncIsOn) await syncRound();
 }
 
-// When Tidier starts. Without Tidier alone, what is kept is forgotten (moving back to Sidebery
-// changes the record), so the next time is a first merge again; a browser that never
-// had this on only looks.
+// When Tidier starts. A browser that never had this on only looks.
 async function startSync() {
   const stored = await browser.storage.local.get(["syncOn", "syncState"]);
-  if (!tidierAlone) {
-    if (stored.syncState) await browser.storage.local.remove("syncState");
-    return;
-  }
   syncIsOn = !!stored.syncOn;
   syncListen();
   syncSoon(); // what changed while Tidier was not running, and what came meanwhile
@@ -565,7 +557,7 @@ async function startSync() {
 async function syncReport() {
   const spaces = await containerSpaces();
   const report = {
-    alone: tidierAlone, on: syncIsOn, problem: syncProblem, limit: SYNC_QUOTA.total, bytes: 0, left: [],
+    on: syncIsOn, problem: syncProblem, limit: SYNC_QUOTA.total, bytes: 0, left: [],
     spaces: spaces.map(s => ({ id: s.id, name: s.name, color: s.color, hidden: isHiddenSpace(s.id), declared: hiddenSpacesDeclared.has(s.id) })),
   };
   if (syncIsOn) {

@@ -1,5 +1,5 @@
-// Live folders: Sidebery folders filled from a GitHub pull request search,
-// like Zen's live folders.
+// Live folders: folders filled from a GitHub pull request search, like Zen's
+// live folders.
 //
 // The search runs in a native messaging host (native/github-prs.py) with your
 // existing gh login, so no GitHub token reaches the browser. The folders
@@ -9,9 +9,10 @@
 // Every few minutes (and at startup) each folder is brought in line with the
 // search: new pull requests get a tab (an unloaded placeholder that opens the
 // pull request when you select it), merged or closed ones are removed (the
-// one you are looking at only once you have left it). Tab sync shows the
-// folder and its tabs in every window. A tab you close stays closed until the
-// pull request leaves the search.
+// one you are looking at only once you have left it). A live folder is one of
+// Tidier's own (ownfolders.js), with `live` set to its id, and tab sync shows its
+// tabs in every window. A tab you close stays closed until the pull request leaves
+// the search.
 
 const NATIVE_HOST = "tidier_github";
 const GITHUB_ICON = "https://github.githubassets.com/favicons/favicon.svg";
@@ -26,41 +27,17 @@ async function folderState(id) {
 }
 const saveFolderState = async () => liveFolderState.set(await liveFolderState.get());
 
-const groupName = url => decodeURIComponent((url.split("#")[1] || "").replace(/~!.*!~$/, "").replace(/(?::id:|%3Aid%3A).*$/, "")); // (":id:" from older Sidebery)
-
-// Sidebery's group page URL, taken from an existing folder: Sidebery's own
-// extension URL is not otherwise visible to other extensions.
-async function sideberyGroupBase() {
-  const tab = (await browser.tabs.query({})).find(t => isSideberyGroup(t.url));
-  return tab ? tab.url.split("#")[0] : null;
-}
-
 // New live tabs are created in the window with the most synced tabs.
 async function homeWindowId() {
   return referenceWindow(await browser.tabs.query({}), undefined);
 }
 
-// The folder's group page: an existing one with this name in this space, or a
-// new one.
+// The folder: one with this name in this space, or a new one.
 async function ensureFolderGroup(folder, state) {
   const all = await getSynced();
   if (state.groupKey && all[state.groupKey]) return state.groupKey;
-  const existing = Object.entries(all).find(([, e]) =>
-    e.group && e.cookieStoreId === folder.cookieStoreId && (e.own ? e.name : groupName(e.url)) === folder.name);
-  if (existing) { state.groupKey = existing[0]; await saveFolderState(); return state.groupKey; }
-  if (tidierAlone) {
-    state.groupKey = await createFolder(folder.name, folder.cookieStoreId, { live: folder.id }); // ownfolders.js
-    await saveFolderState();
-    return state.groupKey;
-  }
-
-  const [base, windowId] = await Promise.all([sideberyGroupBase(), homeWindowId()]);
-  if (!base || windowId === undefined) return null;
-  const tab = await browser.tabs.create({ windowId, url: `${base}#${encodeURIComponent(folder.name)}`,
-    cookieStoreId: folder.cookieStoreId, active: false });
-  for (let i = 0; i < 20 && !isSideberyGroup((await browser.tabs.get(tab.id)).url); i++) await sleep(100);
-  await register(tab.id);
-  state.groupKey = syncKeyByTab.get(tab.id) || null;
+  const existing = Object.entries(all).find(([, e]) => isOwnFolder(e) && e.cookieStoreId === folder.cookieStoreId && e.name === folder.name);
+  state.groupKey = existing ? existing[0] : await createFolder(folder.name, folder.cookieStoreId, { live: folder.id }); // ownfolders.js
   await saveFolderState();
   return state.groupKey;
 }
@@ -77,15 +54,10 @@ async function createLiveItem(folder, groupKey, item) {
   };
   all[key] = entry;
   saveSynced(all);
-  const tabs = tidierAlone ? [] : await browser.tabs.query({}); // a folder of Tidier's own has no tab to look for
   const home = await homeWindowId();
   for (const w of await normalWindows()) {
-    const parentId = repMap(tabs.filter(t => t.windowId === w.id)).get(groupKey);
-    if (w.id !== home) { await createRep(w.id, key, entry, parentId); continue; }
-    const props = { windowId: w.id, url: ghostUrl("lazy", key), cookieStoreId: entry.cookieStoreId, active: false };
-    if (parentId !== undefined) props.openerTabId = parentId;
-    if (placeholderWithoutPage(entry)) Object.assign(props, { discarded: true, title: entry.title });
-    const tab = await browser.tabs.create(props);
+    if (w.id !== home) { await createRep(w.id, key, entry); continue; }
+    const tab = await browser.tabs.create({ windowId: w.id, url: ghostUrl("lazy", key), cookieStoreId: entry.cookieStoreId, active: false, discarded: true, title: entry.title });
     syncBusy.add(tab.id);
     await setRole(tab.id, key, "live");
     setTimeout(() => syncBusy.delete(tab.id), SETTLE_MS);
@@ -107,7 +79,7 @@ async function refreshLiveFolder(folder, res) {
   }
   // The host's file still names a space that was removed, with its folder and tabs
   // (safemoves.js): made again, they would be entries shown nowhere, refused at every start.
-  if (tidierAlone && await spaceGone(folder.cookieStoreId)) {
+  if (await spaceGone(folder.cookieStoreId)) {
     setNotice("live", `Live folder "${folder.name}" is set up for a space that is gone`);
     return;
   }

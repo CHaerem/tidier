@@ -6,12 +6,13 @@ import { FakeFirefox, wait, GHOST } from "./fake_firefox.mjs";
 import { ChaosFirefox } from "./chaos_firefox.mjs";
 
 const C1 = "firefox-container-1", GONE = "firefox-container-9";
-const FOLDER = "moz-extension://sb/sidebery/group.html#F";
+const FOLDER = "moz-extension://sb/sidebery/group.html#F"; // a folder of Sidebery's, as a browser that never moved over has it
 const entry = (url, more = {}) => ({ url, title: url, cookieStoreId: C1, parentKey: null, group: false, added: 1, ...more });
+const folder = (name, more = {}) => ({ group: true, own: true, name, cookieStoreId: C1, parentKey: null, rank: 1, added: 1, ...more });
 
 function record(ff) {
   ff.store.syncedTabs = {
-    F: entry(FOLDER, { group: true }),
+    F: folder("F"),
     saved: entry("https://a.example/board", { parentKey: "F", saved: { url: "https://a.example/board", title: "Board" } }),
     plain: entry("https://b.example/plain"),
   };
@@ -41,7 +42,6 @@ test("a start with no synced tab keeps the record, and the window gets every tab
   const x = await run(ff);
   assert.deepEqual(Object.keys(ff.synced).sort(), ["F", "plain", "saved"]);
   assert.equal(ff.urls(w.id).filter(u => u.startsWith("ghost.html")).length, 2);
-  assert.ok(ff.urls(w.id).includes(FOLDER));
   x.kill();
 });
 
@@ -99,7 +99,6 @@ test("a tab refused while reading roles leaves the record whole", async () => {
   const w = ff.addWindow({ focused: true });
   const live = ff.addTab(w.id, { url: "https://b.example/plain", active: true, cookieStoreId: C1 }, { syncKey: "plain", syncRole: "live" });
   ff.addTab(w.id, { url: "https://a.example/board", cookieStoreId: C1 }, { syncKey: "saved", syncRole: "live" });
-  ff.addTab(w.id, { url: FOLDER, cookieStoreId: C1 }, { syncKey: "F", syncRole: "copy" });
   const closing = ff.addTab(w.id, { url: "https://gone.example/" });
   ff.hooks.getTabValue = async id => { if (id === closing.id) throw new Error(`Invalid tab ID: ${id}`); };
   const x = await run(ff);
@@ -111,12 +110,14 @@ test("a tab refused while reading roles leaves the record whole", async () => {
 
 test("removing a container removes its essentials", async () => {
   const ff = new FakeFirefox();
+  ff.containers.add(GONE);
   ff.store.essentials = [
     { key: "dead", url: "https://dead.example/", cookieStoreId: GONE, title: "Dead", icon: "x" },
     { key: "fine", url: "https://fine.example/", cookieStoreId: C1, title: "Fine", icon: "x" },
   ];
   emptySession(ff);
   const x = await run(ff);
+  ff.containers.delete(GONE);
   x.b.contextualIdentities.onRemoved.fire({ contextualIdentity: { cookieStoreId: GONE } });
   await wait(1000);
   assert.deepEqual(ff.store.essentials.map(e => e.key), ["fine"]);
@@ -129,7 +130,9 @@ async function keepReason(ff, x, key) {
   return r.kept[key] ?? (r.archived.length ? "archived" : "?");
 }
 
-test("a live tab that is only a placeholder is not archived, a real page is", async () => {
+// Its time counts from when it was first seen as one: you may have used the page just
+// before its window closed (archive.js). Tidier's own list holds its address.
+test("a live tab that is only a placeholder starts its time when it is seen, a real page is archived", async () => {
   const ff = new FakeFirefox();
   ff.store.archiveSince = 1;
   ff.store.syncedTabs = { handed: entry("https://a.example/"), real: entry("https://b.example/") };
@@ -138,7 +141,7 @@ test("a live tab that is only a placeholder is not archived, a real page is", as
   ff.addTab(w.id, { url: GHOST("ghost", "handed"), discarded: true, cookieStoreId: C1, lastAccessed: 1 }, { syncKey: "handed", syncRole: "live" });
   ff.addTab(w.id, { url: "https://b.example/", discarded: true, cookieStoreId: C1, lastAccessed: 1 }, { syncKey: "real", syncRole: "live" });
   const x = await run(ff);
-  assert.equal(await keepReason(ff, x, "handed"), "placeholder");
+  assert.equal(await keepReason(ff, x, "handed"), "used 0 min ago");
   assert.equal(await keepReason(ff, x, "real"), "archived");
   x.kill();
 });
@@ -486,31 +489,11 @@ test("a copy is taken in by merging: only the chosen spaces, and nothing removed
   x.kill();
 });
 
-// --- Tidier alone ----------------------------------------------------------------------
+// --- Spaces, folders and rules ----------------------------------------------------------
 async function alone(ff) {
-  ff.managed = { tidierAlone: true };
   ff.containers.add("firefox-container-4");
   return run(ff);
 }
-
-test("with the setting off, nothing is hidden or reopened", async () => {
-  const ff = new FakeFirefox();
-  ff.store.syncedTabs = { a: entry("https://a.example/"), b: entry("https://b.example/", { cookieStoreId: "firefox-container-2" }) };
-  const w = ff.addWindow({ focused: true });
-  ff.addTab(w.id, { url: "https://a.example/", active: true, cookieStoreId: C1 }, { syncKey: "a", syncRole: "live" });
-  ff.addTab(w.id, { url: "https://b.example/", cookieStoreId: "firefox-container-2" }, { syncKey: "b", syncRole: "live" });
-  const x = await run(ff);
-  ff.select(ff.list(w.id)[1].id);
-  await wait(500);
-  const fresh = ff.addTab(w.id, { url: "about:newtab" });
-  x.b.tabs.onCreated.fire(ff.snap(fresh));
-  await wait(500);
-  assert.equal(x.js("tidierAlone"), false);
-  assert.ok(ff.tabs.has(fresh.id), "not opened again");
-  assert.ok(!ff.log.some(l => l[0] === "hide"));
-  assert.equal(ff.commandsSet, undefined, "keys are left to Sidebery");
-  x.kill();
-});
 
 test("folders are in the record and no tab event can delete them", async () => {
   const ff = new FakeFirefox();
@@ -605,45 +588,89 @@ test("a rule opens an address in its space, for a tab's first page only", async 
 });
 
 // --- Moving over from Sidebery ------------------------------------------------------------
-test("moving over keeps every folder and tab, and moving back brings the pages back", async () => {
-  const ff = new FakeFirefox();
+// A browser that never moved over still has Sidebery's folder pages, one per window, and
+// the record has them as folders of Sidebery's. Its first start moves it over by itself:
+// a copy first, then the record, and only then are the pages closed (moveover.js).
+function neverMoved(ff, { host = true } = {}) {
   ff.store.syncedTabs = {
     F: entry("moz-extension://sb/sidebery/group.html#Work", { group: true }),
     a: entry("https://a.example/", { parentKey: "F", saved: { url: "https://a.example/", title: "A" } }),
+    deep: entry("https://d.example/", { parentKey: "a", saved: { url: "https://d.example/", title: "D" } }), // below a tab in it, as Sidebery's tree allowed
     b: entry("https://b.example/"),
   };
-  const w = ff.addWindow({ focused: true });
-  ff.addTab(w.id, { url: "moz-extension://sb/sidebery/group.html#Work", cookieStoreId: C1 }, { syncKey: "F", syncRole: "copy" });
+  ff.store.importedFolds = ["firefox-container-1|group.html#Work"]; // an older Tidier kept the export's closed folders for the move
+  const w = ff.addWindow({ focused: true }), v = ff.addWindow();
+  for (const win of [w, v]) ff.addTab(win.id, { url: "moz-extension://sb/sidebery/group.html#Work~!1!~", cookieStoreId: C1 }, { syncKey: "F", syncRole: "copy" });
   ff.addTab(w.id, { url: "https://a.example/", active: true, cookieStoreId: C1 }, { syncKey: "a", syncRole: "live" });
+  ff.addTab(w.id, { url: "https://d.example/", cookieStoreId: C1 }, { syncKey: "deep", syncRole: "live" });
   ff.addTab(w.id, { url: "https://b.example/", cookieStoreId: C1 }, { syncKey: "b", syncRole: "live" });
-  const x = await run(ff);
-  let reloaded = 0;
-  x.b.runtime.reload = () => { reloaded++; };
-  x.b.runtime.sendNativeMessage = async () => ({ saved: "file" });
-  const report = await x.js("moveReport")();
-  assert.deepEqual(JSON.parse(JSON.stringify(report.folders.map(f => [f.name, f.tabs]))), [["Work", 1]]);
-  await x.js("moveOver")();
-  assert.equal(reloaded, 1);
-  assert.equal(ff.store.tidierAlone, true);
-  assert.equal(ff.store.syncedTabs.F.own, true, "the record is written before Tidier starts again");
-  assert.equal(ff.store.syncedTabs.F.name, "Work");
-  // Tidier starts again: only now is the page closed, and every tab stays.
+  for (const key of ["a", "deep", "b"]) ff.addTab(v.id, { url: GHOST("ghost", key), discarded: true, cookieStoreId: C1 }, { syncKey: key, syncRole: "ghost" });
+  const copies = [], order = [];
+  ff.adapt = b => {
+    b.runtime.sendNativeMessage = async (host_, msg) => { if (msg.backup) { copies.push(msg.backup); order.push("copy"); } return host && msg.backup ? { saved: "file" } : Promise.reject(new Error("no host")); };
+    const remove = b.tabs.remove;
+    b.tabs.remove = async ids => { if ([ids].flat().some(id => ff.tabs.get(id)?.url.includes("group.html"))) order.push(ff.store.syncedTabs.F.own ? "pages, after the record" : "pages, before the record"); return remove(ids); };
+  };
+  return { w, v, copies, order };
+}
+
+test("a browser that never moved over is moved at its first start: a copy, the record, then the pages", async () => {
+  const ff = new FakeFirefox();
+  const { w, v, copies, order } = neverMoved(ff);
+  const x = await run(ff, "onInstalled");
+  assert.deepEqual(order.filter((o, i) => order.indexOf(o) === i), ["copy", "pages, after the record"]);
+  assert.equal(copies[0].data.syncedTabs.F.own, undefined, "the copy is of the record as it was");
+  assert.equal(ff.store.copyBeforeMove, undefined, "the helper has it");
+  const F = ff.synced.F;
+  assert.deepEqual([F.own, F.name, F.oldUrl, F.collapsed], [true, "Work", "moz-extension://sb/sidebery/group.html#Work", true]);
+  assert.deepEqual(Object.keys(ff.synced).sort(), ["F", "a", "b", "deep"]);
+  assert.ok(ff.synced.a.saved && ff.synced.deep.saved && !ff.synced.b.saved, "its tabs stay saved tabs");
+  for (const win of [w, v]) {
+    assert.ok(!ff.urls(win.id).some(u => u.includes("group.html")), "no folder page is left");
+    assert.equal(ff.list(win.id).filter(t => ["a", "deep", "b"].includes(ff.values.get(t.id)?.syncKey)).length, 3, "every tab is in every window");
+  }
+  assert.deepEqual(ff.store.importedFolds, []);
+  assert.ok(ff.store.movedFromSidebery);
+  assert.ok(!(ff.recentlyClosed || []).some(c => c.tab?.url.includes("group.html")), "no page is left in Recently Closed either");
   x.kill();
+  // The next start has nothing to move, and takes no copy for it.
   const y = await run(ff, "onInstalled");
-  assert.equal(y.js("tidierAlone"), true);
-  assert.ok(!ff.list(w.id).some(t => t.url.includes("group.html")));
-  assert.deepEqual(Object.keys(ff.synced).sort(), ["F", "a", "b"]);
-  assert.ok(ff.synced.a.saved);
-  // And back.
-  let again = 0;
-  y.b.runtime.reload = () => { again++; };
-  await y.js("moveBack")();
-  assert.equal(again, 1);
-  assert.equal(ff.store.tidierAlone, false);
-  assert.ok(ff.list(w.id).some(t => t.url.includes("group.html")));
-  assert.equal(ff.store.syncedTabs.F.url, "moz-extension://sb/sidebery/group.html#Work");
-  assert.ok(!ff.store.syncedTabs.F.own);
+  assert.equal(copies.length, 1);
+  assert.equal(ff.synced.F.name, "Work");
   y.kill();
+});
+
+test("without the helper, the copy before the move is kept in Firefox's own storage", async () => {
+  const ff = new FakeFirefox();
+  neverMoved(ff, { host: false });
+  const x = await run(ff, "onInstalled");
+  assert.equal(ff.store.copyBeforeMove.data.syncedTabs.F.url, "moz-extension://sb/sidebery/group.html#Work");
+  assert.ok(!ff.store.copyBeforeMove.data.syncedTabs.F.own);
+  assert.equal(ff.synced.F.own, true);
+  x.kill();
+});
+
+// Sidebery should be disabled first, but a browser may skip that too. With it running, closing
+// a folded folder's page closes the tabs in it; they close before Tidier has started, which it
+// does not take for your doing, and as saved tabs they get their placeholders back.
+test("a move with Sidebery still running, closing a folder's tabs with its page, loses nothing", async () => {
+  const ff = new FakeFirefox();
+  const { w } = neverMoved(ff);
+  const adapt = ff.adapt;
+  ff.adapt = b => {
+    adapt(b);
+    const remove = b.tabs.remove;
+    b.tabs.remove = async ids => {
+      const r = await remove(ids);
+      if ([ids].flat().length && ff.wins.has(w.id)) for (const t of ff.list(w.id)) if (["a", "deep"].includes(ff.values.get(t.id)?.syncKey)) ff.rm(t.id);
+      return r;
+    };
+  };
+  const x = await run(ff);
+  assert.deepEqual(Object.keys(ff.synced).sort(), ["F", "a", "b", "deep"]);
+  assert.ok(ff.list(w.id).some(t => ff.values.get(t.id)?.syncKey === "a"), "it has a placeholder again");
+  assert.ok(ff.list(w.id).some(t => ff.values.get(t.id)?.syncKey === "deep"));
+  x.kill();
 });
 
 test("Sidebery's rules and order of spaces come from its export", async () => {
@@ -756,9 +783,8 @@ test("a tab opened while Tidier is starting is seen when it has started", async 
   ff.ext.kill();
 });
 
-test("a link that started Firefox goes to the active space (Tidier alone)", async () => {
+test("a link that started Firefox goes to the active space", async () => {
   const ff = new ChaosFirefox();
-  ff.managed = { tidierAlone: true };
   ff.store.essentials = [{ key: "e", url: "https://e.example/", cookieStoreId: "firefox-container-2", title: "E", icon: "x" }];
   ff.store.syncedTabs = { a: entry("https://a.example/", { cookieStoreId: "firefox-container-2" }) };
   const w = ff.addWindow({ focused: true });
@@ -776,7 +802,6 @@ test("a link that started Firefox goes to the active space (Tidier alone)", asyn
 
 test("a window reopened after the last one closed has an active space, and hides the others", async () => {
   const ff = new ChaosFirefox();
-  ff.managed = { tidierAlone: true };
   ff.store.syncedTabs = {
     a: entry("https://a.example/", { cookieStoreId: "firefox-container-1" }),
     b: entry("https://b.example/", { cookieStoreId: "firefox-container-2" }),
@@ -883,7 +908,6 @@ test("a tab closed while it is being pinned does not stop the rest", async () =>
 test("the space you switched to with the bar is the one you are in after a restart", async () => {
   const C2 = "firefox-container-2";
   const ff = new ChaosFirefox();
-  ff.managed = { tidierAlone: true };
   ff.store.syncedTabs = { a: entry("https://a.example/"), b: entry("https://b.example/", { cookieStoreId: C2 }) };
   const w = ff.addWindow({ focused: true });
   ff.addTab(w.id, { url: "https://a.example/", active: true, cookieStoreId: C1 }, { syncKey: "a", syncRole: "live" });
@@ -919,7 +943,7 @@ test("an essential's copy closed just after it was created comes back", async ()
 
 test("a new tab you dragged a moment ago still gets synced when it gets an address", async () => {
   const { ff, x, windows: [a, b] } = await chaosStart();
-  const fresh = ff.openTab(a.id, { url: "about:newtab", active: true });
+  const fresh = ff.openTab(a.id, { url: "about:newtab", active: true, cookieStoreId: C1 }); // (one with no container is opened again in the space)
   await ff.clock.run(2000); // long after its creation was looked at
   await ff.clock.settled(x.js("moveInWindow")(ff.list(a.id), fresh.id, ff.list(a.id)[0].id)); // as the sidebar's drag does
   ff.load(fresh, "https://typed.example/");
@@ -1010,7 +1034,7 @@ test("an essential's placeholder whose value was lost is known by its address", 
 
 test("a new tab page you pinned is an essential once it has an address", async () => {
   const { ff, x, windows: [a, b] } = await chaosStart();
-  const t = ff.openTab(a.id, { url: "about:newtab", active: true });
+  const t = ff.openTab(a.id, { url: "about:newtab", active: true, cookieStoreId: C1 });
   await ff.clock.run(1000);
   ff.pinTab(t);
   await ff.clock.run(1000);
@@ -1057,7 +1081,6 @@ test("at a start, a pinned page the list does not know is an essential, and a pl
 
 test("a tab pinned just as it gets an address is not opened again in a space", async () => {
   const ff = new ChaosFirefox();
-  ff.managed = { tidierAlone: true };
   ff.store.syncedTabs = { a: entry("https://a.example/") };
   const w = ff.addWindow({ focused: true });
   ff.addTab(w.id, { url: "https://a.example/", active: true, cookieStoreId: C1 }, { syncKey: "a", syncRole: "live" });
@@ -1199,7 +1222,6 @@ test("a tab dragged to a window that then closes at once is not lost", async () 
 test("after a start the selected tab decides the space, whatever the window remembers", async () => {
   const C2 = "firefox-container-2";
   const ff = new ChaosFirefox();
-  ff.managed = { tidierAlone: true };
   ff.store.syncedTabs = { a: entry("https://a.example/"), b: entry("https://b.example/", { cookieStoreId: C2 }) };
   const w = ff.addWindow({ focused: true });
   ff.winValues.set(w.id, { space: C2 });
@@ -1244,42 +1266,23 @@ test("what could not be written is tried again", async () => {
   x.kill();
 });
 
-test("a copy not pinned at an update: you unpinned it with Tidier alone, with Sidebery it was on its way", async () => {
-  const start = async alone => {
-    const ff = new ChaosFirefox();
-    if (alone) ff.managed = { tidierAlone: true };
-    const a = ff.addWindow({ focused: true }), b = ff.addWindow();
-    ff.addTab(a.id, { url: "about:home", active: true });
-    ff.addTab(b.id, { url: "about:home", active: true });
-    ff.boot().b.runtime.onInstalled.fire({ reason: "install" });
-    await ff.clock.run(3000);
-    const t = ff.openTab(a.id, { url: "https://e.example/", cookieStoreId: C1 });
-    await ff.clock.run(3000);
-    ff.pinTab(t);
-    return { ff, b };
-  };
-  {
-    const { ff, b } = await start(true);
-    await ff.clock.idle(60000);
-    ff.unpinTab(ff.tabs.get(ff.list(b.id).find(y => y.pinned).id));
-    const x = ff.update();
-    await ff.clock.idle(60000);
-    assert.deepEqual(ff.store.essentials, []);
-    assert.ok(![...ff.tabs.values()].some(y => y.url.includes("kind=essential")));
-    x.kill();
-  }
-  {
-    const { ff, b } = await start(false);
-    while (!ff.list(b.id).some(y => y.url.includes("kind=essential"))) await ff.clock.step(); // created, not pinned yet
-    await ff.clock.run(400);
-    assert.ok(ff.list(b.id).some(y => y.url.includes("kind=essential") && !y.pinned));
-    await ff.clock.settled(ff.ext.js("flushWrites()"));
-    const x = ff.update();
-    await ff.clock.idle(60000);
-    assert.deepEqual(ff.store.essentials.map(e => e.url), ["https://e.example/"], "the essential stays");
-    assert.equal(ff.list([...ff.wins.keys()][1]).filter(y => y.pinned).length, 1, "and the copy is pinned");
-    x.kill();
-  }
+test("a copy not pinned at an update was unpinned by you: the essential goes", async () => {
+  const ff = new ChaosFirefox();
+  const a = ff.addWindow({ focused: true }), b = ff.addWindow();
+  ff.addTab(a.id, { url: "about:home", active: true });
+  ff.addTab(b.id, { url: "about:home", active: true });
+  ff.boot().b.runtime.onInstalled.fire({ reason: "install" });
+  await ff.clock.run(3000);
+  const t = ff.openTab(a.id, { url: "https://e.example/", cookieStoreId: C1 });
+  await ff.clock.run(3000);
+  ff.pinTab(t);
+  await ff.clock.idle(60000);
+  ff.unpinTab(ff.tabs.get(ff.list(b.id).find(y => y.pinned).id));
+  const x = ff.update();
+  await ff.clock.idle(60000);
+  assert.deepEqual(ff.store.essentials, []);
+  assert.ok(![...ff.tabs.values()].some(y => y.url.includes("kind=essential")));
+  x.kill();
 });
 
 test("a window opened while Tidier is starting gets its tabs when it has started", async () => {
@@ -1334,7 +1337,6 @@ test("an essential reopened after you unpinned it is an essential again", async 
 test("an essential's copy closed in the moment it is created comes back", async () => {
   for (const delay of [0, 1, 2, 3, 4, 5, 6, 8, 10, 12, 15, 20, 30]) {
     const { ff, x, windows: [a, b] } = await chaosStart({ seed: delay });
-    x.js("tidierAlone = true"); // created pinned, so it can be closed at once
     const t = ff.openTab(a.id, { url: "https://e.example/", cookieStoreId: "firefox-container-1" });
     await ff.clock.run(3000);
     ff.pinTab(t);
@@ -1431,26 +1433,6 @@ test("a window reopened while Tidier is starting is taken back, not doubled", as
   x.kill();
 });
 
-test("in the moment after an update Tidier alone knows it is alone", async () => {
-  const ff = new ChaosFirefox();
-  ff.managed = { tidierAlone: true };
-  const a = ff.addWindow({ focused: true }), b = ff.addWindow();
-  ff.addTab(a.id, { url: "about:home", active: true });
-  ff.addTab(b.id, { url: "about:home", active: true });
-  ff.boot().b.runtime.onInstalled.fire({ reason: "install" });
-  await ff.clock.run(3000);
-  const t = ff.openTab(a.id, { url: "https://e.example/", cookieStoreId: C1 });
-  await ff.clock.run(3000);
-  const x = ff.update();
-  await ff.clock.run(100);
-  assert.equal(x.js("tidierAlone"), true);
-  ff.pinTab(t); // before Tidier has started again
-  await ff.clock.idle(60000);
-  assert.deepEqual(ff.store.essentials.map(e => e.url), ["https://e.example/"], "it stays an essential");
-  assert.equal(ff.list(b.id).filter(y => y.pinned).length, 1, "with a copy in the other window");
-  x.kill();
-});
-
 test("a window that closes after its live tab was dragged out does not make a second live tab", async () => {
   const { ff, x, windows: [a, b] } = await chaosStart();
   const t = ff.openTab(a.id, { url: "https://a.example/", cookieStoreId: "firefox-container-1" });
@@ -1501,7 +1483,6 @@ test("a move Firefox ignores does not make the next one you make not count", asy
 
 test("an essential's tile shows the title its page has now", async () => {
   const ff = new ChaosFirefox();
-  ff.managed = { tidierAlone: true };
   const w = ff.addWindow({ focused: true });
   ff.addTab(w.id, { url: "about:home", active: true });
   const x = ff.boot();
@@ -1523,7 +1504,6 @@ test("an essential's tile shows the title its page has now", async () => {
 const closedPages = ff => ff.closedItems.filter(c => c.kind === "tab").map(c => c.state.url);
 async function aloneStart({ windows = 2 } = {}) {
   const ff = new ChaosFirefox();
-  ff.managed = { tidierAlone: true };
   const made = [];
   for (let i = 0; i < windows; i++) {
     const w = ff.addWindow({ focused: i === 0 });
@@ -1642,21 +1622,6 @@ test("a pinned tab in a private window does not become an essential, at a start 
   x.kill();
 });
 
-test("with Sidebery a start leaves the order of the essentials alone, since Sidebery has sorted them its own way", async () => {
-  const ff = new ChaosFirefox();
-  ff.store.essentials = four().map((e, i) => ({ ...e, cookieStoreId: i < 2 ? C1 : "firefox-container-2" }));
-  const w = ff.addWindow({ focused: true });
-  // Sidebery's order of spaces has the second container first.
-  const order = ["c", "d", "a", "b"];
-  for (const key of order) ff.addTab(w.id, { url: GHOST("essential", key), pinned: true, discarded: true, cookieStoreId: ff.store.essentials.find(e => e.key === key).cookieStoreId }, { essentialKey: key });
-  ff.addTab(w.id, { url: "about:home", active: true });
-  const x = ff.boot();
-  x.b.runtime.onStartup.fire();
-  await ff.clock.idle(120000);
-  assert.deepEqual(ff.list(w.id).filter(t => t.pinned).map(t => ff.values.get(t.id).essentialKey), order);
-  x.kill();
-});
-
 test("an unpinned essential whose page is slow to answer is not closed as a stray", async () => {
   const { ff, x, windows: [a, b] } = await chaosStart();
   const t = ff.openTab(a.id, { url: "https://e.example/", cookieStoreId: C1 });
@@ -1677,7 +1642,6 @@ test("an unpinned essential whose page is slow to answer is not closed as a stra
 
 test("a link seen late with no space to go to is still synced", async () => {
   const ff = new ChaosFirefox({});
-  ff.managed = { tidierAlone: true };
   ff.containers = new Set(["firefox-default"]); // no container, so no space at all
   ff.store.syncedTabs = { a: entry("https://a.example/", { cookieStoreId: "firefox-default" }) };
   const w = ff.addWindow({ focused: true });
@@ -1690,9 +1654,9 @@ test("a link seen late with no space to go to is still synced", async () => {
   x.kill();
 });
 
-test("a window that closes while its sidebar is waited for does not hold everything up", async () => {
+test("a window that closes as it is being filled does not hold everything up", async () => {
   const { ff, x, windows: [a] } = await chaosStart();
-  // An essential, so that a new window waits for Sidebery's sidebar to start there.
+  // An essential, so that a new window has its copy to be given too.
   const e = ff.openTab(a.id, { url: "https://e.example/", cookieStoreId: C1 });
   await ff.clock.run(3000);
   ff.pinTab(e);
@@ -1792,7 +1756,6 @@ test("a live tab elsewhere is not doubled when a window with a stale live tab cl
 
 test("a ghost you are looking at opens when its saved tab was unloaded and you switch to its window", async () => {
   const ff = new ChaosFirefox();
-  ff.managed = { tidierAlone: true };
   ff.store.syncedTabs = {
     F: { own: true, group: true, name: "F", url: "", title: "F", cookieStoreId: C1, rank: 1, parentKey: null, added: 1 },
     s: entry("https://s.example/", { parentKey: "F", saved: { url: "https://s.example/", title: "S" } }),
@@ -1925,9 +1888,8 @@ test("a tile is drawn with the new title also when the queue was busy as it chan
   x.kill();
 });
 
-test("with Tidier alone a start puts the essentials back in the list's order", async () => {
+test("a start puts the essentials back in the list's order", async () => {
   const ff = new ChaosFirefox();
-  ff.managed = { tidierAlone: true };
   ff.store.essentials = four();
   const w = ff.addWindow({ focused: true });
   for (const key of ["c", "a", "d", "b"]) ff.addTab(w.id, { url: GHOST("essential", key), pinned: true, discarded: true, cookieStoreId: C1 }, { essentialKey: key });
@@ -1991,7 +1953,6 @@ test("a link whose rule names a space that has gone stays, in the space you are 
 
 test("moving over: one folder page closing in that moment does not leave the others", async () => {
   const ff = new ChaosFirefox();
-  ff.store.tidierAlone = true;
   ff.store.syncedTabs = { F: { own: true, group: true, name: "F", url: FOLDER, oldUrl: FOLDER, title: "F", cookieStoreId: C1, rank: 1, parentKey: null, added: 1 } };
   const w = ff.addWindow({ focused: true });
   ff.addTab(w.id, { url: "about:home", active: true, cookieStoreId: C1 });
@@ -2003,17 +1964,6 @@ test("moving over: one folder page closing in that moment does not leave the oth
   await ff.clock.idle(60000);
   assert.ok(!ff.tabs.has(page.id));
   assert.deepEqual(x.errors, []);
-  x.kill();
-});
-
-test("the tabs of a folder no window has any more are no longer saved", async () => {
-  const ff = new ChaosFirefox();
-  ff.store.syncedTabs = { F: entry(FOLDER, { group: true }), s: entry("https://s.example/", { parentKey: "F", saved: { url: "https://s.example/", title: "S" } }) };
-  const w = ff.addWindow({ focused: true });
-  ff.addTab(w.id, { url: "about:home", active: true });
-  const x = ff.boot();
-  await ff.clock.settled(x.js(`dropIfUnused("F")`));
-  assert.equal((await ff.clock.settled(x.js("getSynced()"))).s.saved, undefined);
   x.kill();
 });
 
@@ -2241,7 +2191,7 @@ test("a window closing while a new tab is copied to the windows is no error, and
   const x = await run(ff);
   const create = x.b.tabs.create;
   x.b.tabs.create = async p => { if (p.windowId === closing.id && ff.wins.has(closing.id)) { for (const id of [...ff.wins.get(closing.id).order]) ff.rm(id, { closing: true }); ff.wins.delete(closing.id); } return create(p); };
-  const t = ff.addTab(home.id, { url: "about:blank" });
+  const t = ff.addTab(home.id, { url: "about:blank", cookieStoreId: C1 });
   x.b.tabs.onCreated.fire(ff.snap(t));
   ff.navigate(t.id, "https://a.example/");
   await wait(3000);
@@ -2262,7 +2212,7 @@ test("a tab pinned and closed at once leaves no error, and is an essential", asy
   ff.store.syncedTabs = { a: entry("https://a.example/") };
   const x = await run(ff);
   const set = x.b.sessions.setTabValue;
-  x.b.sessions.setTabValue = async (id, k, v) => { if (k === "essentialKey") ff.rm(id); return set(id, k, v); };
+  x.b.sessions.setTabValue = async (id, k, v) => { if (k === "essentialKey" && id === t.id) ff.rm(id); return set(id, k, v); }; // closed as it is pinned
   await x.b.tabs.update(t.id, { pinned: true });
   await wait(2000);
   assert.deepEqual((ff.store.essentials ?? []).map(e => e.url), ["https://a.example/"]);
@@ -2500,7 +2450,7 @@ test("a tab closed just as it is synced leaves no record, and stops nothing", as
   const other = ff.addWindow();
   ff.addTab(other.id, { url: "about:blank", active: true });
   const x = await run(ff);
-  const t = ff.addTab(w.id, { url: "about:blank" });
+  const t = ff.addTab(w.id, { url: "about:blank", cookieStoreId: C1 }); // (one with no container is opened again in the space)
   x.b.tabs.onCreated.fire(ff.snap(t));
   ff.navigate(t.id, "https://a.example/");
   ff.hooks.setRole = true;
@@ -2532,7 +2482,7 @@ test("an essential's copy closed just after it was made comes back", async () =>
   const x = await run(ff);
   x.js(`busy.add(${copy.id})`); // as createEssentials does for a second and a half
   ff.rm(copy.id);
-  await wait(3000); // with Sidebery a copy is pinned only after a moment
+  await wait(3000);
   assert.equal(ff.list(w.id).filter(t => t.pinned).length, 1, "the window has it again");
   x.kill();
 });
@@ -2571,7 +2521,7 @@ test("a reopened window whose tabs get their values late is not doubled", async 
   x.kill();
 });
 
-test("a new tab moved by Tidier and given an address at once is synced, with Sidebery too", async () => {
+test("a new tab moved by Tidier and given an address at once is synced", async () => {
   const ff = new FakeFirefox();
   const w = ff.addWindow({ focused: true });
   ff.addTab(w.id, { url: "about:blank", active: true });
@@ -2579,14 +2529,14 @@ test("a new tab moved by Tidier and given an address at once is synced, with Sid
   const fresh = ff.addTab(w.id, { url: "about:newtab", cookieStoreId: C1 });
   x.b.tabs.onCreated.fire(ff.snap(fresh));
   await wait(2000);
-  x.js(`syncBusy.add(${fresh.id})`); // folders first has just moved it (folders.js)
+  x.js(`syncBusy.add(${fresh.id})`); // as when Tidier has just moved it
   ff.navigate(fresh.id, "https://typed.example/");
   await wait(3000);
   assert.ok(ff.values.get(fresh.id)?.syncKey, "it has a key");
   x.kill();
 });
 
-test("with Tidier alone, an essential moved just after its copy was made is moved everywhere", async () => {
+test("an essential moved just after its copy was made is moved everywhere", async () => {
   const ff = new FakeFirefox();
   ff.store.essentials = ["e", "f"].map(key => ({ key, url: `https://${key}.example/`, cookieStoreId: C1, title: key, icon: "x" }));
   const w = ff.addWindow({ focused: true });
@@ -2683,7 +2633,7 @@ test("a pinned tab closed as its window is filled does not leave the window with
   const stray = ff.addTab(w.id, { url: "https://stray.example/", pinned: true, cookieStoreId: C1 });
   ff.hooks.getTabValue = async id => { if (id === stray.id) throw new Error(`Invalid tab ID: ${id}`); };
   x.b.windows.onCreated.fire({ id: w.id, type: "normal", incognito: false });
-  await wait(6000); // with Sidebery a new window's copies are pinned only after it has started
+  await wait(6000);
   assert.ok(ff.urls(w.id).some(u => u.startsWith("ghost.html?kind=essential")), "the window has its essential");
   assert.equal(x.js("problems.join()"), "");
   x.kill();
@@ -2737,7 +2687,7 @@ test("a tab closed before its record is made does not stay in the record", async
   const other = ff.addWindow();
   ff.addTab(other.id, { url: "about:blank", active: true });
   const x = await run(ff);
-  const t = ff.addTab(w.id, { url: "about:blank" });
+  const t = ff.addTab(w.id, { url: "about:blank", cookieStoreId: C1 }); // (one with no container is opened again in the space)
   x.b.tabs.onCreated.fire(ff.snap(t));
   ff.navigate(t.id, "https://a.example/");
   // Closed just after Tidier looked it up. Tidier hears of it before it has a key, so that

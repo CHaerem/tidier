@@ -12,6 +12,6 @@
   let firstClickOnEmpty = false;
   addEventListener("mousedown", e => { if (e.detail === 1) firstClickOnEmpty = e.target === list; }, true);
   list.addEventListener("dblclick", e => {
-    if (view?.alone && firstClickOnEmpty && e.target === list) send({ type: "newTab", space: view.space });
+    if (view && firstClickOnEmpty && e.target === list) send({ type: "newTab", space: view.space });
   });
 }

@@ -15,21 +15,20 @@
 //   CHAOS_REPLAY='<line from a failure>' node --test ...    one sequence again
 //   CHAOS_TRACE=1 CHAOS_REPLAY=... node --test ...          with every call and event printed
 //   CHAOS_SITES=1 CHAOS_REPLAY=... node --test ...          with the line that made a refused call
-//   CHAOS_SURVEY=on|off CHAOS_SEQUENCES=15000 CHAOS_SECONDS=0 node --test ...
+//   CHAOS_SURVEY=1 CHAOS_SEQUENCES=15000 CHAOS_SECONDS=0 node --test ...
 //                                                           on past failures, how many of each kind
 //
 // What a sequence can do is OPS below; what must hold is check(). A failure says which
 // check, in which phase: "settled" (after the random use), "update" or "restart".
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { ChaosFirefox, randoms, REFUSED, isPlaceholder, isFolderPage } from "./chaos_firefox.mjs";
+import { ChaosFirefox, randoms, REFUSED, isPlaceholder } from "./chaos_firefox.mjs";
 
 const SPACES = ["firefox-container-1", "firefox-container-2", "firefox-container-3"];
 const NO_CONTAINER = "firefox-default";
 const isWeb = url => /^https?:/i.test(url || "");
 const isNewTabPage = url => /^about:/.test(url || "");
 const pick = (list, f) => (list.length ? list[Math.floor(f * list.length) % list.length] : undefined);
-const FOLDER_URL = n => `moz-extension://sb/sidebery/group.html#F${n}`;
 
 function inFolderOf(all, key) {
   for (let p = all[key]?.parentKey, seen = new Set(); p && all[p] && !seen.has(p); p = all[p].parentKey) { seen.add(p); if (all[p].group) return true; }
@@ -42,7 +41,6 @@ class World {
   constructor(seq) {
     this.seq = seq;
     this.ff = new ChaosFirefox({ seed: seq.seed, closeWindowWithLastTab: seq.closeWithLast, loadFactor: seq.loadFactor });
-    this.alone = seq.alone;
     this.pageCounter = 0;
     this.known = new Map();      // key -> what was last seen of it in the record
     this.excused = new Set();    // keys you did away with
@@ -50,7 +48,6 @@ class World {
     this.goneEssentials = new Set();
     this.closedAddresses = new Set();
     this.broughtBack = new Set(); // addresses a window you reopened brought back
-    this.relaxed = false;        // a folder page closed in one window: that window lacks tabs until it is filled again
     this.violations = [];
     this.x = null;
   }
@@ -113,12 +110,9 @@ class World {
     }
     const e = all[key];
     const inFolder = inFolderOf(all, key);
-    if (this.relaxed) this.excused.add(key); // its folder's page has closed in this window: it may be left there
     const unloaded = t.discarded || isPlaceholder(t.url);
     if (!e || !inFolder || unloaded) this.excused.add(key);
-    if (this.value(t, "syncRole") === "copy") { this.relaxed = true; this.excused.add(key); }
   }
-  // A tab in a folder that has none in this window can go too (closeAction: "leave").
   shownRows(windowId) {
     const v = this.ff.views.get(windowId);
     return v ? { essentials: v.essentials, folders: v.folders, tabs: [...v.folders.flatMap(f => f.tabs), ...v.tabs], view: v } : null;
@@ -208,12 +202,12 @@ const OPS = {
   } },
   // A sign-in popup: not a tab you keep.
   // (window.open from the page you are on: Firefox gives the popup that page's container, and
-  // with Tidier alone a web page is in a space. One outside any space would be moved into one
+  // a web page is in a space. One outside any space would be moved into one
   // at the next start, isolation.js.)
   popup: { weight: 1, run(W) {
     const from = W.ff.wins.get(W.ff.focused), opener = from && W.ff.activeOf(from);
     if (!opener) return; // no page to open it
-    const space = opener?.cookieStoreId !== "firefox-default" ? opener?.cookieStoreId : W.alone ? W.x.js("activeSpace").get(from.id) : undefined;
+    const space = opener?.cookieStoreId !== "firefox-default" ? opener?.cookieStoreId : W.x.js("activeSpace").get(from.id);
     W.ff.openWindow({ type: "popup", url: W.newUrl(), cookieStoreId: space });
   } },
   closePopup: { weight: 1, run(W) { for (const w of [...W.ff.wins.values()]) if (w.type !== "normal") W.ff.closeWindow(w.id); } },
@@ -233,7 +227,7 @@ const OPS = {
     else W.unpinnedUnknown = true; // pinned a moment ago: which essential goes cannot be told here
     W.ff.unpinTab(t);
   } },
-  // A tab or essential dragged within its window: in the tab strip, with Sidebery as without.
+  // A tab or essential dragged within its window, in the tab strip.
   dragInWindow: { weight: 5, run(W, { a, b, c }) {
     const w = pick(W.windows(), a), t = w && pick(W.tabsOf(w), b);
     if (!t) return;
@@ -242,26 +236,25 @@ const OPS = {
   } },
   // A tab or essential dragged to another window.
   dragToWindow: { weight: 5, run(W, { a, b, c }) {
-    // (Not a Sidebery folder page: Sidebery does not offer it, and it is not looked after.)
-    const w = pick(W.windows(), a), t = w && pick(W.tabsOf(w).filter(t => !isFolderPage(t.url)), b);
+    const w = pick(W.windows(), a), t = w && pick(W.tabsOf(w), b);
     const to = pick(W.windows().filter(x => x !== w), c);
     if (!t || !to) return;
     if (W.isLastShown(w, t)) W.windowClosing(w);
     W.ff.moveTabs([t.id], { windowId: to.id, index: t.pinned ? W.ff.pinnedCount(to) : -1 });
   } },
-  // ------ Tidier alone: what the sidebar sends, from what it has drawn ------
-  sidebarOpen: { weight: 3, alone: true, run(W, { a }) {
+  // ------ What the sidebar sends, from what it has drawn ------
+  sidebarOpen: { weight: 3, run(W, { a }) {
     const w = pick(W.windows(), a);
     if (w) W.ff.connectSidebar(w.id);
   } },
-  rowSelect: { weight: 10, alone: true, run(W, { a, b }) {
+  rowSelect: { weight: 10, run(W, { a, b }) {
     const w = pick(W.windows(), a), rows = w && W.shownRows(w.id);
     if (!rows) return;
     W.ff.focusWindow(w.id);
     const item = pick([...rows.essentials, ...rows.tabs], b);
     if (item) W.ff.sidebarSays(w.id, { type: "select", tabId: item.id });
   } },
-  rowClose: { weight: 8, alone: true, async run(W, { a, b }) {
+  rowClose: { weight: 8, async run(W, { a, b }) {
     const w = pick(W.windows(), a), rows = w && W.shownRows(w.id);
     const item = rows && pick(rows.tabs, b), t = item && W.ff.tabs.get(item.id);
     if (!t) return;
@@ -269,40 +262,40 @@ const OPS = {
     if (W.isLastShown(w, t)) W.windowClosing(w);
     W.ff.sidebarSays(w.id, { type: "close", tabId: item.id });
   } },
-  space: { weight: 7, alone: true, run(W, { a, b }) {
+  space: { weight: 7, run(W, { a, b }) {
     const w = pick(W.windows(), a);
     if (!w) return;
     if (W.ff.ports.has(w.id)) W.ff.sidebarSays(w.id, { type: "space", space: pick(SPACES, b) });
     else { W.ff.focusWindow(w.id); W.x.b.commands.onCommand.fire(`space-${1 + Math.floor(b * 3)}`); }
   } },
-  sidebarNewTab: { weight: 4, alone: true, run(W, { a }) {
+  sidebarNewTab: { weight: 4, run(W, { a }) {
     const w = pick(W.windows(), a), rows = w && W.shownRows(w.id);
     if (rows) W.ff.sidebarSays(w.id, { type: "newTab", space: rows.view.space });
   } },
-  newFolder: { weight: 5, alone: true, run(W, { a, b }) {
+  newFolder: { weight: 5, run(W, { a, b }) {
     const w = pick(W.windows(), a), rows = w && W.shownRows(w.id);
     if (rows) W.ff.sidebarSays(w.id, { type: "newFolder", space: rows.view.space, name: `Folder ${Math.floor(b * 100)}` });
   } },
-  deleteFolder: { weight: 2, alone: true, run(W, { a, b }) {
+  deleteFolder: { weight: 2, run(W, { a, b }) {
     const w = pick(W.windows(), a), rows = w && W.shownRows(w.id), f = rows && pick(rows.folders, b);
     if (!f) return;
     W.excused.add(f.key);
     W.ff.sidebarSays(w.id, { type: "deleteFolder", key: f.key });
   } },
-  renameFolder: { weight: 1, alone: true, run(W, { a, b }) {
+  renameFolder: { weight: 1, run(W, { a, b }) {
     const w = pick(W.windows(), a), rows = w && W.shownRows(w.id), f = rows && pick(rows.folders, b);
     if (f) W.ff.sidebarSays(w.id, { type: "renameFolder", key: f.key, name: `Renamed ${Math.floor(b * 100)}` });
   } },
-  foldFolder: { weight: 2, alone: true, run(W, { a, b }) {
+  foldFolder: { weight: 2, run(W, { a, b }) {
     const w = pick(W.windows(), a), rows = w && W.shownRows(w.id), f = rows && pick(rows.folders, b);
     if (f) W.ff.sidebarSays(w.id, { type: "foldFolder", key: f.key, collapsed: !f.collapsed });
   } },
-  moveFolder: { weight: 1, alone: true, run(W, { a, b, c }) {
+  moveFolder: { weight: 1, run(W, { a, b, c }) {
     const w = pick(W.windows(), a), rows = w && W.shownRows(w.id), f = rows && pick(rows.folders, b);
     if (f) W.ff.sidebarSays(w.id, { type: "moveFolder", key: f.key, before: pick(rows.folders, c)?.key ?? null });
   } },
   // A row dragged: before another row, into a folder, or out of it.
-  rowMove: { weight: 9, alone: true, run(W, { a, b, c }) {
+  rowMove: { weight: 9, run(W, { a, b, c }) {
     const w = pick(W.windows(), a), rows = w && W.shownRows(w.id), item = rows && pick(rows.tabs, b);
     if (!item) return;
     const target = c < 0.4 ? pick(rows.folders.filter(f => !f.live), c / 0.4) : null;
@@ -311,45 +304,21 @@ const OPS = {
     if (over && over.id !== item.id) W.ff.sidebarSays(w.id, { type: "moveTab", tabId: item.id, folder, before: over.id });
     else W.ff.sidebarSays(w.id, { type: "moveTab", tabId: item.id, folder: null, before: null });
   } },
-  rowToSpace: { weight: 4, alone: true, run(W, { a, b, c }) {
+  rowToSpace: { weight: 4, run(W, { a, b, c }) {
     const w = pick(W.windows(), a), rows = w && W.shownRows(w.id), item = rows && pick(rows.tabs, b), t = item && W.ff.tabs.get(item.id);
     if (!t) return;
     if (W.keyOf(t)) W.excused.add(W.keyOf(t));
     W.ff.sidebarSays(w.id, { type: "moveToSpace", tabId: item.id, space: pick(SPACES, c) });
   } },
-  rowPin: { weight: 3, alone: true, run(W, { a, b }) {
+  rowPin: { weight: 3, run(W, { a, b }) {
     const w = pick(W.windows(), a), rows = w && W.shownRows(w.id), item = rows && pick(rows.tabs, b), t = item && W.ff.tabs.get(item.id);
     if (!t) return;
     if (W.keyOf(t)) W.excused.add(W.keyOf(t));
     W.ff.sidebarSays(w.id, { type: "pin", tabId: item.id, pinned: true });
   } },
-  tileMove: { weight: 4, alone: true, run(W, { a, b, c }) {
+  tileMove: { weight: 4, run(W, { a, b, c }) {
     const w = pick(W.windows(), a), rows = w && W.shownRows(w.id), item = rows && pick(rows.essentials, b), before = rows && pick(rows.essentials, c);
     if (item && before && before.id !== item.id) W.ff.sidebarSays(w.id, { type: "moveEssential", tabId: item.id, before: before.id });
-  } },
-  // ------ With Sidebery: its folder pages, and what it does to a tab dragged into one ------
-  folderPage: { weight: 5, sidebery: true, run(W, { a, b }) {
-    const w = pick(W.windows(), a);
-    if (w) W.ff.openTab(w.id, { url: FOLDER_URL(++W.pageCounter), active: false, cookieStoreId: pick(SPACES, b) });
-  } },
-  intoFolderPage: { weight: 6, sidebery: true, async run(W, { a, b, c }) {
-    const w = pick(W.windows(), a);
-    if (!w) return;
-    W.ff.focusWindow(w.id);
-    const tabs = W.tabsOf(w), page = pick(tabs.filter(t => isFolderPage(t.url)), b);
-    const t = page && pick(tabs.filter(t => !t.pinned && !isFolderPage(t.url) && t.cookieStoreId === page.cookieStoreId), c);
-    if (!t) return;
-    W.ff.moveTabs([t.id], { index: W.ff.index(page) + (W.ff.index(t) < W.ff.index(page) ? 0 : 1) });
-    t.openerTabId = page.id; // Sidebery keeps openerTabId equal to the parent
-  } },
-  outOfFolderPage: { weight: 3, sidebery: true, run(W, { a, b }) {
-    const w = pick(W.windows(), a);
-    if (!w) return;
-    W.ff.focusWindow(w.id);
-    const t = pick(W.tabsOf(w).filter(t => !t.pinned && t.openerTabId !== undefined), b);
-    if (!t) return;
-    delete t.openerTabId;
-    W.ff.moveTabs([t.id], { index: -1 });
   } },
   // ------ The big things ------
   update: { weight: 1, async run(W) {
@@ -379,9 +348,9 @@ const OPS = {
 };
 const FORCED_ACTION = { d: 0, a: 0, b: 0, c: 0, r: 0 };
 
-export function generate(seed, alone) {
-  const rng = randoms(seed * 2 + (alone ? 1 : 0));
-  const ops = Object.entries(OPS).filter(([, o]) => (alone ? !o.sidebery : !o.alone));
+export function generate(seed) {
+  const rng = randoms(seed * 2 + 1); // (as when there were two kinds of sequence, so a seed still plays what it did)
+  const ops = Object.entries(OPS);
   const total = ops.reduce((n, [, o]) => n + o.weight, 0);
   const pickOp = () => { let r = rng() * total; for (const [name, o] of ops) { r -= o.weight; if (r < 0) return name; } return ops[0][0]; };
   const delay = () => {
@@ -395,18 +364,18 @@ export function generate(seed, alone) {
   const actions = [];
   for (let i = 0; i < length; i++) actions.push({ op: pickOp(), a: rng(), b: rng(), c: rng(), d: delay(), r: Math.floor(rng() * 2 ** 32) });
   // Most sequences start with a sidebar to send from and a few tabs to work on.
-  if (alone) actions.unshift({ ...FORCED_ACTION, op: "sidebarOpen", d: 300 });
+  actions.unshift({ ...FORCED_ACTION, op: "sidebarOpen", d: 300 });
   return {
-    seed, alone, closeWithLast: rng() < 0.5, loadFactor: rng() < 0.2 ? 6 : 1,
+    seed, closeWithLast: rng() < 0.5, loadFactor: rng() < 0.2 ? 6 : 1,
     refuseRate: rng() < 0.3 ? 0.03 + 0.1 * rng() : 0, windows: 1 + Math.floor(rng() * 2.5), actions,
   };
 }
 
 // --- What must always hold ----------------------------------------------------------------
 // (Lists other packages keep are here too: a new list in memory belongs in one of these.)
-const TAB_SETS = ["syncKeyByTab", "syncRoleByTab", "keyByTab", "createdAt", "staleOpener", "firstPage", "newTabs", "newsSeen", "requestOfTab", "settled", "newBlanks", "unruled", "earlyKeys"];
+const TAB_SETS = ["syncKeyByTab", "syncRoleByTab", "keyByTab", "firstPage", "newTabs", "newsSeen", "requestOfTab", "settled", "newBlanks", "unruled", "earlyKeys"];
 const WINDOW_SETS = ["lastOrder", "activeSpace", "viewRest", "quietNotes", "closeGroups", "littles"];
-const EMPTY_WHEN_IDLE = ["syncBusy", "busy", "pending", "movedTabs", "moveTimers", "orderQueries", "refreshTimers", "showTimers", "viewTimers", "closedIn", "newTabs", "toForget", "awaitingIcon", "foldersTimers", "ownFolderMoves", "ownMoves",
+const EMPTY_WHEN_IDLE = ["syncBusy", "busy", "pending", "orderQueries", "refreshTimers", "showTimers", "viewTimers", "closedIn", "newTabs", "toForget", "awaitingIcon", "ownMoves",
   "ownPins", "viewsBuilding", "successorDue", "closingOrder", "loadedSeen"];
 function logical(all, list) {
   const tabs = {};
@@ -445,15 +414,11 @@ async function check(W, phase, { strong }) {
   if (!refused) {
     // Every tab of the record: one representation in every window, one live tab.
     for (const [key, e] of Object.entries(all)) {
-      // (A Sidebery folder page has quirks of its own that will go with Sidebery: a window
-      // reopened brings its page back beside the one it was given, say.)
-      if (e.group) continue;
+      if (e.group) continue; // a folder has no tab
       const reps = tabs.filter(t => W.value(t, "syncKey") === key);
-      if (!(W.relaxed && !strong)) {
-        for (const w of wins) {
-          const n = reps.filter(t => t.windowId === w.id).length;
-          if (n !== 1) bad("reps", `${key} ${e.url} has ${n} tabs in window ${w.id}`);
-        }
+      for (const w of wins) {
+        const n = reps.filter(t => t.windowId === w.id).length;
+        if (n !== 1) bad("reps", `${key} ${e.url} has ${n} tabs in window ${w.id}`);
       }
       const live = reps.filter(t => W.value(t, "syncRole") === "live");
       if (live.length > 1) bad("two-live", `${key} ${e.url} is live in ${live.map(t => t.id)}`);
@@ -482,7 +447,7 @@ async function check(W, phase, { strong }) {
       if (t.pinned) { if (W.value(t, "syncKey")) bad("pinned-synced", `pinned tab ${t.id} ${t.url} still has key ${W.value(t, "syncKey")}`); continue; }
       const key = W.value(t, "syncKey");
       if (key && !all[key]) bad("stale-key", `tab ${t.id} ${t.url} has key ${key}, which is not in the record`);
-      if (!key && (isWeb(t.url) || isPlaceholder(t.url) || isFolderPage(t.url))) bad("no-key", `tab ${t.id} in window ${t.windowId}: ${t.url} has no key`);
+      if (!key && (isWeb(t.url) || isPlaceholder(t.url))) bad("no-key", `tab ${t.id} in window ${t.windowId}: ${t.url} has no key`);
     }
     // Essentials: once in the list, once in every window, in the list's order, loaded once.
     const keys = list.map(e => e.key);
@@ -503,8 +468,7 @@ async function check(W, phase, { strong }) {
       }
       // (A move in the moment a copy appears is not looked at: put right at the next start.)
       const shown = pinned.map(essentialOf).filter(k => keys.includes(k));
-      // (With Sidebery the start leaves that to Sidebery's own sorting, which is not here.)
-      if (strong && W.alone && shown.join() !== keys.filter(k => shown.includes(k)).join()) bad("essential-order", `window ${w.id} has ${shown}, the list ${keys}`);
+      if (strong && shown.join() !== keys.filter(k => shown.includes(k)).join()) bad("essential-order", `window ${w.id} has ${shown}, the list ${keys}`);
     }
     for (const e of list) {
       const loaded = tabs.filter(t => t.pinned && essentialOf(t) === e.key && !t.discarded && isWeb(t.url));
@@ -515,25 +479,23 @@ async function check(W, phase, { strong }) {
       if (isPlaceholder(t.url) && !t.discarded && !t.active) bad("placeholder-loaded", `tab ${t.id} ${t.url} stays loaded`);
       if (t.active && isPlaceholder(t.url) && t.windowId === ff.focused) bad("blank", `tab ${t.id} ${t.url} is selected and stays blank`);
     }
-    // Spaces: only the active space's tabs are shown (Tidier alone).
-    if (W.alone) {
-      const spaces = mem("activeSpace");
-      for (const w of wins) {
-        const space = spaces.get(w.id);
-        if (!space) { bad("space", `window ${w.id} has no active space`); continue; }
-        for (const t of W.tabsOf(w)) {
-          const here = t.cookieStoreId === space || t.cookieStoreId === NO_CONTAINER;
-          if (t.active && !here) bad("space-selected", `window ${w.id} is in ${space} but tab ${t.id} of ${t.cookieStoreId} is selected`);
-          if (t.pinned) continue;
-          if (here && t.hidden) bad("space-hidden", `window ${w.id} in ${space}: tab ${t.id} ${t.url} is hidden`);
-          if (!here && !t.hidden && !t.active) bad("space-shown", `window ${w.id} in ${space}: tab ${t.id} of ${t.cookieStoreId} is shown`);
-        }
-        // What the sidebar has drawn is what is true now.
-        if (ff.ports.has(w.id)) {
-          const drawn = ff.views.get(w.id), fresh = await W.read(`viewFor(${w.id})`);
-          const differ = Object.keys(fresh ?? {}).filter(k => JSON.stringify(drawn?.[k]) !== JSON.stringify(fresh[k]));
-          if (differ.length) bad("stale-view", `window ${w.id}: drawn ${differ.map(k => `${k} ${JSON.stringify(drawn?.[k])}`).join(", ").slice(0, 400)} is not ${differ.map(k => JSON.stringify(fresh[k])).join(", ").slice(0, 400)}`);
-        }
+    // Spaces: only the active space's tabs are shown.
+    const spaces = mem("activeSpace");
+    for (const w of wins) {
+      const space = spaces.get(w.id);
+      if (!space) { bad("space", `window ${w.id} has no active space`); continue; }
+      for (const t of W.tabsOf(w)) {
+        const here = t.cookieStoreId === space || t.cookieStoreId === NO_CONTAINER;
+        if (t.active && !here) bad("space-selected", `window ${w.id} is in ${space} but tab ${t.id} of ${t.cookieStoreId} is selected`);
+        if (t.pinned) continue;
+        if (here && t.hidden) bad("space-hidden", `window ${w.id} in ${space}: tab ${t.id} ${t.url} is hidden`);
+        if (!here && !t.hidden && !t.active) bad("space-shown", `window ${w.id} in ${space}: tab ${t.id} of ${t.cookieStoreId} is shown`);
+      }
+      // What the sidebar has drawn is what is true now.
+      if (ff.ports.has(w.id)) {
+        const drawn = ff.views.get(w.id), fresh = await W.read(`viewFor(${w.id})`);
+        const differ = Object.keys(fresh ?? {}).filter(k => JSON.stringify(drawn?.[k]) !== JSON.stringify(fresh[k]));
+        if (differ.length) bad("stale-view", `window ${w.id}: drawn ${differ.map(k => `${k} ${JSON.stringify(drawn?.[k])}`).join(", ").slice(0, 400)} is not ${differ.map(k => JSON.stringify(fresh[k])).join(", ").slice(0, 400)}`);
       }
     }
     // Recently Closed holds real pages, not placeholders.
@@ -548,7 +510,7 @@ async function check(W, phase, { strong }) {
   // new one goes for the old one.)
   for (const [key, k] of W.known) if (W.excused.has(key)) for (const u of k.urls) W.closedAddresses.add(u);
   for (const [key, k] of W.known) {
-    if (W.excused.has(key) || all[key] || (k.group && !W.alone)) continue;
+    if (W.excused.has(key) || all[key]) continue;
     if ([...k.urls].some(u => addresses.has(u) || W.closedAddresses.has(u))) continue;
     bad("lost", `${key} (${[...k.urls].join(" ")}${k.saved ? ", saved" : ""}${k.group ? ", folder" : ""}) is gone`);
   }
@@ -584,7 +546,6 @@ async function check(W, phase, { strong }) {
 async function start(W) {
   const { ff, seq } = W;
   W.x = null;
-  if (seq.alone) ff.managed = { tidierAlone: true };
   for (let i = 0; i < seq.windows; i++) {
     const w = ff.addWindow({ focused: i === 0 });
     ff.addTab(w.id, { url: "about:home", active: true });
@@ -689,7 +650,7 @@ export async function shrink(seq, kinds, { maxRuns = 400, maxMs = 60000 } = {}) 
 export function describe(seq, violations) {
   const line = JSON.stringify(seq);
   return [
-    `Seed ${seq.seed}, ${seq.alone ? "Tidier alone" : "the Sidebery paths"}, ${seq.actions.length} actions:`,
+    `Seed ${seq.seed}, ${seq.actions.length} actions:`,
     ...seq.actions.map(a => `  ${a.op} (then ${a.d} ms)`),
     "What went wrong:",
     ...[...new Set(violations.map(v => v.msg))].slice(0, 12).map(m => `  ${m}`),
@@ -703,14 +664,14 @@ export function describe(seq, violations) {
 const env = process.env;
 const FIRST = Number(env.CHAOS_FIRST ?? 1);
 const SEQUENCES = Number(env.CHAOS_SEQUENCES ?? 120);
-const SECONDS = Number(env.CHAOS_SECONDS ?? 8); // for each of the two tests; 0: no limit
+const SECONDS = Number(env.CHAOS_SECONDS ?? 8); // 0: no limit
 
-async function campaign(alone) {
+async function campaign() {
   const t0 = Date.now();
   let played = 0;
   for (let seed = FIRST; seed < FIRST + SEQUENCES; seed++) {
     if (SECONDS && Date.now() - t0 > SECONDS * 1000) break;
-    const seq = generate(seed, alone);
+    const seq = generate(seed);
     const v = await play(seq);
     played++;
     if (!v.length) continue;
@@ -718,16 +679,16 @@ async function campaign(alone) {
     const again = await play(small);
     assert.fail(`\n${describe(small, again.length ? again : v)}\n`);
   }
-  console.log(`# chaos: ${played} sequences in ${((Date.now() - t0) / 1000).toFixed(1)} s, ${alone ? "Tidier alone" : "Sidebery paths"}`);
+  console.log(`# chaos: ${played} sequences in ${((Date.now() - t0) / 1000).toFixed(1)} s`);
 }
 
 // All seeds, on past a failure: how many of each kind, and one short example of each.
-async function survey(alone) {
+async function survey() {
   const t0 = Date.now(), kinds = new Map(), errors = new Map();
   let played = 0, failed = 0;
   for (let seed = FIRST; seed < FIRST + SEQUENCES; seed++) {
     if (SECONDS && Date.now() - t0 > SECONDS * 1000) break;
-    const seq = generate(seed, alone), v = await play(seq);
+    const seq = generate(seed), v = await play(seq);
     played++;
     if (v.length) failed++;
     for (const cat of new Set(v.map(x => x.cat))) {
@@ -736,7 +697,7 @@ async function survey(alone) {
     }
     for (const e of v.filter(x => x.cat === "error")) { const m = e.msg.replace(/ID: \d+/g, "ID"); errors.set(m, (errors.get(m) ?? 0) + 1); }
   }
-  console.log(`# chaos survey (${alone ? "Tidier alone" : "Sidebery paths"}): ${failed} of ${played} sequences failed, in ${((Date.now() - t0) / 1000).toFixed(1)} s`);
+  console.log(`# chaos survey: ${failed} of ${played} sequences failed, in ${((Date.now() - t0) / 1000).toFixed(1)} s`);
   for (const [cat, k] of [...kinds].sort((a, b) => b[1].n - a[1].n)) console.log(`#   ${cat}: ${k.n} (first: seed ${k.seq.seed})`);
   for (const [m, n] of [...errors].sort((a, b) => b[1] - a[1])) console.log(`#     ${n} × ${m}`);
   const show = Number(env.CHAOS_SHOW ?? 3);
@@ -748,7 +709,7 @@ async function survey(alone) {
 }
 
 if (env.CHAOS_SURVEY) {
-  test("survey", async () => { await survey(env.CHAOS_SURVEY !== "off"); });
+  test("survey", async () => { await survey(); });
 } else if (env.CHAOS_REPLAY) {
   test("the sequence asked for", async () => {
     const seq = JSON.parse(env.CHAOS_REPLAY);
@@ -756,10 +717,9 @@ if (env.CHAOS_SURVEY) {
     if (v.length) assert.fail(`\n${describe(seq, v)}\n`);
   });
 } else {
-  test("random use breaks nothing Tidier promises (Tidier alone)", () => campaign(true));
-  test("random use breaks nothing Tidier promises (the Sidebery paths)", () => campaign(false));
+  test("random use breaks nothing Tidier promises", () => campaign());
   test("the same seed gives the same run", async () => {
-    const seq = generate(7, true);
+    const seq = generate(7);
     const once = async () => {
       const W = new World({ ...seq, refuseRate: 0 });
       await start(W);

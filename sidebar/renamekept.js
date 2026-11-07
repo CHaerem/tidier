@@ -11,7 +11,7 @@
 let naming = null; // the open box: { target, input, finish }
 
 function renameKept(id) {
-  if (!view?.alone) return;
+  if (!view) return;
   naming?.finish(true);
   const tile = kept.get("tile:" + id), row = kept.get("tab:" + id), target = tile || row;
   // In a folder is what saved means; a live folder's tabs belong to its search.

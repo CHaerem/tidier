@@ -1,97 +1,56 @@
-// Moving a browser from Sidebery to Tidier alone (PLAN.md, part D). Never by an
-// update, only by your click on the settings page, and in this order:
+// Moving a browser from Sidebery to Tidier's own folders (PLAN.md, part D). Sidebery once
+// drew the tab list, folders and spaces; its folders were pages of its own, one in each
+// window, with their tabs nested under them, and the record had each page as a folder. A
+// browser was moved over by a click on the settings page. One that never was is moved at its
+// first start without Sidebery, in the same order:
 //
-//   1. A report of what will happen, and a copy of everything (copies.js).
-//   2. You disable Sidebery yourself: an extension cannot, and with Sidebery still
-//      running, closing a folded folder's page would close the tabs in it.
-//   3. moveOver: Sidebery's folder pages become Tidier's folders in the record, which
-//      is written before anything else happens, and Tidier starts again alone. Only
-//      then are the folder pages closed (closeOldFolderPages). A crash at any point
-//      leaves either the old record, or the new one and pages that close at the next start.
-//   4. Sidebery stays installed for a few weeks. moveBack undoes it all.
+//   1. A copy of everything (copies.js): through the native host, or else in Firefox's own
+//      storage (`copyBeforeMove`).
+//   2. Sidebery's folders become Tidier's own in the record, which is written before anything
+//      else happens: each keeps its tabs, which stay saved tabs, and its name. Which of them
+//      Sidebery had closed comes from its export, taken in before or after (importSidebery).
+//   3. Only then are the folder pages closed (closeOldFolderPages). A crash at any point
+//      leaves either the old record, and the move happens at the next start, or the new one,
+//      and pages that close at the next start.
+//
+// Sidebery should be disabled first: with it running, closing a folded folder's page closes
+// the tabs in it. Even then nothing is lost: those tabs close before Tidier has started, which
+// it does not take for your doing (tabs.onRemoved, tabsync.js), and as saved tabs they get
+// their placeholders back as it starts. A click asked for the optional permissions; a move
+// by itself leaves them to the sidebar, which asks for hiding tabs (sidebar/sidebar.js).
 
-async function moveReport() {
-  const all = await getSynced();
-  const entries = Object.entries(all);
-  return {
-    alone: tidierAlone,
-    canMoveBack: entries.some(([, e]) => e.oldUrl),
-    essentials: (await getList()).length,
-    tabs: entries.filter(([, e]) => !e.group).length,
-    folders: entries.filter(([, e]) => e.group).map(([key, e]) => ({
-      name: e.own ? e.name : groupName(e.url), space: e.cookieStoreId, tabs: entries.filter(([k]) => folderKeyOf(all, k) === key).length,
-    })),
-    rules: (await rulesList.get()).length,
-  };
-}
+// Sidebery's folders were "group" pages served by Sidebery itself, and named in their address.
+const isSideberyGroup = url => /^moz-extension:\/\/[^/]+\/sidebery\/group\.html/.test(url || "");
+const groupName = url => decodeURIComponent((url.split("#")[1] || "").replace(/~!.*!~$/, "").replace(/(?::id:|%3Aid%3A).*$/, "")); // (":id:" from older Sidebery)
 
-async function moveOver() {
-  if (tidierAlone) return;
-  const copy = await makeCopy();
-  if (!copy?.saved) await browser.storage.local.set({ copyBeforeMove: await theCopy() }); // no helper here: at least inside Firefox's storage
+async function moveOverOnce() {
   const all = await getSynced();
-  const closed = new Set(listIn((await browser.storage.local.get("importedFolds")).importedFolds)); // importSidebery
-  let rank = 0;
-  for (const e of Object.values(all)) {
-    if (!e.group || e.own) continue;
-    Object.assign(e, { own: true, name: groupName(e.url), oldUrl: e.url, rank: ++rank });
-    if (closed.has(foldKey(e.cookieStoreId, e.url))) e.collapsed = true;
+  const old = Object.values(all).filter(e => e.group && !e.own);
+  if (old.length) {
+    const copy = await makeCopy();
+    if (!copy?.saved) await browser.storage.local.set({ copyBeforeMove: await theCopy() }); // no helper here: at least inside Firefox's storage
+    const closed = new Set(listIn((await browser.storage.local.get("importedFolds")).importedFolds)); // importSidebery
+    for (const e of old) {
+      // `oldUrl`: its address in Sidebery, by which Sidebery's export says whether it was closed.
+      Object.assign(e, { own: true, name: groupName(e.url), oldUrl: e.url, rank: (foldersOf(all, e.cookieStoreId).at(-1)?.rank ?? 0) + 1 });
+      if (closed.has(foldKey(e.cookieStoreId, e.url))) e.collapsed = true;
+    }
+    noteSaved(all);
+    saveSynced(all);
+    await flushWrites();
+    await browser.storage.local.set({ importedFolds: [], movedFromSidebery: Date.now() });
   }
-  saveSynced(all);
-  await flushWrites();
-  await browser.storage.local.set({ tidierAlone: true, importedFolds: [] });
-  await guardAfterReload();
-  browser.runtime.reload();
+  await closeOldFolderPages();
 }
 
-// Tidier alone: the pages of folders that are now Tidier's own, and any Sidebery folder
-// page left, are closed once, with nothing else happening to their tabs.
+// The pages of folders that are now Tidier's own, and any Sidebery folder page left, are
+// closed once, with nothing else happening to their tabs.
 async function closeOldFolderPages() {
-  await readAlone();
-  if (!tidierAlone) return;
   const pages = (await browser.tabs.query({})).filter(t => isSideberyGroup(t.url));
   if (!pages.length) return; // as at every start but the first: reading every tab's values is left for the start itself
   await loadRoles();
   pages.forEach(t => forget(t.id));
   await removeTabs(pages.map(t => t.id), syncBusy).catch(noteError);
-}
-
-// Back to Sidebery: you enable it first, since its folder pages are its own. Each
-// window gets its folder pages back, and Tidier starts again without the setting.
-async function moveBack() {
-  if (!tidierAlone) return;
-  const all = await getSynced();
-  const wins = await normalWindows();
-  for (const [key, e] of Object.entries(all)) {
-    if (!isOwnFolder(e)) continue;
-    if (!e.oldUrl) { // made since the move: Sidebery has no page for it, so its tabs become ordinary tabs
-      for (const x of Object.values(all)) if (x.parentKey === key) x.parentKey = null;
-      delete all[key];
-      continue;
-    }
-    Object.assign(e, { url: e.oldUrl });
-    delete e.own; delete e.name; delete e.oldUrl; delete e.rank; delete e.collapsed;
-    for (const w of wins) await createRep(w.id, key, e).catch(noteError);
-  }
-  noteSaved(all);
-  saveSynced(all);
-  await flushWrites();
-  await browser.tabs.show((await browser.tabs.query({ hidden: true })).map(t => t.id)).catch(() => {});
-  await takeKeysBack(); // Sidebery's again, the command bar's too (keys-commands.js)
-  stopIsolation();
-  await browser.storage.local.set({ tidierAlone: false, placeholdersNeedPages: true });
-  browser.runtime.reload();
-}
-
-// Placeholders made with Tidier alone have no page (placeholderWithoutPage), but Sidebery
-// draws the tab itself. Once, after moving back and with Tidier started again, those
-// without an icon load their page, which sets title and icon and unloads itself.
-async function pagesAfterMovingBack() {
-  if (tidierAlone || !(await browser.storage.local.get("placeholdersNeedPages")).placeholdersNeedPages) return;
-  for (const t of await browser.tabs.query({ discarded: true })) {
-    if (isGhostUrl(t.url) && !t.favIconUrl) await browser.tabs.update(t.id, { url: t.url }).catch(() => {});
-  }
-  await browser.storage.local.remove("placeholdersNeedPages");
 }
 
 // --- Sidebery's export -----------------------------------------------------------
@@ -118,7 +77,7 @@ function snapshotTabs(snapshots, n) {
 }
 
 // An address without what differs per install or per load: Sidebery's own extension
-// address, the channel suffix it adds to a page it has open (groupBaseUrl), and the
+// address, the channel suffix ("~!...!~") it adds to a page it has open, and the
 // ":id:" of older versions, which its snapshot drops from an open page but not from an
 // unloaded one. The same name in two spaces gives one address, so the space is part of the key.
 const foldKey = (space, url) => `${space}|${(url || "").split("/sidebery/")[1]?.replace(/~!.*!~$/, "").replace(/(?::id:|%3Aid%3A).*$/, "")}`;
@@ -142,9 +101,9 @@ function closedFolders(backup, here) {
   return [...pages].filter(([, closed]) => closed).map(([key]) => key);
 }
 
-// Null for a file that is not Sidebery's export. Folds are applied at once if this
-// browser has moved over, else kept in storage until moveOver applies them: until then
-// the folders are Sidebery's, and Tidier's mark on them would mean nothing.
+// Null for a file that is not Sidebery's export. Folds are applied at once to the folders
+// that came from Sidebery, known by their old address. (An older Tidier kept them for the
+// move instead, `importedFolds`, which moveOverOnce applies.)
 async function importSidebery(backup) {
   if (!isSideberyExport(backup)) return null;
   const containers = Object.values(backup.containers || {});
@@ -193,8 +152,7 @@ async function importSidebery(backup) {
   if (closed) {
     const all = await getSynced(), keys = new Set(closed);
     const matched = Object.keys(all).filter(k => all[k].group && keys.has(foldKey(all[k].cookieStoreId, all[k].oldUrl ?? all[k].url)));
-    if (tidierAlone) for (const k of matched) await foldFolder(k, true); // ownfolders.js
-    else await browser.storage.local.set({ importedFolds: closed });
+    for (const k of matched) await foldFolder(k, true); // ownfolders.js
     folds = matched.length;
   }
   viewAllSoon(); // the bar's order, if nothing else
@@ -210,17 +168,16 @@ browser.runtime.onMessage.addListener((msg, sender) => {
 async function settingsAction(msg) {
   switch (msg.type.slice("settings:".length)) {
     case "get": {
-      const stored = await browser.storage.local.get(["archiveAfterHours", "lastCopy"]);
+      const stored = await browser.storage.local.get(["archiveAfterHours", "lastCopy", "movedFromSidebery"]);
       return {
-        report: await moveReport(), rules: await rulesList.get(), spaces: await containerSpaces(), archiveHours: stored.archiveAfterHours ?? ARCHIVE_DEFAULT_HOURS,
-        lastCopy: stored.lastCopy ?? null, version: browser.runtime.getManifest().version, hiding: !!browser.tabs.hide, notices: [...notices.values()],
+        rules: await rulesList.get(), spaces: await containerSpaces(), archiveHours: stored.archiveAfterHours ?? ARCHIVE_DEFAULT_HOURS,
+        lastCopy: stored.lastCopy ?? null, moved: stored.movedFromSidebery ?? null, version: browser.runtime.getManifest().version,
+        hiding: !!browser.tabs.hide, notices: [...notices.values()],
       };
     }
     case "archiveHours": await browser.storage.local.set({ archiveAfterHours: Number(msg.hours) }); return true;
     case "rules": rulesList.set(msg.rules.filter(r => r.url && r.space).map(r => ({ url: r.url, space: r.space }))); setNotice("rule", null); viewAllSoon(); return true;
     case "space": await browser.contextualIdentities.update(msg.id, msg.changes).catch(noteError); return true;
-    case "moveOver": await moveOver(); return true;
-    case "moveBack": await moveBack(); return true;
     case "importSidebery": return importSidebery(msg.backup);
     case "copyNow": return makeCopy();
     case "copyFile": return theCopy();

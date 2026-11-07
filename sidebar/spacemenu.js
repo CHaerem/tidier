@@ -1,6 +1,5 @@
 // --- A menu on each space ---------------------------------------------------------
 // A right click on a dot, or on the name above the list, opens Tidier's small menu.
-// Only with Tidier alone: without it, the daily browser keeps Firefox's menu here.
 // A listener of its own that comes first, so the bar's drawing need not know of it.
 
 function spaceMenu(space) {
@@ -23,7 +22,7 @@ const clearItem = (space = view.space) => ["Clear today's tabs", () => send({ ty
 addEventListener("contextmenu", e => {
   if (e.target.closest?.("#menu")) return e.preventDefault(); // no menu on a menu
   closeMenu(); // no small menu left open beside Firefox's own
-  if (!view?.alone) return;
+  if (!view) return;
   const dot = e.target.closest?.("#spaces .space");
   if (!dot && e.target.id !== "space-name") return;
   openMenu(e, spaceMenu(dot ? dot.dataset.space : view.space));

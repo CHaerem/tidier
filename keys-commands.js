@@ -1,4 +1,4 @@
-// What the commands of shortcuts.js do with Tidier alone, and how they get their keys.
+// What the commands of shortcuts.js do, and how they get their keys.
 //
 // Firefox's own next tab and ⌘1 count the window's tabs: other spaces' pinned tabs, and
 // tabs in the order they were opened. Here the list is what the sidebar draws, in the
@@ -52,8 +52,8 @@ async function newFolderHere(windowId) {
 }
 
 // --- Giving the keys ---------------------------------------------------------------
-// Each key is given once, at the first start with Tidier alone that knows the command,
-// and only if that command has none. What you do with it after that is yours: a key you
+// Each key is given once, at the first start that knows the command, and only if that
+// command has none. What you do with it after that is yours: a key you
 // changed stays, and so does one you removed (Firefox then says it has none, which is
 // why "has none" alone is not enough, and the names given are kept).
 const KEYS_GIVEN = "keysGiven";
@@ -102,20 +102,6 @@ async function giveKeys() {
 // The key each command starts with, as a machine with no keys at all would get them.
 const firstKeys = os => new Map(keysToGive(COMMANDS, COMMANDS.map(({ name }) => ({ name, shortcut: "" })), [], os).map(g => [g.name, g.shortcut]));
 
-// Back to Sidebery: the keys are the manifest's again, and a move over later gives them anew.
-// Not the key to copy an address, which is the one command Sidebery's browser has too.
-async function takeKeysBack() {
-  for (const { name, key, always } of COMMANDS) if (key && !always) await browser.commands.reset(name).catch(() => {});
-  await browser.storage.local.set({ [KEYS_GIVEN]: [] });
-}
-
-// Tidier alone can also end without moving back: declared in managed storage, then no
-// longer. With the setting off the commands do nothing, so ⌘1 would be a key that does
-// nothing. Only a read at each start, unless keys were given.
-async function takeKeysBackIfGiven() {
-  if ((await browser.storage.local.get(KEYS_GIVEN))[KEYS_GIVEN]?.length) await takeKeysBack();
-}
-
 // --- The settings page ------------------------------------------------------------
 const KEY_SYMBOLS = { Command: "⌘", MacCtrl: "⌃", Alt: "⌥", Shift: "⇧", Up: "↑", Down: "↓", Left: "←", Right: "→", Comma: ",", Period: ".", Space: "Space", PageUp: "Page Up", PageDown: "Page Down" };
 // As a Mac's menus write a key: ⌃⌥⇧⌘ in that order, then the key. Elsewhere as Firefox writes it.
@@ -148,7 +134,6 @@ const FIREFOX_KEYS = {
 
 // What the settings page lists: every command with a key to give, and that key now.
 async function commandKeys() {
-  if (!tidierAlone) return null;
   const { os } = await browser.runtime.getPlatformInfo();
   const have = await browser.commands.getAll(), first = firstKeys(os);
   return COMMANDS.filter(c => c.key).map(({ name, label }) => {

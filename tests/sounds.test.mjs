@@ -8,8 +8,7 @@ import { FakeFirefox, wait, realSleep, SCALE, GHOST } from "./fake_firefox.mjs";
 const C1 = "firefox-container-1", C2 = "firefox-container-2";
 const entry = (url, more = {}) => ({ url, title: url, cookieStoreId: C1, parentKey: null, group: false, added: 1, ...more });
 
-async function start(ff, managed = { tidierAlone: true }) {
-  ff.managed = managed;
+async function start(ff) {
   const x = ff.boot();
   x.b.runtime.onStartup.fire({ reason: "update" });
   await wait(1200);
@@ -258,22 +257,3 @@ test("a change of sound refreshes every window, and only that", async () => {
   x.kill();
 });
 
-test("with the setting off a row shows its own tab's sound, and nothing is asked across windows", async () => {
-  const ff = new FakeFirefox();
-  const { w1, w2, real, copy } = twoWindows(ff);
-  const asked = [];
-  ff.hooks.query = async q => { if (q.audible !== undefined || q.muted !== undefined) asked.push(q); };
-  const x = await start(ff, {});
-  assert.equal(x.js("tidierAlone"), false);
-  const here = sidebar(x, w2.id), there = sidebar(x, w1.id);
-  await settle();
-  play(ff, x, real.id);
-  await settle();
-  assert.equal(here.views.length, 1, "as before: another window's sound does not concern this one");
-  assert.equal(row(here.view, copy.id).sound, null);
-  assert.equal(row(there.view, real.id).sound, "playing");
-  assert.equal(row(there.view, real.id).soundTabId, real.id);
-  assert.deepEqual(there.view.spaces.filter(s => s.soundTabId), []);
-  assert.deepEqual(asked, []);
-  x.kill();
-});

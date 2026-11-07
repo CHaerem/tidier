@@ -14,7 +14,6 @@ const order = ff => ff.store.essentials.map(e => e.url.replace("https://", "").r
 // first with a placeholder each in the other, and a new tab page only the first has.
 async function two() {
   const ff = new FakeFirefox();
-  ff.managed = { tidierAlone: true };
   ff.store.essentials = [essential("a"), essential("b"), essential("z", C2)];
   const record = (name, added) => ({ url: `https://${name}.example/`, title: name.toUpperCase(), cookieStoreId: C1, parentKey: null, group: false, added });
   ff.store.syncedTabs = { x: record("x", 1), y: record("y", 2), folder: { group: true, own: true, name: "Kept", cookieStoreId: C1, parentKey: null, rank: 1, added: 3 } };

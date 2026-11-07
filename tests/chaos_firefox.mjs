@@ -18,7 +18,6 @@ import { FakeFirefox } from "./fake_firefox.mjs";
 
 export const REFUSED = "chaos: refused"; // the mark of a refusal injected on purpose
 export const isPlaceholder = url => (url || "").startsWith("moz-extension://tidier/ghost.html");
-export const isFolderPage = url => /^moz-extension:\/\/[^/]+\/sidebery\/group\.html/.test(url || "");
 const isWeb = url => /^https?:/i.test(url || "");
 
 // A small seeded generator: the same seed gives the same numbers everywhere.
@@ -611,7 +610,7 @@ export class ChaosFirefox extends FakeFirefox {
       if (isPlaceholder(url)) { this.runPlaceholder(t, url, alive); return; }
       this.clock.setTimeout(() => {
         if (!alive()) return;
-        if (isWeb(url) || isFolderPage(url)) { t.title = `Page ${url.replace(/^.*\/\//, "")}`; this.updated(t, { title: t.title }); }
+        if (isWeb(url)) { t.title = `Page ${url.replace(/^.*\/\//, "")}`; this.updated(t, { title: t.title }); }
         this.clock.setTimeout(() => {
           if (!alive()) return;
           if (isWeb(url) && this.rng() < 0.7) { t.favIconUrl = `${new URL(url).origin}/favicon.ico`; this.updated(t, { favIconUrl: t.favIconUrl }); }

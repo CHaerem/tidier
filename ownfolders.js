@@ -1,8 +1,7 @@
-// Tidier's own folders (Tidier alone): a folder is an entry in the tab record
-// (`group`, `own`, with a name and a place among its space's folders), with no tab
-// of its own. A tab is in a folder by its `parentKey`, as with Sidebery's folder
-// pages, so saved tabs and archiving work the same on both. Only what you do here
-// changes a folder; no tab event can delete one.
+// Tidier's own folders: a folder is an entry in the tab record (`group`, `own`, with a
+// name and a place among its space's folders), with no tab of its own. A tab is in a
+// folder by its `parentKey`. Only what you do here changes a folder; no tab event can
+// delete one.
 
 const newFolderKey = () => crypto.randomUUID();
 
@@ -76,7 +75,7 @@ async function moveFolder(key, beforeKey) {
 
 // A tab moved in the sidebar: into or out of a folder (`folderKey`, or null) and
 // before another tab (`beforeTabId`, or null: last there). Every window follows,
-// and without Sidebery's rules about what may move where, any tab can simply move.
+// and any tab can simply move.
 async function moveTab(windowId, tabId, beforeTabId, folderKey) {
   // A tab opened or unpinned a moment ago is not in the record yet: tab sync waits for
   // redirects first. You are moving it now, and without a record no folder can take it.
@@ -116,7 +115,7 @@ async function moveInWindow(tabs, tabId, beforeId) {
   let index = before ? before.index : -1;
   if (before && tab.index < before.index) index--;
   if (index === tab.index) return;
-  // Not marked as Tidier's own (syncBusy): without Sidebery nothing listens to a move, and for
+  // Not marked as Tidier's own (syncBusy): nothing in tab sync answers a move, and for
   // that moment a pin or a new title would go unseen. A tab dragged on to the essentials
   // right after a move stayed in the tab record too, and so was there twice; a new tab
   // dragged and given an address within a second and a half was never synced.

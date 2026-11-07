@@ -1,4 +1,4 @@
-// What isolation shows in the sidebar (Tidier alone), all of it only when it applies
+// What isolation shows in the sidebar, all of it only when it applies
 // (isolation.js in the background does the work):
 //
 // - One line asking for the permission to stop a page before it loads in the wrong
@@ -42,7 +42,7 @@ function drawAskLine() {
   let declined = false;
   try { declined = !!localStorage.getItem(DECLINED); } catch (err) { /* asks then */ }
   // One thing to click at a time: the line about hiding tabs comes first.
-  askLine.hidden = isolationGiven || declined || !view?.alone || !!view?.needsHiding;
+  askLine.hidden = isolationGiven || declined || !view || !!view.needsHiding;
 }
 port.onMessage.addListener(drawAskLine);
 browser.permissions.onAdded.addListener(readPermissions);
@@ -58,7 +58,7 @@ const spacesOtherThan = id => (view?.spaces ?? []).filter(s => s.id !== id);
 const plainFolderMenu = folderMenu;
 window.folderMenu = (key, live) => {
   const items = plainFolderMenu(key, live);
-  if (!view?.alone) return items;
+  if (!view) return items;
   const others = spacesOtherThan(view.space).map(s => [s.name, async () => isolationTell("moveFolder", { key, space: s.id, windowId: await thisWindow }), { color: s.color }]);
   return others.length ? [...items, ["Move to space", others]] : items; // a list in place: a narrow sidebar has no room for a menu beside a menu
 };
@@ -116,7 +116,7 @@ document.getElementById("spaces").after(dropForSpace);
 let draggedTabs = null;
 addEventListener("dragstart", e => {
   const id = Number(e.target.closest?.(".row.tab")?.dataset.tab);
-  if (!view?.alone || !id) return;
+  if (!view || !id) return;
   draggedTabs = selectedTabs(id); // selection.js
   dropForSpace.hidden = false;
 }, true);

@@ -1,4 +1,4 @@
-// A small window for links from other apps, like Little Arc (Tidier alone). A link
+// A small window for links from other apps, like Little Arc. A link
 // from Slack or Mail opens in a window of its own that you read and close, or keep with
 // one click, so that it does not end up in your list just because someone sent it.
 //
@@ -47,7 +47,7 @@ const newBlanks = new Map(); // new tabs on their first about:blank -> { fromOut
 
 // --- Telling a link from another app ------------------------------------------------
 browser.tabs.onCreated.addListener(tab => {
-  if (tidierAlone && started && tab.url === "about:blank" && tab.openerTabId === undefined && !tab.pinned && !tab.incognito && !syncBusy.has(tab.id)) {
+  if (started && tab.url === "about:blank" && tab.openerTabId === undefined && !tab.pinned && !tab.incognito && !syncBusy.has(tab.id)) {
     newBlanks.set(tab.id, { fromOutside: false, space: activeSpace.get(tab.windowId), held: false });
   }
 });
@@ -182,7 +182,7 @@ browser.windows.onRemoved.addListener(windowId => { if (littles.delete(windowId)
 // outside the queue, and only for a popup; one that closes meanwhile (the command bar) ends it.
 const LITTLE_MARK_ASKED_MS = [0, 100, 300, 700, 1500, 3000];
 browser.windows.onCreated.addListener(win => {
-  if (!tidierAlone || !started || win.type !== "popup") return;
+  if (!started || win.type !== "popup") return;
   (async () => {
     let at = 0;
     for (const next of LITTLE_MARK_ASKED_MS) {
@@ -270,7 +270,7 @@ function startLittleMenus() {
 }
 
 browser.menus.onShown.addListener(async (info, tab) => {
-  if (!tidierAlone || !tab || info.contexts.includes("tab")) return;
+  if (!tab || info.contexts.includes("tab")) return;
   let changed = false;
   if (info.contexts.includes("link")) {
     for (const id of linkChoices) browser.menus.remove(id).catch(() => {});
@@ -301,7 +301,7 @@ browser.menus.onHidden.addListener(() => {
 
 browser.menus.onClicked.addListener((info, tab) => {
   const id = String(info.menuItemId);
-  if (!tidierAlone || !tab || tab.incognito) return;
+  if (!tab || tab.incognito) return;
   if (id === MENU_KEEP) serial(() => keepLittle(tab.id));
   else if (id === MENU_OPEN_LITTLE) serial(() => linkInLittle(tab, info.linkUrl));
   else if (id.startsWith(MENU_OPEN_IN + ":")) serial(() => linkInSpace(tab, info.linkUrl, id.slice(MENU_OPEN_IN.length + 1)));
@@ -334,7 +334,7 @@ const ALL_SITES = { origins: ["<all_urls>"] };
 let peekScript = null, peekChange = Promise.resolve();
 function startPeek() {
   peekChange = peekChange.then(async () => {
-    const given = tidierAlone && await browser.permissions.contains(ALL_SITES).catch(() => false);
+    const given = await browser.permissions.contains(ALL_SITES).catch(() => false);
     if (given && !peekScript) peekScript = await browser.contentScripts.register({ matches: ["http://*/*", "https://*/*"], js: [{ file: "peek.js" }], runAt: "document_start" });
     else if (!given && peekScript) { await peekScript.unregister().catch(() => {}); peekScript = null; }
   }).catch(noteError);
@@ -347,13 +347,13 @@ browser.permissions.onRemoved.addListener(() => { if (started) startPeek(); });
 browser.runtime.onMessage.addListener((msg, sender) => {
   if (!msg?.type?.startsWith("little:") || sender.id !== browser.runtime.id) return;
   if (msg.type === "little:peek") {
-    if (tidierAlone && sender.tab && !sender.tab.incognito) serial(() => linkInLittle(sender.tab, msg.url));
+    if (sender.tab && !sender.tab.incognito) serial(() => linkInLittle(sender.tab, msg.url));
     return;
   }
   if (!sender.url?.startsWith(browser.runtime.getURL(""))) return;
   return serial(async () => {
     if (msg.type === "little:set") littleSetting.set(!!msg.on);
-    return { alone: tidierAlone, on: await littleSetting.get() };
+    return { on: await littleSetting.get() };
   });
 });
 
@@ -362,7 +362,6 @@ browser.runtime.onMessage.addListener((msg, sender) => {
 // Tidier starts again with an update while one is open: without this, either would be a
 // window nothing can keep.
 async function startLittleWindow() {
-  if (!tidierAlone) return;
   startLittleMenus();
   await startPeek();
   for (const w of await browser.windows.getAll({ populate: true, windowTypes: ["popup"] })) await adoptLittle(w);

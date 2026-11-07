@@ -1,4 +1,4 @@
-// Find archived tabs again, as in Arc (Tidier alone). Every tab archiving closes, and
+// Find archived tabs again, as in Arc. Every tab archiving closes, and
 // every ordinary tab you close, goes in a list of its space: newest first, at most
 // ARCHIVED_PER_SPACE per space and none older than ARCHIVED_KEEP_MS.
 //
@@ -33,7 +33,7 @@ const saveArchived = list => { archivedList.set(list); viewAllSoon(); }; // an o
 // tab, so this never fails the close. It says whether the row is there: for a tab that is
 // only a placeholder that row is all there is (archiveIdleTabs).
 async function noteArchived(entry, why) {
-  if (!tidierAlone || !entry || entry.group || entry.liveFolder || !isWeb(entry.url)) return false;
+  if (!entry || entry.group || entry.liveFolder || !isWeb(entry.url)) return false;
   try {
     const list = await archivedNow(), now = Date.now();
     const icon = entry.icon?.length <= ARCHIVED_ICON_MAX ? entry.icon : null;
@@ -60,7 +60,6 @@ async function noteArchived(entry, why) {
 // gone: its tabs cannot be opened in it any more, and a tab still closing after it was
 // removed, or one removed while Tidier was not running, can leave a row behind.
 async function archivedTabs(space) {
-  if (!tidierAlone) return [];
   const list = await archivedNow(), now = Date.now();
   const spaces = space ? [space, NO_CONTAINER] : [NO_CONTAINER, ...(await containerSpaces()).map(s => s.id)];
   return [...new Set(spaces)]
@@ -93,7 +92,7 @@ function reopenArchived(item, windowId) {
     const row = (await archivedNow())[item.space]?.find(r => r.url === item.url);
     const windows = await normalWindows(), last = await browser.windows.getLastFocused({ windowTypes: ["normal"] }).catch(() => null);
     const win = windows.find(w => w.id === windowId) ?? windows.find(w => w.id === last?.id) ?? windows[0];
-    if (!tidierAlone || !row || !win) return false;
+    if (!row || !win) return false;
     const space = item.space === NO_CONTAINER ? activeSpace.get(win.id) ?? item.space : item.space;
     const props = { windowId: win.id, cookieStoreId: space, url: row.url, title: row.title, discarded: true, index: await topOfToday(win.id, space) };
     let tab;
@@ -116,7 +115,6 @@ const forgetArchived = item => serial(() => dropArchived(item.space, item.url));
 
 // A space that is gone takes its list along: its tabs cannot be opened in it any more.
 browser.contextualIdentities.onRemoved.addListener(({ contextualIdentity }) => {
-  if (!tidierAlone) return;
   serial(async () => {
     const list = await archivedNow();
     if (!list[contextualIdentity.cookieStoreId]) return;

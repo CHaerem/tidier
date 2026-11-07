@@ -1,4 +1,4 @@
-// One place for new tabs (Tidier alone), as in Arc: the top of today's tabs, right
+// One place for new tabs, as in Arc: the top of today's tabs, right
 // under the folders, for the new tab button, ⌘T and links from other apps. Firefox
 // itself would add them at the end of the window, out of sight below a long list.
 // A link opened from a tab in today's list is different: it stays next to that tab, where
@@ -45,7 +45,7 @@ async function toTopOfToday(tab, space) {
 // of sight, since a tab moved into a folder lies last in the window. Moved at once, before the
 // view is drawn (VIEW_DEBOUNCE_MS), so there is no jump to see unless the queue is busy.
 browser.tabs.onCreated.addListener(tab => {
-  if (!tidierAlone || !started || tab.pinned || tab.incognito || tab.openerTabId == null || tab.cookieStoreId === NO_CONTAINER) return;
+  if (!started || tab.pinned || tab.incognito || tab.openerTabId == null || tab.cookieStoreId === NO_CONTAINER) return;
   serial(async () => {
     if (await besideOpener(tab, tab.cookieStoreId)) return;
     const now = await browser.tabs.get(tab.id).catch(() => null);

@@ -2,9 +2,9 @@
 //
 // Firefox cannot give an unloaded tab an icon, so a placeholder is briefly loaded
 // as this tiny local page, which sets the real page's title and icon, and is then
-// unloaded again (an unloaded tab keeps both). With Tidier alone a placeholder needs
-// that only when its title changes: it is made unloaded, as its sidebar draws it from
-// the record (placeholderWithoutPage, tabsync.js).
+// unloaded again (an unloaded tab keeps both). A placeholder needs that only when its
+// title changes: it is made unloaded, as Tidier's sidebar draws it from the record
+// (createRep, tabsync.js).
 //
 // When the placeholder is shown:
 // - a live tab that has never been loaded ("lazy", e.g. a live folder's pull

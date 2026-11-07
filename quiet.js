@@ -1,4 +1,4 @@
-// One quiet line in the sidebar, and what makes it worth having (Tidier alone): undo
+// One quiet line in the sidebar, and what makes it worth having: undo
 // after closing several tabs or deleting a folder, instead of asking first, and Clear,
 // which closes today's tabs of a space in one go.
 //
@@ -23,7 +23,6 @@ let bringingBack = 0; // undos in progress, see the rules below
 // `undo` is run in the queue when you click it: it must not wait for serial() itself,
 // which would wait for it in turn.
 function say(windowId, text, { undo } = {}) {
-  if (!tidierAlone) return;
   clearTimeout(quietNotes.get(windowId)?.timer);
   quietNotes.set(windowId, { id: ++noteCount, text, undo, timer: setTimeout(() => dropNote(windowId), NOTE_MS) });
   viewSoon(windowId);
@@ -101,7 +100,6 @@ async function rememberClose(group, tabId) {
 }
 
 async function closeFromSidebar(windowId, tabId) {
-  if (!tidierAlone) { await browser.tabs.remove(tabId).catch(() => {}); return; }
   const group = closeGroup(windowId);
   // Remembered by the row, closed by what the row stands for (closeTargetOf, tabactions.js):
   // a saved tab whose page is loaded in another window only unloads. Its row stays, so it

@@ -8,16 +8,10 @@ let state = null;
 async function refresh() {
   state = await ask("get");
   $("notices").replaceChildren(...state.notices.map(text => el("p", { className: "notice", textContent: text })));
-  const r = state.report;
-  $("alone-state").textContent = r.alone ? "Tidier is on its own here: no Sidebery needed." : "This browser uses Sidebery for its tab list, spaces and folders.";
-  $("allow-hiding").hidden = !r.alone || state.hiding;
-  $("move").hidden = r.alone;
-  $("move-back").hidden = !(r.alone && r.canMoveBack);
-  $("report").replaceChildren(
-    el("li", { textContent: `${r.essentials} essentials and ${r.tabs} tabs stay as they are.` }),
-    el("li", { textContent: `${r.folders.length} folders become Tidier's own: ` + r.folders.map(f => `${f.name} (${f.tabs})`).join(", ") }),
-    el("li", { textContent: `${r.rules} rules. Sidebery's own rules, and which folders are closed, can only be read from its export: import it below first, with a snapshot in it.` }),
-  );
+  $("allow-hiding").hidden = state.hiding;
+  // A browser that skipped the click on the move over was moved by itself (moveover.js).
+  $("moved").hidden = !state.moved;
+  if (state.moved) $("moved").textContent = `Sidebery's folders became Tidier's own on ${new Date(state.moved).toLocaleString()}, after a copy was taken. Sidebery can be removed in about:addons.`;
   drawSpaces();
   if (document.activeElement?.closest?.("#rules") == null) drawRules();
   if (document.activeElement !== $("archive-hours")) $("archive-hours").value = state.archiveHours;
@@ -57,15 +51,8 @@ $("add-rule").onclick = () => {
 };
 
 $("archive-hours").onchange = e => ask("archiveHours", { hours: e.target.value });
+// Asking needs your click. Without it tabs are simply not hidden.
 $("allow-hiding").onclick = () => browser.permissions.request({ permissions: ["tabHide"] }).then(refresh);
-$("move-over").onclick = async () => {
-  // Asked here, in one go: the permissions need your click. Without them, tabs are simply
-  // not hidden yet, and a page's first request can go out in the wrong container.
-  browser.sidebarAction.open(); // also needs your click: Firefox brings it back after Tidier starts again
-  await browser.permissions.request({ permissions: ["tabHide", "webRequest", "webRequestBlocking"], origins: ["<all_urls>"] }).catch(() => {});
-  await ask("moveOver");
-};
-$("do-move-back").onclick = () => ask("moveBack");
 // A file you chose, or null if it is no JSON at all. Emptied after reading, or choosing
 // the same file again (after making a new export, say) would do nothing.
 const readFile = async input => {

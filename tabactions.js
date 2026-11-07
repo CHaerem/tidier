@@ -1,4 +1,4 @@
-// What the menu on a tab does (sidebar/tabmenu.js, only with Tidier alone).
+// What the menu on a tab does (sidebar/tabmenu.js).
 //
 // A row or a tile is not its tab. A row can be a placeholder, with the real page in
 // another window, unloaded, or nowhere yet; a tile is one window's copy of an essential,
@@ -69,7 +69,6 @@ browser.runtime.onMessage.addListener((msg, sender) => {
 // good, so closing only its placeholder here, with the page loaded in another window,
 // would lose it where closing the page itself only unloads it.
 async function closeTargetOf(tabId) {
-  if (!tidierAlone) return tabId;
   const real = await realOf(tabId).catch(noteError); // a × must close something, whatever else went wrong
   return real?.loaded ? real.tab.id : tabId;
 }

@@ -1,4 +1,4 @@
-// The Keys section of the settings page, with Tidier alone: every command with its key,
+// The Keys section of the settings page: every command with its key,
 // changed by clicking it and pressing the new one. What may be chosen is decided in the
 // background (setCommandKey in keys-commands.js). Firefox's own page for this refuses
 // every key Firefox uses, even once you have cleared it, ⌘1 and ⌘D among them;
@@ -31,8 +31,6 @@ const keyGroup = name => name.startsWith("space-") ? "Go to a space" : name.star
 
 async function drawKeys(focus) {
   const commands = await ask("keys");
-  $("keys-section").hidden = !commands; // no list without Tidier alone: then Sidebery has the keys
-  if (!commands) return;
   const lines = [];
   for (const c of commands) {
     const group = keyGroup(c.name), last = lines.at(-1);

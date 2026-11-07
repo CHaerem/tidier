@@ -1,9 +1,8 @@
-// Small windows on the settings page (littlewindow.js). Only with Tidier alone: without
-// it, Sidebery decides where a link from another app goes.
+// Small windows on the settings page (littlewindow.js).
 (async () => {
-  const box = document.getElementById("little-section"), on = document.getElementById("little-window");
+  const on = document.getElementById("little-window");
   const state = document.getElementById("peek-state"), allow = document.getElementById("peek-allow");
-  const set = s => { box.hidden = !s.alone; on.checked = s.on; };
+  const set = s => { on.checked = s.on; };
   const allSites = { origins: ["<all_urls>"] };
   const peek = async () => {
     const given = await browser.permissions.contains(allSites);

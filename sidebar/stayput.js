@@ -1,4 +1,4 @@
-// A list that shows where you are, and stays as you left it (Tidier alone).
+// A list that shows where you are, and stays as you left it.
 //
 // Each space keeps how far down its list you were, while this sidebar is open. And the
 // list moves by itself for one thing only: the selected tab became another one, which is
@@ -27,7 +27,6 @@
   };
 
   port.onMessage.addListener(next => {
-    if (!next.alone) return;
     cursor?.classList.add("cursor"); // a row drawn again has lost its mark, and you your place
     if (next.space !== shown) {
       shown = next.space;
@@ -45,5 +44,5 @@
 
   // You went back to the page: the cursor's mark is no longer true, and the next key
   // starts at the tab you are on then, not where you once left the cursor.
-  addEventListener("blur", () => { if (view?.alone) moveCursor(null); });
+  addEventListener("blur", () => { if (view) moveCursor(null); });
 }

@@ -12,10 +12,9 @@ const fixture = () => JSON.parse(readFileSync(new URL("fixtures/sidebery_export.
 const GROUP = "moz-extension://sb/sidebery/group.html#";
 
 // Firefox with these spaces: on this machine "Work" is container 2 and "Home" is 1.
-function machine({ alone = true, windows = true } = {}) {
+function machine({ windows = true } = {}) {
   const ff = new FakeFirefox({ containers: ["firefox-default", C1, C2] });
   ff.identities = { [C1]: { name: "Home", color: "green", icon: "tree" }, [C2]: { name: "Work", color: "orange", icon: "briefcase" } };
-  if (alone) ff.managed = { tidierAlone: true };
   if (windows) { const w = ff.addWindow({ focused: true }); ff.addTab(w.id, { url: "about:home", active: true }); }
   return ff;
 }
@@ -110,7 +109,7 @@ test("taking in rewrites everything to the local ids and makes the missing space
   x.kill();
 });
 
-test("a folder from a copy is no reason to offer going back to a Sidebery this browser may not have", async () => {
+test("a folder from a copy is Tidier's own, its address in Sidebery kept only for folds", async () => {
   const ff = machine();
   const x = await run(ff);
   const copy = swappedCopy();
@@ -123,7 +122,6 @@ test("a folder from a copy is no reason to offer going back to a Sidebery this b
   assert.equal(ff.synced.M.url, `${GROUP}Moved~!abc!~`);
   assert.equal(ff.synced.M.name, "Moved there");
   assert.equal(ff.synced.M.rank, 2);
-  assert.equal((await x.js("moveReport")()).canMoveBack, false);
   x.kill();
 });
 
@@ -334,26 +332,24 @@ const sideberyFolders = () => ({
   R2: { group: true, url: `moz-extension://here/sidebery/group.html#Reading`, title: "Reading", cookieStoreId: C2, parentKey: null, added: 1 },
 });
 
-test("folds wait for the move, and the move applies them", async () => {
-  const ff = machine({ alone: false, windows: false });
+// An older Tidier, on a browser that had not moved over yet, kept the export's closed
+// folders for the move (importedFolds); the move at the first start applies them.
+test("folds an older Tidier kept for the move are applied by the move", async () => {
+  const ff = machine({ windows: false });
   ff.identities = { [C1]: { name: "Space 1" }, [C2]: { name: "Space 2" } };
   ff.store.syncedTabs = sideberyFolders();
+  ff.store.importedFolds = [`${C1}|group.html#Reading`, `${C1}|group.html#Later`];
   const w = ff.addWindow({ focused: true });
-  for (const [key, e] of Object.entries(ff.store.syncedTabs)) ff.addTab(w.id, { url: e.url, title: e.title, cookieStoreId: e.cookieStoreId }, { syncKey: key, syncRole: "live" });
+  for (const [key, e] of Object.entries(ff.store.syncedTabs)) ff.addTab(w.id, { url: e.url, title: e.title, cookieStoreId: e.cookieStoreId }, { syncKey: key, syncRole: "copy" });
   ff.addTab(w.id, { url: "about:home", active: true });
   const x = await run(ff);
-  x.b.runtime.reload = () => {};
-  const r = plain(await x.js("importSidebery")(fixture()));
-  assert.equal(r.folds, 2, "two of these folders are closed");
-  assert.equal(ff.synced.R.collapsed, undefined, "and Sidebery's folders are left alone until the move");
-  assert.equal(ff.store.importedFolds.length, 2);
-  await x.js("moveOver")();
   const all = ff.store.syncedTabs;
   assert.equal(all.R.collapsed, true);
-  assert.equal(all.L.collapsed, true, "with the channel suffix Sidebery adds to its address");
+  assert.equal(all.L.collapsed, true);
   assert.ok(!all.O.collapsed);
   assert.ok(!all.R2.collapsed, "the same name in another space is another folder");
   assert.deepEqual(ff.store.importedFolds, [], "applied once");
+  assert.ok(!ff.list(w.id).some(t => t.url.includes("group.html")));
   x.kill();
 });
 
@@ -376,7 +372,7 @@ test("folds apply at once if the move has already happened", async () => {
 });
 
 test("without a snapshot folders start open, and the result says so", async () => {
-  const ff = machine({ alone: false, windows: false });
+  const ff = machine({ windows: false });
   ff.identities = { [C1]: { name: "Space 1" }, [C2]: { name: "Space 2" } };
   const w = ff.addWindow({ focused: true });
   ff.addTab(w.id, { url: "about:home", active: true });
@@ -472,7 +468,7 @@ test("what cannot be used in a copy is left out, and the rest comes", async () =
   assert.equal(ff.store.essentials.filter(e => e.key === "work-mail").length, 1);
   assert.equal(ff.store.essentials.find(e => e.key === "work-mail").url, "https://mail.example.org/", "the first of a key in it twice");
   assert.ok(ff.store.rules.some(r => r.url === "spaced.example.org" && r.space === C2), "as Sidebery reads a rule, without spaces around it");
-  assert.ok((await x.js("moveReport")()).folders.length >= 2, "and the settings page still opens");
+  assert.ok((await x.js("settingsAction")({ type: "settings:get" })).spaces.length, "and the settings page still opens");
   assert.deepEqual(x.errors, []);
   x.kill();
 });
@@ -555,24 +551,6 @@ test("an export with no names, its containers left out, gives no rules: an id al
   x.kill();
 });
 
-test("a window closed while a copy is taken in does not stop it (with Sidebery, a folder needs a page in each window)", async () => {
-  const ff = machine({ alone: false, windows: false });
-  const w = ff.addWindow({ focused: true });
-  ff.addTab(w.id, { url: "about:home", active: true });
-  ff.addTab(w.id, { url: `${GROUP}Here`, title: "Here", cookieStoreId: C1 });
-  const x = await run(ff);
-  const copy = swappedCopy();
-  copy.spaces = copy.spaces.slice(0, 2);
-  copy.data.essentials = [];
-  copy.data.syncedTabs = { F: { group: true, url: `${GROUP}Clients`, cookieStoreId: C1, parentKey: null, added: 1 } };
-  copy.data.rules = [{ url: "still.example.org", space: C1 }];
-  const create = x.b.tabs.create;
-  x.b.tabs.create = async p => p.url?.includes("Clients") ? Promise.reject(new Error("Invalid window ID")) : create(p);
-  const r = plain(await x.js("mergeCopy")(copy));
-  assert.equal(r.rules, 1, "the rest still comes");
-  x.kill();
-});
-
 test("older Sidebery's \":id:\" in a folder's address is no part of its name, and its snapshot leaves it out", async () => {
   const ff = machine();
   ff.identities = { [C1]: { name: "Space 1" }, [C2]: { name: "Space 2" } };
@@ -588,7 +566,7 @@ test("older Sidebery's \":id:\" in a folder's address is no part of its name, an
 });
 
 test("a copy taken in while Tidier is still starting is refused: without the tabs' roles every tab would get a second placeholder", async () => {
-  const ff = machine({ alone: false, windows: false });
+  const ff = machine({ windows: false });
   const w = ff.addWindow({ focused: true });
   ff.store.syncedTabs = { mine: { url: "https://mine.example.org/", title: "Mine", cookieStoreId: C1, parentKey: null, added: 1 } };
   ff.addTab(w.id, { url: "https://mine.example.org/", active: true, cookieStoreId: C1 }, { syncKey: "mine", syncRole: "live" });
@@ -600,39 +578,3 @@ test("a copy taken in while Tidier is still starting is refused: without the tab
   x.kill();
 });
 
-test("with Sidebery, a folder from a copy gets its page in every window, in the space with its name, at this machine's Sidebery address", async () => {
-  const ff = machine({ alone: false, windows: false });
-  const w1 = ff.addWindow({ focused: true }), w2 = ff.addWindow();
-  const here = "moz-extension://this-machine/sidebery/group.html";
-  ff.store.syncedTabs = { H: { group: true, url: `${here}#Here`, title: "Here", cookieStoreId: C1, parentKey: null, added: 1 } };
-  ff.addTab(w1.id, { url: "about:home", active: true });
-  for (const w of [w1, w2]) ff.addTab(w.id, { url: `${here}#Here`, title: "Here", cookieStoreId: C1 }, { syncKey: "H", syncRole: "copy" });
-  const x = await run(ff);
-  const copy = swappedCopy();
-  copy.data.essentials = [];
-  copy.data.syncedTabs = { F: { group: true, url: `${GROUP}Clients~!abcdefghijkl!ch!~`, cookieStoreId: C1, parentKey: null, added: 1 } };
-  const r = plain(await x.js("mergeCopy")(copy));
-  assert.equal(r.folders, 1);
-  await wait(500);
-  for (const w of [w1, w2]) {
-    const page = ff.list(w.id).filter(t => t.url === `${here}#Clients`);
-    assert.equal(page.length, 1, `one page in window ${w.id}`);
-    assert.equal(page[0].cookieStoreId, C2, "Work is container 2 here");
-  }
-  assert.equal(ff.synced.F.cookieStoreId, C2);
-  assert.equal(ff.synced.F.own, undefined);
-  assert.deepEqual(x.errors, []);
-  x.kill();
-});
-
-test("with Sidebery but no folder of it open here, a folder that never had a Sidebery address stays out, and the rest comes", async () => {
-  const ff = machine({ alone: false });
-  const x = await run(ff);
-  const copy = swappedCopy();
-  const r = plain(await x.js("mergeCopy")(copy));
-  assert.equal(r.folders, 1, "only the one with an address");
-  assert.equal(ff.synced?.F, undefined, "Projects was made since a move");
-  assert.equal(r.essentials, 3);
-  assert.deepEqual(x.errors, []);
-  x.kill();
-});

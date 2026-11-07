@@ -16,7 +16,7 @@ addEventListener("mousedown", e => { pressed = e.target; }, true);
 function startDrag(e, what) {
   const onButton = pressed?.closest?.("button");
   pressed = null;
-  if (!view?.alone || onButton) { e.preventDefault(); return; }
+  if (!view || onButton) { e.preventDefault(); return; }
   dragging = what;
   e.dataTransfer.effectAllowed = "move";
   e.dataTransfer.setData("text/plain", ""); // Firefox starts no drag without data

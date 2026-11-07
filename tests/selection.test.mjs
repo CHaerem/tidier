@@ -25,13 +25,13 @@ class El {
   get previousElementSibling() { const list = this.list.filter(e => e.classes.has("tile") === this.classes.has("tile")); return list[list.indexOf(this) - 1] ?? null; }
 }
 
-async function sidebar({ os = "mac", alone = true, rows = [1, 2, 3, 4, 5], tiles = [8, 9], active = 1 } = {}) {
+async function sidebar({ os = "mac", rows = [1, 2, 3, 4, 5], tiles = [8, 9], active = 1 } = {}) {
   const els = [...rows.map(id => new El(id, "row tab")), ...tiles.map(id => new El(id, "tile"))];
   for (const e of els) { e.list = els; if (e.id === active) e.classes.add("active"); }
   const kept = new Map(els.map(e => [`${e.classes.has("tile") ? "tile" : "tab"}:${e.id}`, e]));
   const listeners = {}, sent = [], viewListeners = [];
   const ctx = {
-    view: { alone, space: "s" }, kept, send: m => sent.push(m), closeMenu() {}, cursor: null, moveCursor(c) { ctx.cursor = c || null; },
+    view: { space: "s" }, kept, send: m => sent.push(m), closeMenu() {}, cursor: null, moveCursor(c) { ctx.cursor = c || null; },
     reachable: () => els, dragging: null, marks() {}, dropAt: () => null,
     nextTab: e => { const list = els.filter(x => x.classes.has("tab")); return list[list.indexOf(e) + 1] ?? null; },
     port: { onMessage: { addListener: f => viewListeners.push(f) } },
@@ -70,16 +70,6 @@ const target = ({ item = null, button = null, keeps = false } = {}) => ({
   closest: sel => (sel === "[data-tab]" ? item : sel === "button" ? button : keeps && sel.includes("#menu") ? {} : null),
 });
 const xButton = { classList: { contains: x => x === "close" } }, otherButton = { classList: { contains: () => false } };
-
-test("with the setting off, a click is the row's own and nothing is picked", async () => {
-  const s = await sidebar({ alone: false });
-  assert.equal(s.add(2).stopped, false);
-  assert.equal(s.range(3).stopped, false);
-  assert.equal(s.fire("keydown", s.el(2), { key: "Backspace" }).stopped, false);
-  assert.equal(s.fire("auxclick", s.el(2), { button: 1 }).stopped, false);
-  assert.deepEqual(s.picked(), []);
-  assert.deepEqual([...s.ctx.selectedTabs(2)], [2]);
-});
 
 test("the first ⌘-click takes the selected tab in; the next add and remove; the click stops there", async () => {
   const s = await sidebar();
@@ -369,8 +359,7 @@ const entry = (url, more = {}) => ({ url, title: url, cookieStoreId: C1, parentK
 const savedIn = (folder, url) => entry(url, { parentKey: folder, saved: { url, title: url } });
 const FOLDER = { group: true, own: true, name: "Work", cookieStoreId: C1, parentKey: null, rank: 1 };
 
-async function start(ff, alone = true) {
-  if (alone) ff.managed = { tidierAlone: true };
+async function start(ff) {
   const x = ff.boot();
   x.b.runtime.onStartup.fire({ reason: "update" });
   await wait(1200);
@@ -418,19 +407,6 @@ for (const [name, prior, closing] of [
   });
 }
 
-test("with the setting off, a place is read as before", async () => {
-  const { ff, w, tabs } = savedRow(true);
-  // Sidebery's own folder page, since that is what a folder is then.
-  ff.store.syncedTabs.F = entry("moz-extension://sb/sidebery/group.html#F", { group: true });
-  ff.addTab(w.id, { url: "moz-extension://sb/sidebery/group.html#F", cookieStoreId: C1, index: 2 }, { syncKey: "F", syncRole: "copy" });
-  const x = await start(ff, false);
-  await wait(100);
-  ff.rm(tabs.a.id);
-  assert.equal(x.js("closingOrder").size, 0, "nothing is held");
-  await wait(2000);
-  x.kill();
-});
-
 test("a tab pinned right after a move, or while Tidier is busy with it, leaves the tab record", async () => {
   const ff = new FakeFirefox();
   ff.store.syncedTabs = { a: entry("https://a.example/"), b: entry("https://b.example/"), n: entry("https://n.example/") };
@@ -457,16 +433,15 @@ test("a tab pinned right after a move, or while Tidier is busy with it, leaves t
   x.kill();
 });
 
-// With the setting off too since the chaos test (tabsync.js): Tidier pins no synced tab
-// itself, so a pin is yours, also while Tidier is busy with the tab; missed, it would stay
-// both an essential and a synced tab.
-test("with the setting off too, a tab Tidier is busy with leaves the tab record when you pin it", async () => {
+// Tidier pins no synced tab itself, so a pin is yours, also while Tidier is busy with the
+// tab (tabsync.js); missed, it would stay both an essential and a synced tab.
+test("a tab Tidier is busy with leaves the tab record when you pin it", async () => {
   const ff = new FakeFirefox();
   ff.store.syncedTabs = { a: entry("https://a.example/") };
   const w = ff.addWindow({ focused: true });
   ff.addTab(w.id, { url: "about:blank", active: true });
   const a = ff.addTab(w.id, { url: "https://a.example/", cookieStoreId: C1 }, { syncKey: "a", syncRole: "live" });
-  const x = await start(ff, false);
+  const x = await start(ff);
   x.js("syncBusy").add(a.id);
   await x.b.tabs.update(a.id, { pinned: true });
   await wait(1000);
@@ -475,14 +450,14 @@ test("with the setting off too, a tab Tidier is busy with leaves the tab record 
 });
 
 test("tabs opened together keep their order in another window, whichever settles first", async () => {
-  const order = async alone => {
+  const order = async () => {
     const ff = new FakeFirefox();
     ff.store.syncedTabs = { h: entry("https://h.example/") };
     const w = ff.addWindow({ focused: true }), o = ff.addWindow();
     ff.addTab(w.id, { url: "https://h.example/", active: true, cookieStoreId: C1 }, { syncKey: "h", syncRole: "live" });
     ff.addTab(o.id, { url: "about:blank", active: true });
     ff.addTab(o.id, { url: GHOST("ghost", "h"), discarded: true, cookieStoreId: C1 }, { syncKey: "h", syncRole: "ghost" });
-    const x = await start(ff, alone);
+    const x = await start(ff);
     const t = ["a", "b", "c"].map(n => ff.addTab(w.id, { url: `https://${n}.example/`, cookieStoreId: C1 }));
     for (const i of [2, 0, 1]) await x.js("register")(t[i].id);
     await x.js("flushWrites")();
@@ -490,8 +465,7 @@ test("tabs opened together keep their order in another window, whichever settles
     x.kill();
     return got.join("");
   };
-  assert.equal(await order(true), "habc");
-  assert.equal(await order(false), "hcab", "with the setting off, each is simply added at the end");
+  assert.equal(await order(), "habc");
 });
 
 test("a tab with no record is a place too: a move lands right before it, in its window", async () => {
@@ -546,14 +520,15 @@ test("an essential's pin counts even on a copy Tidier has just made", async () =
 });
 
 // Tidier never unpins a copy, so an unpin is yours, also just after the copy appeared (an
-// unpin for a moment while Sidebery moves it is waited out: UNPIN_SETTLE_MS, essentials.js).
-test("with the setting off too, a copy Tidier is busy with is no essential once you unpin it", async () => {
+// unpin for a moment while Firefox moves it to another window is waited out: UNPIN_SETTLE_MS,
+// essentials.js).
+test("a copy Tidier is busy with is no essential once you unpin it", async () => {
   const ff = new FakeFirefox();
   ff.store.essentials = [{ key: "e", url: "https://e.example/", cookieStoreId: C1, title: "E", icon: "x" }];
   const w = ff.addWindow({ focused: true });
   ff.addTab(w.id, { url: "about:blank", active: true });
   const t = ff.addTab(w.id, { url: "https://e.example/", pinned: true, cookieStoreId: C1 }, { essentialKey: "e" });
-  const x = await start(ff, false);
+  const x = await start(ff);
   x.js("busy").add(t.id);
   await x.b.tabs.update(t.id, { pinned: false });
   await wait(1000);

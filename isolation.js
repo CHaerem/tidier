@@ -1,4 +1,4 @@
-// Isolation (Tidier alone): a space is a container, with logins of its own, and
+// Isolation: a space is a container, with logins of its own, and
 // nothing ever goes out in the wrong one. It should be something nobody has to think
 // about, so nearly all of it has no face; what has one is on the settings page
 // (settings/spaces.js) and in the menus (sidebar/isolation.js).
@@ -35,14 +35,14 @@ const BY_HAND_MS = 5000;
 //   activeSpace  the space you are in
 //   exempt       opened by hand into its space, or an essential: no rule may send it away
 //
-// A page outside any container goes to a space, always: with Tidier alone no web page is
-// ever loaded outside one, so no login can land there. To the rule's if one matches, else
+// A page outside any container goes to a space, always: no web page is ever loaded
+// outside one, so no login can land there. To the rule's if one matches, else
 // the active one.
 //
 // In a space, a rule counts only for what you chose yourself: a tab's first page, or a
 // navigation nobody's page asked for. A link followed inside a page and a redirect do not,
 // so a sign-in passing through an address does not move your tab (with Sidebery's rules it
-// did: README). The same address again, with no page asking, is a reload or Firefox
+// did). The same address again, with no page asking, is a reload or Firefox
 // restoring the tab, and you chose neither. A popup is a sign-in talking to the page that
 // opened it, which moving it would break.
 //
@@ -152,7 +152,7 @@ function beforeTopLevelRequest(details) {
 // shows, as without the permission. (spaces.js, from tabs.onUpdated.) Only while it
 // loads: a tab Firefox restores unloaded takes on its address too, and sends nothing until
 // it is selected, when it is stopped like any other.
-const notLookedAt = (tabId, tab, wasFirstPage) => tidierAlone && tab.status === "loading" && !tab.discarded && !tab.incognito &&
+const notLookedAt = (tabId, tab, wasFirstPage) => tab.status === "loading" && !tab.discarded && !tab.incognito &&
   (tab.cookieStoreId === NO_CONTAINER || (wasFirstPage && !requestOfTab.has(tabId)));
 async function moveShown(tabId, url, wasFirstPage) {
   const tab = await browser.tabs.get(tabId).catch(() => null);
@@ -180,7 +180,7 @@ async function moveOutOfPlace(tab, url, wasFirstPage = false) {
 async function lookAtRequest(details, look) {
   await isolationKnown;
   const { tabId, requestId, url, cookieStoreId: here } = details;
-  if (!tidierAlone || tabId < 0 || details.incognito || !isWeb(url)) return {};
+  if (tabId < 0 || details.incognito || !isWeb(url)) return {};
   const redirect = requestOfTab.get(tabId) === requestId;
   requestOfTab.set(tabId, requestId);
   if (reopening.has(tabId) || leaving.has(tabId)) return { cancel: true };
@@ -249,7 +249,7 @@ async function spaceToOpenIn(tab) {
 }
 
 // Where a tab with no container belongs when no rule says: with its folder, if it is in
-// one (Sidebery's spaces can hold tabs with no container, and moving over keeps them
+// one (Sidebery's spaces could hold tabs with no container, and moving over kept them
 // there), else the space you are in.
 async function homeOf(tab) {
   const all = await getSynced();
@@ -322,7 +322,7 @@ async function recordIntoSpace(key, created, space) {
   const perWindow = new Map();
   for (const t of old) if (t.windowId !== created.windowId && (t.active || !perWindow.has(t.windowId))) perWindow.set(t.windowId, t);
   for (const t of all[key] ? perWindow.values() : []) {
-    const rep = await createRep(t.windowId, key, all[key], undefined, t.index).catch(noteError);
+    const rep = await createRep(t.windowId, key, all[key], t.index).catch(noteError);
     if (rep && t.active) await browser.tabs.update(rep.id, { active: true }).catch(() => {});
   }
   // One by one (removeTabs, common.js): Firefox refuses a whole list if one has closed meanwhile.
@@ -348,7 +348,7 @@ async function openIn(tab, url, space, popup, index) {
   return browser.windows.create({ cookieStoreId: space, url }).then(made => made.tabs?.[0] ?? made);
 }
 
-// An essential with no container: from before Tidier alone, say. It cannot stay what it
+// An essential with no container: from before Tidier had spaces of its own, say. It cannot stay what it
 // is, or its login lands outside every space, so it becomes an essential of the space
 // you are in, in every window, and the copy you were opening opens there. Its copies in
 // two windows can both load at once (Firefox restoring them), and each asks here.
@@ -380,11 +380,10 @@ async function moveEssentialIntoSpace(key, space) {
 // remembers from last time (webRequest is "startup blocking"), but it only remembers one
 // that was added while the page was loading, and forgets it if it isn't back by then.
 // That is a link from another app with Firefox closed: the very request this is for.
-// Reading whether Tidier alone is on takes longer than that, so what was true last time
-// is kept where it can be read at once. So a permission given while Tidier runs holds
+// Asking whether the permission is given takes longer than that, so what was true last
+// time is kept where it can be read at once. So a permission given while Tidier runs holds
 // requests from the second start after it, and in the first one a page that slipped
-// through is moved as soon as Tidier has started (moveStragglers). Moving over reloads
-// the page, so it is there from the first (guardAfterReload).
+// through is moved as soon as Tidier has started (moveStragglers).
 function guardRequests() {
   if (guarding || !browser.webRequest?.onBeforeRequest) return;
   browser.webRequest.onBeforeRequest.addListener(beforeTopLevelRequest, { urls: ["<all_urls>"], types: ["main_frame"] }, ["blocking"]);
@@ -396,18 +395,12 @@ function unguardRequests() {
 }
 browser.tabs.onRemoved.addListener(tabId => { requestOfTab.delete(tabId); settled.delete(tabId); });
 
-async function guardAfterReload() {
-  if (!await browser.permissions.contains?.(ISOLATION_PERMISSIONS).catch(() => false)) return;
-  try { localStorage.setItem(AT_START, JSON.stringify({ guard: true, network: networkNow })); } catch (err) { /* then from the next start */ }
-}
-
 // A web page already loaded outside any space when Tidier starts: it got there before
 // anything could stop it, with no login, since those are all in spaces, and it must not
 // stay there, where its next login would land. Only what is loaded: an unloaded tab is
 // stopped when it loads. A pinned one too: Firefox loads those at once when it restores
 // them, so it is the likeliest to have got out, and it never navigates by itself.
 async function moveStragglers() {
-  if (!tidierAlone) return;
   for (const tab of await browser.tabs.query({ cookieStoreId: NO_CONTAINER })) {
     if (tab.incognito || tab.discarded || !isWeb(tab.url) || reopening.has(tab.id)) continue;
     await moveOutOfPlace(tab, tab.url);
@@ -419,7 +412,7 @@ async function moveStragglers() {
 // and the host permission; a user agent is the same permissions as above.
 const spaceNetwork = storedValue("spaceNetwork", () => ({})); // { [container]: { proxy: { type, host, port }, userAgent } }
 let networkNow = {}; // the same, for listeners that must answer at once
-let startingAlone = false; // last time Tidier alone was on, and whether it still is has not been read yet
+let permissionsRead = false; // whether what was given is known yet: not while the page loads
 const PROXY_TYPES = ["http", "https", "socks", "socks4"];
 
 // What was typed, as Firefox wants it, or null: Firefox rejects a bad one at each
@@ -476,12 +469,12 @@ function agentFor(details) {
 // show the site your own address at the moment the proxy hides it. Such a tab shows its
 // first letter instead; an icon Firefox has inline costs no request.
 // (The record's icon, for a page that has none at the moment, is as remote as the page's own.)
-// A placeholder has no page of its own with Tidier alone (createRep, tabsync.js), so it
-// takes the record's icon, else the site's (recordIcon, sidebar-view.js). A loaded page
+// A placeholder has no page of its own (createRep, tabsync.js), so it takes the record's
+// icon, else the site's (recordIcon, sidebar-view.js). A loaded page
 // takes the record's only while Firefox has dropped its own for a new page of the same site
 // (keptIcon, tabsync.js, forgets it for another site).
 const iconForView = (t, entry) => {
-  const record = !tidierAlone || !entry ? null : isGhostUrl(t.url) ? recordIcon(entry) : viewableIcon(entry.icon);
+  const record = !entry ? null : isGhostUrl(t.url) ? recordIcon(entry) : viewableIcon(entry.icon);
   const icon = t.favIconUrl || record || null;
   return networkNow[t.cookieStoreId]?.proxy && isWeb(icon) ? null : icon;
 };
@@ -490,7 +483,7 @@ const iconForView = (t, entry) => {
 // space has one. One a space asks for but cannot have is said, never silently ignored:
 // you would think you were behind a proxy.
 function applyNetwork() {
-  const all = Object.values(tidierAlone || startingAlone ? networkNow : {});
+  const all = Object.values(networkNow);
   const wantsProxy = all.some(n => n.proxy), wantsAgent = all.some(n => n.userAgent);
   const proxyEvent = browser.proxy?.onRequest, agentEvent = browser.webRequest?.onBeforeSendHeaders;
   if (agentEvent) {
@@ -505,14 +498,14 @@ function applyNetwork() {
     if (wantsAgent && !agentEvent.hasListener(agentFor)) agentEvent.addListener(agentFor, { urls: ["<all_urls>"] }, ["blocking", "requestHeaders"]);
     if (!wantsAgent && agentEvent.hasListener(agentFor)) agentEvent.removeListener(agentFor);
   }
-  if (!tidierAlone) return;
+  if (!permissionsRead) return;
   const missing = (wantsProxy || wantsAgent) && (!hostsGiven || (wantsProxy && !proxyEvent) || !agentEvent);
   setNotice("spaceNetwork", missing ? "A space's proxy or user agent is not in use: Tidier no longer has the permission for it. It can be given on the settings page." : null);
 }
 
 function rememberForStart() {
   try {
-    if (tidierAlone && (guarding || Object.keys(networkNow).length)) localStorage.setItem(AT_START, JSON.stringify({ guard: guarding, network: networkNow }));
+    if (guarding || Object.keys(networkNow).length) localStorage.setItem(AT_START, JSON.stringify({ guard: guarding, network: networkNow }));
     else localStorage.removeItem(AT_START);
   } catch (err) { /* private storage off: then these start a moment later */ }
 }
@@ -534,20 +527,19 @@ async function setSpaceNetwork(id, { proxy, userAgent }) {
 try {
   const atStart = JSON.parse(localStorage.getItem(AT_START) || "null");
   if (atStart) {
-    startingAlone = true;
     networkNow = atStart.network ?? {};
     if (atStart.guard) guardRequests();
     applyNetwork();
   }
 } catch (err) { /* then they start a moment later */ }
 
+// (Started as the page loads, so its first step must wait for something: storage answers only
+// once every background script has run, and what follows uses theirs.)
 async function startIsolation() {
-  await readAlone();
-  startingAlone = false;
-  if (!tidierAlone) return stopIsolation();
-  await readSpaces();
   networkNow = await spaceNetwork.get();
+  await readSpaces();
   hostsGiven = !!await browser.permissions.contains?.({ origins: ["<all_urls>"] }).catch(() => false);
+  permissionsRead = true;
   if (await browser.permissions.contains?.(ISOLATION_PERMISSIONS).catch(() => false)) guardRequests();
   else unguardRequests();
   applyNetwork();
@@ -558,12 +550,6 @@ async function startIsolation() {
 async function readSpaces() {
   // Containers turned off in Firefox: there is nothing a rule or a tab could go to.
   knownSpaces = new Set((await identities().catch(() => [])).map(c => c.cookieStoreId));
-}
-function stopIsolation() {
-  unguardRequests();
-  networkNow = {};
-  applyNetwork();
-  try { localStorage.removeItem(AT_START); } catch (err) { /* nothing was kept then */ }
 }
 const isolationKnown = startIsolation().catch(noteError);
 for (const event of ["onAdded", "onRemoved"]) browser.permissions[event].addListener(() => { isolationKnown.then(startIsolation).catch(noteError); viewAllSoon(); });
@@ -758,7 +744,7 @@ async function rememberSpaces() {
 
 // The containers that are pointed at but not there. What you keep counts: essentials,
 // folders and saved tabs. An ordinary tab or a rule counts only if the space is remembered:
-// a tab left over, or a rule in Sidebery's export for a container removed long ago, is no
+// a tab left over, or a rule from Sidebery's export for a container removed long ago, is no
 // reason for a space called "Space".
 function vanishedSpaces({ essentials, record, rules, have, memory = {} }) {
   const pointedAt = [
@@ -770,8 +756,7 @@ function vanishedSpaces({ essentials, record, rules, have, memory = {} }) {
 }
 
 async function bringBackSpaces() {
-  await startIsolation(); // what was read while the page loaded may have changed: managed storage is read again here too
-  if (!tidierAlone) return;
+  await startIsolation(); // what was read while the page loaded may have changed
   // Containers turned off in Firefox: not known whether anything is gone.
   const containers = await identities().catch(() => null);
   if (!containers) return;
@@ -851,13 +836,13 @@ async function tabsIntoNewContainers(map) {
 // Your own changes, while Tidier runs. A start has already seen what was there before.
 browser.contextualIdentities.onCreated.addListener(({ contextualIdentity }) => {
   knownSpaces?.add(contextualIdentity?.cookieStoreId);
-  if (tidierAlone) serial(rememberSpaces);
+  serial(rememberSpaces);
 });
-browser.contextualIdentities.onUpdated.addListener(() => { if (tidierAlone) serial(rememberSpaces); });
+browser.contextualIdentities.onUpdated.addListener(() => { serial(rememberSpaces); });
 browser.contextualIdentities.onRemoved.addListener(({ contextualIdentity }) => {
   // At once, not in the queue: a request now must not go to a space that is gone.
   knownSpaces?.delete(contextualIdentity.cookieStoreId);
-  if (tidierAlone) serial(() => forgetSpace(contextualIdentity.cookieStoreId));
+  serial(() => forgetSpace(contextualIdentity.cookieStoreId));
 });
 
 // --- 6. A copy in another space, and a folder moved to one ----------------------------

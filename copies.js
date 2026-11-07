@@ -90,7 +90,8 @@ async function makeMissingSpaces(spaces, map, wanted) {
   return made;
 }
 
-// A folder's name in a file; null if it has none to make a folder of.
+// A folder's name in a file; null if it has none to make a folder of. A folder of Sidebery's,
+// in a copy made on a machine still beside it, is named in its page's address.
 function folderNameIn(e) {
   if (e.own) return typeof e.name === "string" ? e.name : null;
   try { return isText(e.url) ? groupName(e.url) : null; } catch (err) { return null; } // a "%" alone is no address
@@ -157,8 +158,8 @@ async function copySummary(copy) {
 
 // Take in the essentials, folders, saved tabs and rules of the given spaces (all, if
 // none is given) that are not here yet, making the spaces that are missing. Ordinary
-// tabs are not kept: they would have been archived by now anyway. With Tidier alone,
-// Sidebery's folder pages become folders.
+// tabs are not kept: they would have been archived by now anyway. A folder of Sidebery's
+// becomes one of Tidier's own, as when a browser moves over (moveover.js).
 async function mergeCopy(copy, spaces) {
   if (!isTidierCopy(copy)) return null;
   // Firefox may have restored the settings page before Tidier has read which tab is what:
@@ -175,25 +176,12 @@ async function mergeCopy(copy, spaces) {
   const newEssentials = coming.essentials.filter(takes).map(e => ({ ...e, cookieStoreId: here(e.cookieStoreId) }));
   if (newEssentials.length) setList([...list, ...newEssentials]);
 
-  const pageBase = tidierAlone ? null : await sideberyGroupBase(); // Sidebery's address differs per machine
-  const wins = await normalWindows();
   let folders = 0, tabs = 0;
   for (const [key, theirs] of coming.folders.filter(([, e]) => takes(e))) {
     const e = { ...theirs, cookieStoreId: here(theirs.cookieStoreId) }, name = folderNameIn(theirs);
-    if (tidierAlone) {
-      // Only moveOver sets oldUrl: it is what going back to Sidebery restores, and Sidebery
-      // here has no page for a folder from elsewhere. Its address stays, for folds (foldKey).
-      const { oldUrl, ...rest } = e, url = oldUrl ?? e.url;
-      all[key] = { ...rest, url: isText(url) ? url : undefined, own: true, name, rank: e.own ? e.rank : folders + 1 };
-    } else {
-      // A folder needs its page in each window, or reconcileAll would see a folder that was closed.
-      const url = pageBase ? `${pageBase}#${encodeURIComponent(name)}` : e.oldUrl ?? e.url;
-      if (!isSideberyGroup(url)) continue; // made since a move, and no Sidebery folder here to take the address from
-      all[key] = { ...e, url };
-      delete all[key].own;
-      // (A window closed meanwhile must not stop the rest: it is all in the record by now.)
-      for (const w of wins) await createRep(w.id, key, all[key]).catch(noteError);
-    }
+    // A folder's address in Sidebery stays, for its export's closed folders (foldKey, moveover.js).
+    const { oldUrl, ...rest } = e, url = oldUrl ?? e.url;
+    all[key] = { ...rest, url: isText(url) ? url : undefined, own: true, name, rank: e.own ? e.rank : folders + 1 };
     folders++;
   }
   for (const [key, e] of coming.tabs.filter(([, e]) => takes(e))) {

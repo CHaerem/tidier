@@ -2,9 +2,9 @@
 // been selected in any window for 12 hours is closed everywhere. Firefox keeps
 // it under History → Recently Closed Tabs (⌘⇧T reopens the last one).
 //
-// Kept: essentials (pinned), Sidebery folders and every tab in them (Arc's
-// pinned folders; the pull request folders too), a tab that is selected in
-// any window, and tabs playing sound.
+// Kept: essentials (pinned), every tab in a folder (Arc's pinned folders; the
+// pull request folders too), a tab that is selected in any window, and tabs
+// playing sound.
 //
 // The time counts from when the tab was last selected (or opened, if it never
 // was), but never from before
@@ -12,23 +12,11 @@
 // once. Change the time with "archiveAfterHours" in the extension storage
 // (0 turns archiving off).
 //
-// With Tidier alone every tab it closes also goes in Tidier's own list, per space, so
-// it can be found again there (archivelist.js).
+// Every tab it closes also goes in Tidier's own list, per space, so it can be found
+// again there (archivelist.js).
 
 const ARCHIVE_DEFAULT_HOURS = 12;
 const ARCHIVE_CHECK_MINUTES = 10;
-
-// A Sidebery folder, or a tab anywhere below one: by the stored parents, and
-// by the tree as it is now (Sidebery keeps openerTabId equal to the parent),
-// since a tab can be moved into a folder after it was opened.
-function inFolder(all, key, live, tabsById) {
-  if (all[key]?.group || storedInFolder(all, key)) return true;
-  for (let t = live, seen = new Set(); t && !seen.has(t.id); t = tabsById.get(t.openerTabId)) {
-    seen.add(t.id);
-    if (isSideberyGroup(t.url)) return true;
-  }
-  return false;
-}
 
 // `now` and `onlyKeys` are for the smoke test (pretend it is later, and only
 // look at its own tabs); `explain` returns why each tab was kept.
@@ -44,10 +32,10 @@ async function archiveIdleTabs({ now = Date.now(), onlyKeys, explain = false } =
   const all = await getSynced();
   const tabs = await browser.tabs.query({});
   const archived = [], kept = {};
-  const tabsById = new Map(tabs.map(t => [t.id, t]));
+  const tabsById = new Map(tabs.map(t => [t.id, t])); // (for a placeholder's live tab)
   const reps = repsByKey(tabs); // closing a tab below changes only that tab's own entry
   for (const key of onlyKeys || Object.keys(all)) {
-    const why = keepReason(all, key, reps.get(key) ?? [], tabsById, now, since, hours);
+    const why = keepReason(all, key, reps.get(key) ?? [], now, since, hours);
     if (why) { kept[key] = why; continue; }
     if (!(await closesQuietly(key))) { kept[key] = "unsaved"; continue; }
     // A real page has Recently Closed as well. A tab that is only a placeholder has nothing
@@ -60,27 +48,25 @@ async function archiveIdleTabs({ now = Date.now(), onlyKeys, explain = false } =
   return explain ? { archived, kept } : archived;
 }
 
-function keepReason(all, key, reps, tabsById, now, since, hours) {
+function keepReason(all, key, reps, now, since, hours) {
   const entry = all[key];
   if (!entry) return "unknown";
   if (!reps.length) return "no tab";
   const live = reps.find(t => syncRoleByTab.get(t.id) === "live");
-  if (entry.group || reps.some(t => inFolder(all, key, t, tabsById))) return "folder";
+  if (entry.group || storedInFolder(all, key)) return "folder";
   if (reps.some(t => t.pinned)) return "pinned";
   if (reps.some(t => t.active)) return "selected";
   if (reps.some(t => t.audible)) return "sound";
   if (!live) return "no live tab";
   // A live tab that is only a placeholder (it became live when the window with
   // the real page closed) has no page for Recently Closed to keep, and its
-  // lastAccessed says nothing about when you last used the tab. With Sidebery it is
-  // kept until you select it, and from then on it ages like any other tab.
-  //
-  // With Tidier alone Tidier's own list holds its address (archivelist.js), so it can
-  // be archived like the rest. Its time counts from when this first saw it as a
-  // placeholder: you may well have used the page just before its window closed.
+  // lastAccessed says nothing about when you last used the tab. Tidier's own list
+  // holds its address (archivelist.js), so it can be archived like the rest. Its time
+  // counts from when this first saw it as a placeholder: you may well have used the
+  // page just before its window closed.
   let lastUsed;
   if (isGhostUrl(live.url)) {
-    if (!tidierAlone || !isWeb(entry.url)) return "placeholder";
+    if (!isWeb(entry.url)) return "placeholder";
     if (!entry.placeholderSince) {
       entry.placeholderSince = now;
       saveSynced(all, { lazy: true }); // lost in a crash, the time just starts again
@@ -102,7 +88,7 @@ function keepReason(all, key, reps, tabsById, now, since, hours) {
 // used a minute ago.
 browser.tabs.onActivated.addListener(async ({ tabId }) => {
   const key = syncKeyByTab.get(tabId);
-  if (!tidierAlone || !started || !key) return;
+  if (!started || !key) return;
   const all = await getSynced();
   if (!all[key]?.placeholderSince) return;
   delete all[key].placeholderSince;

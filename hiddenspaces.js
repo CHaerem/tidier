@@ -1,5 +1,5 @@
 // A space hidden on this machine, for example a workplace's space that should show only
-// on that workplace's Mac (Tidier alone). It is hiding only: nothing is deleted, and its
+// on that workplace's Mac. It is hiding only: nothing is deleted, and its
 // essentials, folders and tabs stay in Tidier's record, so they still sync and come back
 // when it is shown again. While hidden, it is not on the bar and gets no tab in any window
 // here, ⌃1/⌃2/⌃3 skip it, and nothing opens in it.
@@ -15,7 +15,6 @@ const isHiddenSpace = id => hiddenSpaceIds.has(id);
 const HIDDEN_KEY = "hiddenSpaces";
 
 async function readHiddenSpaces() {
-  if (!tidierAlone) return;
   const declared = (await browser.storage.managed.get(HIDDEN_KEY).catch(() => ({})))[HIDDEN_KEY];
   let stored = (await browser.storage.local.get(HIDDEN_KEY))[HIDDEN_KEY];
   if (!Array.isArray(stored)) stored = [];
@@ -48,7 +47,7 @@ async function rereadHiddenSpaces() {
   await readHiddenSpaces();
   await hiddenChanged(before);
 }
-const hiddenMayChange = () => { if (tidierAlone && started) serial(rereadHiddenSpaces); };
+const hiddenMayChange = () => { if (started) serial(rereadHiddenSpaces); };
 browser.contextualIdentities.onUpdated.addListener(hiddenMayChange);
 browser.contextualIdentities.onCreated.addListener(hiddenMayChange);
 // A container removed: Firefox closes its tabs and refuses new ones, and essentials.js drops its
@@ -56,7 +55,7 @@ browser.contextualIdentities.onCreated.addListener(hiddenMayChange);
 // have no tab to be closed, would be refused at every window filled, for ever. With sync on, the
 // other machines still have them, and they come back with a container of that name (sync.js).
 browser.contextualIdentities.onRemoved.addListener(({ contextualIdentity: { cookieStoreId: id } }) => {
-  if (!tidierAlone || !started) return;
+  if (!started) return;
   serial(async () => {
     const all = await getSynced();
     const left = Object.keys(all).filter(k => all[k].cookieStoreId === id);
@@ -184,7 +183,6 @@ async function leaveHiddenSpaces(spaces = hiddenSpaceIds) {
 // From the settings page. Hiding the last space that shows is not done: a window must
 // have a space (the page does not offer it either, but two ticks can pass each other).
 async function setSpaceHidden(id, hidden) {
-  if (!tidierAlone) return;
   if (hidden && !(await containerSpaces()).some(s => s.id !== id && !isHiddenSpace(s.id))) return;
   const stored = (await browser.storage.local.get(HIDDEN_KEY))[HIDDEN_KEY];
   const list = (Array.isArray(stored) ? stored : []).filter(x => x !== id);

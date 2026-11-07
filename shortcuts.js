@@ -5,8 +5,9 @@
 // changed on the settings page.
 //
 // Arc's keys, where Firefox lets an extension have them. "Ctrl" means ⌘ on a Mac, as
-// Firefox writes it, and "MacCtrl" means ⌃. The keys are not in the manifest, since it
-// reaches machines still on Sidebery, whose keys they would take.
+// Firefox writes it, and "MacCtrl" means ⌃. The keys are given at the first start
+// (keys-commands.js), not in the manifest: there a key some other command already has is
+// left out rather than doubled, and the settings page can give them all back.
 //
 // - ⌘⌥ and an arrow, Arc's next and previous tab and space, cannot be had: Firefox's
 //   tab box takes them first (ShortcutUtils.getSystemActionForEvent), and about:keyboard
@@ -16,7 +17,7 @@
 //   extension's never acts. On a digit both act when the keyboard is in a page: an
 //   extension's key acts on keydown, but the page's process has by then also been sent the
 //   keypress, and Firefox's key acts when that comes back.
-// - Copying the address is the one command that works without Tidier alone too.
+// - Copying the address works in any window of Firefox's, a small or a private one too.
 
 async function copyUrl(windowId) {
   const [tab] = await browser.tabs.query({ active: true, windowId });
@@ -71,7 +72,7 @@ const COMMANDS = [
 // _execute_sidebar_action never comes here: Firefox carries that one out itself.
 browser.commands.onCommand.addListener(async (name, tab) => {
   const command = COMMANDS.find(c => c.name === name);
-  if (!command?.action || !(tidierAlone || command.always)) return; // (one with no action is carried out where it is made)
+  if (!command?.action) return; // (one with no action is carried out where it is made)
   const windowId = tab?.windowId ?? (await browser.tabs.query({ active: true, currentWindow: true }))[0]?.windowId;
   const win = windowId !== undefined && await browser.windows.get(windowId).catch(() => null);
   // The keys work in any window of Firefox's, but a small window has no list and no spaces,

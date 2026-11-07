@@ -35,7 +35,6 @@ bridgeDetails.append(bridgeStatus, bridgeHowTo,
   bridgeLogBox);
 
 function bridgeDrawState(state) {
-  bridgeBox.hidden = !state.alone;
   copySwitch.checked = state.copy;
   bridgeSwitch.checked = state.bridge;
   bridgeDetails.hidden = !state.bridge;

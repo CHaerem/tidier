@@ -1,4 +1,4 @@
-// --- Selecting several tabs (Tidier alone) ------------------------------------------
+// --- Selecting several tabs --------------------------------------------------------
 // ⌘-click (Ctrl-click elsewhere) adds or removes a tab, ⇧-click takes a range, and what
 // you then do to one of them goes for all of them. The selection is the sidebar's own.
 // Firefox has one too (tabs.highlight), but that selects the first tab, which pulls a
@@ -133,7 +133,7 @@
   const take = e => { e.stopPropagation(); closeMenu(); };
 
   addEventListener("click", e => {
-    if (!view?.alone) return;
+    if (!view) return;
     const item = e.target.closest?.("[data-tab]"), button = e.target.closest?.("button");
     const adding = mac ? e.metaKey : e.ctrlKey;
     if (item && !button && mac && e.ctrlKey) take(e); // a right click on a Mac: only its menu
@@ -149,7 +149,7 @@
 
   addEventListener("auxclick", e => {
     const item = e.target.closest?.("[data-tab]");
-    if (e.button !== 1 || !view?.alone || !item || !picked.has(idOf(item))) return;
+    if (e.button !== 1 || !view || !item || !picked.has(idOf(item))) return;
     e.stopPropagation();
     closePicked();
   }, true);
@@ -157,7 +157,7 @@
   // Esc goes back one step at a time: the menu (menu.js), then the selection, then the
   // keys' cursor. ⌫ on a picked row closes them all; on any other row it is that row's.
   addEventListener("keydown", e => {
-    if (!view?.alone || e.target.closest?.("input") || !document.getElementById("menu").hidden) return;
+    if (!view || e.target.closest?.("input") || !document.getElementById("menu").hidden) return;
     if (e.key === "Escape") {
       if (picked.size) clear();
       else if (cursor) moveCursor(null);
@@ -202,13 +202,13 @@
   // drawn leave the selection. Drawing a row resets its classes, so the marks are put back
   // before anything is painted, the cursor's too (keys.js sets it only when it moves).
   port.onMessage.addListener(() => {
-    if (!view.alone || view.space !== shownSpace) {
+    if (view.space !== shownSpace) {
       shownSpace = view.space;
       if (picked.size) clear();
     }
     // A cursor on a row that has gone or is folded away would take the next ⌫, and keys.js
     // would then close a tab you cannot see, or jump to the first tile.
-    if (view.alone && cursor) {
+    if (cursor) {
       if (cursor.offsetParent === null) moveCursor(null);
       else cursor.classList.add("cursor");
     }

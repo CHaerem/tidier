@@ -6,7 +6,6 @@ const syncCount = (n, one, many) => `${n} ${n === 1 ? one : many}`;
 const SYNC_KIND_NAMES = { essentials: ["essential", "essentials"], folders: ["folder", "folders"], saved: ["saved tab", "saved tabs"] };
 
 function drawSyncState(r) {
-  $("sync-section").hidden = !r.alone;
   $("sync-on").checked = r.on;
   const state = $("sync-state"), left = $("sync-left");
   state.hidden = !r.on;
@@ -25,7 +24,7 @@ function drawSyncState(r) {
 
 function drawSpacesHere(r) {
   const box = $("spaces-here");
-  box.hidden = !r.alone || r.spaces.length < 2;
+  box.hidden = r.spaces.length < 2;
   const showing = r.spaces.filter(s => !s.hidden).length;
   const ticks = r.spaces.map(s => {
     if (s.declared) return el("span", { className: "line", title: "Hidden on this machine by its setup", textContent: `${s.name}: hidden by this machine's setup` });

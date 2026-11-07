@@ -1,4 +1,4 @@
-// Moves that cannot lose anything (Tidier alone).
+// Moves that cannot lose anything.
 //
 // Firefox cannot change a tab's container, so a move to another space is a reopen:
 // a new tab there, and the old one closed. Three things can then go wrong, and each
@@ -96,7 +96,6 @@ function sayStayed(windowId) {
 // match, its folders would stay in the record, shown nowhere, and its saved tabs would
 // be refused at every start (Firefox has no such container any more). Removing a space
 // is the one thing besides your own hand that takes a folder away (ownfolders.js).
-// With Sidebery the record and the rules are not Tidier's to change like this.
 //
 // Firefox's settings close a container's tabs and then remove it; the extension call only
 // removes it, and its tabs stay, in no space. Tidier's own stay-in-the-space (spaces.js)
