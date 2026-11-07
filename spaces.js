@@ -289,10 +289,10 @@ function seenLateInSpace(tab) {
   if (!isWeb(tab.url)) { if (!isGhostUrl(tab.url)) firstPage.add(tab.id); return false; }
   if (tab.cookieStoreId !== NO_CONTAINER) return false;
   // A loaded page is moved by moveStragglers (isolation.js), which keeps what the record
-  // knows of it, and an unloaded one is stopped when it loads: reopened here as well, it would
-  // become another tab, and opened now it would send its request, with nothing of yours asking.
-  // (With no space to go to it stays where it is, and is a tab like any other.)
-  return !syncKeyByTab.has(tab.id) && !!(activeSpace.get(tab.windowId) ?? activeSpace.get(focusedWindowId));
+  // knows of it: reopened here as well, it would become another tab. An unloaded one is a tab
+  // like any other until it loads, and is stopped then: opened now it would send its request,
+  // with nothing of yours asking. (With no space to go to it stays where it is, also loaded.)
+  return !tab.discarded && !syncKeyByTab.has(tab.id) && !!(activeSpace.get(tab.windowId) ?? activeSpace.get(focusedWindowId));
 }
 
 // --- Rules: an address always opens in a given space (Arc's Air Traffic Control) ---
