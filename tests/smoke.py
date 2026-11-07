@@ -4966,8 +4966,10 @@ def alone_shortcuts(m):
     go(RIGHT, CMD, CTRL)
     check("⌃⌘→ goes to the next space on the bar", m.js(space_now, here), f"{here} on {bar}")
 
-    go(str(len(closed)), CMD)
-    selects(closed[-1])
+    # The last tab ⌘ and a digit reaches: earlier groups can leave more than nine.
+    last = min(len(closed), 9)
+    go(str(last), CMD)
+    selects(closed[last - 1])
     r0 = m.js(ident + "const w = main(); return {who: selected(), pinned: w.gBrowser.selectedTab.pinned};")
     hold("d", CMD)
     pinned = m.js(H + "for (let i = 0; i < 50 && !main().gBrowser.selectedTab.pinned; i++) await wait(100); await wait(1000); return main().gBrowser.selectedTab.pinned;")
@@ -6802,7 +6804,8 @@ def alone_drag_details(m):
       out.bareAmong = over(web, .5, .8);
       end(bare);
       // Pinned, as Firefox's own menu can: a tile with no essential behind it, so no place among them.
-      send({type: "pin", tabId: Number(bareId), pinned: true});
+      // (The sidebar's own pin keeps a new tab a tab: pinFromSidebar, sidebar-view.js.)
+      await page.browser.tabs.update(Number(bareId), {pinned: true});
       await until(() => !bareRow());
       const bareTile = doc.querySelector(`#essentials .tile[data-tab="${bareId}"]`);
       start(bareTile);
@@ -7565,7 +7568,10 @@ STAY_PUT = """
   const until = async (test, ms = 8000) => { for (const t0 = Date.now(); Date.now() - t0 < ms; await wait(30)) if (await test()) return true; return false; };
   const tabs = page.browser.tabs;
   const activeRow = () => doc.querySelector("#tabs .tab.active");
-  const box = () => list.getBoundingClientRect();
+  // The list's edges as a row brought into view meets them: inside its fades (scroll-padding,
+  // sidebar.css), which a row scrolled to by the least distance stops at.
+  const box = () => { const b = list.getBoundingClientRect(), css = side.getComputedStyle(list);
+    return { top: b.top + (parseFloat(css.scrollPaddingTop) || 0), bottom: b.bottom - (parseFloat(css.scrollPaddingBottom) || 0) }; };
   const fromTop = r => Math.round(r.getBoundingClientRect().top - box().top), fromBottom = r => Math.round(box().bottom - r.getBoundingClientRect().bottom);
   const inView = r => fromTop(r) >= 0 && fromBottom(r) >= 0;
   const mine = async () => {
