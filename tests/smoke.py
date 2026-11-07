@@ -5204,8 +5204,11 @@ def alone_sync_hide(m):
     # Deleted elsewhere: the copies go, and only the copies.
     pinned_before = m.js(H + 'return wins().map(w => w.gBrowser.tabs.filter(t => t.pinned && ek(w, t) !== "smoke-synced").length);')
     from_elsewhere({f"1/{sid}.79": [["E", "smoke-synced", now + 6000]]})
+    # Until it is out of the record as well, which is written a moment after its copies have gone:
+    # the hiding checks below compare the record before and after.
     r = until(m, """const got = wins().map(w => w.gBrowser.tabs.filter(t => t.pinned).map(t => ek(w, t)));
-      return {ok: got.every(g => !g.includes("smoke-synced")), got: got.map(g => g.length)};""")
+      const stored = (await storage(args[1], ["essentials"])).essentials.some(e => e.key === "smoke-synced");
+      return {ok: got.every(g => !g.includes("smoke-synced")) && !stored, got: got.map(g => g.length), stored};""", EXT_ID)
     check("an essential deleted on another machine goes from every window, and nothing else does", r["ok"] and r["got"] == pinned_before, f"{r}, {pinned_before}")
 
     # Hiding: the space you are in, from the settings page.
@@ -8726,7 +8729,9 @@ def alone_many(m):
     check(f"and the queue is not held for long ({burst['queueMs']} ms for {n} tabs)", burst["queueMs"] < n * 60, str(burst))
     # Placeholders load no page, which is what would take the memory.
     loaded = many_wait(m, H + """return wins().every(w => !w.gBrowser.tabs.some(t => t.linkedPanel && !t.selected && url(t).includes("ghost.html")));""", 20)
-    check("no placeholder stays loaded", loaded is not None, str(numbers))
+    staying = [] if loaded is not None else m.js(H + """return wins().flatMap(w => w.gBrowser.tabs.filter(t => t.linkedPanel && !t.selected && url(t).includes("ghost.html"))
+      .map(t => ({window: w === main() ? "main" : w.__smoke ? "other" : "more", hidden: t.hidden, pinned: t.pinned, role: role(w, t), title: t.label.slice(0, 40), url: url(t).split("?")[1]?.slice(0, 80)})));""")
+    check("no placeholder stays loaded", loaded is not None, f"{staying}, {numbers}")
 
     # A placeholder without a page still shows its page's title and icon, from the record.
     number = int(space0.rsplit("-", 1)[1])
