@@ -60,10 +60,24 @@ over the same tabs: `tidierAlone` in the extension's storage, or declared for a
 machine in managed storage. A browser is moved over on the settings page
 (`moveover.js`), never by an update, and can be moved back.
 
+With it come what Sidebery does well, each as one fixed behaviour: Tidier's own short
+menu on tabs, tiles, folders and spaces; selecting several tabs; one quiet line with
+Undo, and Clear for today's tabs; a list that shows where you are; one place for new
+tabs; closed folders that rest, unloaded; marks for sound and news; honest dragging;
+and moves to another space that cannot lose anything. Spaces are kept apart as strictly
+as Sidebery does it, with a space's own proxy and user agent. Beyond Sidebery: a command
+bar (⌘⇧K), keys that follow what the list shows, set in one place; a list of archived
+tabs; a small window for links from other apps; the same essentials, folders and spaces
+on every machine through Firefox Sync, with spaces hidden per machine; and, off by
+default, Copy for Claude and a bridge for agents. All of it is checked in the test
+Firefox, in release Firefox and Developer Edition, also with random use, and measured
+with a thousand tabs. None of it has been used for real yet: what a test Firefox cannot show (a
+real trackpad, links from real apps, real Firefox Sync between two machines) waits for
+the second Mac.
+
 In order: a second Mac on Tidier alone first; then the daily browser; then Sidebery
-and what exists only because of it removed; then the same essentials, folders and
-spaces on every machine by sync, with spaces that can be hidden per machine (a
-workplace's space only on its Mac). All of it is in [PLAN.md](PLAN.md).
+and what exists only because of it removed, and sync turned on. All of it is in
+[PLAN.md](PLAN.md).
 
 All the features worth having from Zen, Arc and Sidebery, and where Tidier
 stands with each, are listed in [FEATURES.md](FEATURES.md). Everything that has to
@@ -136,7 +150,9 @@ container rules) is left to it and set up in the dotfiles.
 
 Shortcuts, compact mode, sign-in and spaces are set up natively (Firefox
 settings, `about:keyboard`, Sidebery), in the dotfiles. Switching to a tab in
-another window needs no command either: every tab is in every window.
+another window needs no command either: every tab is in every window. With Tidier
+alone, Tidier gives its keys itself, once, and they are changed in the settings
+page's Keys section.
 
 Sidebery folders (group pages) are copied per window, with the ghosts nested
 under the copy. Closing a folder copy only affects its own window.
@@ -223,8 +239,9 @@ agent <-stdio-> native/tidier-mcp.py <-Unix socket-> native/tidier-bridge.py <-n
   Tidier may start it; it lives exactly as long as the port, so off means no process and no
   socket. The socket is `~/.config/tidier/bridge.sock`, mode 0600, in a folder only you can
   write to, and each connection's user is checked. There is no network port. Web pages
-  cannot reach any of it: they cannot use native messaging, there is no content script
-  listening, and no page of Tidier's can be framed or loaded by them.
+  cannot reach any of it: they cannot use native messaging, the only script Tidier puts in
+  pages (for ⌥-click, below) only sends the address of a link you ⌥-clicked, and no page of
+  Tidier's can be framed or loaded by them.
 - **Pages can try to steer an agent.** Everything read from a page (text, titles,
   addresses, what `find` returns, a screenshot) goes back marked as untrusted, between markers
   with a random number the page cannot know, so it cannot write its own end to them.
@@ -251,6 +268,49 @@ The checks are in `tests/bridge.test.mjs` (what is allowed, on a fake Firefox),
 `tests/test_bridge.py` (the socket and the protocol, playing Firefox) and `alone_bridge` in
 `tests/smoke.py` (end to end, in a real Firefox).
 
+## Keys and the command bar
+
+With Tidier alone, the keys follow what the sidebar shows (`shortcuts.js`,
+`keys-commands.js`): ⌃⌘↓ and ⌃⌘↑ go to the next and previous tab as shown, past other
+spaces' tabs and closed folders; ⌃⌘→ and ⌃⌘← to the next and previous space; ⌘1 to ⌘9 to
+the n-th tab of this space, essentials first; ⌘D makes a tab an essential or ordinary
+again; ⌥⌘N makes a new folder; ⌃1 to ⌃5, ⌃⇧S and ⌘⇧C are as before. Each key is given
+once, at the first start with Tidier alone, and changed in the settings page's Keys
+section; a key you change stays that way, and moving back to Sidebery takes them all back.
+⌘1 to ⌘9 and ⌘D are Firefox's own until they are cleared in `about:keyboard` (the
+dotfiles' `customKeys.json`); until then ⌘1 to ⌘9 can act twice with the keyboard in a
+page. ⌘⌥ and an arrow stay Firefox's, in window order: no extension can have them.
+
+The command bar (`commandbar.js`, `commandbar/`) opens with ⌘⇧K in a small window over the
+one you are in, and with ⌘T too once Firefox's new tab key is cleared. One field finds
+every tab of every space, essentials, folders, closed and archived tabs and commands, and
+history and bookmarks once you allow them. Commands act on the tabs selected in the
+sidebar, else on this one. Enter goes to a tab, or opens an address or a search in the
+active space; ⌘↵ opens a new tab instead.
+
+## The same on every machine, and spaces hidden on one
+
+Both only with Tidier alone (`sync.js`, `syncmerge.js`, `hiddenspaces.js`).
+
+**Sync** is off until you tick it on the settings page. Essentials, folders, saved tabs,
+short names, rules, and spaces with their names, colours, icons and order then go into
+Firefox Sync's storage for add-ons. Ordinary tabs, what is open, icons, which folders are
+closed and which spaces are hidden stay on each machine, and so does everything of the
+agents' space. No container number is shared: a space is matched to a container by
+name, so logins cannot mix. The newest change wins per thing; something merely missing
+never counts as deleted, and a page you have open is never closed by another machine.
+Turning it on takes a copy first. Firefox Sync must carry add-on data: tick Add-ons in its
+settings, or set `services.sync.engine.extension-storage.force`, which carries only that.
+It is checked in one test Firefox; real Firefox Sync between two machines is not tried yet.
+Removing a space on one machine does not remove it from the others.
+
+**A hidden space** leaves the bar and every window on this machine, and ⌃1/2/3 skip it.
+Nothing is deleted: showing it again brings everything back, unloaded. A rule for it opens
+the tab in the space you are in and says so. Hide one on the settings page, or declare it
+for a machine by name in managed storage, next to `tidierAlone`:
+`"data": { "tidierAlone": true, "hiddenSpaces": ["Name of the space"] }`. Firefox reads
+that file once each time Tidier starts, so a change there needs a restart of Firefox.
+
 ## Placeholders (ghost.html)
 
 Firefox cannot give an unloaded tab a title or icon. Ghosts and essential
@@ -263,6 +323,12 @@ copy goes straight to the real page; a ghost has the live tab pulled in, and
 only loads the real page itself if no live tab exists. When a live tab's title
 or icon changes, its ghosts reload the placeholder to show it.
 
+With Tidier alone a placeholder has no page at all: it is created unloaded, with its
+title, which Firefox allows (but not together with pinned, so an essential's copy is
+pinned right after). Tidier's sidebar draws it from Tidier's record, with the saved icon,
+and ⌃Tab shows the title it was made with. That is what keeps a new window with a
+thousand tabs to a few seconds.
+
 Tabs that were never loaded have no title or icon to copy. For the initial
 migration from Zen these were filled in from Zen's session data. An essential
 that still has no icon takes the icon of the first tab on its site that you
@@ -270,12 +336,14 @@ open, and its copies are redrawn. This matters for sites behind a sign-in,
 whose `/favicon.ico` leads to the sign-in page. Firefox's own icon cache
 (`page-icon:`) cannot be loaded from an extension's process.
 
-## Short names for essentials
+## Short names for essentials and saved tabs
 
 An essential can have a `name` (e.g. "Jira") in the extension storage
-(`essentials` list). Unloaded copies show it instead of the page title. There
-is no UI for it; set it with a script while the extension is disabled (the
-extension keeps the list in memory and would overwrite the change).
+(`essentials` list). Unloaded copies show it instead of the page title. With Tidier
+alone it is set with Rename in the tab menu, also for a saved tab (`tabnames.js`),
+and clearing it gives the page's title back. With Sidebery there is no UI for it;
+set it with a script while the extension is disabled (the extension keeps the list
+in memory and would overwrite the change).
 
 ## Tabs in the wrong space
 
@@ -297,7 +365,11 @@ after an essential is closed or pinned and after a tab is pulled in.
 
 Links opened from outside Firefox (Slack, Mail, …) open in the active space's
 container; Sidebery does that (its setting "reopen externally opened tabs").
-It cannot for addons.mozilla.org, which Firefox shields from extensions.
+It cannot for addons.mozilla.org, which Firefox shields from extensions. Firefox
+itself gives such a link no container, unless a visible tab is on the same host, and
+then that tab's container. With Tidier alone the link opens in a small window of its
+own (`littlewindow.js`), in the rule's space or else the one you are in, to read and
+close, or to keep with one click; it can be turned off on the settings page.
 
 Sidebery's container rules ("reopen tabs with this URL in this container")
 match a rule's text anywhere in every address a tab loads, including sign-in
@@ -387,6 +459,9 @@ These are set in dotfiles' `sidebery-settings.json` (see above).
   now comes ~0.7 s later). Placeholders load briefly and unload themselves;
   only folder copies stay loaded.
 - Selecting a ghost: the live tab is in place after ~50 ms.
+- With Tidier alone, in the test Firefox: a new window with the same tabs is ready in
+  ~0.5 to 0.8 s; with 300 tabs in ~1.4 s, and with 1000 in ~7 s, with the extension's
+  memory under 200 MB. Switching space takes ~0.15 s.
 
 Timing constants live in `common.js`; re-measure if Sidebery or Firefox
 changes how new tabs are handled.
@@ -395,8 +470,10 @@ changes how new tabs are handled.
 
 `tabs`, `sessions`, `storage`, `cookies` (to open tabs in a container),
 `contextualIdentities` (the spaces), `nativeMessaging` (the pull request search and
-the daily copy), `alarms` (their timing, and archiving), `clipboardWrite` (⌘⇧C), and
-`menus` and `menus.overrideContext` (the context menu in Tidier's sidebar).
+the daily copy, and the bridge for agents when it is on), `alarms` (their timing, and
+archiving), `clipboardWrite` (⌘⇧C, the menu's Copy address and Copy for Claude), and
+`menus` and `menus.overrideContext` (the context menu in Tidier's sidebar, and "Open link
+in" on a link's menu).
 The rest are optional, with Tidier alone only, each asked for by your click when it
 is first of use: a permission added to the required ones makes Firefox hold every
 later update until it is approved, with only a badge to show it (a unit test stops
@@ -407,16 +484,24 @@ that). Everything works without them, as it says here:
   a page stopped before it loads in the wrong space (below, Isolation). For this Tidier
   reads no page and keeps no record of where you go; all it looks at is the address of a
   tab's next page and the container it is in. Clearing a site's cookies is offered once
-  this is given, since the cookies API shows nothing without it.
+  this is given, since the cookies API shows nothing without it. The same access, which
+  is one permission, is what ⌥-click on a link uses (`peek.js`, a small script in every
+  page that does nothing but send the address of a link you ⌥-click), and what Copy for
+  Claude and the bridge use to read a page, only when you ask or an agent works in a space
+  you opened to it.
 - `proxy` (with `webRequest`, `webRequestBlocking` and access to all websites, since at a
   start a page must be stopped before it goes past the proxy: below, Isolation), when a
   space is first given a proxy, and `browsingData`, when you first sign out of everything
   in a space.
+- `search`, `history` and `bookmarks`, when you choose *Also search history and bookmarks*
+  in the command bar.
 
 No required host permissions and no data collection. The only network use is icons: a
 placeholder with no saved icon tries the site's `/favicon.ico`, and Tidier's sidebar
 loads tabs' icons from where the site has them (not for a space with a proxy, whose tabs
-show their first letter). No IP lookups, nothing else by itself.
+show their first letter). No IP lookups, nothing else by itself. Sync across machines,
+when you turn it on, goes through Firefox Sync's own storage for add-ons, and the bridge
+only through a socket on this machine.
 
 ## Isolation
 
@@ -517,22 +602,51 @@ Not guaranteed:
 - `livefolders.js` – live folders of GitHub pull requests (see above).
 - `ghost.html` / `ghost.js` – placeholder page for ghosts, essential copies and never-loaded live tabs.
 - `archive.js` – archiving of unused tabs.
-- `shortcuts.js` – ⌘⇧C, copy the address.
+- `archivelist.js`, `sidebar/archived.js` – the list of archived and closed tabs, per space.
+- `shortcuts.js` – one table for every key, the command bar's and Claude's included; ⌘⇧C
+  copies the address. `keys-commands.js`, `settings/keys.js`, `sidebar/keys.js` and
+  `sidebar/keyrename.js` – what the keys do with Tidier alone, the settings page's Keys
+  section, and keys in the sidebar.
+- `commandbar.js`, `commandbar/` (the bar's page, and `rank.js`, what it shows for what you
+  type), `sidebar/commandbar-link.js` – the command bar.
 - `spaces.js` – spaces: hiding, switching, new tabs and links, rules.
+- `spaceactions.js`, `sidebar/spacemenu.js` – a space's menu and what it does (rename,
+  unload, clear).
+- `newtabs.js`, `sidebar/newtab.js` – one place for new tabs.
+- `safemoves.js`, `sidebar/reconnect.js` – moves to another space that cannot lose
+  anything; the sidebar connecting again after its background part has come back.
+- `foldrest.js` – a closed folder rests: hidden and unloaded.
+- `quiet.js`, `sidebar/note.js` – the quiet line, Undo and Clear.
+- `tabnames.js`, `sidebar/renamekept.js` – names of your own for essentials and saved tabs.
+- `sounds.js`, `sidebar/sound.js` – where sound comes from.
+- `news.js`, `sidebar/news.js` – a still dot when a page in the background has news.
+- `littlewindow.js`, `peek.js`, `sidebar/littlewindow.js`, `settings/littlewindow.js` – the
+  small window for links from other apps, "Open link in", and ⌥-click.
+- `hiddenspaces.js`, `syncmerge.js`, `sync.js`, `settings/sync.js` – spaces hidden on one
+  machine, and the same essentials, folders and spaces on every machine through Firefox Sync
+  (`syncmerge.js` is how two versions become one, with no Firefox needed to test it).
+- `bridge.js`, `bridge-page.js`, `sidebar/agent.js`, `settings/bridge.js`,
+  `native/tidier-mcp.py`, `native/tidier-bridge.py` – Copy for Claude and the bridge for
+  agents (above).
 - `rulematch.js` – whether a rule matches an address, in time that can't blow up.
 - `isolation.js`, `settings/spaces.js`, `sidebar/isolation.js` – nothing goes out in the wrong container; a
   space's proxy and user agent; signing out; new, edited and deleted spaces; a vanished
   container brought back; a copy of a tab, and a folder, to another space.
 - `ownfolders.js` – Tidier's own folders, moving tabs.
-- `tabactions.js` – what the menu on a tab does (the menu itself: `sidebar/tabmenu.js`).
-- `sidebar-view.js`, `sidebar/` – Tidier's own sidebar.
-- `copies.js` – the daily copy of Tidier's data, and taking one in.
+- `tabactions.js` – what the menu on a tab does (the menu itself: `sidebar/tabmenu.js`;
+  the small menu Tidier draws: `sidebar/menu.js`).
+- `sidebar-view.js`, `sidebar/` – Tidier's own sidebar; among its parts `selection.js`
+  (several tabs), `drag.js`, `stayput.js` (the list shows where you are) and `touches.js`
+  (the slow-load sign and warming up a tab). `sidebar/tokens.css` holds the colours and
+  sizes of every page Tidier draws.
+- `copies.js` – the daily copy of Tidier's data, and taking one in, matched to spaces by name.
 - `moveover.js`, `settings/` – the settings page, and moving a browser over from Sidebery.
 - `tools/fix_spaces.py` – put tabs back in their own Sidebery space (in your
   own Firefox, which it restarts).
 - `tools/shoot.py` – pictures of what Tidier draws, for working on its look: every
   space and width, light and dark, hover, menus, empty spaces, the settings page.
-- `tests/` – the smoke test, the test Firefox and its fixtures.
+- `tests/` – the unit tests, the smoke test, the test Firefox and its fixtures, the random
+  sequences (`chaos.test.mjs` on `chaos_firefox.mjs`) and the long run (`soak.py`).
 - `.github/workflows/smoke.yml`, `tools/setup-ci-keys.sh` – the smoke test on GitHub.
 - `.github/workflows/release.yml`, `tools/release.py`, `tools/setup-amo-key.sh` –
   signing and releases (see below).
@@ -590,13 +704,33 @@ Set up once:
 From fastest to most complete:
 
 ```bash
-node --test                          # unit tests, a few seconds
+node --test                          # unit tests, about half a minute
 tests/smoke.py --only trees,folders  # some smoke test groups, about a minute
-tests/smoke.py                       # the whole smoke test, about five minutes
+tests/smoke.py                       # the whole smoke test, about 45 minutes
 tests/smoke.py --installed           # the signed version installed in your Firefox
 tests/smoke.py --xpi FILE            # a given signed .xpi
-tests/smoke.py --serial              # in one test Firefox, as on GitHub (about nine minutes)
+tests/smoke.py --serial              # in one test Firefox
+tests/smoke.py --part alone          # one half of that (or --part sidebery), as on GitHub
 ```
+
+Runs to do on purpose, not after every change:
+
+```bash
+CHAOS_SEQUENCES=15000 CHAOS_SECONDS=0 node --test tests/chaos.test.mjs  # random use, for a night
+tests/soak.py [--alone] [--minutes N] [--seed N] [--port P]          # a long run in a real test Firefox
+TIDIER_MANY=1000 tests/smoke.py --only alone_setup,alone_many         # measured with a thousand tabs
+tools/shoot.py                                                       # pictures of what Tidier draws
+```
+
+`tests/chaos.test.mjs` plays random sequences of browser use on the real background
+scripts, on a fake Firefox (`tests/chaos_firefox.mjs`) that refuses what Firefox refuses,
+and checks after each what Tidier promises: no tab lost or doubled, every essential in
+every window, every tab in its space, nothing left in memory. A failure prints a line to
+run that one sequence again (`CHAOS_REPLAY='…'`, with `CHAOS_TRACE=1` for every call).
+`tests/soak.py` does the same slowly in a real test Firefox, with Sidebery or `--alone`,
+clicking and dragging in the real sidebar, and also fails on memory that grows or on
+work while nothing happens. Restarts in it (`--restart-every N`) need Developer Edition
+(`TIDIER_FIREFOX`, `TIDIER_MUST_RESTART=1`).
 
 The unit tests (`tests/unit.test.mjs`) cover the logic that needs no Firefox:
 the order a window's tabs are put in, and moving tabs without breaking
@@ -610,8 +744,16 @@ The group names for `--only` are the check functions in `tests/smoke.py`
 (`new_window`, `essentials`, `folders`, `trees`, …); a group that needs the
 second window gets it first. Without `--only`, the groups run in several test
 Firefoxes at once (`SHARDS`), one of them without Sidebery, for Tidier alone
-(`ALONE_GROUPS`, in `alone_*`). Only one smoke test can run at a time on a machine:
-they would use the same ports. A second one says so.
+(`ALONE_GROUPS`, in `alone_*`). That one is the longest, about 45 minutes while the
+others are done in about seven, since its groups build on each other and run in order:
+judge a failure there by the whole chain, as a subset leaves out what earlier groups
+leave behind. `TIDIER_ALONE_ALL_PERMISSIONS=1` runs it with every optional permission
+given, as in real use. Two smoke tests at once need their own ports (`--port`), and a
+second one on the same ports says so.
+
+A test must not switch Marionette through every tab's handle to find a page: that
+loads every unloaded tab on the way, and a closed folder's tabs would no longer rest.
+`into_page` in `tests/smoke.py` asks for the one tab's handle instead.
 
 The smoke test runs in an invisible test Firefox with a throwaway profile
 (`tests/testfirefox.py`), so it never touches your own Firefox: no restart, no
@@ -649,7 +791,9 @@ container).
 `.github/workflows/smoke.yml` runs the same smoke test on GitHub, in a
 headless Firefox on a macOS runner with the newest Sidebery, both in the newest
 Firefox and in Firefox Developer Edition (the Beta, about four weeks ahead, so a
-Firefox change that would break the setup shows up before it reaches you).
+Firefox change that would break the setup shows up before it reaches you). Each runs
+in two parts on runners of their own, the Sidebery groups and the Tidier-alone chain,
+since the chain alone takes longer than one job could for both.
 Developer Edition allows unsigned add-ons, so there Tidier is installed for
 real and the test also quits and restarts Firefox to check the restored
 session; on your Mac that part runs with `--installed` or `--xpi`. It

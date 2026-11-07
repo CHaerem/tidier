@@ -42,9 +42,16 @@ Rules for all of it:
 - [x] A title or icon change writes the tab record only when something changed.
 - [x] A page with unsaved input is not closed by archiving or a live folder.
 - [x] Tidier keeps a copy of its own data: essentials, folders and saved tabs, as a
-      dated file through the native host, taken in again from Tidier itself.
+      dated file through the native host, taken in again from Tidier itself. A copy also
+      holds the spaces with their rules and order, and lands in the space of the same name
+      on another machine.
 - [x] A live folder that has stopped (no host, no `gh` login) shows it.
 - [x] README's permissions, files and claims match what is there.
+- [x] What random use and a long run in a real Firefox found in code the daily browser
+      shares: a pin of a tab Tidier is busy with counts, an unpin is always yours, a tab with
+      no copy anywhere is taken for closed only right after Firefox starts, and a saved tab
+      closed within half a second of another close goes back to its saved address instead
+      of being removed. The Sidebery checks and a long run with Sidebery pass.
 
 ## B. Tidier alone (behind the setting)
 
@@ -64,12 +71,12 @@ A first version of all of it works in the test Firefox, without Sidebery.
       of its own, and no tab event can delete it. Saved tabs, archiving and live
       folders work on these folders.
 - [x] **Using it.** Drag tabs, into and out of folders, between essentials and tabs and to
-      other spaces; the order follows in every window. A new tab button. Firefox's tab
-      menu with Tidier's items, and a menu on folders. Sound indicator and mute. Keys.
+      other spaces; the order follows in every window. A new tab button. Tidier's own
+      menu on tabs, tiles, folders, spaces and the list. Sound indicator and mute. Keys.
 - [x] **Rules.** An address always opens in a given space, edited in Tidier.
 - [x] **Settings in Tidier.** A page for the rules, spaces' names, archiving, copies and
       moving over.
-- [ ] **What Sidebery does well**, in Tidier's own simple way: a short menu of Tidier's own on
+- [x] **What Sidebery does well**, in Tidier's own simple way: a short menu of Tidier's own on
       every tab, selecting several tabs, one quiet line with undo, Clear, a list that shows where
       you are, one place for new tabs, closed folders that rest, sound and news marks, honest
       dragging, safe moves. Sidebery has hundreds of options; each became one fixed
@@ -77,11 +84,15 @@ A first version of all of it works in the test Firefox, without Sidebery.
 - [x] **Container session isolation**, as strong as Sidebery's: nothing goes out in the wrong
       container, a space's own proxy and user agent, signing out, spaces made, changed and deleted in
       Tidier, a vanished container brought back, a copy of a tab and a folder to another space.
-- [ ] **The command bar**, as in Arc: one key, one field, everything from it. Shortcuts as in Arc.
-- [ ] **Finding archived tabs**, a small window for links from other apps, and link preview.
-- [ ] **A refined design**: judged from screenshots, in light and dark, at every width.
-- [ ] **Very robust and efficient**: random use checked against what must always hold, a long
+- [x] **The command bar**, as in Arc: one key, one field, everything from it. Shortcuts as in Arc.
+- [x] **Finding archived tabs**, a small window for links from other apps, and link preview.
+- [x] **A refined design**: judged from screenshots, in light and dark, at every width.
+- [x] **Very robust and efficient**: random use checked against what must always hold, a long
       run in a real Firefox, and measured with up to 1000 tabs.
+
+All of part B is checked in the test Firefox, in release Firefox and in Developer Edition.
+What a test Firefox cannot show is left for the second Mac: a real trackpad and drag and drop,
+links from real apps, real sound and calls, and real Firefox Sync between two machines.
 
 ## C. Trying it on the second Mac
 
@@ -95,7 +106,8 @@ A first version of all of it works in the test Firefox, without Sidebery.
 
 - [ ] A copy taken first, by hand, of the whole Firefox profile and Sidebery's export.
 - [x] Rules and order of spaces imported from Sidebery's export, which is the only
-      place they can be read from.
+      place they can be read from, also the address rules of its panels and which folders
+      were closed.
 - [x] One explicit click, never an update: a report of what will happen, then the
       record is written, and only then are folder pages closed. It can be undone.
       Checked with a real Sidebery in the test Firefox, there and back.
@@ -106,8 +118,10 @@ A first version of all of it works in the test Firefox, without Sidebery.
 - [ ] Sidebery and all that exists because of it removed: folders first, its tree
       rules, waiting for its sidebar, `tests/fixtures/sidebery.json`, `tools/fix_spaces.py`,
       and its files in dotfiles (in that order, or releases stop).
-- [ ] Essentials, folders and spaces on every machine by Firefox Sync, within its limits.
-- [ ] Spaces hidden per machine. Hidden only: the data is on every machine.
+- [x] Essentials, folders and spaces on every machine by Firefox Sync, within its limits.
+      Built and checked in a test Firefox, off by default; real Firefox Sync between two
+      machines is not tried yet.
+- [x] Spaces hidden per machine. Hidden only: the data is on every machine.
 - [ ] Every Mac set up the same way.
 
 ## Stretch goal: made for working with Claude and other agents
@@ -116,6 +130,9 @@ Off by default. Copying a page or tabs as clean text for Claude. An MCP server s
 Code can work in the browser, local only. Agents get a space of their own with its own
 logins, see and touch only that, unless you allow more. What they do shows, and one
 click stops it.
+
+- [x] All of it is there with Tidier alone, off by default, and checked; not yet tried with
+      Claude Code itself.
 
 ## F. After that
 
@@ -148,4 +165,17 @@ Changed by saying so. All of them can be reversed.
   if it holds anything: a page's history or a saved tab is not lost for it. A rule's
   regular expression runs on a small engine of Tidier's own, since Firefox's can take for
   ever on every navigation. That engine has no look-around or back-references: such a rule
-  does nothing, and the settings page says so.
+  does nothing, and the settings page says so. A rule with a slash but no valid flags after
+  the last one is plain text, as in Sidebery.
+- A rule for a space that is gone does nothing, and says so in the sidebar and on the
+  settings page. One for a space hidden on this machine opens the tab where you are, and
+  says so in the sidebar.
+- A pinned tab is an essential, also one reopened after its essential was removed.
+- A page is loaded once. A selected copy of it in a window you are not using becomes a
+  placeholder, and the page comes to you when you go to that window.
+- Clear asks nothing: one line offers Undo. Closing several tabs and deleting a folder work
+  the same way.
+- Tabs moved to another space go to the end of its tabs, not where new tabs go, so several
+  moved together keep their order.
+- Small windows for links from other apps have one on-off on the settings page, to be looked
+  at again after the second Mac.
