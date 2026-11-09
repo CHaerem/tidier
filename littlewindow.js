@@ -330,6 +330,8 @@ async function linkInSpace(tab, url, space) {
 // a registered script at each start. One change at a time: a permission given also makes
 // Tidier start its spaces again (spaces.js), and the two calls would each register one,
 // of which only the last could be taken back.
+//
+// The command bar's barkeys.js comes and goes with it (commandbar.js, startBarKeys).
 const ALL_SITES = { origins: ["<all_urls>"] };
 let peekScript = null, peekChange = Promise.resolve();
 function startPeek() {
@@ -337,6 +339,7 @@ function startPeek() {
     const given = tidierAlone && await browser.permissions.contains(ALL_SITES).catch(() => false);
     if (given && !peekScript) peekScript = await browser.contentScripts.register({ matches: ["http://*/*", "https://*/*"], js: [{ file: "peek.js" }], runAt: "document_start" });
     else if (!given && peekScript) { await peekScript.unregister().catch(() => {}); peekScript = null; }
+    await startBarKeys(given);
   }).catch(noteError);
   return peekChange;
 }

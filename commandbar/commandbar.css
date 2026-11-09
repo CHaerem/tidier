@@ -1,41 +1,94 @@
-/* The command bar: one field and a few rows, as calm as the sidebar. Colours as in
- * sidebar.css, so the two read as one thing; --frame can follow the space through your
- * tidier.css (dotfiles), as there. */
-:root {
-  color-scheme: light dark;
-  --text: light-dark(#1d1d1f, #ececf0);
-  --muted: light-dark(#6e6e73, #a1a1a6);
-  --line: light-dark(rgba(0, 0, 0, .07), rgba(255, 255, 255, .08));
-  --selected: light-dark(rgba(255, 255, 255, .85), rgba(255, 255, 255, .12));
-  --tile: light-dark(rgba(0, 0, 0, .05), rgba(255, 255, 255, .07));
-  --accent: #7a7a80; /* the active space's colour, set by commandbar.js */
-  font: 14px/1.3 system-ui, -apple-system, sans-serif;
+/* The command bar, on the sidebar's tokens (tokens.css), so the two read as one thing: the
+ * window is the surface, in the space's tint; rows have the list's height, corners and
+ * icons; the selected row is the one card; text is see-through, so it takes on the tint.
+ * With the dotfiles' userChrome.css the window has no frame of its own around it. */
+
+/* The tint from the space's colour, as the sidebar's with Tidier alone (sidebar.css); your
+ * own tidier.css, keyed on html[data-space], still wins. */
+html {
+  --frame: light-dark(color-mix(in srgb, var(--accent) 12%, #ececf0), color-mix(in srgb, var(--accent) 9%, #1f1f23));
+  background: var(--frame);
 }
-html { --frame: light-dark(#ececf0, #1f1f23); background: var(--frame); }
 html, body { height: 100%; margin: 0; }
 body { display: flex; flex-direction: column; overflow: hidden; color: var(--text); cursor: default; user-select: none; }
 
+/* The icons stand in one column with the rows' icons, and what you type starts where
+ * their titles do. */
+#top {
+  flex: none; height: 52px; display: flex; align-items: center; gap: var(--icon-gap);
+  padding: 0 calc(var(--pad) * 2); border-bottom: 1px solid var(--line);
+}
 #field {
-  flex: none; height: 56px; box-sizing: border-box; width: 100%;
-  padding: 0 20px; border: 0; border-bottom: 1px solid var(--line); outline: 0;
-  background: none; color: inherit; font: 20px/1.2 system-ui, -apple-system, sans-serif;
-  caret-color: var(--accent);
+  flex: 1; min-width: 0; height: 100%; padding: 0; border: 0; outline: 0; background: none;
+  color: inherit; font: 18px / 1.2 var(--font); letter-spacing: -.01em; caret-color: var(--accent);
 }
-#field::placeholder { color: var(--muted); }
+#field::placeholder { color: var(--faint); }
+#top .icon { color: var(--muted); }
 
-#rows { flex: 1; min-height: 0; overflow: hidden auto; padding: 8px; scrollbar-width: none; }
+/* A command's question says what it is for, as a line under the field. */
+#step {
+  flex: none; height: 28px; line-height: 28px; padding: 6px calc(var(--pad) * 2) 0;
+  font-size: var(--size-small); color: var(--muted); white-space: nowrap; overflow: hidden;
+  mask-image: linear-gradient(to right, #000 calc(100% - 20px), transparent);
+}
+#step[hidden] { display: none; }
+
+#rows { flex: 1; min-height: 0; overflow: hidden auto; padding: var(--pad); scrollbar-width: none; }
 .row {
-  height: 38px; box-sizing: border-box; padding: 0 12px; border-radius: 8px;
-  display: flex; align-items: center; gap: 10px;
+  height: var(--row); margin-bottom: var(--row-gap); box-sizing: border-box;
+  display: flex; align-items: center; gap: var(--icon-gap);
+  padding: 0 var(--pad); border-radius: var(--radius);
 }
-.row.selected { background: var(--selected); }
-.row .dot { flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--color, transparent); }
-.row img, .row .letter, .row .glyph { flex: none; width: 16px; height: 16px; }
+.row.selected { background: var(--selected); box-shadow: var(--shadow-card); }
+
+/* Icons: the page's own, else its first letter as in the sidebar, else one drawn here. */
+.row img, .row .letter, .icon { flex: none; width: var(--icon); height: var(--icon); }
+.row img { filter: drop-shadow(0 0 .6px light-dark(rgb(40 30 20 / .3), rgb(255 255 255 / .5))); }
 .row .letter {
-  display: grid; place-items: center; border-radius: 4px;
-  background: var(--tile); color: var(--muted); font-size: 10px; font-weight: 600;
+  display: grid; place-items: center; border-radius: 5px;
+  background: color-mix(in srgb, var(--accent) 20%, var(--tile));
+  color: color-mix(in srgb, var(--accent) 45%, var(--text));
+  font-size: 10px; line-height: 1; font-weight: 600; text-transform: uppercase;
 }
-.row .glyph { display: grid; place-items: center; color: var(--muted); font-size: 14px; line-height: 1; }
-.row .title { flex: 1 1 auto; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.row .site { flex: 0 1 auto; max-width: 42%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--muted); font-size: 12px; }
+.icon { background: currentColor; mask: var(--mask) center / contain no-repeat; color: var(--muted); }
+.row.selected .icon { color: var(--text); }
+[data-icon="search"] { --mask: var(--icon-search); }
+[data-icon="address"] { --mask: var(--icon-globe); }
+[data-icon="plus"] { --mask: var(--icon-plus); }
+[data-icon="close"] { --mask: var(--icon-close); }
+[data-icon="folder"] { --mask: var(--icon-folder); }
+[data-icon="folder-plus"] { --mask: var(--icon-folder-plus); }
+[data-icon="live"] { --mask: var(--icon-live); }
+[data-icon="go"] { --mask: var(--icon-arrow-right); }
+[data-icon="back"] { --mask: var(--icon-arrow-left); }
+[data-icon="up"] { --mask: var(--icon-arrow-up); }
+[data-icon="down"] { --mask: var(--icon-arrow-down); }
+[data-icon="open"] { --mask: var(--icon-open); }
+[data-icon="undo"] { --mask: var(--icon-undo); }
+[data-icon="copy"] { --mask: var(--icon-copy); }
+[data-icon="rename"] { --mask: var(--icon-pencil); }
+[data-icon="unload"] { --mask: var(--icon-moon); }
+[data-icon="pin"] { --mask: var(--icon-pin); }
+[data-icon="settings"] { --mask: var(--icon-settings); }
+[data-icon="history"] { --mask: var(--icon-history); }
+[data-icon="bookmark"] { --mask: var(--icon-bookmark); }
+/* A space is its dot, in its colour. */
+.icon.space { background: none; mask: none; display: grid; place-items: center; }
+.icon.space::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--color); }
+
+/* The title takes the room and fades out as in the sidebar; what is after it never shrinks. */
+.row .title {
+  flex: 1; min-width: 0; white-space: nowrap; overflow: hidden;
+  mask-image: linear-gradient(to right, #000 calc(100% - 20px), transparent);
+}
 .row.quiet .title { color: var(--muted); }
+.row .site, .row .enter {
+  flex: none; max-width: 50%; white-space: nowrap; overflow: hidden;
+  color: var(--muted); font-size: var(--size-small);
+}
+.row .site .dot { display: inline-block; width: 6px; height: 6px; margin-right: 5px; border-radius: 50%; background: var(--color); vertical-align: 1px; }
+/* What Enter does, on the selected row only, where it takes you to another space. */
+.row .enter { display: none; color: var(--text); }
+.row.selected .enter { display: block; }
+.row.selected:has(.enter) .site { display: none; }
+.row .key { flex: none; color: var(--muted); font-size: var(--size-small); letter-spacing: .04em; }

@@ -6,6 +6,7 @@
 // Text is only ever set with textContent, so a page title cannot add anything to the bar.
 
 const field = document.getElementById("field"), list = document.getElementById("rows");
+const stepLine = document.getElementById("step"), what = document.getElementById("what");
 const PLACEHOLDER = "Search, or type an address";
 const HISTORY_RESULTS = 25, HISTORY_WAIT_MS = 40; // a few keys in a row are one lookup
 field.placeholder = PLACEHOLDER;
@@ -18,12 +19,14 @@ let step = null; // a command asking something: { row, kind: "ask" | "list", tex
 let asking = false; // a permission prompt is open, and must not close the bar
 let enterWaiting = null; // Enter before anything has come back
 let historyTimer = null, historySeq = 0;
+let engine = null; // the name of Firefox's search engine, once the bar may know it
 
 const port = browser.runtime.connect({ name: "commandbar" });
 const send = msg => port.postMessage(msg);
 port.onDisconnect.addListener(() => window.close());
-port.onMessage.addListener(snapshot => {
-  data = snapshot;
+port.onMessage.addListener(msg => {
+  if (msg.type === "early") return typedBefore(msg);
+  data = msg;
   if (data.color) document.documentElement.style.setProperty("--accent", data.color);
   if (data.space) document.documentElement.dataset.space = data.space;
   update();
@@ -32,13 +35,29 @@ port.onMessage.addListener(snapshot => {
   if (enterWaiting !== null) { const inNewTab = enterWaiting; enterWaiting = null; choose(rows[selected], inNewTab); }
 });
 
-// Your own look (dotfiles' tidier.css), as in the sidebar: the tint of the active space.
+// What you typed after the key but before this window had the keyboard, caught where it went
+// (barkeys.js): it comes before anything typed here since.
+function typedBefore({ text, enter, escape }) {
+  if (escape) return closeBar(true);
+  if (text && !step) {
+    field.value = text + field.value;
+    field.setSelectionRange(field.value.length, field.value.length);
+    lookUpMore();
+    update();
+  }
+  if (enter) choose(rows[selected], enter.inNewTab);
+}
+
+// Your own look (dotfiles' tidier.css), as in the sidebar: the tint of the active space. Kept
+// for the next bar's first frame (first.js), which cannot wait for managed storage.
 browser.storage.managed.get("sidebarCSS").then(({ sidebarCSS }) => {
-  if (!sidebarCSS) return;
-  const style = document.createElement("style");
-  style.textContent = sidebarCSS;
-  document.head.append(style);
+  try { if ((localStorage.getItem("commandbar:look") ?? "") !== (sidebarCSS ?? "")) sidebarCSS ? localStorage.setItem("commandbar:look", sidebarCSS) : localStorage.removeItem("commandbar:look"); } catch (e) {}
+  const style = document.getElementById("own-look") ?? document.head.appendChild(Object.assign(document.createElement("style"), { id: "own-look" }));
+  if (style.textContent !== (sidebarCSS ?? "")) style.textContent = sidebarCSS ?? "";
 }, () => {});
+
+// Which engine a search goes to, once the bar may ask (the permission comes with the first search).
+browser.search?.get().then(engines => { engine = engines.find(e => e.isDefault)?.name ?? null; if (data) update({ keepSelected: true }); }, () => {});
 
 const el = (tag, cls, text) => {
   const e = document.createElement(tag);
@@ -46,38 +65,89 @@ const el = (tag, cls, text) => {
   if (text !== undefined) e.textContent = text;
   return e;
 };
+const icon = name => { const e = el("span", "icon"); e.dataset.icon = name; return e; };
+const spaceOf = id => data?.spaces.find(s => s.id === id);
 
 // --- Rows ---------------------------------------------------------------------------
 // The one row asking for history and bookmarks: quiet, last, and gone once you answered.
+// Firefox's question then covers the field, so the row says it is coming.
 function askRow() {
   if (!data || data.asked || (browser.history && browser.bookmarks)) return [];
-  return [{ kind: "ask", id: "ask", title: "Also search history and bookmarks", quiet: true }];
+  return [{ kind: "ask", id: "ask", title: "Also search history and bookmarks", note: "Firefox asks you first", quiet: true }];
+}
+
+// The row under a question: what Enter does with what you typed.
+function confirmRow() {
+  const ask = step.row.ask, text = field.value.trim();
+  const title = text ? ask.confirm?.replace("#", text) : ask.empty;
+  return title ? [{ kind: "confirm", id: "confirm", title, icon: iconOfCommand(step.row) }] : [];
 }
 
 function rowsNow() {
   const text = field.value;
-  if (step?.kind === "ask") return [];
+  if (step?.kind === "ask") return confirmRow();
   if (step?.kind === "list") {
     const choices = step.row.list;
     return text.trim() ? rankResults(text, choices) : choices;
   }
-  if (!data) return addressFrom(text) ? resultsFor(text, []) : [];
-  return resultsFor(text, [...data.items, ...found], { tail: text.trim() ? askRow() : [] });
+  if (!data) return addressFrom(text) ? resultsFor(text, [], { engine }) : [];
+  return resultsFor(text, [...data.items, ...found], { tail: text.trim() ? askRow() : [], engine });
 }
 
+// After the title: where it is (the space in words when it is not this one), what it is
+// when it is not an open tab, or a command's key.
+const KIND_WORD = { closed: "closed", bookmark: "bookmark", history: "history" };
 function second(row) {
-  if (row.kind === "command") return prettyKey(row.shortcut, data?.mac);
-  if (row.kind === "folder") return "Folder";
-  if (row.kind === "closed") return `${siteOf(row.url)} · closed`;
-  if (row.kind === "archived") return `${siteOf(row.url)} · ${row.why === "closed" ? "closed" : "archived"}`;
-  if (row.kind === "address" || row.kind === "search" || row.kind === "ask" || !row.url) return "";
-  return siteOf(row.url);
+  if (row.kind === "command" || row.kind === "choice") return null; // a choice of space is the space itself
+  const parts = [];
+  const elsewhere = row.space && row.space !== data?.space && spaceOf(row.space);
+  if (elsewhere) parts.push(elsewhere.name);
+  if (row.kind === "folder") parts.push("Folder");
+  else if (row.url && row.kind !== "address" && row.kind !== "search") parts.push(siteOf(row.url));
+  if (KIND_WORD[row.kind]) parts.push(row.kind === "closed" && row.why === "archived" ? "archived" : KIND_WORD[row.kind]);
+  if (row.kind === "archived") parts.push(row.why === "closed" ? "closed" : "archived");
+  if (row.note) parts.push(row.note);
+  if (!parts.length) return null;
+  const e = el("span", "site", parts.join(" · "));
+  if (elsewhere) { const dot = el("span", "dot"); dot.style.setProperty("--color", elsewhere.color); e.prepend(dot); }
+  return e;
 }
+
+// On the selected row, when Enter takes you to another space: that it does.
+function enterSays(row) {
+  if (step || row.kind === "command" || row.kind === "choice") return null;
+  const elsewhere = row.space && row.space !== data?.space && spaceOf(row.space);
+  if (!elsewhere) return null;
+  const how = row.kind === "closed" || row.kind === "archived" ? `Reopen in ${elsewhere.name}` : `Switch to ${elsewhere.name}`;
+  return el("span", "enter", `${how}  ↵`);
+}
+
+// What a command does, drawn in the folders' line (tokens.css), all the same size and weight.
+const COMMAND_ICONS = {
+  "new-tab": "plus", "new-folder": "folder-plus", "reopen-closed": "undo", "clear-today": "close", "copy-url": "copy",
+  "rename-tab": "rename", "rename-folder": "rename", unload: "unload", "toggle-essential": "pin", "move-to-folder": "folder",
+  "move-to-space": "go", "close-tab": "close", settings: "settings", "next-tab": "down", "previous-tab": "up",
+  "next-space": "go", "previous-space": "back", "claude-copy-page": "copy", "claude-copy-tabs": "copy", "claude-ask": "open",
+};
+const iconOfCommand = row => COMMAND_ICONS[row.name] ?? "go";
+const KIND_ICONS = { search: "search", address: "address", ask: "history", history: "history", bookmark: "bookmark" };
+
+// A page with no icon gets its first letter or digit, not a bracket: "(2) Inbox" is an I.
+const letterOf = title => String(title ?? "").match(/[\p{L}\p{N}]/u)?.[0] ?? "·";
 
 function picture(row) {
-  const glyphs = { command: "›", choice: "›", folder: "▾", search: "⌕", address: "→", ask: "＋" };
-  if (glyphs[row.kind]) return el("span", "glyph", glyphs[row.kind]);
-  const letter = () => el("span", "letter", (row.title || "?").trim()[0] || "?");
+  const space = spaceOf(row.space);
+  if ((row.kind === "command" && row.name === "go-to-space" || row.kind === "choice") && space) {
+    const e = el("span", "icon space");
+    e.style.setProperty("--color", space.color);
+    return e;
+  }
+  if (row.kind === "command") return icon(iconOfCommand(row));
+  if (row.kind === "confirm") return icon(row.icon);
+  if (row.kind === "choice") return icon(row.value ? "folder" : "back");
+  if (row.kind === "folder") return icon(row.live ? "live" : "folder");
+  if (KIND_ICONS[row.kind] && !row.icon) return icon(KIND_ICONS[row.kind]);
+  const letter = () => el("span", "letter", letterOf(row.title));
   if (!row.icon || !/^(https?:|data:|moz-extension:)/.test(row.icon)) return letter();
   const img = el("img");
   img.src = row.icon;
@@ -95,12 +165,11 @@ function draw() {
     e.dataset.kind = row.kind;
     e.setAttribute("role", "option");
     if (row.url) e.dataset.url = row.url;
-    const dot = el("span", "dot");
-    const color = data?.spaces.find(s => s.id === row.space)?.color;
-    if (color) { dot.style.setProperty("--color", color); dot.title = data.spaces.find(s => s.id === row.space).name; }
-    e.append(dot, picture(row), el("span", "title", row.title));
-    const text = second(row);
-    if (text) e.append(el("span", "site", text));
+    e.append(picture(row), el("span", "title", row.title));
+    const after = second(row), enter = enterSays(row);
+    if (after) e.append(after);
+    if (enter) e.append(enter);
+    if (row.kind === "command" && row.shortcut) e.append(el("span", "key", row.shortcut));
     return e;
   }));
   if (rows.length) field.setAttribute("aria-activedescendant", "row-" + selected);
@@ -161,10 +230,15 @@ async function askForMore() {
 // --- Choosing -----------------------------------------------------------------------
 const closeBar = refocus => send({ type: "close", refocus });
 
+// A command's question: the field asks, the line above says what for, and the icon in the
+// field becomes the command's.
 function startStep(row, kind) {
   step = { row, kind, text: field.value };
   field.value = kind === "ask" ? row.ask.value ?? "" : "";
   field.placeholder = kind === "ask" ? row.ask.placeholder : row.placeholder ?? row.title;
+  stepLine.textContent = (kind === "ask" ? row.ask.heading : row.heading) ?? row.title;
+  stepLine.hidden = false;
+  what.dataset.icon = iconOfCommand(row);
   field.select();
   lookUpMore();
   update();
@@ -173,6 +247,8 @@ function startStep(row, kind) {
 function endStep() {
   field.value = step.text;
   field.placeholder = PLACEHOLDER;
+  stepLine.hidden = true;
+  what.dataset.icon = "search";
   step = null;
   lookUpMore();
   update();
@@ -197,7 +273,7 @@ async function searchFor(row) {
 }
 
 function choose(row, inNewTab) {
-  if (step?.kind === "ask") return chosen(step.row, { value: field.value.trim() });
+  if (step?.kind === "ask") return row && chosen(step.row, { value: field.value.trim() }); // no row: nothing to do with an empty name
   if (step?.kind === "list") return row && chosen(step.row, { value: row.value });
   if (!data) { enterWaiting = inNewTab; return; } // a moment: the rows are on their way
   // ⌘↵ with nothing typed is the shortest way to an empty new tab.
@@ -227,6 +303,8 @@ addEventListener("keydown", e => {
     case "Tab":
       if (rows[selected] && !step) { field.value = completionFor(rows[selected], field.value); lookUpMore(); update(); }
       break;
+    // ⌫ in an empty question goes back one step, as in Arc. Held down, it only empties the field.
+    case "Backspace": if (step && !field.value && !e.repeat) { endStep(); break; } return;
     default: return;
   }
   e.preventDefault();

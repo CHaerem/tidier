@@ -8,7 +8,11 @@
 
 const port = browser.runtime.connect({ name: "sidebar" });
 const hello = () => browser.windows.getCurrent().then(w => port.postMessage({ type: "hello", windowId: w.id })); // answered with a view
-hello();
+// Only once every script of the page is there: Firefox can hand over the answer between two
+// of them, and drawing it then stopped at the first part of another script (a tile's sound
+// mark, sound.js), leaving the list undrawn until the next view, which may not come soon.
+if (document.readyState === "loading") addEventListener("DOMContentLoaded", hello, { once: true });
+else hello();
 port.onMessage.addListener(render);
 
 // Your own look, from managed storage (dotfiles' tidier.css, given to Firefox
@@ -44,6 +48,12 @@ function place(parent, nodes) {
   }
   while (at) { const next = at.nextSibling; at.remove(); at = next; }
 }
+
+// An attribute set only when it changes. Setting one to the value it has still counts as a
+// change for Firefox, with an observer about, and a page whose title ticks makes every row's
+// and every tile's be set again on each view.
+const setIf = (e, name, value) => { if (e.getAttribute(name) !== value) e.setAttribute(name, value); };
+const textIf = (e, text) => { if (e.textContent !== text) e.textContent = text; };
 
 // The kept element for `id`, its content drawn again only if `state` changed.
 // Not while it is being pressed: drawing replaces what is under the pointer, and
@@ -119,13 +129,30 @@ globalThis.matchMedia?.("(prefers-color-scheme: dark)").addEventListener("change
   requestAnimationFrame(() => requestAnimationFrame(() => root.classList.remove("scheme-change")));
 });
 
+// What you click shows as selected at once, as in Firefox's own tab strip, rather than a
+// view later (0.1 to 0.45 s with Tidier busy). Both are drawn again from the next view
+// whatever it says, so a click that selected nothing shows that too. A row that is only
+// shown because it was selected, in a closed folder, stays until then (.was-active): going
+// now, it would pull the rows below it up under the pointer.
+function showSelected(e) {
+  if (e.classList.contains("active")) return; // already so: no view will come to draw it again
+  for (const was of document.querySelectorAll("#essentials .active, #tabs .active")) {
+    if (was === e) continue;
+    was.classList.remove("active");
+    was.classList.add("was-active");
+    delete was.dataset.state;
+  }
+  e.classList.add("active");
+  delete e.dataset.state;
+}
+
 // --- Essentials ----------------------------------------------------------------
 function tile(item) {
   const e = keep("tile:" + item.id, () => {
     const t = el("div");
     t.dataset.tab = item.id;
     t.draggable = !!view?.alone;
-    t.onclick = () => send({ type: "select", tabId: item.id });
+    t.onclick = () => { showSelected(t); send({ type: "select", tabId: item.id }); };
     t.onmousedown = noAutoscroll;
     t.onauxclick = e => { if (e.button === 1) send({ type: "close", tabId: item.id }); };
     t.oncontextmenu = e => { if (view?.alone) openTabMenu(e, item.id); else browser.menus.overrideContext({ context: "tab", tabId: item.id }); };
@@ -135,7 +162,7 @@ function tile(item) {
     t.className = "tile" + (item.active ? " active" : "") + (item.loaded ? "" : " unloaded");
     t.replaceChildren(icon(item), ...(view.alone ? soundMark(item) : []));
   });
-  e.title = item.tip || item.title;
+  setIf(e, "title", item.tip || item.title);
   return e;
 }
 
@@ -145,7 +172,7 @@ function row(item, folderKey) {
     const e = el("div");
     e.dataset.tab = item.id;
     e.draggable = !!view?.alone;
-    e.onclick = ev => { if (byHand(ev)) pickedByHand = true; send({ type: "select", tabId: item.id }); };
+    e.onclick = ev => { if (byHand(ev)) pickedByHand = true; showSelected(e); send({ type: "select", tabId: item.id }); };
     e.onmousedown = noAutoscroll;
     e.onmouseleave = () => { if (stillDim.delete(e.dataset.tab)) e.classList.remove("still-dim"); };
     e.onauxclick = secondClick.acts(ev => { if (ev.button === 1) closeByPointer(item.id, ev); });
@@ -169,8 +196,8 @@ function row(item, folderKey) {
     parts.push(close);
     e.replaceChildren(...parts);
   });
-  r.title = item.tip || item.title;
-  r.dataset.folder = folderKey ?? "";
+  setIf(r, "title", item.tip || item.title);
+  setIf(r, "data-folder", folderKey ?? "");
   return r;
 }
 
@@ -351,25 +378,35 @@ let folderKeys = new Set();
 function render(next) {
   view = next;
   drawn = new Set();
+  const space = view.spaces.find(s => s.id === view.space), root = document.documentElement;
   if (view.space !== roomsInSpace) { roomsInSpace = view.space; letRoomsGo(); } // another list: nothing in it was where you pointed
-  const space = view.spaces.find(s => s.id === view.space);
-  document.documentElement.style.setProperty("--accent", space?.color || "#7a7a80");
-  document.documentElement.dataset.space = view.space || "";
-  document.documentElement.classList.toggle("alone", !!view.alone);
+  // A space comes in as one piece: a folder drawn for it now does not fade in on its own,
+  // after everything else (sidebar.css, html.space-arriving), as a folder that appears does.
+  // The class goes once what is new has its style, also when drawing stops half way (a
+  // view can come before every script of this page is there), so it can never stay.
+  const fresh = root.getAttribute("data-space") !== (view.space || "");
+  if (fresh) {
+    root.classList.add("space-arriving");
+    queueMicrotask(() => { root.getBoundingClientRect(); root.classList.remove("space-arriving"); });
+  }
+  if (root.style.getPropertyValue("--accent") !== (space?.color || "#7a7a80")) root.style.setProperty("--accent", space?.color || "#7a7a80");
+  setIf(root, "data-space", view.space || "");
+  root.classList.toggle("alone", !!view.alone);
 
-  document.getElementById("hiding").hidden = !view.needsHiding;
+  const hiding = document.getElementById("hiding");
+  if (hiding.hidden !== !view.needsHiding) hiding.hidden = !view.needsHiding;
   // The lasting notice goes once you put it away with its × (isolation.js): under the pointer
   // it fades in place first, so the list does not come into its room at the moment of the click.
   const problem = document.getElementById("problem");
   if (view.problem) {
-    problem.classList.remove("going");
-    problem.hidden = false;
-    problemText.textContent = view.problem;
+    if (problem.classList.contains("going")) problem.classList.remove("going");
+    if (problem.hidden) problem.hidden = false;
+    textIf(problemText, view.problem);
   } else if (!problem.hidden && problem.matches(":hover")) goQuietly(problem);
-  else if (!problem.classList.contains("going")) problem.hidden = true;
+  else if (!problem.hidden && !problem.classList.contains("going")) problem.hidden = true;
 
   place(document.getElementById("essentials"), view.essentials.map(tile));
-  document.getElementById("space-name").textContent = view.alone ? space?.name || "" : "";
+  textIf(document.getElementById("space-name"), view.alone ? space?.name || "" : "");
 
   const list = view.folders.map(folder);
   if (view.folders.length && view.tabs.length) list.push(keep("divider", () => el("div", "divider"), 0, () => {}));

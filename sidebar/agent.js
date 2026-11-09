@@ -27,9 +27,10 @@ agentLineBox.append(agentLineText, agentStop);
 document.getElementById("spaces").before(agentLineBox);
 
 function drawAgent() {
-  agentLineBox.hidden = !agentState.active;
-  agentLineText.textContent = agentState.line ? `Agent: ${agentState.line}` : "";
-  agentLineText.title = agentLineText.textContent;
+  // Only what changed (sidebar.js's setIf): this runs with every view, also with no agent at all.
+  if (agentLineBox.hidden !== !agentState.active) agentLineBox.hidden = !agentState.active;
+  textIf(agentLineText, agentState.line ? `Agent: ${agentState.line}` : "");
+  setIf(agentLineText, "title", agentLineText.textContent);
   for (const dot of document.querySelectorAll("#spaces .space")) {
     dot.classList.toggle("agent-active", agentState.active && dot.dataset.space === agentState.space);
     dot.classList.toggle("agent-left", Object.hasOwn(agentState.forYou, dot.dataset.space));

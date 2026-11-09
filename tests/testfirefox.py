@@ -92,6 +92,8 @@ ICON_PAGE = """<title>Touched</title><link rel="icon" href="data:image/svg+xml,<
 PAGES = {
     "/unsaved": "<title>Unsaved</title><input autofocus><script>onbeforeunload = e => { e.preventDefault(); return 'unsaved'; };</script>unsaved input",
     "/plain": "<title>Plain</title>a plain page",
+    # A field to type in, as a message box is (alone_command_bar: keys typed right after the bar's key).
+    "/message-box": "<title>Message box</title><textarea id='box' autofocus></textarea>",
     "/slow": "<title>Slow</title>a page that takes a while",
     # Its own title. /titled has none but the one in its address.
     "/with-title": "<title>A page with a title</title>a page with a title",

@@ -1402,6 +1402,36 @@ def alone_spaces(m):
     check("the bar shows the spaces, and one is active", len(r["before"]) >= 3 and sum(s["active"] for s in r["before"]) == 1, str(r))
     check("the bar switches space", [s["id"] for s in r["after"] if s["active"]] == [r["wanted"]], str(r))
     check("a space shows its own essentials and its name", r["essentials"] == 2 and r["name"], str(r))
+    # A space comes in as one piece: its folders do not fade in after everything else, as a
+    # folder that appears does (sidebar.css). Their opacity as soon as they are there.
+    m.js(H + "main().__selectedBefore = main().gBrowser.selectedTab; return 1;")
+    r = sidebar_page(m, """
+      const list = doc.getElementById("tabs"), seen = [];
+      const back = spaces().find(s => s.active).id, other = spaces().find(s => !s.active && s.id !== "firefox-container-4").id;
+      const before = new Set([...list.querySelectorAll(".folder")].map(f => f.dataset.key));
+      send({type: "newFolder", space: back});
+      for (let i = 0; i < 50 && list.querySelectorAll(".folder").length === before.size; i++) await wait(100);
+      const made = [...list.querySelectorAll(".folder")].find(f => !before.has(f.dataset.key))?.dataset.key;
+      await wait(500);
+      const o = new page.MutationObserver(() => { for (const c of list.querySelectorAll(".folder > .children")) seen.push(Number(page.getComputedStyle(c).opacity)); });
+      o.observe(list, {childList: true});
+      doc.querySelector(`#spaces .space[data-space="${other}"]`).click(); await wait(1200);
+      doc.querySelector(`#spaces .space[data-space="${back}"]`).click(); await wait(1200);
+      o.disconnect();
+      const folders = list.querySelectorAll(".folder").length;
+      if (made) { send({type: "deleteFolder", key: made}); await wait(800); }
+      return {seen, folders, made: !!made, marked: [...doc.documentElement.classList].filter(c => c !== "alone")};""")
+    check("a space comes in at once, its folders too, and nothing stays marked", r["folders"] and r["seen"] and min(r["seen"]) == 1 and r["marked"] == [], str(r))
+    # What you click shows as selected at once, and the view then agrees.
+    r = sidebar_page(m, """
+      const rows = [...doc.querySelectorAll("#tabs .tab")].filter(e => e.offsetParent && e.querySelector(".title").textContent !== "Tidier");
+      const next = rows.find(e => !e.classList.contains("active"));
+      next.click();
+      const atOnce = {next: next.classList.contains("active"), others: doc.querySelectorAll("#tabs .tab.active, #essentials .active").length};
+      await wait(1500);
+      return {atOnce, after: doc.querySelector(`[data-tab="${next.dataset.tab}"]`)?.classList.contains("active")};""")
+    m.js(H + "const w = main(); w.gBrowser.selectedTab = w.__selectedBefore; delete w.__selectedBefore; await wait(800); return 1;")  # back where it was, for what follows
+    check("a clicked row shows as selected at once, and stays so", r["atOnce"] == {"next": True, "others": 1} and r["after"], str(r))
     shown = m.js(H + """const w = main(), selected = w.gBrowser.selectedTab;
       return {space: selected.userContextId, shown: [...new Set(w.gBrowser.tabs.filter(t => !t.pinned && !t.hidden && t.userContextId).map(t => t.userContextId))],
               ctrlTab: w.gBrowser.visibleTabs.filter(t => !t.pinned && t.userContextId && t.userContextId !== selected.userContextId).length};""")
@@ -3363,6 +3393,17 @@ def alone_sound(m):
     r = sidebar_page(m, FIND + f"""const ticking = () => {TICKING}; await until(() => ticking()?.querySelector(".sound.muted"));
       const first = ticking().title; await until(() => ticking().title !== first); return {{muted: !!ticking().querySelector(".sound.muted"), ticks: ticking().title !== first}};""")
     check("and what waited is drawn once it is let go", r["muted"] and r["ticks"], str(r))
+    # A redraw touches only what changed (sidebar.js): a clock or a chat badge in the space
+    # shown rewrote every row's and tile's tooltip and folder on each view, some 230 at a time.
+    r = sidebar_page(m, FIND + f"""const ticking = () => {TICKING}; await until(ticking);
+      await until(() => !doc.getElementById("note").classList.contains("shown"), 15000); // the line about the folder deleted above goes by itself, which is a change
+      const touched = new Set(); let records = 0;
+      const where = n => {{ const e = n.nodeType === 1 ? n : n.parentElement; const at = e?.closest?.("[data-tab], [data-folder-head], .space"); return at ? (at.dataset.tab ?? at.dataset.folderHead ?? at.dataset.space) : (e?.id || e?.tagName); }};
+      const o = new page.MutationObserver(list => {{ for (const x of list) {{ records++; touched.add(where(x.target)); }} }});
+      o.observe(doc.documentElement, {{subtree: true, attributes: true, childList: true, characterData: true}});
+      const first = ticking().title; await until(() => ticking().title !== first); await wait(1500); o.disconnect();
+      return {{touched: [...touched], ticking: ticking().dataset.tab, records}};""")
+    check("a page whose title ticks rewrites its own row and nothing else", r["records"] > 0 and r["touched"] == [r["ticking"]], str(r))
     ok = sidebar_click(m, TICKING + '?.querySelector(".close")', hold=1.5)
     closed = m.js(H + """const a = main(); for (let i = 0; i < 40 && a.gBrowser.tabs.includes(a.__ticking); i++) await wait(100); return !a.gBrowser.tabs.includes(a.__ticking);""")
     check("a press on a row's × closes, also while the row is being drawn again", ok and closed, str(closed))
@@ -6237,14 +6278,16 @@ def alone_drag(m):
     # Real drag events on the real sidebar: into a folder, among the tabs, to the essentials.
     more_tabs_here(m, "drag")
     r = sidebar_page(m, """
-      const drag = async (from, to, below = false) => {
+      const drag = async (from, to, below = false, atOnce = () => null) => {
         const data = new page.DataTransfer(), box = to.getBoundingClientRect();
         const at = {bubbles: true, cancelable: true, clientX: box.left + 5, clientY: box.top + (below ? box.height - 1 : 1), dataTransfer: data};
         from.dispatchEvent(new page.DragEvent("dragstart", at));
         to.dispatchEvent(new page.DragEvent("dragover", at));
         to.dispatchEvent(new page.DragEvent("drop", at));
         from.dispatchEvent(new page.DragEvent("dragend", at));
+        const seen = atOnce(); // before any view has come back
         await wait(1800);
+        return seen;
       };
       send({type: "newFolder", space: spaces().find(s => s.active).id, name: "Dragged"});
       await wait(1000);
@@ -6258,7 +6301,7 @@ def alone_drag(m):
       await drag(back, row().at(-1), true);
       out.out = {back: row().length === n0, last: Number(row().at(-1).dataset.tab) === aTitle};
       const first = row()[0], last = row().at(-1), lastId = Number(last.dataset.tab);
-      await drag(last, first);
+      out.atOnce = await drag(last, first, false, () => Number(row()[0].dataset.tab) === lastId);
       out.before = Number(row()[0].dataset.tab) === lastId;
       const tiles0 = tiles().length;
       const pinned = row()[0], pinnedId = Number(pinned.dataset.tab);
@@ -6282,6 +6325,7 @@ def alone_drag(m):
     check("a tab dragged onto a folder goes into it", r.get("into") == {"left": True, "inFolder": True}, str(r))
     check("a tab dragged out of a folder is an ordinary tab, where you put it", r.get("out") == {"back": True, "last": True}, str(r))
     check("a tab dragged above another is there", r.get("before") is True, str(r))
+    check("and is there at once, not a view later", r.get("atOnce") is True, str(r))
     check("a tab dragged to the essentials is an essential, and dragged back an ordinary tab", r.get("pinned") is True and r.get("unpinned") is True, str(r))
 
 
@@ -6661,7 +6705,9 @@ PICKING = """
       const until = async (test, ms = 15000) => { const t0 = Date.now(); while (Date.now() - t0 < ms) { if (test()) return true; await wait(50); } return !!test(); };
       const key = k => doc.body.dispatchEvent(new page.KeyboardEvent("keydown", {key: k, bubbles: true, cancelable: true}));
       const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
-      const select = async e => { const id = idOf(e); press(e); await until(() => (row(id) || tile(id))?.classList.contains("active")); };
+      // A click shows as selected at once (sidebar.js, showSelected); selected it is once a view agrees, which draws it with its state.
+      const shownSelected = id => { const e = row(id) || tile(id); return !!e?.classList.contains("active") && e.dataset.state !== undefined; };
+      const select = async e => { const id = idOf(e); press(e); await until(() => shownSelected(id)); };
       const keysOf = list => Promise.all(list.map(id => page.browser.sessions.getTabValue(id, "syncKey")));
       const drag = (from, to, below = false, right = false) => {
         const data = new page.DataTransfer(), box = to.getBoundingClientRect();
@@ -6742,7 +6788,7 @@ def alone_selection(m):
       row(r3).dispatchEvent(new page.MouseEvent("mouseup", {bubbles: true, cancelable: true, button: 0}));
       row(r3).dispatchEvent(new page.MouseEvent("click", {bubbles: true, cancelable: true, button: 0}));
       out.released = picks().length === 0;
-      await until(() => row(r3).classList.contains("active"));
+      await until(() => shownSelected(r3));
       out.plainSelects = (await activeId()) === r3;
 
       // A range: from the selected tab, again from there, over a folder as drawn.
@@ -8887,6 +8933,47 @@ def alone_command_bar(m):
     bar_open(m)
     m.js(BAR + "main().focus(); return 1;")
     check("losing the focus closes it", wait_for_bar(m, False))
+
+    # Typing at once after the key, from a field in a page: what goes there before the bar's
+    # window has the keyboard is caught in the page (barkeys.js, with the access to all
+    # websites) and handed to the bar, so none of it lands in the page.
+    had_access = m.js(H + """const {ExtensionPermissions} = ChromeUtils.importESModule("resource://gre/modules/ExtensionPermissions.sys.mjs");
+      const policy = WebExtensionPolicy.getByID(args[0]), had = (await ExtensionPermissions.get(args[0])).origins.includes("<all_urls>");
+      await ExtensionPermissions.add(args[0], {permissions: [], origins: ["<all_urls>"]}, policy.extension);
+      for (let i = 0; i < 50 && !policy.contentScripts.some(s => s.jsPaths.some(p => p.endsWith("/barkeys.js"))); i++) await wait(100);
+      const w = main(); w.focus();
+      const t = w.gBrowser.addTrustedTab(args[1] + "/message-box?smoke-bar-typed", {userContextId: w.gBrowser.selectedTab.userContextId}); w.gBrowser.selectedTab = t;
+      for (let i = 0; i < 100 && (!key(w, t) || t.linkedBrowser.webProgress?.isLoadingDocument); i++) await wait(100);
+      await wait(500); w.gBrowser.selectedBrowser.focus(); await wait(200); return had;""", EXT_ID, m.pages)
+    typed = "smoke typed"
+    acts = [{"type": "keyDown", "value": k} for k in (CMD, SHIFT, "k")] + [{"type": "keyUp", "value": k} for k in ("k", SHIFT, CMD)]
+    for k in typed:
+        acts += [{"type": "keyDown", "value": k}, {"type": "keyUp", "value": k}]
+    m.cmd("WebDriver:PerformActions", {"actions": [{"type": "key", "id": "kb", "actions": acts}]})
+    m.cmd("WebDriver:ReleaseActions")
+    wait_for_bar(m)
+    field = ""
+    for _ in range(50):
+        field = bar_page(m, """return doc.getElementById("field").value;""") or ""
+        if field == typed:
+            break
+        time.sleep(0.1)
+    into_page(m, "smoke-bar-typed")
+    box = m.cmd("WebDriver:ExecuteScript", {"script": "return document.getElementById('box').value;", "args": []})
+    m.chrome()
+    in_order = iter(typed)
+    lost = len(typed) - len(field)
+    # (Firefox can drop a key in the moment its new window takes the keyboard, before the
+    # page in it is there: no extension sees that one.)
+    check("keys typed at once after the key go to the bar, none to the page", box == "" and field and all(c in in_order for c in field) and lost <= 1, f"page {box!r}, bar {field!r}")
+    if lost:
+        print(f"INFO  the bar got {field!r} of {typed!r}", flush=True)
+    bar_keys(m, [ESC])
+    wait_for_bar(m, False)
+    m.js(H + """await removeWhere((w, t) => url(t).includes("smoke-bar-typed"));
+      if (!args[1]) { const {ExtensionPermissions} = ChromeUtils.importESModule("resource://gre/modules/ExtensionPermissions.sys.mjs");
+        await ExtensionPermissions.remove(args[0], {permissions: [], origins: ["<all_urls>"]}, WebExtensionPolicy.getByID(args[0]).extension); await wait(1000); }
+      return 1;""", EXT_ID, had_access)  # as it was, for the groups after this one
 
     # Firefox lists a closed popup under Recently Closed Windows: ⌘⇧T would bring the bar back.
     r = {}

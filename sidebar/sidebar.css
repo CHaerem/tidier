@@ -176,12 +176,17 @@ img { filter: drop-shadow(0 0 .6px light-dark(rgb(40 30 20 / .3), rgb(255 255 25
 /* A closed folder still shows the selected tab under its head, and only that, so you
  * can always see where you are. Nothing unfolds and nothing is stored: it goes when you
  * leave the tab. (With Sidebery the whole box stays hidden, as ever.) */
-.folder.collapsed > .children > .tab:not(.active, .lingers), html:not(.alone) .folder.collapsed > .children { display: none; }
+.folder.collapsed > .children > .tab:not(.active, .lingers, .was-active), html:not(.alone) .folder.collapsed > .children { display: none; }
 /* Where a row was, while the pointer is still in the list (sidebar.js): the rows around it
  * stay where they were. Events go through it to the list, as on its empty part. */
 #tabs .room { height: var(--row); margin-bottom: var(--row-gap); pointer-events: none; }
 .folder.collapsed > .children > .tab { scroll-margin-top: calc(var(--row) + var(--row-gap)); } /* scrolled into view, it brings its head along */
 .folder > .children { transition: opacity var(--soft); @starting-style { opacity: 0; } }
+html.space-arriving .folder > .children { transition: none; } /* a whole space comes in at once (sidebar.js) */
+/* A folder chosen in the command bar, for a moment (commandbar-link.js); it fades back,
+ * or with less motion simply goes. */
+.folder > .row.head.marked { background: var(--accent-soft); animation: marked 1.2s ease-in forwards; }
+@keyframes marked { 50% { background: var(--accent-soft); } to { background: transparent; } }
 .row .count { flex: none; min-width: var(--icon); text-align: center; color: var(--muted); font-size: var(--size-small); font-variant-numeric: tabular-nums; }
 .row .count:empty { display: none; }
 .row .rename {

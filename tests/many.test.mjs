@@ -290,6 +290,24 @@ function sidebarPage() {
   return code => vm.runInContext(code, ctx);
 }
 
+test("the sidebar asks for its view only once every script of its page is there", async () => {
+  // Firefox can hand over the answer between two of the page's scripts; drawing it then
+  // stopped at a part of a later one, and the list stayed undrawn.
+  const posted = [], loaded = [];
+  const ctx = vm.createContext({
+    browser: { runtime: { connect: () => ({ onMessage: { addListener() {} }, postMessage: m => posted.push(m) }) }, windows: { getCurrent: async () => ({ id: 1 }) }, storage: { managed: { get: async () => ({}) } } },
+    document: { readyState: "loading", getElementById: () => ({ style: {}, dataset: {}, addEventListener() {}, append() {} }), documentElement: { dataset: {} }, head: {}, createElement: () => ({ dataset: {}, style: {}, classList: { add() {} }, append() {}, addEventListener() {} }), addEventListener() {} },
+    addEventListener: (type, f) => { if (type === "DOMContentLoaded") loaded.push(f); },
+  });
+  vm.runInContext(readFileSync(new URL("../sidebar/sidebar.js", import.meta.url), "utf8"), ctx);
+  await realSleep(10);
+  assert.deepEqual(posted, [], "not while the page is still loading");
+  assert.equal(loaded.length, 1);
+  loaded[0]();
+  await realSleep(10);
+  assert.deepEqual(posted.map(m => m.type), ["hello"]);
+});
+
 test("the sidebar asks for an icon only near the view, once, and what it remembers does not grow", () => {
   const page = sidebarPage(), icon = page("icon");
   const first = icon({ icon: "https://a.example/i.png", title: "A" });

@@ -7,7 +7,7 @@ import { readFileSync } from "node:fs";
 import vm from "node:vm";
 
 const read = path => readFileSync(new URL("../" + path, import.meta.url), "utf8");
-const PAGES = ["sidebar/sidebar.html", "settings/settings.html"];
+const PAGES = ["sidebar/sidebar.html", "settings/settings.html", "commandbar/commandbar.html"];
 const STYLES = ["sidebar/tokens.css", "sidebar/sidebar.css", "sidebar/archived.css", "sidebar/agent.css", "settings/settings.css", "settings/bridge.css", "commandbar/commandbar.css"];
 // What the sidebar draws, the archived list and the agent's line included: on the design's
 // names throughout. (The command bar is to join it, as its page links tokens.css.)
@@ -147,4 +147,33 @@ test("a page with no icon gets its first letter (a digit if it has none)", () =>
   for (const [title, letter] of cases) assert.equal(letterOf(title), letter, String(title));
   assert.equal(sidebar("icon")({ title: "(2) Inbox one" }).textContent, "I", "and the row draws it");
   assert.equal(sidebar("icon")({ title: "New Tab", blank: true }).textContent, "", "an empty new tab has no name to take a letter from");
+});
+
+test("the command bar is drawn from the same names: no colours of its own, and drawn icons", () => {
+  const css = read("commandbar/commandbar.css");
+  // Its colours are the design's (a tint mixed from the space's colour, as the sidebar's). A
+  // mask's black is no colour, and an icon's halo is the sidebar's.
+  const own = css.replace(/color-mix\([^;]*\)|mask-image:[^;]*;|filter: drop-shadow[^;]*;/g, "").match(/#[0-9a-f]{3,8}\b|rgba?\(/gi) ?? [];
+  assert.deepEqual(own, [], "colours of its own");
+  for (const name of ["var(--row)", "var(--radius)", "var(--selected)", "var(--shadow-card)", "var(--muted)", "var(--icon)"]) assert.ok(css.includes(name), name);
+  // No text characters standing in for icons, which come in other sizes and weights.
+  assert.doesNotMatch(read("commandbar/commandbar.js"), /["'][›⌕＋▾→]["']/);
+});
+
+test("a class the sidebar puts on the whole page is no element's own class", () => {
+  // A space switch once marked html with "new-space", which is also the round button for a
+  // new space: until the mark went, the whole sidebar was laid out as that button.
+  const files = ["sidebar/sidebar.html", ...[...read("sidebar/sidebar.html").matchAll(/<script src="([^"]+)"/g)].map(m => "sidebar/" + m[1])];
+  const code = files.map(read).join("\n");
+  const onPage = new Set([...code.matchAll(/(?:root|documentElement)\.classList\.(?:add|toggle|remove)\("([\w-]+)"/g)].map(m => m[1]));
+  assert.ok(onPage.has("alone") && onPage.has("space-arriving"), [...onPage].join());
+  // Classes given to elements: el("tag", "a b"), class="a b", className = "a b", classList.add("a") on anything else.
+  const given = [
+    ...[...code.matchAll(/\bel\("\w+", "([\w -]+)"/g)].map(m => m[1]),
+    ...[...code.matchAll(/class="([\w -]+)"/g)].map(m => m[1]),
+    ...[...code.matchAll(/className = "([\w -]+)"/g)].map(m => m[1]),
+    ...[...code.matchAll(/(?<!root|documentElement)\.classList\.(?:add|toggle)\("([\w-]+)"/g)].map(m => m[1]),
+  ].flatMap(c => c.split(/\s+/));
+  assert.ok(given.includes("new-space"), "the button for a new space is found");
+  for (const name of onPage) assert.ok(!given.includes(name), `.${name} is the page's and an element's`);
 });

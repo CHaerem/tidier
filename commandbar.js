@@ -16,18 +16,24 @@
 // given, and it is short-lived enough that nothing has to keep that up to date.
 
 const BAR_PAGE = "commandbar/commandbar.html";
-// A field and eight rows, under a title bar on a Mac and with userChrome.css's margins. It
-// never changes, so nothing jumps while you type.
-const BAR_WIDTH = 640, BAR_HEIGHT = 432;
+// A field and eight rows of the sidebar's height, under a title bar on a Mac. It never
+// changes while the bar is open, so nothing jumps while you type. As wide as the window
+// allows, with some of it showing on both sides.
+const BAR_WIDTH = 640, BAR_MIN_WIDTH = 360, BAR_SIDES = 48, BAR_HEIGHT = 380;
 const BAR_OPEN_LIMIT_MS = 10000; // a window that never came must not take the key for good
 const BAR_FORGET_MS = 10000; // Firefox lists a closed window a moment after it has closed, once it has its last state
-const BAR_ASK_SIDEBAR_MS = 100; // a sidebar answers at once; none must not hold up the bar
+// A sidebar answers in a few milliseconds, and with none open Firefox says so at once; only a
+// sidebar that is there but slow (a busy machine: 100 ms was too short there) waits this long,
+// meanwhile the bar's window is still being made. Acting on one tab when you had selected two
+// would be the wrong tabs.
+const BAR_ASK_SIDEBAR_MS = 300;
 const CLOSED_LOOKED_AT = 25; // Firefox's list of closed tabs holds about this many anyway
 const BAR_ASKED = "commandBarAsked"; // storage: history and bookmarks have been asked for, so the row does not come back
 
-let commandBar = null; // the open bar: { id, from, pressedAt, snapshot (a promise), ctx, closeOnOpen }
+let commandBar = null; // the open bar: { id, from, pressedAt, snapshot (a promise), ctx, closeOnOpen, early (keys caught before it), port, caughtIn (the tab they were caught in) }
 
 const barUses = storedValue("commandUses", () => ({})); // command name -> how often: "the most used"
+const barAccents = new Map(); // space -> its colour, as the last bar was given it
 
 // The window to open from: the one you are in. A sign-in popup or another bar is not a
 // window to open tabs in, so then any normal window.
@@ -38,17 +44,30 @@ async function barSourceWindow(tab) {
 }
 
 // The key: opens the bar, or closes the one that is open.
+//
+// A window made in advance and only shown on the key would be quicker still, but cannot be
+// hidden: Firefox keeps every window an extension moves on the screen (windows.update), a
+// minimised one goes into the Dock and comes back out of it, slowly and with an animation,
+// and one kept behind the window you are in shows in Mission Control and ⌘`, and peeks out
+// when that window moves. So the window is made at each press, and what you type before it
+// has the keyboard is caught where it goes (barkeys.js) and handed to it.
 async function toggleCommandBar(tab) {
   if (commandBar?.id === null && Date.now() - commandBar.pressedAt > BAR_OPEN_LIMIT_MS) commandBar = null;
   if (commandBar?.id === null) { commandBar.closeOnOpen = !commandBar.closeOnOpen; return; } // what the presses add up to is settled once it is there
   if (commandBar) return barClose(commandBar, true);
-  const bar = commandBar = { id: null, from: null, pressedAt: Date.now(), snapshot: null, ctx: null, closeOnOpen: false };
+  const bar = commandBar = { id: null, from: null, pressedAt: Date.now(), snapshot: null, ctx: null, closeOnOpen: false, early: null, port: null };
+  barCatchKeys(tab, bar); // first of all: the next key can be on its way already
   try {
     const from = await barSourceWindow(tab);
     if (!from) { commandBar = null; return; }
     bar.from = from.id;
     bar.snapshot = barSnapshot(bar).catch(err => { noteError(err); return null; }); // ready by the time the page asks
-    const win = await browser.windows.create({ type: "popup", url: `${BAR_PAGE}#${bar.pressedAt}`, allowScriptsToClose: true, width: BAR_WIDTH, height: BAR_HEIGHT, ...barPlaceOver(from) });
+    // The space and its colour go along, so the page is in them from its first frame
+    // (commandbar/first.js). Its colour as the bar last saw it: asking would hold the window up.
+    const space = activeSpace.get(from.id), accent = barAccents.get(space);
+    const given = new URLSearchParams([...(space ? [["space", space]] : []), ...(accent ? [["accent", accent]] : [])]);
+    const url = `${BAR_PAGE}${given.size ? `?${given}` : ""}#${bar.pressedAt}`;
+    const win = await browser.windows.create({ type: "popup", url, allowScriptsToClose: true, ...barPlaceOver(from) });
     bar.id = win.id;
     if (bar.closeOnOpen) await barClose(bar, true);
   } catch (err) {
@@ -60,9 +79,52 @@ async function toggleCommandBar(tab) {
 // In the middle of the window, a bit above the middle, where you look. A window with no
 // position to tell (a minimised one) leaves it to Firefox, which centres it on the screen.
 function barPlaceOver(win) {
-  if (![win.left, win.top, win.width, win.height].every(Number.isFinite)) return {};
-  return { left: Math.round(win.left + (win.width - BAR_WIDTH) / 2), top: Math.round(win.top + Math.max(48, (win.height - BAR_HEIGHT) / 4)) };
+  const known = [win.left, win.top, win.width, win.height].every(Number.isFinite);
+  const width = known ? Math.round(Math.max(BAR_MIN_WIDTH, Math.min(BAR_WIDTH, win.width - BAR_SIDES))) : BAR_WIDTH;
+  if (!known) return { width, height: BAR_HEIGHT };
+  return { width, height: BAR_HEIGHT, left: Math.round(win.left + (win.width - width) / 2), top: Math.round(win.top + Math.max(48, (win.height - BAR_HEIGHT) / 4)) };
 }
+
+// Where the keyboard is now: the page (in every frame of it; only one has the keyboard) and
+// this window's sidebar. Neither may be there to answer: a page Tidier has no access to, or
+// none at all. What comes back, comes back as "bar:early" (below), once the bar's page says it
+// has the keyboard ("bar:stop").
+function barCatchKeys(tab, bar, type = "bar:catch") {
+  const msg = { type, pressedAt: bar.pressedAt };
+  if (tab?.id !== undefined && isWeb(tab.url)) browser.tabs.sendMessage(tab.id, msg).catch(() => {});
+  if (tab?.windowId !== undefined) browser.runtime.sendMessage({ ...msg, windowId: tab.windowId }).catch(() => {});
+  bar.caughtIn = tab;
+}
+
+// barkeys.js, in every frame of every page while Tidier has the access to all websites (a
+// field you type in can be in a frame), with littlewindow.js's peek.js. It is given the bar's
+// keys, so it can start catching on the key itself, which reaches the page before Tidier
+// hears of it: "bar:catch" can come after the first letter. Given again when they change,
+// which the bar finds out when it opens.
+let barKeysScript = null, barKeysGiven = null;
+async function startBarKeys(given) {
+  const keys = given ? JSON.stringify((await browser.commands.getAll()).filter(c => c.name.startsWith("command-bar") && c.shortcut).map(c => c.shortcut)) : null;
+  if (barKeysScript && keys === barKeysGiven) return;
+  await barKeysScript?.unregister().catch(() => {});
+  barKeysScript = barKeysGiven = null;
+  if (!given) return;
+  barKeysScript = await browser.contentScripts.register({
+    matches: ["http://*/*", "https://*/*"], runAt: "document_start", allFrames: true,
+    js: [{ code: `globalThis.tidierBarKeys = ${keys};` }, { file: "barkeys.js" }],
+  });
+  barKeysGiven = keys;
+}
+
+// The keys caught for this press, to the bar's page, once it is there.
+function barEarly(bar, msg) {
+  const early = { type: "early", text: typeof msg.text === "string" ? msg.text.slice(0, 200) : "", enter: msg.enter ? { inNewTab: !!msg.enter.inNewTab } : null, escape: !!msg.escape };
+  bar.early = early;
+  bar.port?.postMessage(early);
+}
+browser.runtime.onMessage.addListener((msg, sender) => {
+  if (msg?.type !== "bar:early" || sender?.id !== browser.runtime.id) return;
+  if (commandBar && msg.pressedAt === commandBar.pressedAt && !commandBar.early) barEarly(commandBar, msg);
+});
 
 async function barClose(bar, refocus) {
   if (commandBar === bar) commandBar = null;
@@ -154,6 +216,13 @@ function barFolderChoices(ctx) {
 }
 const barSpaceChoices = ctx => ctx.spaces.filter(s => !ctx.picked.every(t => t.cookieStoreId === s.id)).map(s => ({ label: s.name, value: s.id, space: s.id }));
 
+// What a step of a command says above its field, so you can see what Enter will act on.
+const barSpaceName = ctx => ctx.spaces.find(s => s.id === ctx.space)?.name ?? "this space";
+const barTitleOf = (ctx, t) => { const e = ctx.all[syncKeyByTab.get(t.id)]; return barShort(e?.name || e?.title || t.title); }; // a placeholder's own title is the placeholder's
+// A title in a sentence, short enough that the sentence still ends inside the bar.
+const barShort = (text, most = 48) => { const t = String(text ?? "").trim(); return t.length > most ? `${t.slice(0, most - 1).trimEnd()}…` : t; };
+const barMoving = ctx => (ctx.picked.length > 1 ? `Move ${ctx.picked.length} tabs to` : `Move “${barTitleOf(ctx, ctx.picked[0])}” to`);
+
 // --- The commands ------------------------------------------------------------------
 // One table: a name (the same as the shortcut's in manifest.json, if it has one, so the
 // row can show its key), a label, when it applies, and what it does. What it needs from
@@ -164,15 +233,20 @@ const barSpaceChoices = ctx => ctx.spaces.filter(s => !ctx.picked.every(t => t.c
 // `run` is carried out in the queue, and everything goes through what the sidebar uses,
 // so other windows follow. `free` is for what may wait for you (a page that asks before it
 // closes): all of Tidier would wait with it in the queue, and the sidebar's close is not in it.
+// `careful` is for what closes tabs: never moved up by use, and never what a plain Enter takes
+// for a word that is only somewhere in its name (rank.js). The order here is the order among
+// commands that match as well: going and making first, closing last.
 const BAR_COMMANDS = [
   { name: "new-tab", label: "New tab", run: ctx => barOpenTab(ctx) },
-  { name: "new-folder", label: "New folder", ask: () => ({ placeholder: "Name of the new folder" }),
+  // A question asked in the field says what it is for (`heading`), and the row under it what
+  // Enter does with what you typed (`confirm`, # for the text; `empty` with nothing typed).
+  { name: "new-folder", label: "New folder", ask: ctx => ({ placeholder: "Name of the new folder", heading: `New folder in ${barSpaceName(ctx)}`, confirm: "Create “#”", empty: "Create “New folder”" }),
     run: (ctx, name) => createFolder(name || "New folder", ctx.space) },
   { name: "reopen-closed", label: "Reopen closed tab", when: ctx => ctx.closed.length > 0,
     run: ctx => barReopenClosed(ctx, barClosedItems(ctx)[0]) },
   { name: "go-to-space", each: ctx => ctx.spaces.filter(s => s.id !== ctx.space).map(s => ({ label: `Go to ${s.name}`, value: s.id, space: s.id })),
     run: (ctx, space) => switchSpace(ctx.windowId, space) },
-  { name: "clear-today", label: "Clear today's tabs", run: ctx => clearSpace(ctx.windowId, ctx.space) },
+  { name: "clear-today", label: "Clear today's tabs", careful: true, run: ctx => clearSpace(ctx.windowId, ctx.space) },
   // While the sidebar's quiet line offers Undo, here too, for the same note (quiet.js). Not
   // in the queue: Undo puts itself there.
   { name: "undo", each: ctx => { const note = quietNotes.get(ctx.windowId); return note?.undo ? [{ label: `Undo: ${note.text}`, value: String(note.id) }] : []; }, free: true,
@@ -183,12 +257,13 @@ const BAR_COMMANDS = [
       say(ctx.windowId, ctx.addresses.length > 1 ? `${ctx.addresses.length} addresses copied` : "Address copied", { brief: true });
     } },
   { name: "rename-tab", label: "Rename this tab", when: ctx => barOnlyThisTab(ctx) && barIsKept(ctx),
-    ask: ctx => ({ placeholder: "A name, or nothing for the page's title", value: barNameOf(ctx) }),
+    ask: ctx => ({ placeholder: "A name, or nothing for the page's title", value: barNameOf(ctx), heading: `Rename “${barShort(barNameOf(ctx))}”`, confirm: "Call it “#”", empty: "Use the page's own title" }),
     run: (ctx, name) => renameTab(ctx.tab.id, name) },
   { name: "rename-folder", label: "Rename this folder", when: ctx => barOnlyThisTab(ctx) && !!barOwnFolderOf(ctx),
-    ask: ctx => ({ placeholder: "Name of the folder", value: barOwnFolderOf(ctx).name }),
+    ask: ctx => ({ placeholder: "Name of the folder", value: barOwnFolderOf(ctx).name, heading: `Rename the folder “${barShort(barOwnFolderOf(ctx).name)}”`, confirm: "Call it “#”" }),
     run: (ctx, name) => renameFolder(barFolderKey(ctx), name) },
-  { name: "unload", label: ctx => barCount(ctx, "Unload this tab", "Unload # tabs"), when: ctx => ctx.picked.some(t => !t.discarded && !isGhostUrl(t.url)), run: barUnload },
+  // (An empty new tab holds nothing to unload.)
+  { name: "unload", label: ctx => barCount(ctx, "Unload this tab", "Unload # tabs"), when: ctx => ctx.picked.some(t => !t.discarded && !isGhostUrl(t.url) && !NEW_TAB_PAGES.has(t.url)), run: barUnload },
   { name: "toggle-essential", label: ctx => ctx.tab.pinned ? "Remove from essentials" : "Make this tab an essential",
     when: ctx => barOnlyThisTab(ctx) && (ctx.tab.pinned || isWeb(ctx.tab.url)),
     run: ctx => {
@@ -200,7 +275,7 @@ const BAR_COMMANDS = [
       return sidebarAction(ctx.windowId, { type: "pin", tabId: ctx.tab.id, pinned: !ctx.tab.pinned });
     } },
   { name: "move-to-folder", label: ctx => barCount(ctx, "Move to folder", "Move # tabs to folder"), when: ctx => barMovable(ctx) && ctx.picked.every(t => syncKeyByTab.has(t.id) || isWeb(t.url)) && barFolderChoices(ctx).length > 0,
-    list: barFolderChoices,
+    list: barFolderChoices, heading: barMoving,
     placeholder: "Which folder?",
     run: async (ctx, folder) => {
       for (const t of ctx.picked) {
@@ -210,12 +285,12 @@ const BAR_COMMANDS = [
     } },
   { name: "move-to-space", label: ctx => barCount(ctx, "Move to space", "Move # tabs to space"),
     when: ctx => barMovable(ctx) && ctx.addresses.length === ctx.picked.length && barSpaceChoices(ctx).length > 0, // moving is opening it again there: no address, no move
-    list: barSpaceChoices,
+    list: barSpaceChoices, heading: barMoving,
     placeholder: "Which space?",
     // The tab menu's way (tabactions.js): in order, so they arrive in order, and the tab you
     // are on never steps onto one still to come.
     run: (ctx, space) => tabAction(ctx.windowId, { action: "space", tabIds: ctx.picked.map(t => t.id), space }) },
-  { name: "close-tab", label: ctx => barCount(ctx, "Close this tab", "Close # tabs"), when: ctx => ctx.picked.length > 0, free: true,
+  { name: "close-tab", label: ctx => barCount(ctx, "Close this tab", "Close # tabs"), when: ctx => ctx.picked.length > 0, free: true, careful: true,
     run: async ctx => {
       for (const t of barSelectedLast(ctx)) {
         await closeFromSidebar(ctx.windowId, await closeTargetOf(t.id)); // what a saved placeholder with its page in another window closes (tabactions.js)
@@ -242,12 +317,14 @@ function barUnload(ctx) {
 const barSharedCommands = () => COMMANDS
   .filter(c => c.action && !/^(space|tab)-\d$/.test(c.name) && c.name !== "_execute_sidebar_action" && !BAR_COMMANDS.some(b => b.name === c.name));
 
-// The rows for the commands that apply, most used first.
-function barCommandRows(ctx, uses, shortcuts) {
+// The rows for the commands that apply, most used first, except what closes tabs. Each
+// carries its place in the table (`order`), and its key as a Mac writes it (keys-commands.js),
+// the same as on the settings page.
+function barCommandRows(ctx, uses, shortcuts, os) {
   const rows = [];
   const row = (command, shown) => rows.push({
     kind: "command", id: `command:${command.name}:${shown.value ?? ""}`, name: command.name, title: shown.label, value: shown.value, space: shown.space, here: true,
-    shortcut: shortcuts.get(command.name) || null, placeholder: command.placeholder,
+    order: rows.length, careful: !!command.careful, shortcut: prettyKey(shortcuts.get(command.name), os) || null, placeholder: command.placeholder, heading: command.heading?.(ctx),
     ask: command.ask?.(ctx), list: command.list?.(ctx).map(c => ({ kind: "choice", id: `choice:${c.value}`, title: c.label, value: c.value, space: c.space, here: true })),
   });
   for (const command of BAR_COMMANDS) {
@@ -256,7 +333,8 @@ function barCommandRows(ctx, uses, shortcuts) {
     else row(command, { label: typeof command.label === "function" ? command.label(ctx) : command.label });
   }
   for (const command of barSharedCommands()) row(command, { label: command.label });
-  return rows.map((r, i) => [r, i]).sort(([a, i], [b, j]) => (uses[b.name] ?? 0) - (uses[a.name] ?? 0) || i - j).map(([r]) => r);
+  const used = r => (r.careful ? 0 : uses[r.name] ?? 0);
+  return rows.sort((a, b) => used(b) - used(a) || a.order - b.order);
 }
 
 // --- What can be found -------------------------------------------------------------
@@ -280,7 +358,7 @@ async function barTabItems(ctx) {
   const items = [];
   for (const [key, entry] of Object.entries(all)) {
     if (isOwnFolder(entry)) {
-      items.push({ kind: "folder", id: `folder:${key}`, key, title: entry.name, space: entry.cookieStoreId, here: here(entry.cookieStoreId) });
+      items.push({ kind: "folder", id: `folder:${key}`, key, title: entry.name, space: entry.cookieStoreId, here: here(entry.cookieStoreId), live: !!entry.live });
       continue;
     }
     const reps = repsByKey.get(key);
@@ -316,38 +394,50 @@ async function barTabItems(ctx) {
   return items;
 }
 
-function barClosedItems(ctx) {
-  // Firefox's list has the container only sometimes, so no dot without it.
-  return ctx.closed.map(({ tab, lastModified }) => ({
-    kind: "closed", id: `closed:${tab.sessionId}`, sessionId: tab.sessionId, title: tab.title || tab.url, url: tab.url, icon: iconForView(tab),
-    space: tab.cookieStoreId && tab.cookieStoreId !== NO_CONTAINER ? tab.cookieStoreId : null, lastUsed: lastModified,
-  }));
+// Firefox's list has the container only sometimes. Tidier's own list (archivelist.js) knows
+// the space of what it holds, and whether archiving closed it or you did: a tab in both is
+// shown once, as Firefox's, which brings it back with its history as ⌘⇧T does, but with
+// Tidier's space and word for it.
+function barClosedItems(ctx, archived = []) {
+  return ctx.closed.map(({ tab, lastModified }) => {
+    const ours = archived.find(a => a.url === tab.url);
+    const space = tab.cookieStoreId && tab.cookieStoreId !== NO_CONTAINER ? tab.cookieStoreId : ours?.space && ours.space !== NO_CONTAINER ? ours.space : null;
+    return {
+      kind: "closed", id: `closed:${tab.sessionId}`, sessionId: tab.sessionId, title: tab.title || tab.url, url: tab.url, icon: iconForView(tab),
+      space, here: !space || space === ctx.space, lastUsed: lastModified, why: ours && ours.why !== "closed" ? "archived" : "closed",
+    };
+  });
 }
 
 // From Tidier's own list of what archiving closed, when it has one (archivelist.js).
-async function barArchivedItems() {
+async function barArchivedItems(ctx) {
   const archived = await archivedTabs().catch(err => { noteError(err); return []; });
-  return archived.map((a, i) => ({
-    kind: "archived", id: `archived:${i}:${a.url}`, title: a.title || a.url, url: a.url, icon: a.icon || null, space: a.space ?? null, lastUsed: a.when, why: a.why, archived: { space: a.space, url: a.url },
-  }));
+  return archived.map((a, i) => {
+    const space = a.space && a.space !== NO_CONTAINER ? a.space : null;
+    return {
+      kind: "archived", id: `archived:${i}:${a.url}`, title: a.title || a.url, url: a.url, icon: a.icon || null, space, here: !space || space === ctx.space,
+      lastUsed: a.when, why: a.why, archived: { space: a.space, url: a.url },
+    };
+  });
 }
 
 // All the bar's page needs, once.
 async function barSnapshot(bar) {
   const ctx = bar.ctx = await barContext(bar.from);
   const [tabs, archived, uses, stored, commands, { os }] = await Promise.all([
-    barTabItems(ctx), barArchivedItems(), barUses.get(), browser.storage.local.get(BAR_ASKED),
+    barTabItems(ctx), barArchivedItems(ctx), barUses.get(), browser.storage.local.get(BAR_ASKED),
     browser.commands.getAll(), browser.runtime.getPlatformInfo(),
   ]);
   const shortcuts = new Map(commands.map(c => [c.name, c.shortcut]));
+  if (barKeysScript) startPeek(); // the bar's keys may have changed since barkeys.js was given them
   const space = ctx.spaces.find(s => s.id === ctx.space);
-  // A tab you closed is in Firefox's list and in Tidier's archive list (archivelist.js) at
-  // once. Firefox's brings it back with its history, as ⌘⇧T does: that one is shown.
-  const closed = barClosedItems(ctx), closedUrls = new Set(closed.map(c => c.url));
+  barAccents.clear();
+  for (const s of ctx.spaces) if (s.color) barAccents.set(s.id, s.color);
+  const closed = barClosedItems(ctx, archived), closedUrls = new Set(closed.map(c => c.url));
   return {
-    pressedAt: bar.pressedAt, space: ctx.space, color: space?.color ?? null, mac: os === "mac", asked: !!stored[BAR_ASKED],
+    pressedAt: bar.pressedAt, space: ctx.space, color: space?.color ?? null, asked: !!stored[BAR_ASKED],
     spaces: ctx.spaces.map(s => ({ id: s.id, name: s.name, color: s.color })),
-    items: [...tabs, ...closed, ...archived.filter(a => !closedUrls.has(a.url)), ...barCommandRows(ctx, uses, shortcuts)],
+    items: [...tabs, ...closed, ...archived.filter(a => !closedUrls.has(a.url)), ...barCommandRows(ctx, uses, shortcuts, os)],
   };
 }
 
@@ -404,6 +494,8 @@ async function barGoToFolder(ctx, key) {
   if (entry.collapsed) await foldFolder(key, false); // you asked for it, so this one opens
   if (entry.cookieStoreId !== ctx.space) await switchSpace(ctx.windowId, entry.cookieStoreId);
   viewSoon(ctx.windowId);
+  // With several folders open you would have to look for it: its head is marked a moment.
+  browser.runtime.sendMessage({ type: "commandBarMark", windowId: ctx.windowId, folder: key }).catch(() => {});
 }
 
 // Firefox brings a tab back in the window it was closed in. If that is another one, you are
@@ -455,7 +547,13 @@ browser.runtime.onConnect.addListener(port => {
     return;
   }
   bar.id = windowId; // the page can be here before windows.create has answered
-  // (The port can be gone by then: the key pressed again, say.)
+  barCatchKeys(bar.caughtIn, bar, "bar:stop"); // its field has the keyboard (commandbar/commandbar.js focuses it first)
+  // What was typed before the page had the keyboard goes to it as soon as it is known, also
+  // before the rows: the page keeps an Enter until it has rows to choose from, and it must
+  // have the first letters before it chooses. (The port can be gone by then: the key pressed
+  // again, say.)
+  bar.port = port;
+  if (bar.early) port.postMessage(bar.early);
   bar.snapshot.then(snapshot => port.postMessage(snapshot ?? { pressedAt: bar.pressedAt, items: [], spaces: [] })).catch(() => {});
   port.onMessage.addListener(async msg => {
     if (msg.type === "close") await barClose(bar, msg.refocus);
