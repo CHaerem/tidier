@@ -707,7 +707,13 @@ async function spaceContents(id) {
 async function deleteSpace(id) {
   const others = (await containerSpaces()).filter(s => s.id !== id);
   if (!others.length) return { refused: "It is the only space." };
-  for (const w of await normalWindows()) if (activeSpace.get(w.id) === id) await switchSpace(w.id, others[0].id);
+  // On a page in no space (this settings page, where a space is deleted), you stay on it:
+  // only the window's space changes. Switching would take you to the other space's tab.
+  for (const w of await normalWindows()) {
+    if (activeSpace.get(w.id) !== id) continue;
+    const [on] = await browser.tabs.query({ windowId: w.id, active: true }).catch(() => []);
+    await (on && on.cookieStoreId === NO_CONTAINER ? setSpace(w.id, others[0].id) : switchSpace(w.id, others[0].id));
+  }
   // A page with unsaved input would ask, in a tab you can't see, holding up the queue.
   // It stays then, and so does the space.
   const open = await browser.tabs.query({ cookieStoreId: id });
@@ -751,6 +757,7 @@ async function forgetSpace(id) {
   if (memory[id]) { delete memory[id]; spaceMemory.set({ ...memory }); }
   const picks = await spacePicks.get(); // spaces.js
   if (picks?.[id]) { delete picks[id]; spacePicks.set({ ...picks }); }
+  for (const [tabId, home] of pageHomes) if (home === id) pageHomes.delete(tabId); // spaces.js: seen again where you are
   const { spaceOrder } = await browser.storage.local.get("spaceOrder");
   if (spaceOrder?.includes(id)) await browser.storage.local.set({ spaceOrder: spaceOrder.filter(s => s !== id) });
   const left = await browser.tabs.query({ cookieStoreId: id });

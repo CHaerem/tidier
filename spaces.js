@@ -81,7 +81,9 @@ async function showSpace(windowId) {
     browser.tabs.query({ windowId, pinned: false, hidden: true, cookieStoreId: [space, NO_CONTAINER, ...hiddenSpaceIds] }),
     browser.tabs.query({ windowId, pinned: false, hidden: false }),
   ]).catch(() => [])).flat();
-  for (const t of tabs) if (!t.hidden && t.cookieStoreId === NO_CONTAINER && !pageHomes.has(t.id)) setPageHome(t, space); // first seen here
+  // First seen here, or selected here: a window that changes space under such a page (its
+  // space deleted, an essential of another space shown) takes the page along.
+  for (const t of tabs) if (t.cookieStoreId === NO_CONTAINER && (t.active || (!t.hidden && !pageHomes.has(t.id)))) setPageHome(t, space);
   const all = await getSynced();
   const visible = t => shownInSpace(t, space) && !restsInFolder(all, syncKeyByTab.get(t.id)); // hiddenspaces.js, foldrest.js
   const show = tabs.filter(t => t.hidden && visible(t)).map(t => t.id);

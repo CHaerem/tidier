@@ -552,6 +552,31 @@ test("deleting a space: copy first, then all it holds goes, you are taken out, a
   x.kill();
 });
 
+test("deleting the space you are in from the settings page: you stay on the page, which is then in the next space", async () => {
+  const ff = new FakeFirefox();
+  ff.store.syncedTabs = {
+    o: { url: "https://o.example/", title: "O", cookieStoreId: A, parentKey: null, group: false, added: 1 },
+    b: { url: "https://b.example/", title: "B", cookieStoreId: B, parentKey: null, group: false, added: 1 },
+  };
+  ff.store.spaceOrder = [B, A];
+  const w = ff.addWindow({ focused: true });
+  ff.addTab(w.id, { url: "https://o.example/", cookieStoreId: A }, { syncKey: "o", syncRole: "live" });
+  const b = ff.addTab(w.id, { url: "https://b.example/", cookieStoreId: B, active: true }, { syncKey: "b", syncRole: "live" });
+  const settings = ff.addTab(w.id, { url: "moz-extension://tidier/settings/settings.html" });
+  const x = await run(ff);
+  ff.select(settings.id);
+  await wait(300);
+  assert.equal(x.js("activeSpace").get(w.id), B);
+  assert.equal((await x.js("deleteSpace")(B)).deleted, true);
+  await wait(800);
+  assert.ok(!ff.tabs.has(b.id));
+  assert.equal(ff.list(w.id).find(t => t.active)?.id, settings.id, "still on the settings page");
+  assert.equal(x.js("activeSpace").get(w.id), A);
+  assert.ok((await x.js("viewFor")(w.id)).tabs.some(t => t.id === settings.id), "and it is listed where you are now");
+  assert.deepEqual(x.errors, []);
+  x.kill();
+});
+
 test("the only space cannot be deleted, and a page with unsaved input keeps its space", async () => {
   const ff = new FakeFirefox({ containers: ["firefox-default", A] });
   const { w } = aWindow(ff);
