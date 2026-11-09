@@ -404,6 +404,23 @@ test("a small window is still one after Tidier starts again", async () => {
   x.kill();
 });
 
+// Measured: Firefox refuses a window value for a window whose state it does not keep yet,
+// and a mark set at once on a window just made was lost, so ⌘⇧T gave back a plain popup.
+test("a small window keeps its mark when Firefox refuses it at first", async () => {
+  const ff = new FakeFirefox();
+  const { w } = session(ff);
+  const x = await start(ff);
+  const set = x.b.sessions.setWindowValue;
+  let refused = 0;
+  x.b.sessions.setWindowValue = async (id, k, v) => { if (refused++ < 2) throw new Error("Window is not tracked"); return set(id, k, v); };
+  linkFromOutside(ff, x, w.id);
+  await wait(2000);
+  const [small] = popups(ff);
+  assert.ok(small, "a small window");
+  assert.equal(await x.b.sessions.getWindowValue(small.id, "little"), true);
+  x.kill();
+});
+
 test("⌥-click: a script in every page only while the access is given", async () => {
   const ff = new FakeFirefox();
   const { on } = session(ff);

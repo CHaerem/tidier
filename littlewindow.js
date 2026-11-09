@@ -210,9 +210,22 @@ async function openLittle(fromWindowId, where, space, pageWidth) {
   const made = await browser.windows.create({ type: "popup", ...(from ? littleBounds(from, pageWidth) : { width: LITTLE_WIDTH, height: LITTLE_HEIGHT }), titlePreface, ...where });
   littles.set(made.id, fromWindowId);
   if (where.tabId) await browser.windows.update(made.id, { titlePreface }).catch(() => {}); // with a tab moved in, Firefox drops it on the way
-  await browser.sessions.setWindowValue(made.id, LITTLE_KEY, true).catch(() => {});
+  markLittle(made.id).catch(noteError); // not waited for: the window is Tidier's already (littles)
   viewAllSoon();
   return made;
+}
+
+// The mark Firefox keeps with the window, for ⌘⇧T and a restart. Firefox takes it only once
+// it keeps the window's state itself, which a window just made may not be doing yet: the
+// mark was then refused and lost without a word, and the window came back a plain popup.
+// So it is read back, and set again a moment later until it is there.
+async function markLittle(windowId) {
+  for (const next of [0, 100, 300, 700, 1500, 3000]) {
+    await sleep(next);
+    await browser.sessions.setWindowValue(windowId, LITTLE_KEY, true).catch(() => {});
+    if (await browser.sessions.getWindowValue(windowId, LITTLE_KEY).catch(() => undefined)) return;
+    if (!(await browser.windows.get(windowId).catch(() => null))) return;
+  }
 }
 
 browser.windows.onRemoved.addListener(windowId => { if (littles.delete(windowId)) viewAllSoon(); });
