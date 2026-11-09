@@ -24,6 +24,13 @@ code { padding: 1px 4px; border-radius: var(--radius-sm); background: var(--tile
  * found among the soft fills; what Tidier only tells you (.info) is a plain one. */
 .notice { padding: 8px 10px; margin: 0 0 8px; border-radius: var(--radius); background: light-dark(rgb(255 190 60 / .2), rgb(255 190 60 / .11)); color: var(--text); }
 .notice.info { background: var(--tile); }
+.note-line { display: block; }
+.note-line + .note-line { margin-top: 4px; }
+/* A notice with the one click that mends it, beside its words while there is room. */
+.notice.with-button { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+.notice.with-button > span { flex: 1 1 240px; }
+.notice.with-button > button { background-color: var(--tile-hover); }
+.notice.with-button > button:hover { background-color: var(--selected); }
 #notices:has(.notice) { margin-bottom: 28px; }
 
 /* The controls: soft fills, nothing of the browser's default look. */
@@ -90,7 +97,10 @@ label.line > .dot { margin-top: 6px; }
  * rest, enough to say it can be changed, and is as wide as a name needs. */
 #spaces .line { margin-bottom: 2px; flex-wrap: nowrap; gap: 10px; }
 #spaces input[type=text] { flex: 0 1 240px; background-color: color-mix(in srgb, var(--tile) 50%, transparent); }
-.space-special { flex: 0 1 auto; min-width: 0; overflow: hidden; white-space: nowrap; font-size: var(--size-small); color: var(--faint); }
+.space-special { flex: 0 1 auto; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: var(--size-small); color: var(--faint); }
+/* On a narrow page what a space has gives way, and its name keeps room to be read. */
+#spaces .space-card input[type=text] { min-width: 120px; }
+.nowrap { white-space: nowrap; }
 #spaces input[type=text]:hover { background-color: var(--tile); }
 #spaces input[type=text]:focus { background-color: var(--selected); }
 

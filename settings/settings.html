@@ -99,7 +99,7 @@
 
   <section>
     <h2>Tabs that tidy themselves</h2>
-    <label>Close tabs not used for <input type="number" id="archive-hours" min="0" max="8760" step="1" required> hours (0: never)</label>
+    <label>Close tabs not used for <input type="number" id="archive-hours" min="0" max="8760" step="1" required> <span class="nowrap">hours (0: never)</span></label>
     <p class="hint">Essentials, tabs in folders, the tabs you are looking at and tabs playing sound stay. With Tidier alone, a closed tab is in its space's list of archived tabs.</p>
   </section>
 
@@ -119,6 +119,7 @@
 
   <section>
     <h2>A copy of your essentials and folders</h2>
+    <p class="hint">They are kept nowhere else, so Tidier makes a copy once a day, and keeps those of the last two weeks in <code>~/.config/tidier/copies</code> (its helper does that: <code>native/install.sh</code>). Taking one in adds what is missing here, and removes nothing; it can also bring another machine's spaces here.</p>
     <p id="copy-state"></p>
     <button id="copy-now">Make a copy now</button>
     <button id="copy-save">Save a copy as a file…</button>

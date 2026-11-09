@@ -31,7 +31,7 @@
     "tabHide",
     "webRequest",
     "webRequestBlocking",
-    "<all_urls>",
+    "*://*/*",
     "proxy",
     "browsingData",
     "search",

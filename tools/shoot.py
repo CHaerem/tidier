@@ -621,7 +621,7 @@ SETTINGS_IN_FULL = """
   add($("notices"), "p", "notice", "Tidier could not read the record of its folders, and is working from the copy made this morning.");
   $("allow-hiding").hidden = $("move").hidden = $("move-back").hidden = $("merge").hidden = $("moved").hidden = $("windows-without").hidden = $("import-alone").hidden = false;
   $("alone-state").textContent = "This browser uses Sidebery for its tab list, spaces and folders.";
-  $("moved").textContent = "Moved: 5 folders and 23 tabs are Tidier's own now. Firefox asks once whether Tidier may hide tabs: choose Keep Tabs Hidden. To go back, see below.";
+  for (const text of ["Moved: 5 folders and 23 tabs are Tidier's own now.", "When Firefox asks whether Tidier may hide tabs, choose Keep Tabs Hidden.", "Going back is below."]) add($("moved"), "span", "note-line", text);
   $("windows-without").textContent = "One window has no sidebar yet: press ⌃⇧S there to show Tidier's.";
   $("sidebery-result").textContent = "Took in 2 rules and the order of 3 spaces.";
   $("step-export").classList.add("done"); $("step-allow").classList.add("done");

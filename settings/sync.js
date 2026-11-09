@@ -11,7 +11,8 @@ function drawSyncState(r) {
   const state = $("sync-state"), left = $("sync-left");
   state.hidden = !r.on;
   state.className = r.problem ? "notice" : "hint";
-  state.textContent = r.problem ? `Stopped: ${r.problem}` : `${syncKB(r.bytes)} KB of the ${syncKB(r.limit)} KB Firefox Sync allows is used.`;
+  // Tidier cannot see whether this Firefox is signed in: what it needs is said with what is used.
+  state.textContent = r.problem ? `Stopped: ${r.problem}` : `${syncKB(r.bytes)} KB of the ${syncKB(r.limit)} KB Firefox Sync allows is used. It reaches your other machines while this Firefox is signed in to Firefox Sync with Add-ons on.`;
   // What does not fit is said plainly: it is here, and not on your other machines.
   left.hidden = !r.left.length;
   if (r.left.length) {
@@ -27,7 +28,7 @@ function drawSpacesHere(r) {
   const box = $("spaces-here");
   box.hidden = !r.alone || r.spaces.length < 2;
   const showing = r.spaces.filter(s => !s.hidden).length;
-  const ticks = r.spaces.map(s => {
+  const ticks = inBarOrder(r.spaces).map(s => {
     if (s.declared) return el("span", { className: "line", title: "Hidden on this machine by its setup", textContent: `${s.name}: hidden by this machine's setup` });
     const last = !s.hidden && showing < 2; // a window needs a space to show
     const tick = el("input", { type: "checkbox", checked: !s.hidden, disabled: last, title: last ? "A window needs a space to show" : "" });

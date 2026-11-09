@@ -18,7 +18,7 @@
 // after that, builds its tree from them in every window.
 
 const SIDEBERY_ADDON_ID = "{3c078156-979c-498b-8990-85f7987dd929}"; // its manifest's, the same everywhere
-const MOVE_PERMISSIONS = { permissions: ["tabHide", "webRequest", "webRequestBlocking", "management"], origins: ["<all_urls>"] };
+const MOVE_PERMISSIONS = { permissions: ["tabHide", "webRequest", "webRequestBlocking", "management"], origins: ["*://*/*"] };
 
 // "on", "off" or "missing" (not installed), or null when Tidier may not see it: the optional
 // management permission, given in step 2's click (or in the click that goes back).
@@ -385,10 +385,15 @@ async function settingsAction(msg) {
       const stored = await browser.storage.local.get(["archiveAfterHours", "lastCopy", "movedNote"]);
       // What moving over or back did, said once on the page it opens (afterMoving).
       if (stored.movedNote?.opened) await browser.storage.local.remove("movedNote");
+      const network = notices.has("spaceNetwork") ? await spaceNetwork.get() : {}; // isolation.js: which spaces that notice is about
       return {
         report: await moveReport(), rules: await rulesList.get(), spaces: await containerSpaces(), archiveHours: archiveHours(stored.archiveAfterHours),
-        lastCopy: stored.lastCopy ?? null, version: browser.runtime.getManifest().version, hiding: !!browser.tabs.hide, notices: [...notices.values()],
+        lastCopy: stored.lastCopy ?? null, version: browser.runtime.getManifest().version, hiding: !!browser.tabs.hide,
+        notices: [...notices].map(([kind, text]) => ({ kind, text })),
+        network: Object.entries(network).filter(([, n]) => n?.proxy || n?.userAgent).map(([id, n]) => ({ id, proxy: !!n.proxy, userAgent: !!n.userAgent })),
         moved: stored.movedNote?.opened ? stored.movedNote : null, started,
+        // The bar's order (spaces.js), which the page's lists of spaces follow.
+        order: tidierAlone ? (await spaceList(new Set((await containerSpaces()).map(s => s.id)))).map(s => s.id) : [],
       };
     }
     case "archiveHours": { // what is stored, which the page then shows: an hour count that is no answer changes nothing

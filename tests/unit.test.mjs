@@ -227,6 +227,20 @@ test("the manifest asks for no new permission that would hold updates", () => {
   assert.deepEqual(manifest.permissions.filter(p => !allowed.includes(p)), []);
 });
 
+test("access to websites is asked for as every website, never with local files", () => {
+  // "<all_urls>" also lists "Access local files on your computer" in about:addons, on the daily
+  // browser on Sidebery too, where none of it is used. Asked for or looked at, it is "*://*/*"
+  // (http, https and their web sockets); a filter of events may still say "<all_urls>".
+  const manifest = JSON.parse(readFileSync(new URL("../manifest.json", import.meta.url), "utf8"));
+  assert.ok(manifest.optional_permissions.includes("*://*/*") && !manifest.optional_permissions.includes("<all_urls>"));
+  const files = readdirSync(new URL("..", import.meta.url), { recursive: true }).filter(f => f.endsWith(".js") && !/^(tests|node_modules|\.git|\.claude)\b/.test(f));
+  assert.ok(files.includes("isolation.js") && files.some(f => f.startsWith("settings")));
+  for (const file of files) {
+    const text = readFileSync(new URL("../" + file, import.meta.url), "utf8");
+    assert.ok(!/origins:\s*\[[^\]]*<all_urls>/.test(text), `${file} asks for <all_urls>`);
+  }
+});
+
 test("what moving over asks for is all in the manifest's optional permissions, the same on the page and in the background", () => {
   // Firefox refuses to ask for a permission the manifest does not list, and the step would never be done.
   const manifest = JSON.parse(readFileSync(new URL("../manifest.json", import.meta.url), "utf8"));

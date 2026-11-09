@@ -331,7 +331,8 @@ On the settings page, in numbered steps it ticks itself as they are done:
 
 Going back is the same the other way, again with Sidebery off: Tidier gives every window its folder
 pages back, unloaded and right before their tabs, also for folders made or renamed on Tidier alone,
-and only closed folders come back open. Then you turn Sidebery on and press ⌃E in each window.
+and only closed folders come back open; the page says all of that first, and follows folders made or
+renamed while it is open. Then you turn Sidebery on and press ⌃E in each window.
 Sidebery takes a tab's parent only when the tab is created or when its sidebar starts, from the tab's
 opener, so Tidier sets each tab's opener (its folder's page, else an essential of its space, which
 also puts a new page in the right space) before Sidebery runs. The smoke test reads Sidebery's own
@@ -524,6 +525,13 @@ that). Everything works without them, as it says here:
   in the command bar.
 - `management`, in the click that allows what moving over needs (or the one that goes back):
   only to see whether Sidebery is on, since both steps are refused while it runs.
+
+"Access to all websites" is `*://*/*` (http, https and their web sockets), not `<all_urls>`,
+which would also list *Access local files on your computer* in about:addons, on the daily
+browser on Sidebery too, where none of it is used. One given earlier as `<all_urls>` still
+counts. Firefox's Extensions menu still says Tidier "needs permission" on a website while
+this is not given: it says that of any extension that may ask for a site, and a click on
+Tidier there opens the settings page while the browser is on Sidebery.
 
 No required host permissions and no data collection. The only network use is icons: a
 placeholder with no saved icon tries the site's `/favicon.ico`, and Tidier's sidebar

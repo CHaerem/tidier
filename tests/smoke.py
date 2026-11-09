@@ -1351,22 +1351,44 @@ def move_over(m):
     # after moving back it has its icon.
     # (/icon-png: Firefox shows an SVG icon through an address of its own, not as data:.)
     icon_key = m.js(H + """const t = main().gBrowser.addTrustedTab(args[0] + "/icon-png", {userContextId: 1, inBackground: true}); await wait(4000); return JSON.parse(key(main(), t));""", m.pages)
+    # On Tidier alone, as a day there goes: a folder renamed, and one made with a tab put in it.
+    # Going back says so first, and gives both their page in Sidebery, under the names they have.
+    made = sidebar_page(m, """await wait(500);
+      const heads = () => [...doc.querySelectorAll("#tabs .folder .head")], named = n => heads().find(h => h.querySelector(".title")?.textContent === n);
+      const old = folders().map(f => f.name).find(n => n !== args[0]);
+      if (!old) return {missing: folders()};
+      send({type: "renameFolder", key: named(old).dataset.folderHead, name: "Renamed here"});
+      send({type: "newFolder", space: spaces().find(s => s.active).id, name: "Made here"});
+      await wait(1500);
+      send({type: "moveTab", tabId: Number(plainTabs()[0].dataset.tab), folder: named("Made here").dataset.folderHead, before: null});
+      await wait(2500);
+      return {old, folders: folders().map(f => f.name)};""", closed_folder)
+    mid = m.js(record)
+    expected = dict(before["folders"])
+    if made.get("old") in expected:
+        expected["Renamed here"] = expected.pop(made["old"])
+    expected["Made here"] = mid["folders"].get("Made here")
+    check("on Tidier alone, a folder is renamed, and one is made with a tab in it", mid["folders"] == expected and len(expected["Made here"] or []) == 1, f"{made}, {mid['folders']}")
+    # (The page is open, from the move: it follows the record by itself.)
+    said = ext_page(m, "/settings/settings.html", """await wait(1500); return doc.getElementById("back-report").textContent;""")
+    check("before going back, the page says which folders come back, made and renamed here, and that a closed one opens",
+          all(x in (said or "") for x in (f"{len(expected)} folders get their page", "1 of them made here", "1 with its new name", "closed folder comes back open")), str(said))
     # And back, with Sidebery still off: Tidier gives each window its folder pages, and
     # Sidebery, turned on afterwards, builds its tree from them.
     m.js(H + """for (const w of wins()) for (const t of [...w.gBrowser.tabs]) if (url(t).includes("/settings/settings.html")) w.gBrowser.removeTab(t); await wait(300); return 1;""")
     fire_message(m, {"type": "settings:moveBack"})
     m.js(H + "await wait(10000); return 1;")
     back = m.js(record)
-    check("after moving back, every folder has its tabs and its pages", back["folders"] == before["folders"] and [k for k in back["tabs"] if k != icon_key] == before["tabs"] and back["pages"] == before["pages"], f"{before} -> {back}")
+    check("after moving back, every folder has its tabs and its pages, the one made here and the one renamed too", back["folders"] == expected and [k for k in back["tabs"] if k != icon_key] == before["tabs"] and back["pages"] == [n + 1 for n in before["pages"]], f"{expected} -> {back}")
     check("after moving back, Sidebery has the keys again", m.js(keys_now, EXT_ID) == keys0, str(m.js(keys_now, EXT_ID)))
     sidebery_enabled(True)
     m.js(H + """for (const w of wins()) { await w.SidebarController.show("_3c078156-979c-498b-8990-85f7987dd929_-sidebar-action"); } await wait(6000); return 1;""")
     tree = m.js(SIDEBERY_TREE)
     check("after moving back and turning Sidebery on, Sidebery's own tree has every folder's tabs under its page, in its space, in every window",
-          len(tree) == 2 * len(before["folders"]) and all(not f["outside"] and f["inItsSpace"] for f in tree), str(tree))
+          len(tree) == 2 * len(expected) and all(not f["outside"] and f["inItsSpace"] for f in tree) and {f["folder"] for f in tree} >= {"Renamed here", "Made here"}, str(tree))
     m.js(H + "await wait(8000); return 1;")  # Sidebery's first sort and Tidier's folders first are done by now
     later = m.js(record)
-    check("some seconds later, Tidier's record still has every folder with its tabs", later["folders"] == before["folders"] and later["saved"] >= before["saved"], f"{before} -> {later}")
+    check("some seconds later, Tidier's record still has every folder with its tabs", later["folders"] == expected and later["saved"] >= before["saved"], f"{expected} -> {later}")
     r = m.js(H + """const copies = () => wins().flatMap(w => w.gBrowser.tabs.filter(t => value(w, t, "syncKey") === args[0] && value(w, t, "syncRole") === "ghost"));
       for (let i = 0; i < 80 && !(copies().length && copies().every(t => t.image && !t.linkedPanel)); i++) await wait(250);
       return copies().map(t => ({icon: (t.image || "").slice(0, 10), loaded: !!t.linkedPanel}));""", icon_key)
@@ -3648,14 +3670,18 @@ def alone_isolation(m):
     r = ext_page(m, "/settings/settings.html", more + """
       const out = {};
       set(card().querySelector("select"), "http");
-      out.incomplete = await saved();
+      card().querySelector(".save").click();
+      const problem = () => card().querySelector(".field-problem:not([hidden])");
+      for (let i = 0; i < 80 && !problem(); i++) await wait(100);
+      // Said beside the proxy, with what was typed kept to be put right.
+      out.incomplete = problem()?.textContent; out.typed = card().querySelector("select").value;
       set(card().querySelector("select"), "");
       set(card().querySelector("input[placeholder*=own]"), "Smoke agent");
       out.saved = await saved();
       out.kept = card().querySelector("input[placeholder*=own]").value;
       card().querySelector(".more").click();
       return out;""", f"firefox-container-{third}")
-    check("a proxy that is not complete is said, and not used", "not complete" in (r.get("incomplete") or ""), str(r))
+    check("a proxy that is not complete is said beside it, keeps what was typed, and is not used", "Not saved" in (r.get("incomplete") or "") and r.get("typed") == "http", str(r))
     check("a user agent set in a space's More is kept", r.get("saved") == "Saved." and r.get("kept") == "Smoke agent", str(r))
     time.sleep(1)
     visit(m, third, f"{base}/r/agent-own")
@@ -7225,6 +7251,40 @@ def alone_settings(m):
     check("on the settings page a new rule has the keyboard, and keeps its line when the one before is saved", r.get("focused") and r.get("focused2") and r.get("kept") == 2, str(r))
     check("on the settings page a double click on a rule's × removes one rule", r.get("left") == ["smoke-b.example"] and r.get("rules") == ["smoke-b.example"], str(r))
     check("on the settings page the hours for archiving refuse -5 and nothing, and show what is stored", r.get("seen") == ["12", "12", "3", "12"] and r.get("hours") == 12, str(r))
+    # A rule removed can be had back; one made from a tab's menu says its site in words, and an
+    # expression begun and never closed says it is text; the spaces come in the bar's order.
+    extension_message(m, {"type": "settings:rules", "rules": [{"url": "/^https?:\\/\\/(www\\.)?smoke\\.example\\//", "space": "firefox-container-2"}, {"url": "/[a-z", "space": "firefox-container-1"}]})
+    r = ext_page(m, "/settings/settings.html?undo", """await wait(800);
+      const why = () => [...doc.querySelectorAll("#rules .rule-problem")].map(p => p.hidden ? "" : p.textContent);
+      const said = why();
+      doc.querySelector("#rules .line button").click();
+      await wait(800);
+      const undo = doc.querySelector("#rule-undo"), shown = !undo.hidden && undo.textContent;
+      undo.querySelector("button").click();
+      await wait(800);
+      const stored = await page.browser.runtime.sendMessage(page.JSON.parse(JSON.stringify({type: "settings:get"})));
+      return {said, shown, back: stored.rules.map(r => r.url), order: stored.order, listed: [...doc.querySelectorAll("#spaces [data-space]")].map(c => c.dataset.space)};""")
+    extension_message(m, {"type": "settings:rules", "rules": []})
+    m.js(H + """await removeWhere((w, t) => url(t).includes("settings.html?undo")); return 1;""")
+    check("on the settings page a rule from a tab's menu names its site, and an unclosed expression is said to be text",
+          (r.get("said") or [""])[0] == "Every page on smoke.example." and "not a regular expression" in (r.get("said") or ["", ""])[1], str(r))
+    check("on the settings page a removed rule comes back with Undo, in its place", "Removed the rule" in str(r.get("shown")) and (r.get("back") or [""])[0].startswith("/^https"), str(r))
+    check("on the settings page the spaces are in the bar's order", r.get("order") and r.get("listed", [])[:len(r["order"])] == r["order"], str(r))
+    # A space's user agent, when Tidier is no longer allowed to see websites: the notice at the
+    # top names the space, and has the button that gives the permission back.
+    hosts = """const {ExtensionPermissions} = ChromeUtils.importESModule("resource://gre/modules/ExtensionPermissions.sys.mjs");
+      await ExtensionPermissions.%s(args[0], {permissions: [], origins: ["<all_urls>"]}, WebExtensionPolicy.getByID(args[0]).extension); await wait(1000); return 1;"""
+    extension_message(m, {"type": "isolation:network", "id": "firefox-container-2", "proxy": None, "userAgent": "Smoke agent"})
+    m.js(H + hosts % "remove", EXT_ID)
+    r = ext_page(m, "/settings/settings.html?notice", """await wait(800);
+      const n = doc.querySelector("#notices .notice");
+      return {text: n?.textContent, button: n?.querySelector("button")?.textContent, name: (await page.browser.contextualIdentities.get("firefox-container-2")).name,
+              row: doc.querySelector('#spaces [data-space="firefox-container-2"] .space-special')?.textContent};""")
+    m.js(H + hosts % "add", EXT_ID)
+    extension_message(m, {"type": "isolation:network", "id": "firefox-container-2", "proxy": None, "userAgent": ""})
+    m.js(H + """await removeWhere((w, t) => url(t).includes("settings.html?notice")); return 1;""")
+    check("a user agent not in use for want of the permission is said for its space, with a button to allow it again, and its row says it has one",
+          f"{r.get('name')}'s user agent is not in use" in str(r.get("text")) and r.get("button") == "Allow again" and r.get("row") == "own user agent", str(r))
     # The sidebar's key: without a sidebar a window has no list of tabs.
     r = m.js(H + """const w = main(); w.focus(); w.SidebarController.hide(); await wait(600); return w.SidebarController.isOpen;""")
     press(m, "s", CTRL, SHIFT)

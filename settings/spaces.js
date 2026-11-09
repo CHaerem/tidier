@@ -32,11 +32,13 @@ async function drawSpaces(force) {
     return;
   }
   isolated = await isolation("get");
+  // Asked while you came into the list (a space made here, say, and its name given the keyboard).
+  if (!force && document.activeElement?.closest?.("#spaces")) return;
   $("new-space").hidden = false;
-  $("isolation-ask").hidden = $("allow-isolation").hidden = await browser.permissions.contains({ permissions: ["webRequest", "webRequestBlocking"], origins: ["<all_urls>"] });
+  $("isolation-ask").hidden = $("allow-isolation").hidden = await browser.permissions.contains({ permissions: ["webRequest", "webRequestBlocking"], origins: ["*://*/*"] });
   const focused = document.activeElement?.closest?.("[data-color], [data-icon]");
   const again = focused && { space: focused.closest("[data-space]")?.dataset.space, color: focused.dataset.color, icon: focused.dataset.icon };
-  $("spaces").replaceChildren(...isolated.spaces.map(spaceCard));
+  $("spaces").replaceChildren(...inBarOrder(isolated.spaces).map(spaceCard));
   // A colour or an icon chosen: the keyboard stays on it, rather than going back to the top.
   if (again?.space) $("spaces").querySelector(`[data-space="${again.space}"] ${again.color ? `[data-color="${again.color}"]` : `[data-icon="${again.icon}"]`}`)?.focus();
 }
@@ -61,7 +63,9 @@ function spaceCard(s) {
   const more = el("button", { className: "quiet more", textContent: open ? "Less" : "More", ariaExpanded: String(open), title: open ? "" : "Colour, icon, proxy, user agent, signing out, deleting" });
   more.onclick = () => { if (!moreOpen.delete(s.id)) moreOpen.add(s.id); asking.delete(s.id); spaceFacts.delete(s.id); drawSpaces(true); };
   // What changes every page in the space is said on its line, also with More closed.
-  const special = [s.network.proxy && "through a proxy", s.network.userAgent && "its own user agent"].filter(Boolean).join(", ");
+  // A space not on the bar (hidden on this machine, under Shown on this machine) says so too.
+  const hiddenHere = !!state.order?.length && !state.order.includes(s.id);
+  const special = [hiddenHere && "hidden here", s.network.proxy && "proxy", s.network.userAgent && "own user agent"].filter(Boolean).join(" · ");
   const card = el("div", { className: "space-card" }, el("div", { className: "line" }, spaceIcon(s.iconUrl, s.colorCode), nameField(s),
     el("span", { className: "space-special", textContent: special, hidden: !special }), more));
   card.dataset.space = s.id;
@@ -119,7 +123,7 @@ function networkFields(s) {
     const usesProxy = !!type.value, usesAgent = !!agent.value.trim();
     // (A proxy needs both: isolation.js, notPastProxy.)
     const wanted = [...(usesProxy ? ["proxy"] : []), ...(usesProxy || usesAgent ? ["webRequest", "webRequestBlocking"] : [])];
-    const asked = { permissions: wanted, origins: ["<all_urls>"] };
+    const asked = { permissions: wanted, origins: ["*://*/*"] };
     if (wanted.length && !await mayAsk(asked) && !await browser.permissions.contains(asked)) {
       spaceFacts.set(s.id, "Firefox did not give Tidier the permission for this, so nothing changed.");
       return drawSpaces(true);
@@ -208,5 +212,5 @@ addEventListener("DOMContentLoaded", () => {
     name?.focus();
     name?.select();
   };
-  $("allow-isolation").onclick = () => mayAsk({ permissions: ["webRequest", "webRequestBlocking"], origins: ["<all_urls>"] }).then(() => drawSpaces(true));
+  $("allow-isolation").onclick = () => mayAsk({ permissions: ["webRequest", "webRequestBlocking"], origins: ["*://*/*"] }).then(() => drawSpaces(true));
 });

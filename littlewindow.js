@@ -330,7 +330,7 @@ async function linkInSpace(tab, url, space) {
 // a registered script at each start. One change at a time: a permission given also makes
 // Tidier start its spaces again (spaces.js), and the two calls would each register one,
 // of which only the last could be taken back.
-const ALL_SITES = { origins: ["<all_urls>"] };
+const ALL_SITES = { origins: ["*://*/*"] };
 let peekScript = null, peekChange = Promise.resolve();
 function startPeek() {
   peekChange = peekChange.then(async () => {

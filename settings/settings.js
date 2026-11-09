@@ -5,10 +5,16 @@ const el = (tag, props = {}, ...kids) => { const e = Object.assign(document.crea
 
 // What moving over needs, asked for in one click (the same as MOVE_PERMISSIONS in moveover.js):
 // hiding tabs, stopping a page before it loads in the wrong space, and seeing whether Sidebery is on.
-const MOVE_PERMISSIONS = { permissions: ["tabHide", "webRequest", "webRequestBlocking", "management"], origins: ["<all_urls>"] };
+const MOVE_PERMISSIONS = { permissions: ["tabHide", "webRequest", "webRequestBlocking", "management"], origins: ["*://*/*"] };
 const SIDEBERY_ADDON_ID = "{3c078156-979c-498b-8990-85f7987dd929}";
 
 let state = null;
+// Spaces listed on this page come in the bar's order (state.order, from the background), as on the
+// bar itself; one that is not on it (hidden here, say) after them, in Firefox's order.
+const inBarOrder = list => {
+  const rank = new Map((state?.order ?? []).map((id, i) => [id, i]));
+  return [...list].sort((a, b) => (rank.get(a.id) ?? Infinity) - (rank.get(b.id) ?? Infinity));
+};
 let movedNote = null; // what the last move over or back did: said once, and kept on this page
 
 async function refresh() {
@@ -18,7 +24,7 @@ async function refresh() {
   // it has started, and the page is drawn afresh then, with every part of it.
   if (!state.started) waitForStart();
   if (state.moved) movedNote = state.moved;
-  $("notices").replaceChildren(...state.notices.map(text => el("p", { className: "notice", textContent: text })));
+  $("notices").replaceChildren(...state.notices.map(noticeLine));
   drawMoving();
   drawSpaces();
   if (document.activeElement?.closest?.("#rules") == null && !rulesUnsaved()) drawRules();
@@ -26,6 +32,24 @@ async function refresh() {
   $("copy-state").textContent = state.lastCopy ? `Last copy: ${new Date(state.lastCopy).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })}.` : "No copy made yet.";
   $("version").textContent = "Version " + state.version;
 }
+// A notice as the background has it, for the sidebar too. One about a space's proxy or user
+// agent, not in use for want of the permission, is said here for each space it is about, with
+// the click that gives the permission back: Firefox asks only in a click.
+function noticeLine({ kind, text }) {
+  const line = el("p", { className: "notice" });
+  const spaces = kind === "spaceNetwork" ? state.network.map(n => ({ ...n, name: state.spaces.find(s => s.id === n.id)?.name })).filter(n => n.name) : [];
+  if (!spaces.length) { line.textContent = text; return line; }
+  const what = spaces.map(n => `${n.name}'s ${n.proxy && n.userAgent ? "proxy and user agent" : n.proxy ? "proxy" : "user agent"}`);
+  const allow = el("button", { textContent: "Allow again" });
+  allow.onclick = async () => {
+    const given = await browser.permissions.request({ permissions: ["webRequest", "webRequestBlocking", ...(spaces.some(n => n.proxy) ? ["proxy"] : [])], origins: ["*://*/*"] }).catch(() => false);
+    if (!given) allow.textContent = "Not allowed: click to be asked again";
+  };
+  line.classList.add("with-button");
+  line.append(el("span", { textContent: `${andList(what)} ${what.length === 1 && !(spaces[0].proxy && spaces[0].userAgent) ? "is" : "are"} not in use: Tidier no longer has the permission for ${what.length === 1 && !(spaces[0].proxy && spaces[0].userAgent) ? "it" : "them"}.` }), allow);
+  return line;
+}
+
 let waitingForStart = false;
 async function waitForStart() {
   if (waitingForStart) return;
@@ -104,22 +128,19 @@ function drawMovedNote() {
   const n = movedNote;
   $("moved").hidden = !n;
   if (!n) return;
-  if (n.kind === "over") {
-    $("moved").textContent = [
-      `Moved: ${counted(n.folders, "folder")} and ${counted(n.tabs, "tab")} are Tidier's own now${n.closed ? `, ${n.closed} of the folders closed, as in Sidebery` : ""}.`,
-      "Firefox asks once whether Tidier may hide tabs: choose Keep Tabs Hidden.",
-      n.hidden.length && `${andList(n.hidden)} had no space in Sidebery and ${n.hidden.length === 1 ? "holds" : "hold"} nothing, so ${n.hidden.length === 1 ? "it is" : "they are"} hidden here: tick ${n.hidden.length === 1 ? "it" : "them"} under Shown on this machine to show ${n.hidden.length === 1 ? "it" : "them"}.`,
-      "To go back, see below.",
-    ].filter(Boolean).join(" ");
-    sidebarsToOpen();
-  } else {
-    const on = state.report.sidebery === "on";
-    $("moved").textContent = [
-      `Back on Sidebery: ${counted(n.folders, "folder")} ${n.folders === 1 ? "has its" : "have their"} page again, with ${n.folders === 1 ? "its" : "their"} tabs.`,
-      n.lost?.length && `${andList(n.lost)} became ordinary tabs.`,
-      on ? "Sidebery is on: press ⌃E in each window where it does not show yet." : "Now turn Sidebery on in about:addons, then press ⌃E in each window to show it.",
-    ].filter(Boolean).join(" ");
-  }
+  // One thing a line: what happened first, then what is left to do, so it reads at a glance.
+  const lines = n.kind === "over" ? [
+    `Moved: ${counted(n.folders, "folder")} and ${counted(n.tabs, "tab")} are Tidier's own now${n.closed ? `, ${n.closed} of the folders closed, as in Sidebery` : ""}.`,
+    "When Firefox asks whether Tidier may hide tabs, choose Keep Tabs Hidden.",
+    n.hidden.length && `${andList(n.hidden)} had no space in Sidebery and ${n.hidden.length === 1 ? "is" : "are"} empty, so ${n.hidden.length === 1 ? "it is" : "they are"} hidden here: tick ${n.hidden.length === 1 ? "it" : "them"} under Shown on this machine to show ${n.hidden.length === 1 ? "it" : "them"}.`,
+    "Going back is below.",
+  ] : [
+    `Back on Sidebery: ${counted(n.folders, "folder")} ${n.folders === 1 ? "has its" : "have their"} page again, with ${n.folders === 1 ? "its" : "their"} tabs.`,
+    n.lost?.length && `${andList(n.lost)} became ordinary tabs.`,
+    state.report.sidebery === "on" ? "Sidebery is on: press ⌃E in each window where it does not show yet." : "Now turn Sidebery on in about:addons, then press ⌃E in each window to show it.",
+  ];
+  $("moved").replaceChildren(...lines.filter(Boolean).map(text => el("span", { className: "note-line", textContent: text })));
+  if (n.kind === "over") sidebarsToOpen();
 }
 
 // Firefox opens a sidebar after Tidier starts again only in a window where it was the last one
@@ -225,15 +246,18 @@ function ruleLine(rule) {
   const gone = !!rule.space && !state.spaces.some(s => s.id === rule.space);
   const space = el("select", { ariaLabel: "Space" },
     ...(gone ? [el("option", { value: rule.space, textContent: "A space that is gone", selected: true })] : []),
-    ...state.spaces.map(s => el("option", { value: s.id, textContent: s.name, selected: s.id === rule.space })));
+    ...inBarOrder(state.spaces).map(s => el("option", { value: s.id, textContent: s.name, selected: s.id === rule.space })));
   const remove = el("button", { textContent: "×", title: "Remove this rule" });
   const why = el("p", { className: "hint rule-problem" });
   // Why a rule does nothing, as it is typed: otherwise a rule would just never work. A rule made
   // from a tab's menu is a regular expression for its site: said in plain words under it.
   const showWhy = () => {
     const problem = ruleProblem(text.value.trim()) ?? (gone && space.value === rule.space ? "Its space is gone, so the rule does nothing." : "");
-    const site = !problem && text.value.trim().match(SITE_RULE)?.[1].replace(/\\(.)/g, "$1");
-    why.textContent = problem || (site ? `Every page on ${site}.` : "");
+    const typed = text.value.trim(), site = !problem && typed.match(SITE_RULE)?.[1].replace(/\\(.)/g, "$1");
+    // Begun as a regular expression and never closed, it is text to find (rulematch.js): said, or
+    // "/[a-z" would look like a rule for every address with a letter.
+    const unclosed = !problem && /^\/.*[[\](){}*+?^$|\\]/.test(typed) && !/^\/.*\/[a-z]*$/.test(typed);
+    why.textContent = problem || (site ? `Every page on ${site}.` : unclosed ? "With no / at its end this is not a regular expression: it is text to find in the address." : "");
     why.classList.toggle("wrong", !!problem);
     why.hidden = !why.textContent;
   };
@@ -272,7 +296,7 @@ function ruleRemoved(rule, at) {
   undoTimer = setTimeout(() => { line.hidden = true; }, 15000);
 }
 $("add-rule").onclick = () => {
-  const line = ruleLine({ url: "", space: state.spaces[0]?.id });
+  const line = ruleLine({ url: "", space: inBarOrder(state.spaces)[0]?.id });
   $("rules").append(line);
   line.querySelector("input").focus();
 };
@@ -331,6 +355,16 @@ $("merge-go").onclick = () => orSay($("merge-result"), async () => {
   refresh();
 });
 
+// What going back would give Sidebery follows folders made, renamed or deleted in the sidebar
+// meanwhile, with this page in front: a second later, once the record has settled. A page out of
+// sight is drawn again when it is looked at, so with nothing to see nothing is done.
+let recordSoon = null;
+browser.storage.onChanged.addListener((changes, area) => {
+  if (area !== "local" || !("syncedTabs" in changes) || document.hidden) return;
+  clearTimeout(recordSoon);
+  recordSoon = setTimeout(refresh, 1000);
+});
+document.addEventListener("visibilitychange", () => { if (!document.hidden) refresh(); });
 browser.permissions.onAdded.addListener(() => { watchSidebery(); refresh(); });
 browser.permissions.onRemoved.addListener(refresh);
 watchSidebery();

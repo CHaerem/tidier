@@ -310,7 +310,8 @@ function addIsolationApis(ff, b) {
   };
   apis();
   ff.grant = (...names) => { names.forEach(n => ff.granted.add(n)); apis(); b.permissions.onAdded.fire({ permissions: names, origins: [] }); };
-  b.permissions.contains = async ({ permissions = [], origins = [] }) => [...permissions, ...origins].every(p => ff.granted.has(p));
+  // As in Firefox, "<all_urls>" (given before Tidier asked for "*://*/*") holds every website.
+  b.permissions.contains = async ({ permissions = [], origins = [] }) => [...permissions, ...origins].every(p => ff.granted.has(p) || (p === "*://*/*" && ff.granted.has("<all_urls>")));
   b.contentScripts ??= { register: async () => ({ unregister: async () => {} }) }; // what else access to all websites starts (littlewindow.js)
   // Answers a top-level request as Firefox would ask it: undefined if nothing listens.
   ff.request = async ({ tabId, url, requestId = "r" + (ff.nextRequest = (ff.nextRequest || 0) + 1), originUrl, type = "main_frame", method = "GET" }) => {
