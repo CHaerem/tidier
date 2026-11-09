@@ -333,6 +333,27 @@ test("a title that ticks does not rewrite the record at every tick", async () =>
   x.kill();
 });
 
+// A live folder's pull request is named by the search (livefolders.js). Taking the page's
+// title into the record while it ran, its row changed name across a restart: the view shows
+// the record's title for it, and after the restart that was the page's.
+test("a live folder's pull request keeps the search's name in the record while its page is loaded", async () => {
+  const ff = new FakeFirefox();
+  const pr = "https://pr.example/1";
+  ff.store.syncedTabs = {
+    L: { group: true, own: true, name: "Pull requests", live: "prs", cookieStoreId: C1, parentKey: null, rank: 1 },
+    pr: entry(pr, { title: "docs#233 Explain the new release flow", parentKey: "L", liveFolder: "prs", liveUrl: pr }),
+  };
+  const w = ff.addWindow({ focused: true });
+  ff.addTab(w.id, { url: "https://o.example/", active: true, cookieStoreId: C1 });
+  const tab = ff.addTab(w.id, { url: pr, cookieStoreId: C1, title: "docs#233 Explain the new release flow" }, { syncKey: "pr", syncRole: "live" });
+  const x = await run(ff);
+  tab.title = "Explain the new release flow by someone · Pull Request #233";
+  x.b.tabs.onUpdated.fire(tab.id, { title: tab.title }, ff.snap(tab));
+  await wait(1500);
+  assert.equal(ff.synced.pr.title, "docs#233 Explain the new release flow");
+  x.kill();
+});
+
 test("a page load that changes nothing writes nothing", async () => {
   const ff = new FakeFirefox();
   const { x, liveA } = await twoWindows(ff);
@@ -2806,6 +2827,29 @@ test("a window that loads every essential as it comes back does not take the pag
   x.kill();
 });
 
+test("an essential's copy unloaded with its page is left as it is: sent to its placeholder, Firefox would load the page first", async () => {
+  const ff = new FakeFirefox();
+  ff.store.essentials = [{ key: "e", url: "https://e.example/", cookieStoreId: C1, title: "E", icon: "x" }];
+  const w = ff.addWindow({ focused: true });
+  ff.addTab(w.id, { url: "https://o.example/", active: true, cookieStoreId: C1 });
+  const asleep = ff.addTab(w.id, { url: "https://e.example/", pinned: true, discarded: true, cookieStoreId: C1 }, { essentialKey: "e" });
+  const reopened = ff.addWindow();
+  ff.addTab(reopened.id, { url: "https://r.example/", active: true, cookieStoreId: C1 });
+  const copy = ff.addTab(reopened.id, { url: GHOST("essential", "e"), pinned: true, discarded: true, cookieStoreId: C1 }, { essentialKey: "e" });
+  const x = await run(ff);
+  await x.js("serial")(() => x.js("oneLoaded")("e"));
+  assert.equal(ff.tabs.get(asleep.id).url, "https://e.example/");
+  assert.equal(ff.tabs.get(asleep.id).discarded, true, "nothing loaded");
+  assert.ok(ff.tabs.get(copy.id).url.includes("ghost.html"));
+  // Selected, it loads, and is the one kept: a loaded copy elsewhere becomes the placeholder.
+  ff.tabs.get(copy.id).url = "https://e.example/"; ff.tabs.get(copy.id).discarded = false;
+  ff.select(asleep.id); ff.tabs.get(asleep.id).discarded = false;
+  await x.js("serial")(() => x.js("oneLoaded")("e"));
+  assert.equal(ff.tabs.get(asleep.id).url, "https://e.example/");
+  assert.ok(ff.tabs.get(copy.id).url.includes("ghost.html"), "one loaded copy");
+  x.kill();
+});
+
 test("an essential's placeholder opens its page itself if the loaded copy closes as it is moved in", async () => {
   const ff = new FakeFirefox();
   ff.store.essentials = [{ key: "e", url: "https://e.example/", cookieStoreId: C1, title: "E", icon: "x" }];
@@ -2940,7 +2984,8 @@ test("an essential's copy on its way to its placeholder is not sent there again 
   };
   ff.navigate(open.id, "https://e.example/");
   await wait(500);
-  assert.equal(starts, 1, "its load is started once");
+  // (An unloaded copy is left as it is now, oneLoaded: no load is started at all.)
+  assert.equal(starts, 0, "its load is not started again and again");
   x.kill();
 });
 

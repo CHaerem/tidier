@@ -65,7 +65,10 @@ async function startNews() {
 browser.tabs.onUpdated.addListener((tabId, change, tab) => {
   if (!tidierAlone || !started) return;
   if ("pinned" in change) dropNews(tabId); // it changes from record to essential or back, so the mark's key is no longer its own
-  if (tab.discarded || isGhostUrl(tab.url)) return; // a placeholder's title is only the page's, shown again
+  // A placeholder's title is only the page's, shown again. An unloaded page that wakes up
+  // starts over (it passes through about:blank and its own address on the way), as a page
+  // that has just loaded does: what it says while waking, after a long quiet, is no news.
+  if (tab.discarded || !isWeb(tab.url)) { newsSeen.delete(tabId); return; }
   const seen = newsSeen.get(tabId), now = Date.now();
   if (!seen || "status" in change) { newsSeen.set(tabId, { title: tab.title, quietFrom: now }); return; }
   if (change.audible) seen.soundFrom = now;
@@ -86,7 +89,7 @@ browser.tabs.onUpdated.addListener((tabId, change, tab) => {
   if (!quiet || playing || tab.status !== "complete" || (tab.active && newsWindowInUse(tab.windowId)) || key === undefined || newsMarks.has(key)) return;
   newsMarks.set(key, { tabId, space: tab.cookieStoreId });
   viewAllSoon(); // every window: the others show this tab as a placeholder, with the same mark
-}, { properties: ["title", "status", "pinned", "audible"] });
+}, { properties: ["title", "status", "pinned", "audible", "discarded"] });
 
 browser.tabs.onActivated.addListener(({ tabId, previousTabId, windowId }) => {
   const left = newsSeen.get(previousTabId);
