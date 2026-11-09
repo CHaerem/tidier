@@ -62,10 +62,12 @@
   const notice = () => { const row = list.querySelector(".tab.active"); selectedInView = !!row && !outOfView(row); };
   list.addEventListener("scroll", notice, { passive: true });
   port.onMessage.addListener(next => { if (next.alone) notice(); });
+  // The room's part is told apart by its height: the list and the room together keep theirs
+  // when only the room comes or goes, also when something else changes in the same moment.
   new ResizeObserver(() => {
     const was = size;
-    size = { width: list.clientWidth, height: list.clientHeight, room: noteBox.classList.contains("in-room") };
-    const resized = was && (was.width !== size.width || (was.height !== size.height && was.room === size.room));
+    size = { width: list.clientWidth, height: list.clientHeight + noteBox.offsetHeight }; // (no room: no height, sidebar.css)
+    const resized = was && (was.width !== size.width || was.height !== size.height);
     const row = list.querySelector(".tab.active");
     if (resized && row && selectedInView && !wholly(row)) row.scrollIntoView({ block: "nearest" });
     notice();

@@ -7149,11 +7149,10 @@ def alone_tab_names(m):
         # The page beside it takes the focus: what was typed is saved, and the box is gone.
         panel("box().select(); return 1;")
         keys("Left for the page")
-        # A spot in the page with nothing on it (the page beside is Tidier's sidebar page in a
-        # tab): below the last row, or, a list longer than the window, the lowest one in view.
-        free = sidebar_page(m, """const last = [...doc.querySelectorAll("#tabs .row")].at(-1).getBoundingClientRect().bottom + 40;
-          for (let y = Math.min(last, page.innerHeight - 8); y > 0; y -= 4) { const e = doc.elementFromPoint(300, y); if (e && !e.closest(".row, .tile, .space, button, input, a, .notice")) return y; }
-          return null;""")
+        # A spot in the page with nothing to it (the page beside is Tidier's sidebar page in a
+        # tab): its space's name line, near the top and so in view however long the list is.
+        free = sidebar_page(m, """const line = doc.getElementById("space-name"), b = line.getBoundingClientRect(), y = Math.round(b.top + b.height / 2);
+          return !line.hidden && b.height && doc.elementFromPoint(300, y) === line ? y : null;""")
         check("in the real sidebar, the page beside has a spot with nothing on it to click", free is not None, str(free))
         click(base["right"] + 300, base["y"] + free)
         r = panel("""await until(() => !box() && tip(row(args[0])) === "Left for the page"); return {open: !!box(), tip: tip(row(args[0]))};""", saved)
@@ -8500,7 +8499,9 @@ def alone_space_menu(m):
     m.js(H + """const t = main().gBrowser.tabs.find(t => url(t).includes("smoke-menu-here-2"));
       t.linkedBrowser.messageManager.loadFrameScript("data:,content.addEventListener('beforeunload', e => e.preventDefault()); content.document.notifyUserGestureActivation();", false);
       await wait(300); return 1;""")
-    ROWS = """() => [...doc.querySelectorAll("#tabs .tab")].filter(r => !r.classList.contains("unloaded")).map(r => r.classList.contains("active") ? "selected" : "loaded")"""
+    # (Tidier's own pages left out: the test's sidebar page is a row of the space it belongs to,
+    # and a page of Tidier's is not the user's to unload.)
+    ROWS = """() => [...doc.querySelectorAll("#tabs .tab")].filter(r => !r.classList.contains("unloaded") && r.querySelector(".title").textContent !== "Tidier" && !/\nmoz-extension:/.test(r.title)).map(r => r.classList.contains("active") ? "selected" : "loaded")"""
     before = in_sidebar(m, ROWS)
     essentials = m.js(STATE, here)["essentials"]
     menu_on(m, f"dot({json.dumps(here)})")
@@ -9300,7 +9301,11 @@ def alone_stay_put(m):
       await wait(2500); main().focus(); await wait(500); return 1;""", int(space.split("-")[-1]))
     r = sidebar_page(m, STAY_PUT + """
       const out = {}, id = r => Number(r.dataset.tab), folderKey = args[0], title = r => r.querySelector(".title").textContent;
-      const ghosts = async () => { const g = []; for (const r of plainTabs()) if ((await tabs.get(id(r))).url.includes("ghost.html")) g.push(r); return g; };
+      // Placeholders of the tabs just opened in the other window, found by their record: a
+      // group before can leave others (a saved tab is one, with no page anywhere to pull in).
+      const all = (await page.browser.storage.local.get("syncedTabs")).syncedTabs ?? {};
+      const farOnes = u => { const k = new URL(u).searchParams.get("key"); return u.includes("ghost.html") && !!all[k]?.url?.includes("smoke-stay-far"); };
+      const ghosts = async () => { const g = []; for (const r of plainTabs()) if (farOnes((await tabs.get(id(r))).url)) g.push(r); return g; };
       const pulled = (was, name) => until(() => activeRow() && activeRow().dataset.tab !== was && title(activeRow()) === name && !activeRow().classList.contains("unloaded"));
       let g = await ghosts();
       out.placeholders = g.length;
