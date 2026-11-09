@@ -21,9 +21,9 @@ still had it over at its first start (`moveover.js`).
 ## The fast loop
 
 ```bash
-node --test                                   # unit tests, a few seconds
+node --test                                   # unit tests, about half a minute
 tests/smoke.py --only essentials,tab_sync     # some groups, about a minute
-tests/smoke.py                                # everything, several Firefoxes at once, about five minutes
+tests/smoke.py                                # everything, several Firefoxes at once, about fifty minutes
 ```
 
 - Run the smoke test under `nice -n 19` (and `taskpolicy -b` on macOS) so the

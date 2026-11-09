@@ -72,8 +72,9 @@ machines) is tried on the second Mac.
 in each window, with Tidier's record of them. The daily browser was moved over by a click
 on the settings page. A browser that never was is moved at the first start of a Tidier
 without Sidebery (`moveover.js`): a copy of everything first, then Sidebery's folders
-become Tidier's own in the record, each with its tabs, which stay saved tabs, and only then
-are the folder pages closed. Disable or remove Sidebery before, or at least right after:
+become Tidier's own in the record, in Sidebery's order, each with its tabs, which stay saved
+tabs (a live folder stays one), and only then are the folder pages closed; Tidier's button and
+sidebar say so until you have seen it. Disable or remove Sidebery before, or at least right after:
 with it running, closing a closed folder's page closes the tabs in it (they come back, as
 saved tabs, but Sidebery and Tidier would go on fighting over the rest). Sidebery's own
 rules, the order of its spaces and which folders it had closed can only be read from its
@@ -594,7 +595,7 @@ From fastest to most complete:
 ```bash
 node --test                              # unit tests, about half a minute
 tests/smoke.py --only tab_sync,saved_tabs  # some smoke test groups, about a minute
-tests/smoke.py                           # the whole smoke test, about 45 minutes
+tests/smoke.py                           # the whole smoke test, about fifty minutes
 tests/smoke.py --installed               # the signed version installed in your Firefox
 tests/smoke.py --xpi FILE                # a given signed .xpi
 tests/smoke.py --serial                  # in one test Firefox
