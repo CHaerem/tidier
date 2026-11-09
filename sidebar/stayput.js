@@ -64,9 +64,13 @@
   port.onMessage.addListener(next => { if (next.alone) notice(); });
   // The room's part is told apart by its height: the list and the room together keep theirs
   // when only the room comes or goes, also when something else changes in the same moment.
+  // The width is the list's with its scroll bar: where a scroll bar takes room (a Mac with
+  // a mouse), a list long enough to scroll is narrower inside than a short one, so coming
+  // from a short space to a long one looked like a sidebar made narrower, and moved the list
+  // from the place you left it.
   new ResizeObserver(() => {
     const was = size;
-    size = { width: list.clientWidth, height: list.clientHeight + noteBox.offsetHeight }; // (no room: no height, sidebar.css)
+    size = { width: list.offsetWidth, height: list.clientHeight + noteBox.offsetHeight }; // (no room: no height, sidebar.css)
     const resized = was && (was.width !== size.width || was.height !== size.height);
     const row = list.querySelector(".tab.active");
     if (resized && row && selectedInView && !wholly(row)) row.scrollIntoView({ block: "nearest" });

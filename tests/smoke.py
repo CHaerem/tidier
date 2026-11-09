@@ -9005,11 +9005,34 @@ def alone_stay_put(m):
       await switchTo(home);
       out.restoredThenShown = {top: fromTop(activeRow()), bottom: fromBottom(activeRow())};
       return out;""", home, second, short)
+    # Scroll bars that take room, as a Mac shows them with a mouse (and GitHub's Macs always):
+    # a list long enough to scroll is then narrower than a short one, which is no change of
+    # the sidebar's size, so a selected tab partly in view stays where you left it.
+    m.js(H + """Services.prefs.setIntPref("ui.useOverlayScrollbars", 0); await wait(500); return 1;""")
+    bars = sidebar_page(m, STAY_PUT + """
+      const [home, short] = args, out = {};
+      const rows = await mine();
+      await scrollTo(0);
+      await select(rows()[5]);
+      await scrollTo(list.scrollTop - 17);
+      out.bar = list.offsetWidth - list.clientWidth;
+      out.partly = !inView(activeRow()) && fromBottom(activeRow()) > -20;
+      out.home = list.scrollTop;
+      await switchTo(short);
+      out.shortBar = list.offsetWidth - list.clientWidth;
+      await switchTo(home);
+      out.homeBack = list.scrollTop;
+      return out;""", home, short)
+    m.js(H + """Services.prefs.clearUserPref("ui.useOverlayScrollbars"); await wait(500); return 1;""")
     sidebar_page(m, STAY_PUT + """await switchTo(args[0]); await page.browser.contextualIdentities.remove(args[1]); await wait(600); return 1;""", home, short)
     check("each space keeps its place in the list", r.get("home") and r["homeBack"] == r["home"] and r["homeAgain"] == r["home"] and r["secondBack"] == r["second"], str(r))
     check("a space too short to scroll does not change another's place", r.get("short") == 0 and r["home"] != r["second"], str(r))
     check("switching back and forth quickly mixes up no place", r.get("homeQuick") == r.get("home") and r.get("secondQuick") == r.get("second"), str(r))
     check("a selected tab you scrolled away from comes back by the least distance from your place", r.get("away") and r["restoredThenShown"]["top"] == 0, str(r))
+    if bars.get("bar") and not bars.get("shortBar"):
+        check("with scroll bars that take room, a space keeps its place too", bars.get("partly") and bars["homeBack"] == bars["home"], str(bars))
+    else:
+        print(f"SKIP  with scroll bars that take room, a space keeps its place too (no such scroll bar in this Firefox: {bars})", flush=True)
 
     # The list moves only for a selected tab wholly out of view.
     r = sidebar_page(m, STAY_PUT + """
