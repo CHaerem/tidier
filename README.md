@@ -643,6 +643,8 @@ Not guaranteed:
 - `moveover.js`, `settings/` – the settings page, and moving a browser over from Sidebery.
 - `tools/fix_spaces.py` – put tabs back in their own Sidebery space (in your
   own Firefox, which it restarts).
+- `tools/from_arc_zen.py` – your spaces, essentials, pinned tabs and folders from Arc or
+  Zen, as a file the settings page takes in like a copy. Only reads Arc and Zen.
 - `tools/shoot.py` – pictures of what Tidier draws, for working on its look: every
   space and width, light and dark, hover, menus, empty spaces, the settings page.
 - `tests/` – the unit tests, the smoke test, the test Firefox and its fixtures, the random

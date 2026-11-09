@@ -111,6 +111,9 @@ links from real apps, real sound and calls, and real Firefox Sync between two ma
 - [x] One explicit click, never an update: a report of what will happen, then the
       record is written, and only then are folder pages closed. It can be undone.
       Checked with a real Sidebery in the test Firefox, there and back.
+- [x] Spaces, essentials, pinned tabs and folders from Arc or Zen, which is the setup the
+      owner wants (`tools/from_arc_zen.py`), taken in on the settings page like a copy.
+      Checked with made-up Arc and Zen files; not yet run on the real ones.
 - [ ] Sidebery disabled but installed for a few weeks.
 
 ## E. Without Sidebery, everywhere
