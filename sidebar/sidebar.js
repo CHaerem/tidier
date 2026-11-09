@@ -7,7 +7,8 @@
 // is under way.
 
 const port = browser.runtime.connect({ name: "sidebar" });
-const hello = () => browser.windows.getCurrent().then(w => port.postMessage({ type: "hello", windowId: w.id })); // answered with a view
+const sidebarWindow = browser.windows.getCurrent().then(w => w.id); // answered by Firefox itself, not the background part
+const hello = () => sidebarWindow.then(windowId => port.postMessage({ type: "hello", windowId })); // answered with a view
 hello();
 port.onMessage.addListener(render);
 
@@ -20,28 +21,40 @@ const ownLook = css => {
   style.textContent = css;
   document.head.append(style);
 };
-// The look of this sidebar's last view, put back at once. After an update the background
-// part takes a second or so to answer, and until then the sidebar was a blank, untinted panel
-// next to a tinted window. Kept per sidebar (sessionStorage), so each window has its own.
+// The look of each window's sidebar when it was last drawn, put back at once. After an
+// update the background part takes a second or so to answer, and until then the sidebar
+// was a blank, untinted panel beside a tinted window. In localStorage: the page after an
+// update is a new one, whose sessionStorage starts empty. By window, since each has its own
+// space. (Window numbers start over after a restart, so the first moment there can show
+// another window's space, where it showed none.)
 const LAST_LOOK = "lastLook";
-let lastLook = null, cssShown = null;
-try {
-  lastLook = JSON.parse(sessionStorage.getItem(LAST_LOOK) || "null");
-  if (lastLook) {
-    document.documentElement.style.setProperty("--accent", lastLook.accent);
-    document.documentElement.dataset.space = lastLook.space;
-    document.documentElement.classList.toggle("alone", !!lastLook.alone);
-    if (lastLook.css) ownLook(cssShown = lastLook.css);
-  }
-} catch (err) { /* no storage: it is drawn with the first view */ }
-const keepLook = look => {
-  lastLook = { ...lastLook, ...look };
-  try { sessionStorage.setItem(LAST_LOOK, JSON.stringify(lastLook)); } catch (err) { /* only the moment after an update */ }
+const readLook = () => { try { return JSON.parse(localStorage.getItem(LAST_LOOK) || "null") ?? {}; } catch (err) { return {}; } };
+const showLook = look => {
+  document.documentElement.style.setProperty("--accent", look.accent);
+  document.documentElement.dataset.space = look.space;
+  document.documentElement.classList.toggle("alone", !!look.alone);
+};
+const keptLook = readLook();
+let cssShown = null, viewShown = false;
+if (keptLook.css) ownLook(cssShown = keptLook.css);
+sidebarWindow.then(id => { if (!viewShown && keptLook.windows?.[id]) showLook(keptLook.windows[id]); }, () => {});
+const keepLook = change => {
+  try { localStorage.setItem(LAST_LOOK, JSON.stringify({ ...readLook(), ...change })); } catch (err) { /* then it is drawn with the first view */ }
 };
 browser.storage.managed.get("sidebarCSS").then(({ sidebarCSS }) => {
-  if (lastLook?.css !== (sidebarCSS || null)) keepLook({ css: sidebarCSS || null });
+  if (keptLook.css !== (sidebarCSS || undefined)) keepLook({ css: sidebarCSS || undefined });
   if (sidebarCSS && sidebarCSS !== cssShown) ownLook(sidebarCSS); // (shown already, from the last view)
 }, () => {});
+// This window's look, kept when it changes. Windows that have closed are left out.
+let lookKept = "";
+async function keepWindowLook(look) {
+  const id = await sidebarWindow, text = JSON.stringify(look);
+  if (text === lookKept) return;
+  lookKept = text;
+  const open = new Set((await browser.windows.getAll().catch(() => [])).map(w => String(w.id)));
+  const windows = Object.fromEntries(Object.entries(readLook().windows ?? {}).filter(([w]) => open.has(w)));
+  keepLook({ windows: { ...windows, [id]: look } });
+}
 
 let view = null;
 const send = msg => port.postMessage(msg);
@@ -258,12 +271,10 @@ function render(next) {
   view = next;
   drawn = new Set();
   const space = view.spaces.find(s => s.id === view.space);
-  document.documentElement.style.setProperty("--accent", space?.color || "#7a7a80");
-  document.documentElement.dataset.space = view.space || "";
-  document.documentElement.classList.toggle("alone", !!view.alone);
-  if (lastLook?.space !== (view.space || "") || lastLook?.accent !== (space?.color || "#7a7a80") || lastLook?.alone !== !!view.alone) {
-    keepLook({ space: view.space || "", accent: space?.color || "#7a7a80", alone: !!view.alone });
-  }
+  const look = { space: view.space || "", accent: space?.color || "#7a7a80", alone: !!view.alone };
+  viewShown = true;
+  showLook(look);
+  keepWindowLook(look).catch(() => {}); // (only the first moment after an update depends on it)
 
   document.getElementById("hiding").hidden = !view.needsHiding;
   const problem = document.getElementById("problem");
