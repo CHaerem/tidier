@@ -5,6 +5,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url"; // a URL's pathname keeps %20 for a space in the folder name
 import { FakeFirefox, wait, realSleep } from "./fake_firefox.mjs";
 
 const AGENT = "firefox-container-9", WORK = "firefox-container-1", HOME = "firefox-container-2", OTHER = "firefox-container-3";
@@ -963,7 +964,7 @@ test("the background scripts: what others call into is there before they can cal
 });
 
 test("the native side (tests/test_bridge.py)", () => {
-  const run = spawnSync("python3", ["-I", new URL("./test_bridge.py", import.meta.url).pathname], { encoding: "utf8", timeout: 120000, env: { ...process.env, PYTHONWARNINGS: "ignore" } });
+  const run = spawnSync("python3", ["-I", fileURLToPath(new URL("./test_bridge.py", import.meta.url))], { encoding: "utf8", timeout: 120000, env: { ...process.env, PYTHONWARNINGS: "ignore" } });
   if (run.error?.code === "ENOENT") return; // no python3 here: the smoke test runs it, on the machines that matter
   assert.equal(run.status, 0, run.stderr);
 });
