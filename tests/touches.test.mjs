@@ -109,6 +109,15 @@ test("a tab's own icon first, then the record's, then none for the letter; also 
   x.kill();
 });
 
+// An empty new tab has no page yet: its tile is drawn empty, not with the N of "New Tab",
+// which under "+ New tab" read as one more app.
+test("an empty new tab is marked as one, so its tile has no letter", async () => {
+  const { x, w } = await started([[{ url: "about:newtab", title: "New Tab", active: true }], [{ url: "https://a.example/", title: "A" }]]);
+  const items = Object.fromEntries(flat(await viewOf(x, w)).map(i => [i.title, i.blank]));
+  assert.deepEqual(items, { "New Tab": true, A: undefined });
+  x.kill();
+});
+
 // Firefox drops a tab's icon when a new page comes in, and a page may have none at all.
 test("a page with no icon keeps the record's on the same site, and has none of another site's", async () => {
   const icon = "https://a.example/favicon.ico";

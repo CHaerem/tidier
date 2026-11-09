@@ -5,7 +5,7 @@
 {
   const box = document.getElementById("note");
   const text = el("span", "text"), act = el("button", "act", "Undo");
-  const line = el("div", "line");
+  const line = el("div", "line raised"); // it floats over the list (tokens.css)
   line.append(text, act);
   box.append(line);
 

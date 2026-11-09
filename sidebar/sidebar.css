@@ -1,7 +1,10 @@
 /* Tidier's sidebar, on the window's own surface: the list floats on the tint, the
  * selected tab is a soft card. The names and values are in tokens.css. */
 
-html { background: var(--frame); transition: background-color .25s ease; } /* as the window's own (userChrome.css) */
+html { background: var(--frame); transition: background-color var(--tint-change); } /* as the window's own (userChrome.css) */
+/* Light to dark is no change of tint: the text changes at once, and a surface still fading
+ * would be light behind light text for a moment. So then nothing fades (sidebar.js). */
+html.scheme-change, html.scheme-change :is(*, ::before, ::after) { transition: none !important; }
 /* With Tidier alone the tint comes from the space's own colour, so a new space has one
  * too, and tidier.css is no longer needed (a rule of its own there still wins). */
 html.alone { --frame: light-dark(color-mix(in srgb, var(--accent) 12%, #ececf0), color-mix(in srgb, var(--accent) 9%, #1f1f23)); }
@@ -39,12 +42,15 @@ button { font: inherit; letter-spacing: inherit; color: inherit; cursor: default
   border-radius: var(--radius-lg); background: var(--tile); cursor: default;
   transition: background-color var(--quick), box-shadow var(--quick), transform var(--quick);
 }
-.tile:only-child { max-width: calc(50% - var(--tile-gap) / 2); } /* alone, half the row: a tile and not a band */
+/* Alone, half the row: a tile and not a band. In the wide sidebar's grid a cell is already
+ * a tile's size, and half of it would be a sliver, so there it takes two cells. */
+.tile:only-child { max-width: calc(50% - var(--tile-gap) / 2); }
+@media (min-width: 400px) { .tile:only-child { max-width: none; grid-column: span 2; } }
 .tile:hover { background: var(--tile-hover); }
 .tile:active { transform: scale(.97); }
 .tile.active { background: var(--selected); box-shadow: var(--shadow-card); }
 .tile img, .tile .letter { width: 20px; height: 20px; }
-.tile .letter { border-radius: var(--radius-sm); font-size: 11px; }
+.tile .letter { --letter: 20px; }
 /* An image is draggable by itself: grabbed by its icon, a row would be dragged as a small
  * picture, with the icon's address for whatever it is dropped on. */
 .tile img, .row img { pointer-events: none; }
@@ -60,12 +66,14 @@ img { filter: drop-shadow(0 0 .6px light-dark(rgb(40 30 20 / .3), rgb(255 255 25
 /* An unloaded tab is quieter, and wakes up under the mouse. */
 .unloaded :is(img, .letter) { opacity: .66; transition: opacity var(--quick); }
 .unloaded:hover :is(img, .letter) { opacity: 1; }
-/* A page with no icon gets its first letter: a placeholder, so no louder than an icon. */
+/* A page with no icon gets its first letter: a placeholder, so no louder than an icon. It
+ * is drawn as an icon, so its letter has the icon's proportions, not a size of the text's. */
 .letter {
-  display: grid; place-items: center; border-radius: 5px;
+  --letter: var(--icon);
+  display: grid; place-items: center; border-radius: var(--radius-sm);
   background: color-mix(in srgb, var(--accent) 20%, var(--tile));
   color: color-mix(in srgb, var(--accent) 45%, var(--text));
-  font-size: 10px; line-height: 1; font-weight: 600; text-transform: uppercase;
+  font-size: calc(var(--letter) * .625); line-height: 1; font-weight: 600; text-transform: uppercase;
 }
 
 /* --- The list ---------------------------------------------------------------------
@@ -172,18 +180,20 @@ img { filter: drop-shadow(0 0 .6px light-dark(rgb(40 30 20 / .3), rgb(255 255 25
   box-shadow: 0 0 0 1.5px var(--accent-line); outline: none;
 }
 
-/* A thin line between the folders (the kept part) and the other tabs. */
-.divider { height: 1px; margin: 6px var(--pad) 8px; background: var(--line); }
+/* A thin line between the folders (the kept part) and the other tabs; the room around it
+ * is Clear's (below). */
+.divider { height: 1px; margin: 9px var(--pad) 11px; background: var(--line); }
 
 /* News (news.js): a still dot in the space's colour while a page you are not looking at
- * has something new. Out of the flow, in the row's left margin, so it moves nothing. */
+ * has something new. Out of the flow, in the row's left margin, so it moves nothing. (On
+ * the bar, where everything is a dot, a second dot would read as one more space: there
+ * the space's own dot says it, below.) */
 .row, .tile, .space { position: relative; }
-.row.news::before, .folder.collapsed.news > .head::before, .tile.news::before, .space.news::after {
+.row.news::before, .folder.collapsed.news > .head::before, .tile.news::before {
   content: ""; position: absolute; width: 6px; height: 6px; border-radius: 50%; background: var(--accent);
 }
 .row.news::before, .folder.collapsed.news > .head::before { left: 0; top: calc(50% - 3px); }
 .tile.news::before { top: 5px; right: 5px; }
-.space.news::after { top: 7px; left: 20px; width: 5px; height: 5px; background: var(--color); }
 
 /* --- The space's name, and what makes a new thing ------------------------------- */
 #space-name:empty, #actions { display: none; }
@@ -191,7 +201,7 @@ img { filter: drop-shadow(0 0 .6px light-dark(rgb(40 30 20 / .3), rgb(255 255 25
  * being a heading over a form. */
 #space-name {
   padding: 0 var(--pad); height: 24px; line-height: 24px;
-  font-size: 12px;
+  font-size: var(--size-small);
   color: var(--space-name); white-space: nowrap; overflow: hidden;
   mask-image: linear-gradient(to right, #000 calc(100% - 20px), transparent);
 }
@@ -221,46 +231,68 @@ img { filter: drop-shadow(0 0 .6px light-dark(rgb(40 30 20 / .3), rgb(255 255 25
   transition: background-color var(--quick), box-shadow var(--quick), transform var(--quick);
 }
 .space:active { transform: scale(.92); }
+/* The others are paler than the active one. On light that is a mix towards the surface; on
+ * dark the surface would make them muddy, brown and plum, so there they mix towards the
+ * text instead, and stay as pale as they are on light. */
 .space .dot {
+  --pale: light-dark(transparent, rgb(255 252 248 / .7));
   width: 8px; height: 8px; border-radius: 50%;
-  background: color-mix(in srgb, var(--color) 62%, transparent);
+  background: color-mix(in srgb, var(--color) 60%, var(--pale));
   transition: background-color var(--soft), box-shadow var(--soft), transform var(--spring);
 }
-.space:hover .dot { background: color-mix(in srgb, var(--color) 88%, transparent); transform: scale(1.12); }
-.space.active .dot { background: var(--color); transform: scale(1.25); }
+.space:hover .dot { background: color-mix(in srgb, var(--color) 85%, var(--pale)); transform: scale(1.12); }
+.space.active .dot { background: var(--color); transform: scale(1.375); }
+/* What a space has for you, on its own dot, so the bar stays a row of dots and nothing is
+ * heavier than what it marks: news (news.js) or a tab an agent left you (agent.js) draw it
+ * in its full colour, among the pale ones, and the active space's stays the larger. The
+ * two mean the same, "something there to look at", so they look the same. */
+.space:is(.news, .agent-left) .dot { background: var(--color); }
 
 /* --- Notices: quiet, on the icons' edge, in the same soft shape as everything else.
- * Never a white card: that means you are here. -------------------------------------- */
+ * Never a white card: that means you are here. Every line that tells you something has
+ * this one shape: a row's height (more if its words need it), its text where a row's icon
+ * starts, and an action at the row's end where a close button would be. A notice lies on
+ * the surface, so it is a soft fill; the quiet line floats over the list, so it is raised.
+ * A notice that asks something is one button, the notice itself, with a × to say no. */
 .notice {
-  flex: none; padding: 6px var(--pad); margin-bottom: 8px; border-radius: var(--radius);
-  background: var(--tile); color: var(--muted); font-size: 12px; line-height: 16px;
-/* The name line as a box (spaceactions, renaming a space), the same height and with the
- * text in the same place. */
-.space-box {
-  display: block; flex: none; box-sizing: border-box; width: calc(100% - 2 * var(--pad) + 12px); height: 24px;
-  margin: 0 calc(var(--pad) - 6px); padding: 0 5px; font: inherit; font-size: 12px; letter-spacing: inherit;
-  color: var(--text); background: var(--selected); border: 0; border-radius: var(--radius-sm);
-  box-shadow: 0 0 0 1.5px var(--accent-line); outline: none;
-}
-}
-.notice[hidden], #menu[hidden] { display: none; }
-/* Only a question that takes your click: the button is the whole notice. */
-#hiding { padding: 0; background: none; margin-top: 4px; }
-.notice button {
-  display: block; width: 100%; min-height: var(--row); padding: 6px var(--pad); border: 0; border-radius: var(--radius);
-  background: var(--tile); color: var(--text); line-height: 16px; text-align: left;
+  flex: none; display: flex; align-items: center; gap: 2px;
+  box-sizing: border-box; min-height: var(--row); padding: 6px var(--pad); margin-bottom: 8px;
+  border-radius: var(--radius); background: var(--tile); color: var(--muted); line-height: var(--line-height);
   transition: background-color var(--quick);
 }
-.notice button:hover { background: var(--tile-hover); }
+#hiding, .ask-line { margin-top: 4px; }
+.notice:has(> button) { padding: 0; }
+.notice > button { border: 0; background: none; color: var(--text); text-align: left; }
+.notice > button:first-child { flex: 1; align-self: stretch; min-width: 0; padding: 6px var(--pad); border-radius: var(--radius); }
+.notice:has(> button:first-child:hover) { background: var(--tile-hover); }
+.notice .ask-no {
+  flex: none; width: var(--button); height: var(--button); margin-right: var(--button-inset); padding: 0;
+  border-radius: var(--radius-sm); color: var(--muted); font-size: 0;
+  display: flex; align-items: center; justify-content: center;
+  transition: background-color var(--quick), color var(--quick);
+}
+.notice .ask-no::before { content: ""; width: var(--icon); height: var(--icon); background: currentColor; mask: var(--icon-close) center / 14px no-repeat; }
+.notice .ask-no:hover { background: var(--press); color: var(--text); }
+/* The name line as a box (spaceactions, renaming a space), the same height and with the
+ * text in the same place. */
+.space-box, #name-box {
+  display: block; flex: none; box-sizing: border-box; width: calc(100% - 2 * var(--pad) + 12px); height: 24px;
+  margin: 0 calc(var(--pad) - 6px); padding: 0 6px; font: inherit; font-size: var(--size-small); letter-spacing: inherit;
+  color: var(--text); background: var(--selected); border: 0; border-radius: var(--radius-sm);
+  box-shadow: 0 0 0 1.5px var(--accent-line); outline: none; user-select: text;
+}
+.notice[hidden], #menu[hidden] { display: none; }
 
 /* --- The small menu ------------------------------------------------------------- */
+/* Its items are rows, with the rows' height; its corners and theirs are one curve, the menu's
+ * padding being the difference between the two. */
 #menu {
-  position: fixed; z-index: 10; min-width: 150px; padding: 5px; border-radius: var(--radius);
-  transition: opacity .1s ease, scale .1s ease; transform-origin: top left;
+  position: fixed; z-index: 10; min-width: 150px; padding: calc(var(--radius) - var(--radius-sm)); border-radius: var(--radius);
+  transition: opacity var(--quick), scale var(--quick); transform-origin: top left;
   @starting-style { opacity: 0; scale: .98; }
 }
 #menu .item {
-  display: block; width: 100%; height: 28px; padding: 0 9px; border: 0;
+  display: block; width: 100%; height: var(--row); padding: 0 var(--pad); border: 0;
   border-radius: var(--radius-sm); background: none; color: inherit; text-align: left; white-space: nowrap;
 }
 #menu .item:hover { background: var(--hover); }
@@ -270,7 +302,7 @@ img { filter: drop-shadow(0 0 .6px light-dark(rgb(40 30 20 / .3), rgb(255 255 25
  * starts, with a small round end, so it says where and at what depth. */
 .drop-before::after, .drop-after::after {
   content: ""; position: absolute; z-index: 1; pointer-events: none;
-  left: var(--pad); right: var(--pad); height: 2px; border-radius: 1px; background: var(--accent);
+  left: var(--pad); right: var(--pad); height: 2px; border-radius: 999px; background: var(--accent); /* round ends, whatever its length */
 }
 .drop-before::before, .drop-after::before {
   content: ""; position: absolute; z-index: 1; pointer-events: none;
@@ -287,9 +319,10 @@ img { filter: drop-shadow(0 0 .6px light-dark(rgb(40 30 20 / .3), rgb(255 255 25
 .tile.drop-before::after { left: calc(var(--tile-gap) / -2 - 1px); right: auto; top: 8px; bottom: 8px; width: 2px; height: auto; }
 .tile.drop-before::before { display: none; }
 
-/* What would take the drop gets a soft fill, nothing more. */
-.drop-into, .row.drop-into { background: var(--accent-soft); }
-#essentials.drop-into { border-radius: calc(var(--radius-lg) + 2px); box-shadow: 0 0 0 2px var(--accent-soft); }
+/* What would take the drop gets a ring, with a soft fill: a fill alone would read as one
+ * more of the tabs you picked (.picked), which are what is being dragged. */
+.drop-into, .row.drop-into { background: var(--accent-soft); box-shadow: inset 0 0 0 1.5px var(--accent-line); }
+#essentials.drop-into { border-radius: calc(var(--radius-lg) + 3px); box-shadow: 0 0 0 3px var(--accent-soft), 0 0 0 4.5px var(--accent-line); }
 /* A dot is too small to show a fill, so it gets a ring, in the colour of the space it is. */
 .space.drop-into { background: none; box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--color) 62%, transparent); }
 .cursor { outline: 1.5px solid var(--accent-line); outline-offset: -1.5px; }
@@ -301,10 +334,9 @@ img { filter: drop-shadow(0 0 .6px light-dark(rgb(40 30 20 / .3), rgb(255 255 25
 
 /* Naming a saved tab or an essential (renamekept.js). The name line's box has that
  * line's height and its text starts where the line's does, so nothing moves. */
-.row .rename, #name-box { outline: none; } /* the border already says where you type; a ring around it is one mark too many */
+.row .rename, #name-box { outline: none; } /* its own ring already says where you type; the focus ring around it would be one mark too many */
 .row.renaming .close { display: none; } /* so the box has the row's width */
-.tile.renaming { outline: 2px solid color-mix(in srgb, var(--accent) 60%, transparent); outline-offset: -2px; }
-#name-box { flex: none; box-sizing: border-box; width: 100%; height: 24px; margin: 0; padding: 0 7px; font: inherit; font-size: 12px; letter-spacing: inherit; color: inherit; background: var(--selected); border: 1px solid var(--accent); border-radius: var(--radius-sm); } /* the space name's line is 24 px */
+.tile.renaming { outline: 1.5px solid var(--accent-line); outline-offset: -1.5px; }
 /* The menu's own parts (menu.js, tabmenu.js, spacemenu.js): it fits in the sidebar, an item
  * has room for a dot and a sign that more follows, and the keys move through it. */
 #menu {
@@ -313,17 +345,23 @@ img { filter: drop-shadow(0 0 .6px light-dark(rgb(40 30 20 / .3), rgb(255 255 25
 }
 #menu .item { display: flex; align-items: center; gap: 8px; outline: none; cursor: default; }
 #menu .item:focus { background: var(--hover); }
-#menu .label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-#menu .more::after { content: "›"; color: var(--muted); font-size: 15px; line-height: 1; }
+#menu .label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; } /* as a Mac's own menus: a menu is as wide as its longest item, so a fade would always touch it */
+/* A list follows (›), and the way back (‹): drawn, as every icon here is. */
+#menu .more::after, #menu .back::before {
+  content: ""; flex: none; width: var(--icon); height: var(--icon); margin-right: -4px;
+  background: var(--muted); mask: var(--icon-chevron) center / 14px no-repeat;
+}
 #menu .back { color: var(--muted); }
-#menu .back::before { content: "‹"; font-size: 15px; line-height: 1; }
-#menu .line { height: 1px; margin: 4px 8px; background: var(--hover); }
+#menu .back::before { margin: 0 -4px 0 -6px; transform: scaleX(-1); }
+#menu .line { height: 1px; margin: 4px var(--pad); background: var(--line); }
 #menu .dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--color); }
+/* In a list of spaces, what is not one (New space) starts where their names do. */
+#menu:has(.item .dot) .item:not(.back, :has(.dot))::before { content: ""; flex: none; width: 8px; }
 .menu-for { background: var(--hover); }
 /* Where a drop lands among the essentials (drag.js): a line standing up in the gap. */
 .row, .tile, .folder { position: relative; }
 .drop-left::after, .drop-right::after {
-  content: ""; position: absolute; background: var(--accent); border-radius: 1px; pointer-events: none;
+  content: ""; position: absolute; background: var(--accent); border-radius: 999px; pointer-events: none;
 }
 .drop-left::after, .drop-right::after { top: 4px; bottom: 4px; width: 2px; }
 .drop-left::after { left: -4px; }
@@ -331,78 +369,104 @@ img { filter: drop-shadow(0 0 .6px light-dark(rgb(40 30 20 / .3), rgb(255 255 25
 #space-name.drop-into { outline-offset: 1px; } /* its text sits close to its top */
 
 /* The quiet line (note.js). It lies over the end of the list, so nothing moves when it
- * comes or goes, and it is gone by itself, so what it covers is not covered for long. */
+ * comes or goes, and it is gone by itself, so what it covers is not covered for long. It is
+ * raised (tokens.css, .raised), as it floats over the list, so it is never darker than the
+ * surface; and it has a notice's shape (see Notices). */
 #note { position: relative; height: 0; }
 #note .line {
   position: absolute; left: 0; right: 0; bottom: 4px; z-index: 5;
-  display: flex; align-items: center; gap: 6px; height: 28px; padding: 0 3px 0 10px;
-  border-radius: var(--radius); font-size: 12px; color: color-mix(in srgb, var(--muted) 70%, var(--text));
-  background: color-mix(in srgb, var(--frame) 93%, var(--text));
-  box-shadow: 0 1px 4px rgba(0, 0, 0, .1);
-  opacity: 0; visibility: hidden; transition: opacity .2s ease, visibility 0s .2s; /* out of reach of a key once faded */
+  display: flex; align-items: center; gap: 4px; height: var(--row); padding: 0 var(--button-inset) 0 var(--pad);
+  border-radius: var(--radius);
+  opacity: 0; visibility: hidden; transition: opacity var(--soft), visibility var(--soft); /* out of reach of a key once faded */
 }
-#note.shown .line { opacity: 1; visibility: visible; transition: opacity .2s ease; }
-#note .text { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-#note .act {
+#note.shown .line { opacity: 1; visibility: visible; transition: opacity var(--soft); } /* and in reach at once when it comes */
+#note .text, .agent-action { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; mask-image: linear-gradient(to right, #000 calc(100% - 20px), transparent); }
+/* What the line offers, at its end: in the same place and shape as the agent line's Stop. */
+#note .act, .agent-stop {
   flex: none; border: 0; background: none; color: var(--text); font: inherit; font-weight: 500;
-  height: 22px; padding: 0 7px; border-radius: 5px; cursor: default;
+  height: var(--button); padding: 0 8px; border-radius: var(--radius-sm); cursor: default;
+  transition: background-color var(--quick);
 }
 #note .act[hidden] { display: none; }
-#note .act:hover { background: var(--hover); }
+#note .act:hover, .agent-stop:hover { background: var(--press); }
 
 /* Clear, which shows only with the pointer near the line between the folders and
- * today's tabs. Its area is exactly the gap around that line (.divider's margin), so it
- * takes up no room and covers no part of a row. */
+ * today's tabs. Its area is exactly the gap around that line (.divider's margin, with the
+ * row above's own gap), so it takes up no room and covers no part of a row; and that gap
+ * leaves Clear room from the rows on both sides, also from a selected card's edge. */
 .divider { position: relative; }
 .clear-reach {
-  position: absolute; inset: -8px; padding-right: 8px;
+  position: absolute; inset: -11px calc(-1 * var(--pad)); padding-right: var(--pad);
   display: flex; align-items: center; justify-content: flex-end;
 }
 .clear-reach[hidden] { display: none; }
 .clear {
-  border: 0; height: 16px; padding: 0 6px; border-radius: 4px; cursor: default;
-  font: inherit; font-size: 11px; color: var(--muted); background: var(--frame);
-  opacity: 0; transition: opacity .15s ease;
+  border: 0; height: 14px; padding: 0 6px; border-radius: var(--radius-sm); cursor: default;
+  font: inherit; font-size: var(--size-small); line-height: 14px; color: var(--muted); background: var(--frame);
+  opacity: 0; transition: opacity var(--quick);
 }
 .clear-reach:hover .clear, .clear:focus-visible { opacity: 1; }
 .clear:hover { color: var(--text); }
 /* Several tabs picked (selection.js): a soft tint of the space's colour, apart from the
  * selected tab's light and the keys' outline. Rows that are together read as one block. */
-.row.picked, .tile.picked { background: color-mix(in srgb, var(--accent) 20%, transparent); }
-.row.picked:hover, .tile.picked:hover { background: color-mix(in srgb, var(--accent) 28%, transparent); }
+.row.picked, .tile.picked { --pick: color-mix(in srgb, var(--accent) 20%, transparent); background: var(--pick); }
+.row.picked:hover, .tile.picked:hover { --pick: color-mix(in srgb, var(--accent) 28%, transparent); }
 .row.active.picked, .tile.active.picked { background: color-mix(in srgb, var(--accent) 24%, var(--selected)); }
 .row.picked:has(+ .row.picked) { border-bottom-left-radius: 0; border-bottom-right-radius: 0; }
 .row.picked + .row.picked { border-top-left-radius: 0; border-top-right-radius: 0; }
+/* The gap to the next one is filled, by the row's shadow, so a block has no stripes and
+ * nothing in it moves. (The selected tab keeps its card's own shadow.) */
+.row.picked:not(.active):has(+ .row.picked) { box-shadow: 0 var(--row-gap) 0 var(--pick); }
 .carrying .picked { opacity: .5; }
-/* Where the sound is coming from: one small speaker in the text colour, only while
+/* Where the sound is coming from: one small speaker, quiet as a count is, only while
  * something plays or is muted, at a fixed place, so nothing moves when it comes or goes.
- * On a row and a closed folder it sits before the end; on a tile and a space's dot it
- * lies over the lower corner (the upper one is for a page's news). */
+ * On a row and a closed folder it sits before the end; on a tile it lies over the lower
+ * corner (the upper one is for a page's news); on the bar, under its space's dot. */
 .speaker { display: block; width: 12px; height: 12px; fill: currentColor; stroke: currentColor; }
-.sound { display: grid; place-items: center; border: 0; background: none; padding: 0; color: var(--text); border-radius: 5px; cursor: default; }
-.sound.muted { color: var(--muted); }
-.sound:hover { background: var(--hover); }
+.sound { display: grid; place-items: center; border: 0; background: none; padding: 0; color: var(--muted); border-radius: var(--radius-sm); cursor: default; transition: color var(--quick); }
+.sound:hover { background: var(--hover); color: var(--text); }
 .row .sound { flex: none; width: 20px; height: 20px; }
 .head .sound + .count { min-width: 20px; text-align: right; } /* in line with the rows' speakers */
 .tile, .space { position: relative; }
 .tile .sound { position: absolute; bottom: 1px; right: 1px; width: 16px; height: 16px; }
 .tile .speaker { width: 11px; height: 11px; }
-.space .sound { position: absolute; bottom: 0; right: 0; width: 13px; height: 13px; }
+/* Under the dot, a little below the button's own box (into the bar's room below it), so it
+ * is clear of the active space's larger dot. */
+.space .sound { position: absolute; left: calc(50% - 7px); bottom: -4px; width: 14px; height: 11px; border-radius: var(--radius-sm); }
 .space .speaker { width: 9px; height: 9px; }
-/* Isolation: the line asking for the permission, and the place to drop a tab for a new
- * space, which floats over the end of the bar so that nothing moves while you drag. */
-.ask-line { display: flex; gap: 4px; }
-.ask-line button:first-child { flex: 1; }
-.notice .ask-no { width: 24px; flex: none; padding: 0; background: none; color: var(--muted); }
-.notice .ask-no:hover { background: var(--hover); }
-.new-space { position: fixed; right: 8px; bottom: 6px; width: 26px; height: 26px; padding: 0; border: 1px dashed var(--muted); border-radius: 50%; background: var(--frame); color: var(--muted); font: inherit; }
+.space .sound:hover { background: none; }
+/* Isolation: the place to drop a tab for a new space, which floats over the end of the bar
+ * so that nothing moves while you drag. Its middle is on the dots' line (the bar's padding
+ * and a dot's box: 2 + 14 px above the bar's foot of 10). (The line asking for the
+ * permission is a notice, above.) */
+.new-space {
+  position: fixed; right: var(--pad); bottom: calc(10px + 14px - 13px); width: 26px; height: 26px; box-sizing: border-box; padding: 0;
+  border: 1px dashed var(--muted); border-radius: 50%; background: var(--frame); color: var(--muted);
+  font-size: 0; line-height: 0; display: flex; align-items: center; justify-content: center;
+  transition: background-color var(--quick), border-color var(--quick), color var(--quick);
+}
+.new-space::before { content: ""; width: var(--icon); height: var(--icon); background: currentColor; mask: var(--icon-plus) center / 14px no-repeat; }
+.new-space.drop-into { border-style: solid; border-color: var(--accent-line); background: color-mix(in srgb, var(--accent) 16%, var(--frame)); color: var(--text); box-shadow: none; }
 .new-space[hidden] { display: none; }
-/* A small window that is open (sidebar/littlewindow.js): one quiet row above the bar. */
-#little { flex: none; padding-bottom: 4px; max-height: 30vh; overflow-y: auto; container-type: inline-size; }
+/* A small window that is open (sidebar/littlewindow.js): one quiet row above the bar, apart
+ * from the tabs by a line, and said to be a window of its own, as the space's name is said
+ * above the list. Keep stands left of where the close button comes, so the two never meet
+ * and nothing moves when the pointer comes. */
+#little {
+  flex: none; padding-bottom: 4px; max-height: 30vh; overflow-y: auto; container-type: inline-size;
+  background: linear-gradient(var(--line), var(--line)) var(--pad) 0 / calc(100% - 2 * var(--pad)) 1px no-repeat; /* the line, as .divider's */
+}
+#little::before {
+  content: "In a small window"; display: block; height: 24px; line-height: 26px; padding: 0 var(--pad);
+  font-size: var(--size-small); color: var(--faint); white-space: nowrap;
+}
+#little:has(> .row + .row)::before { content: "In small windows"; }
 #little:empty { display: none; }
 .little .keep {
-  flex: none; max-width: 60%; border: 0; background: none; color: var(--muted); font: inherit; font-size: 12px;
-  height: 22px; padding: 0 6px; border-radius: 5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  flex: none; max-width: 60%; margin-right: calc(var(--button) + var(--button-inset) - var(--pad) + 2px);
+  border: 0; background: none; color: var(--muted); font: inherit; font-size: var(--size-small);
+  height: var(--button); padding: 0 6px; border-radius: var(--radius-sm); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  transition: background-color var(--quick), color var(--quick);
 }
-.little .keep:hover { background: var(--hover); color: var(--text); }
+.little .keep:hover { background: var(--press); color: var(--text); }
 @container (max-width: 240px) { .little .where { display: none; } }

@@ -19,7 +19,7 @@ li { margin-bottom: 4px; }
 li:has(button) { margin-top: 10px; list-style-position: outside; }
 label { color: var(--muted); }
 #version { margin: 0; font-size: var(--size-small); color: var(--faint); }
-code { padding: 1px 4px; border-radius: 4px; background: var(--tile); font: 12px ui-monospace, Menlo, monospace; color: var(--text); }
+code { padding: 1px 4px; border-radius: var(--radius-sm); background: var(--tile); font: 12px ui-monospace, Menlo, monospace; color: var(--text); }
 .notice { padding: 8px 10px; margin: 0 0 8px; border-radius: var(--radius); background: var(--tile); color: var(--text); }
 #notices:has(.notice) { margin-bottom: 28px; }
 
@@ -72,7 +72,8 @@ label:has(input:focus-visible) { outline: 2px solid var(--accent-line); outline-
 /* Spaces: a dot and a name. The name has only a trace of a fill at rest, enough to say
  * it can be changed, and is as wide as a name needs. */
 #spaces .line { margin-bottom: 2px; flex-wrap: nowrap; gap: 10px; }
-#spaces .line > span { flex: none; width: 8px; height: 8px; border-radius: 50%; background: currentColor; font-size: 0; }
+/* (With Sidebery the line's mark is a dot; with Tidier alone it is the space's icon, .space-icon, which this must not reach.) */
+#spaces .line > span:not(.space-icon) { flex: none; width: 8px; height: 8px; border-radius: 50%; background: currentColor; font-size: 0; }
 #spaces input[type=text] { flex: 0 1 240px; background-color: color-mix(in srgb, var(--tile) 50%, transparent); }
 #spaces input[type=text]:hover { background-color: var(--tile); }
 #spaces input[type=text]:focus { background-color: var(--selected); }

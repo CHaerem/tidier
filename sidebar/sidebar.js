@@ -84,6 +84,10 @@ for (const type of ["pointerup", "pointercancel", "dragend"]) {
 const ICON_RETRY_MS = 5 * 60000, ICONS_REMEMBERED = 1000;
 const iconsLoaded = new Set(), iconsFailed = new Map(); // URL -> when it failed
 const roomFor = list => { if (list.size >= ICONS_REMEMBERED) list.clear(); };
+// The first letter of a title, or its first digit if it has no letter: many start with
+// something else, such as "(2) Inbox" while a message waits. A title with neither gets an
+// empty tile, as quiet as can be.
+const letterOf = title => (String(title || "").match(/\p{L}/u) ?? String(title || "").match(/\p{N}/u))?.[0] ?? "";
 function icon(item) {
   const failed = iconsFailed.get(item.icon);
   if (item.icon && /^(https?:|data:|moz-extension:)/.test(item.icon) && !(Date.now() - failed < ICON_RETRY_MS)) {
@@ -94,12 +98,20 @@ function icon(item) {
     img.onload = () => { if (asks) { roomFor(iconsLoaded); iconsLoaded.add(item.icon); iconsFailed.delete(item.icon); } };
     img.onerror = () => {
       if (asks) { roomFor(iconsFailed); iconsFailed.set(item.icon, Date.now()); }
-      img.replaceWith(el("span", "letter", (item.title || "?").trim()[0] || "?"));
+      img.replaceWith(el("span", "letter", letterOf(item.title)));
     };
     return img;
   }
-  return el("span", "letter", (item.title || "?").trim()[0] || "?");
+  return el("span", "letter", item.blank ? "" : letterOf(item.title)); // an empty new tab: "New Tab" is no name to take a letter from
 }
+
+// Light to dark (or back) is not a change of tint, so nothing fades then (sidebar.css): only
+// for the frame in which the colours change, and nothing is done until they do.
+globalThis.matchMedia?.("(prefers-color-scheme: dark)").addEventListener("change", () => {
+  const root = document.documentElement;
+  root.classList.add("scheme-change");
+  requestAnimationFrame(() => requestAnimationFrame(() => root.classList.remove("scheme-change")));
+});
 
 // --- Essentials ----------------------------------------------------------------
 function tile(item) {

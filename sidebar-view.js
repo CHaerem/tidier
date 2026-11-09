@@ -53,6 +53,7 @@ const tabItem = (t, title, entry) => ({
   sound: ownSound(t), soundTabId: t.id, // what a row shows; with Tidier alone, the real page's (addSounds)
   news: hasNews(t.id),
   page: isWeb(t.url) || isGhostUrl(t.url), // else a new tab page or the like, which only has a place among the tabs (drag.js)
+  blank: NEW_TAB_PAGES.has(t.url) || undefined, // an empty new tab: no page yet, so no letter of a name that is not one (sidebar.js icon)
   note: forYouNotes.get(syncKeyByTab.get(t.id)), // bridge.js
 });
 

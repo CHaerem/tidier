@@ -673,7 +673,7 @@ test("Always open this site here adds an anchored rule that comes first, says so
   await act(x, here.id, "rule", [ghost.id]);
   const rules = await x.js("rulesList").get();
   assert.deepEqual(JSON.parse(JSON.stringify(rules)), [{ url: "/^https?:\\/\\/(www\\.)?a\\.example\\//", space: C1 }, ...old]);
-  assert.equal(x.said[0].text, "a.example now always opens in firefox-container-1");
+  assert.equal(x.said[0].text, "firefox-container-1: a.example always opens here");
   const [facts] = await x.send({ type: "tabMenu", tabIds: [ghost.id] });
   assert.equal(facts.ruled, true, "the menu no longer offers it");
   x.said[0].undo();

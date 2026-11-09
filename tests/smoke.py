@@ -1962,7 +1962,7 @@ def alone_quiet_undo(m):
       // The area is the gap and no more: the rows next to it keep all of themselves.
       const line = doc.querySelector("#tabs .divider").getBoundingClientRect(), at = y => doc.elementFromPoint(line.left + 40, y);
       out.gap = [line.top - 4, line.bottom + 4].map(y => !!at(y)?.closest(".clear-reach"));
-      out.neighbours = [line.top - 9, line.bottom + 9].map(y => !!at(y)?.closest(".row"));
+      out.neighbours = [line.top - 13, line.bottom + 13].map(y => !!at(y)?.closest(".row"));  // the gap is 11 px each way (sidebar.css, .divider)
       // A button you tabbed to keeps Enter, which the list takes everywhere else (keys.js).
       const enter = e => e.dispatchEvent(new page.KeyboardEvent("keydown", {key: "Enter", bubbles: true, cancelable: true}));
       out.enter = enter(button);
@@ -2906,10 +2906,13 @@ def alone_sound(m):
       const [here, away] = args;
       await until(() => tile("sound tile").querySelector(".sound") && row("sound row").querySelector(".sound") && head("Sound folder").querySelector(".sound") && dot(away).querySelector(".sound"));
       const inside = (e, mark) => { const a = e.getBoundingClientRect(), b = mark.getBoundingClientRect(); return b.left >= a.left && b.right <= a.right && b.top >= a.top && b.bottom <= a.bottom; };
+      // On the bar the mark is under its dot, hanging a little into the bar's own room below the
+      // button (sidebar.css), so it is clear of the active space's larger dot: across it, starting in it.
+      const atDot = (e, mark) => { const a = e.getBoundingClientRect(), b = mark.getBoundingClientRect(); return b.left >= a.left && b.right <= a.right && b.top >= a.top && b.top < a.bottom; };
       return {tile: !!tile("sound tile").querySelector(".sound"), row: !!row("sound row").querySelector(".sound"), head: !!head("Sound folder").querySelector(".sound"),
               dotAway: !!dot(away).querySelector(".sound"), dotHere: !!dot(here).querySelector(".sound"), silentDots: [...doc.querySelectorAll("#spaces .space")].filter(b => b.querySelector(".sound")).length,
               onlyThose: [...doc.querySelectorAll(".sound")].length, svg: !!tile("sound tile").querySelector(".sound svg"), emoji: /[\\u{1F500}-\\u{1F5FF}]/u.test(doc.body.textContent),
-              insideTile: inside(tile("sound tile"), tile("sound tile").querySelector(".sound")), insideDot: inside(dot(away), dot(away).querySelector(".sound")),
+              insideTile: inside(tile("sound tile"), tile("sound tile").querySelector(".sound")), insideDot: atDot(dot(away), dot(away).querySelector(".sound")),
               boxes: places(away)};""", here, away)
     check("the sound of a page in another window shows on an essential's tile", r["tile"] and r["svg"] and r["insideTile"], str(r))
     check("and on a tab's row, drawn and not as an emoji", r["row"] and not r["emoji"], str(r))
@@ -3136,10 +3139,16 @@ def alone_news(m):
       await when(() => named("folder").classList.contains("unloaded"));
       const got = has(), seen = (selector, pseudo) => { const e = doc.querySelector(selector); return e && dot(e, pseudo); };
       return {...got, rested: named("folder").classList.contains("unloaded"), accent: accent(), other: colour(bar(args[1]).style.getPropertyValue("--color")),
-        head: seen(".folder.collapsed.news > .head", "::before"), tile: seen(".tile.news", "::before"), space: seen(".space.news", "::after")};""", name, there)
+        head: seen(".folder.collapsed.news > .head", "::before"), tile: seen(".tile.news", "::before"),
+        // On the bar the dot itself says it, in its full colour among the pale ones: a second dot would read as one more space.
+        space: (() => { const full = b => { const d = b?.querySelector(".dot"); if (!d) return null; for (const a of d.getAnimations()) a.finish(); return {color: page.getComputedStyle(d).backgroundColor, after: page.getComputedStyle(b, "::after").content}; };
+          const plain = doc.querySelector("#spaces .space:not(.active):not(.news)");
+          return {news: full(bar(args[1])), plain: full(plain), plainOwn: plain && colour(plain.style.getPropertyValue("--color"))}; })()};""", name, there)
     check("a closed folder shows that a tab in it has news, also once the tab has unloaded", r.get("heads") == [name + "kept"] and r["rested"] and shows(r["head"], r["accent"]), str(r))
     check("an essential's tile shows it", len(r["tiles"]) == 1 and r["tiles"][0].startswith("tile") and shows(r["tile"], r["accent"]), str(r))
-    check("another space's dot shows it, in that space's colour", r["spaces"] == [there] and shows(r["space"], r["other"]), str(r))
+    dots = r.get("space") or {}
+    check("another space's dot shows it, in that space's full colour, with no second mark", r["spaces"] == [there] and dots.get("news") and dots["news"]["color"] == r["other"] and dots["news"]["after"] == "none"
+          and (not dots.get("plain") or dots["plain"]["color"] != dots["plainOwn"]), str(r))
 
     # Selecting clears each, by real clicks in the sidebar.
     r = sidebar_page(m, marked + """
@@ -7628,6 +7637,157 @@ def click_at(m, at, x, y):
     m.cmd("WebDriver:ReleaseActions")
 
 
+# What the look promises, measured in the real sidebar, where pictures (tools/shoot.py) can
+# only show it: what is made by hand here is what a drag, a sound or a small window would
+# make, and is taken away again at once, in the same frame script, before any view comes.
+LOOK_IN_SIDEBAR = """
+  const lookInSidebar = (source, ...a) => {
+    const mm = main().SidebarController.browser.contentDocument.getElementById("webext-panels-browser").messageManager;
+    const tag = "smoke-look:" + Math.random();
+    const answer = new Promise(done => mm.addMessageListener(tag, function got(msg) { mm.removeMessageListener(tag, got); done(msg.data); }));
+    mm.loadFrameScript("data:,(" + encodeURIComponent(`function() {
+      const doc = content.document, page = content.wrappedJSObject, css = (e, p) => content.getComputedStyle(e, p);
+      const sleep = ms => new Promise(r => content.setTimeout(r, ms));
+      const box = e => e.getBoundingClientRect(), clone = o => page.JSON.parse(JSON.stringify(o));
+      // A colour as the page computes it, without a transition.
+      const colour = value => { const probe = doc.createElement("i"); probe.style.color = value; doc.body.append(probe); const c = css(probe).color; probe.remove(); return c; };
+      const light = c => (c.startsWith("color(") ? 255 : 1) * (c.match(/[\\\\d.]+/g) ?? []).slice(0, 3).reduce((s, v) => s + Number(v), 0); // rgb() is 0-255, color(srgb) 0-1
+      Promise.resolve().then(() => (${source})(...${JSON.stringify(a)})).then(out => out, e => ({error: String(e)})).then(out => sendAsyncMessage(${JSON.stringify(tag)}, out));
+    }`) + ")()", false);
+    return answer;
+  };"""
+
+
+def look_in_sidebar(m, source, *args):
+    return m.js(H + LOOK_IN_SIDEBAR + "return await lookInSidebar(...args);", source, *args)
+
+
+def sidebar_width(m, px):
+    m.js(H + """const box = main().document.getElementById("sidebar-box"); box.style.width = args[0] + "px"; await wait(400); return 1;""", px)
+
+
+def alone_look(m):
+    was = m.js(H + """return main().document.getElementById("sidebar-box").style.width;""")
+    # Two of today's tabs side by side, in the space shown, for the picked rows below.
+    shown = look_in_sidebar(m, """() => doc.documentElement.dataset.space""")
+    ours = m.js(H + """const w = main(); w.focus(); const [pages, space] = args;
+      const tabs = ["look-1", "look-2"].map(name => w.gBrowser.addTrustedTab(pages + "/titled?" + name, {userContextId: space, inBackground: true}));
+      for (let i = 0; i < 100 && !tabs.every(t => role(w, t)); i++) await wait(100);
+      await wait(800); return tabs.every(t => role(w, t));""", m.pages, int(shown.split("-")[-1]))
+
+    # Renaming a space: a soft box with the space's ring, its text where the name was (a block
+    # left open in sidebar.css once made it a plain browser field).
+    r = look_in_sidebar(m, """() => {
+      const line = doc.getElementById("space-name"), at = box(line).left + parseFloat(css(line).paddingLeft), size = css(line).fontSize;
+      page.openSpaceBox(doc.documentElement.dataset.space);
+      const input = doc.querySelector(".space-box"), s = input && css(input);
+      const out = input && {radius: s.borderRadius, border: s.borderTopWidth, ring: s.boxShadow !== "none", size: s.fontSize, nameSize: size,
+        textAt: Math.round(box(input).left + parseFloat(s.paddingLeft) - at), height: Math.round(box(input).height)};
+      input?.dispatchEvent(new page.KeyboardEvent("keydown", clone({key: "Escape", bubbles: true})));
+      return out; }""")
+    check("renaming a space shows the soft box, its text where the name was", bool(r) and r["radius"] == "6px" and r["border"] == "0px" and r["ring"]
+          and r["size"] == r["nameSize"] and abs(r["textAt"]) <= 1 and r["height"] == 24, str(r))
+
+    # The two notices of the first run are one shape in one place, so the list does not move
+    # when one replaces the other, and the one that asks is one button, not a box in a box.
+    r = look_in_sidebar(m, """() => {
+      const hiding = doc.getElementById("hiding"), ask = doc.querySelector(".ask-line"), before = [hiding.hidden, ask.hidden], out = {};
+      for (const [name, shown, other] of [["hiding", hiding, ask], ["ask", ask, hiding]]) {
+        shown.hidden = false; other.hidden = true;
+        const b = box(shown);
+        out[name] = {top: Math.round(b.top), height: Math.round(b.height), inner: css(shown.querySelector("button")).backgroundColor};
+      }
+      [hiding.hidden, ask.hidden] = before;
+      out.row = parseFloat(css(doc.documentElement).getPropertyValue("--row"));
+      return out; }""")
+    clear = "rgba(0, 0, 0, 0)"
+    check("the first-run notices are one shape in one place, each one button", r["hiding"]["top"] == r["ask"]["top"] and r["hiding"]["height"] == r["ask"]["height"] == r["row"]
+          and r["hiding"]["inner"] == r["ask"]["inner"] == clear, str(r))
+
+    # A lone essential keeps a tile's shape at every width: in the wide grid half a cell was a sliver.
+    shapes = {}
+    for px in (220, 300, 480):
+        sidebar_width(m, px)
+        shapes[px] = look_in_sidebar(m, """() => {
+          const grid = doc.getElementById("essentials"), others = [...grid.children].slice(1);
+          if (!grid.firstElementChild) return null;
+          for (const t of others) t.remove();
+          const b = box(grid.firstElementChild), row = box(grid).width;
+          grid.append(...others);
+          return [Math.round(b.width), Math.round(b.height), Math.round(row)]; }""")
+    check("a lone essential is a tile at every width: wider than tall, at most half the row", all(s and s[0] >= s[1] and s[0] <= s[2] / 2 + 1 for s in shapes.values()), str(shapes))
+
+    # On the bar a sound's mark is under its dot, in the middle and clear of it, and quiet.
+    sidebar_width(m, 300)
+    r = look_in_sidebar(m, """() => {
+      const b = doc.querySelector("#spaces .space.active"), d = b.querySelector(".dot");
+      for (const a of d.getAnimations()) a.finish();
+      page.spaceSound(b, clone({soundTabId: 1}));
+      const mark = b.querySelector(".sound"), at = box(mark), dot = box(d);
+      const out = {centre: Math.round((at.left + at.width / 2) - (dot.left + dot.width / 2)), below: Math.round(box(mark.querySelector("svg")).top - dot.bottom),
+        quiet: css(mark).color === colour("var(--muted)")};
+      mark.remove();
+      return out; }""")
+    check("a sound's mark on the bar is under its dot, in the middle, clear of it and quiet", r["centre"] == 0 and r["below"] >= 1 and r["quiet"], str(r))
+
+    # Picked rows side by side are one block: the gap between them is filled, and nothing moves.
+    r = look_in_sidebar(m, """() => {
+      const rows = [...doc.querySelectorAll("#tabs .row.tab:not(.active)")].filter(r => r.nextElementSibling?.matches(".row.tab:not(.active)"));
+      const [a] = rows; if (!a) return null;
+      const b = a.nextElementSibling, tops = [box(a).top, box(b).top];
+      a.classList.add("picked"); b.classList.add("picked");
+      for (const x of [a, b]) for (const an of x.getAnimations()) an.finish();
+      const out = {shadow: css(a).boxShadow, gap: Math.round(box(b).top - box(a).bottom), moved: box(a).top !== tops[0] || box(b).top !== tops[1]};
+      a.classList.remove("picked"); b.classList.remove("picked");
+      return out; }""")
+    check("picked rows side by side are one block, with nothing moved", ours and bool(r) and not r["moved"] and f" 0px {r['gap']}px 0px" in r["shadow"], str(r))
+
+    # The quiet line: a row's height, raised over the list (and below, in either scheme, never darker than the surface).
+    r = look_in_sidebar(m, """() => {
+      const note = doc.getElementById("note"), line = note.querySelector(".line"), was = note.classList.contains("shown");
+      note.classList.add("shown");
+      const out = {height: Math.round(box(line).height), row: parseFloat(css(doc.documentElement).getPropertyValue("--row")), raised: line.classList.contains("raised")};
+      note.classList.toggle("shown", was);
+      return out; }""")
+    check("the quiet line is a row's height, raised over the list", r["height"] == r["row"] and r["raised"], str(r))
+
+    # A small window's row: Keep stands clear of where its × comes, at every width.
+    keep = {}
+    for px in (220, 300, 480):
+        sidebar_width(m, px)
+        keep[px] = look_in_sidebar(m, """() => {
+          const row = page.littleRow(clone({id: -1, title: "A link from another app, with a long title", space: "A space with a long name"}));
+          doc.getElementById("little").append(row);
+          const out = Math.round(box(row.querySelector(".close")).left - box(row.querySelector(".keep")).right);
+          row.remove();
+          return out; }""")
+    check("a small window's Keep stands clear of its close button, at every width", all(v is not None and v >= 1 for v in keep.values()), str(keep))
+    m.js(H + """await removeWhere((x, t) => url(t).includes("/titled?look-")); return 1;""")
+
+    # Light to dark: the surface changes with the text, not after it (a fading surface was
+    # light behind light text for a quarter of a second).
+    def scheme_change(dark):
+        return m.js(H + LOOK_IN_SIDEBAR + """const [source, dark] = args;
+          const answer = lookInSidebar(source, dark);
+          await wait(150);
+          Services.prefs.setIntPref("ui.systemUsesDarkTheme", dark ? 1 : 0);
+          return await answer;""", """async dark => {
+            // Looked at as the change is told, just after the page itself is told (its listener
+            // is older): a surface that fades has not started to change by then.
+            const query = content.matchMedia("(prefers-color-scheme: dark)");
+            if (query.matches === dark) return null;
+            const told = await Promise.race([new Promise(r => query.addEventListener("change", () => r(true), {once: true})), sleep(5000).then(() => false)]);
+            if (!told) return null;
+            const surface = css(doc.documentElement).backgroundColor, line = css(doc.querySelector("#note .line")).backgroundColor;
+            return {surface, frame: colour("var(--frame)"), line, lighter: light(line) >= light(surface)}; }""", dark)
+    dark = look_in_sidebar(m, """() => content.matchMedia("(prefers-color-scheme: dark)").matches""")
+    r = [scheme_change(not dark), scheme_change(dark)]
+    m.js(H + """Services.prefs.clearUserPref("ui.systemUsesDarkTheme"); await wait(300); return 1;""")
+    check("light to dark and back, the surface changes with the text", all(x and x["surface"] == x["frame"] for x in r), str(r))
+    check("the quiet line is never darker than the surface, in light or dark", all(x and x["lighter"] for x in r), str(r))
+    m.js(H + """main().document.getElementById("sidebar-box").style.width = args[0]; await wait(300); return 1;""", was)
+
+
 def sidebar_setting_off(m):
     # The setting off is the daily browser: should Tidier's sidebar be opened beside
     # Sidebery, the list keeps behaving as it always did (compare alone_stay_put).
@@ -9307,6 +9467,7 @@ ALONE_GROUPS = (alone_setup, alone_second_window, alone_spaces, alone_keys, alon
                 alone_tab_names,
                 alone_selection,
                 alone_space_menu,
+                alone_look,
                 alone_stay_put,
                 alone_new_tab,
                 alone_folds_rest,

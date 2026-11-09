@@ -13,6 +13,7 @@ and writes PNGs at twice the size, as on a Retina screen:
     window-SPACE-SCHEME          the whole window around it, with userChrome.css
     hover-*, menu-*, state-*     one thing at a time, at 300 px, light and dark
     state-essentials-N-WIDTH     one, two and three essentials, at each width
+    bar-empty-SCHEME, bar-typed-SCHEME   the command bar's own window
     settings-SCHEME              the settings page
     settings-in-full-SCHEME      with everything it can show, made up; -narrow- as narrow as it can be
 
@@ -551,6 +552,139 @@ def notices(cam):
     in_sidebar(cam.m, """doc.getElementById("hiding").hidden = true; doc.getElementById("problem").hidden = true;""")
 
 
+def space_rename(cam):
+    """The line with the space's name as a box, as Rename in a space's menu makes it."""
+    select(cam.m, on_tab(PERSONAL), PERSONAL["ctx"])
+    in_sidebar(cam.m, """page.openSpaceBox(doc.documentElement.dataset.space);""")
+    cam.shoot("state-space-rename")
+    in_sidebar(cam.m, """doc.querySelector(".space-box")?.dispatchEvent(new page.KeyboardEvent("keydown", clone({key: "Escape", bubbles: true})));""")
+
+
+def quiet_lines(cam):
+    """The quiet line with Undo over the end of the list, and an agent's line under it. By
+    hand, with made-up words: the real ones take a close and an agent at work. Also narrow,
+    where the words fade out."""
+    select(cam.m, on_tab(PERSONAL), PERSONAL["ctx"])
+    for px, text, agent in ((WIDTH, "2 tabs closed", "Agent: read the page Weather for Oslo"),
+                            (220, "Studio: calendar.example.org always opens here", "Agent: left you a tab from calendar.example.org")):
+        in_sidebar(cam.m, """const [text, agent] = args;
+          doc.querySelector("#note .text").textContent = text; doc.querySelector("#note .act").hidden = false; doc.getElementById("note").classList.add("shown");
+          const line = doc.getElementById("agent-line"); line.hidden = false; line.querySelector(".agent-action").textContent = agent;""", text, agent)
+        cam.width(px)
+        cam.shoot("state-quiet-lines" + ("" if px == WIDTH else f"-{px}"))
+    cam.width(WIDTH)
+    in_sidebar(cam.m, """doc.getElementById("note").classList.remove("shown"); doc.getElementById("agent-line").hidden = true;""")
+
+
+def picked(cam):
+    """Three of today's tabs picked, and then carried over a folder: the drop's mark must not
+    read as one more picked row. By hand: a drag needs a drag session."""
+    select(cam.m, on_tab(PERSONAL), PERSONAL["ctx"])
+    pick = """for (const r of [...doc.querySelectorAll("#tabs > .row.tab")].slice(1, 4)) r.classList.toggle("picked", args[0]);"""
+    in_sidebar(cam.m, pick, True)
+    cam.shoot("state-picked")
+    in_sidebar(cam.m, """doc.body.classList.add("carrying"); doc.querySelector(args[0]).classList.add("drop-into");""", FOLDER_HEAD)
+    cam.shoot("state-picked-drop")
+    in_sidebar(cam.m, """doc.body.classList.remove("carrying"); doc.querySelector(args[0]).classList.remove("drop-into");""", FOLDER_HEAD)
+    in_sidebar(cam.m, pick, False)
+
+
+def bar_marks(cam):
+    """What a space's dot can say besides its colour: sound (Personal plays), and by hand news
+    (Work), an agent at work and a tab it left you (Studio). Also as it is while a tab is
+    dragged, with the place to drop it for a new space, under the pointer."""
+    select(cam.m, on_tab(PERSONAL), PERSONAL["ctx"])
+    marks = """const dot = ctx => doc.querySelector(`#spaces .space[data-space="firefox-container-${ctx}"]`), [on] = args;
+      dot(2).classList.toggle("news", on); dot(3).classList.toggle("agent-active", on); dot(3).classList.toggle("agent-left", on);
+      const drop = doc.querySelector(".new-space"); drop.hidden = !on; drop.classList.toggle("drop-into", on);"""
+    in_sidebar(cam.m, marks, True)
+    for px in (220, WIDTH):
+        cam.width(px)
+        cam.shoot(f"state-bar-marks-{px}")
+    in_sidebar(cam.m, marks, False)
+
+
+def little_window(cam):
+    """A small window's row above the bar, by hand (a real one takes a link from another app),
+    at rest and with the pointer on it, at the widths where Keep has least room."""
+    select(cam.m, on_tab(PERSONAL), PERSONAL["ctx"])
+    in_sidebar(cam.m, """doc.getElementById("little").append(page.littleRow(clone({id: -1, title: "Ferry timetable, summer 2027", space: "Personal", icon: args[0]})));""", ICONS["globe"])
+    cam.shoot("state-little-window")
+    for px in (220, WIDTH, 480):
+        cam.width(px)
+        if cam.point_at("#little .row"):
+            cam.shoot(f"hover-little-window-{px}")
+    cam.mouse_away()
+    cam.width(WIDTH)
+    in_sidebar(cam.m, """doc.getElementById("little").replaceChildren();""")
+
+
+def archived(cam):
+    """Tidier's own list of what was closed and archived, over the list. Two tabs are closed
+    for it, so this comes after the other pictures of Personal."""
+    m = cam.m
+    select(m, on_tab(PERSONAL), PERSONAL["ctx"])
+    gone = [m.pages + t["path"] for t in PERSONAL["tabs"] if t["title"] in ("Cinnamon buns: a recipe", "Accounts and savings")]
+    m.js(CHROME + """for (const url of args[0]) gB.removeTab(byUrl(url)); await wait(1500); return 1;""", gone)
+    in_sidebar(m, """page.openArchived(); await until(() => doc.querySelector("#archived.open .rows .row"), "archived rows");""")
+    cam.shoot("state-archived")
+    if cam.point_at("#archived .rows .row"):
+        cam.shoot("hover-archived-row")
+    cam.mouse_away()
+    in_sidebar(m, """page.closeArchived();""")
+
+
+# The command bar is a window of its own, and its page is drawn as the settings page is: by
+# WebDriver, in that page (drawing the whole window leaves out what a mask fades). Its window
+# is the most recent one while it is open, so nothing here goes through the sidebar then.
+BAR_WINDOW = CHROME + """
+  const bar = () => [...Services.wm.getEnumerator("navigator:browser")].find(x => !x.toolbar.visible && x.gBrowser?.tabs.some(t => t.linkedBrowser.currentURI.spec.includes("/commandbar/commandbar.html")));
+"""
+
+
+def command_bar(cam):
+    """The command bar, empty and with something typed, in both schemes."""
+    m = cam.m
+    if not cam.wanted("bar"):
+        return
+    select(m, on_tab(PERSONAL), PERSONAL["ctx"])
+    m.js(CHROME + """w.focus(); for (let i = 0; i < 100 && Services.focus.activeWindow !== w; i++) await wait(50); gB.selectedBrowser.focus(); await wait(200); return 1;""")
+    keys = lambda *k: (m.cmd("WebDriver:PerformActions", {"actions": [{"type": "key", "id": "kb", "actions": [{"type": "keyDown", "value": c} for c in k] + [{"type": "keyUp", "value": c} for c in reversed(k)]}]}),
+                       m.cmd("WebDriver:ReleaseActions"))
+    keys("\ue03d", "\ue008", "k")  # ⌘⇧K
+    handle = m.js(BAR_WINDOW + """const {NavigableManager} = ChromeUtils.importESModule("chrome://remote/content/shared/NavigableManager.sys.mjs");
+      for (let i = 0; i < 100 && !bar()?.gBrowser.selectedBrowser; i++) await wait(50);
+      const b = bar()?.gBrowser.tabs.find(t => t.linkedBrowser.currentURI.spec.includes("/commandbar/commandbar.html"))?.linkedBrowser;
+      if (!b) return null;
+      await wait(1200);
+      return NavigableManager.getIdForBrowser(b);""")
+    if not handle:
+        print("(the command bar did not open: no pictures of it)", flush=True)
+        return
+    try:
+        for typed in ("", "spa"):
+            if typed:
+                keys(*typed)
+                time.sleep(0.6)
+            for scheme in SCHEMES:
+                name = f"bar-{'typed' if typed else 'empty'}-{scheme}"
+                if not cam.wanted(name):
+                    continue
+                m.js(CHROME + """const [dark] = args;
+                  Services.prefs.setIntPref("ui.systemUsesDarkTheme", dark ? 1 : 0);
+                  Services.prefs.setIntPref("layout.css.prefers-color-scheme.content-override", dark ? 0 : 1);
+                  await wait(500); return 1;""", scheme == "dark")
+                m.cmd("Marionette:SetContext", {"value": "content"})
+                m.cmd("WebDriver:SwitchToWindow", {"handle": handle, "focus": False})
+                cam.write(name, m.cmd("WebDriver:TakeScreenshot", {"full": False}))
+                m.chrome()
+    finally:
+        m.chrome()
+        m.js(BAR_WINDOW + """bar()?.close(); for (let i = 0; i < 100 && bar(); i++) await wait(50);
+          const main = [...Services.wm.getEnumerator("navigator:browser")].find(x => x.toolbar.visible); main?.focus(); await wait(500); return 1;""")
+        cam.current = None  # set above without the sidebar: the next picture sets it again
+
+
 def scrolled(cam):
     select(cam.m, on_tab(WORK), WORK["ctx"])
     # With the scrollbar, as while you scroll: here it stays, unlike everywhere else (main).
@@ -669,7 +803,8 @@ def settings(cam):
     pictures("settings-narrow")
 
 
-STEPS = (space_by_space, hover, hover_more, menus, folders_closed, live_closed, folder_rename, marks, notices, scrolled, empty_spaces, few_essentials, icons_that_vanish, settings)
+STEPS = (space_by_space, hover, hover_more, menus, folders_closed, live_closed, folder_rename, marks, notices, space_rename, quiet_lines, picked, bar_marks,
+         little_window, command_bar, archived, scrolled, empty_spaces, few_essentials, icons_that_vanish, settings)
 
 
 def take_pictures(cam):
