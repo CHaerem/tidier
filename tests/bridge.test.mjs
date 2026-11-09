@@ -116,7 +116,9 @@ test("only web addresses, and page text cannot break out of its markers", async 
   const x = await start(ff);
   const web = url => { try { return x.js(`bridgeWebUrl(${JSON.stringify(url)})`); } catch (err) { return null; } };
   for (const bad of ["file:///etc/passwd", "FILE:///etc/passwd", " file:///x", "about:config", "about:addons", "moz-extension://tidier/settings/settings.html", "chrome://browser/content/browser.xhtml",
-    "resource://gre/", "javascript:alert(1)", "data:text/html,x", "view-source:https://a.example/", "blob:https://a.example/1", "jar:file:///a!/b", "ftp://a.example/", "https://me:pw@a.example/", "not an address", ""]) {
+    "resource://gre/", "javascript:alert(1)", "data:text/html,x", "view-source:https://a.example/", "blob:https://a.example/1", "jar:file:///a!/b", "ftp://a.example/", "https://me:pw@a.example/", "not an address", "",
+    // Firefox's parser makes a site of these; Python's, in the MCP server, sees none. One rule for both.
+    "http:///etc/passwd", "https:example.org", "http:\\\\example.org", "https:// a.example"]) {
     assert.equal(web(bad), null, bad);
   }
   assert.equal(web(null), null);
@@ -227,8 +229,8 @@ test("opening a space is your decision, read-only unless you say otherwise", asy
   assert.equal(state.spaces.find(s => s.id === WORK).mode, "read");
   assert.equal(state.spaces.find(s => s.id === HOME).mode, null, "another space stays closed");
   assert.ok((await host.call("read_page", { tab: work.id })).ok, "read");
-  assert.equal((await host.call("click", { tab: work.id, ref: 1 })).error, NO_TAB, "but not touch");
-  assert.equal((await host.call("close_tab", { tab: work.id })).error, NO_TAB);
+  assert.equal((await host.call("click", { tab: work.id, ref: 1 })).error, "This space is open to you for reading only.", "but not touch");
+  assert.equal((await host.call("close_tab", { tab: work.id })).error, "This space is open to you for reading only.");
   assert.equal((await host.call("open_tab", { url: "https://a.example/", space: WORK })).ok, false);
   await host.call("select_tab", { tab: work.id });
   assert.equal(JSON.parse((await host.call("list_spaces")).text).find(s => s.space === WORK).may, "read only");
@@ -410,7 +412,7 @@ test("what an agent does is kept short, in memory, and shows only a site's name"
   const log = x.js("agentLog");
   assert.equal(log.length, x.js("AGENT_LOG"));
   assert.ok(log.at(-1).refused, "a refusal is in it");
-  assert.equal(x.js("agentLine"), "refused: read_page", "it does not name your tab");
+  assert.equal(x.js("agentLine"), `could not read a page in ${WORK}`, "in plain words, with the space it tried, and not your tab's site");
   x.js("agentLog.length = 0");
   await host.call("open_tab", { url: "https://a.example/secret/path?token=abc" });
   assert.equal(x.js("agentLog")[0].text, "opened a.example", "not the whole address");
@@ -632,6 +634,104 @@ test("a space you close counts at once, also for a call under way", async () => 
   const read = await answerTo(host, "read");
   assert.equal(read.error, NO_TAB);
   assert.ok(!JSON.stringify(read).includes("SECRET"));
+  x.kill();
+});
+
+test("a refused call is in the log once, as refused, with the space it tried, in plain words", async () => {
+  const ff = new FakeFirefox();
+  alone(ff);
+  ff.identities = { [WORK]: { name: "Work" } };
+  const x = await start(ff);
+  await x.settings("on", { on: true });
+  const host = x.hosts[0];
+  const { tab } = JSON.parse((await host.call("open_tab", { url: "https://a.example/" })).text);
+  x.js("agentLog.length = 0");
+  const tried = async (tool, args) => { x.js("agentLog.length = 0"); await host.call(tool, args); return x.js("agentLog").map(e => [e.text, e.refused]); };
+  const same = async (got, want, why) => assert.equal(JSON.stringify(await got), JSON.stringify(want), why);
+  await same(tried("open_tab", { url: "https://b.example/", space: WORK }), [["could not open b.example in Work", true]], "never first as done");
+  await same(tried("read_page", { tab: tabIn(ff, WORK).id }), [["could not read a page in Work", true]]);
+  await same(tried("navigate", { tab, url: "file:///Users/me/.ssh/id_rsa" }), [["could not go to a file: address", true]], "no path, but what kind of address");
+  await same(tried("open_tab", { url: "about:config" }), [["could not open an about: address", true]]);
+  await same(tried("read_page", { tab }), [["read a.example", false]], "and what worked, once it did");
+  assert.equal(x.js("agentLine"), "read a.example");
+  x.kill();
+});
+
+test("an address the MCP server refused reaches the log, and nothing is carried out", async () => {
+  const ff = new FakeFirefox();
+  alone(ff);
+  const x = await start(ff);
+  await x.settings("on", { on: true });
+  const host = x.hosts[0];
+  const before = ff.tabs.size;
+  host.fromHost({ type: "call", id: "r1", tool: "open_tab", args: { url: "file:///etc/passwd" }, refused: true });
+  host.fromHost({ type: "call", id: "r2", tool: "open_tab", args: { url: "https://looks-fine.example/" }, refused: true });
+  assert.match((await answerTo(host, "r1")).error, /^Refused/);
+  assert.match((await answerTo(host, "r2")).error, /^Refused/, "marked refused, it is refused whatever the address");
+  assert.equal(ff.tabs.size, before, "nothing opened");
+  assert.equal(JSON.stringify(x.js("agentLog").map(e => e.text)), JSON.stringify(["could not open a file: address", "could not open looks-fine.example"]));
+  x.kill();
+});
+
+test("a space opened for reading says so to an agent that tries to act there; a bad id is no tab", async () => {
+  const ff = new FakeFirefox();
+  alone(ff);
+  const x = await start(ff);
+  await x.settings("on", { on: true });
+  await x.settings("allow", { space: WORK, mode: "read" });
+  const host = x.hosts[0], work = tabIn(ff, WORK);
+  assert.ok((await host.call("read_page", { tab: work.id })).ok);
+  assert.equal((await host.call("click", { tab: work.id, ref: 1 })).error, "This space is open to you for reading only.");
+  assert.equal((await host.call("click", { tab: tabIn(ff, HOME).id, ref: 1 })).error, NO_TAB, "a closed space is still no tab at all");
+  for (const id of [-1, 1.5, 2 ** 60, "7"]) assert.equal((await host.call("read_page", { tab: id })).error, NO_TAB, String(id));
+  x.kill();
+});
+
+test("closing a space ends a wait there at once, as Stop does", async () => {
+  const ff = new FakeFirefox();
+  alone(ff);
+  const x = await start(ff);
+  await x.settings("on", { on: true });
+  await x.settings("allow", { space: WORK, mode: "write" });
+  const host = x.hosts[0], work = tabIn(ff, WORK);
+  x.b.tabs.executeScript = async (id, { code }) => (code ? [await new Promise(() => {})] : []); // a page that waits for ever
+  host.fromHost({ type: "call", id: "wait", tool: "wait_for", args: { tab: work.id, selector: "#never", timeout_s: 20 } });
+  await realSleep(20);
+  const t0 = Date.now();
+  await x.settings("allow", { space: WORK, mode: null });
+  const answer = await answerTo(host, "wait");
+  assert.equal(answer.error, NO_TAB);
+  assert.ok(Date.now() - t0 < 1000, `${Date.now() - t0} ms`);
+  assert.equal(x.js("bridgeCalls.size"), 0);
+  x.kill();
+});
+
+test("with agents off, the Agent space stays on the bar while it has tabs, and rests once empty", async () => {
+  const ff = new FakeFirefox();
+  const w = alone(ff);
+  const x = await start(ff);
+  await x.settings("on", { on: true });
+  const host = x.hosts[0];
+  const { tab } = JSON.parse((await host.call("open_tab", { url: "https://a.example/" })).text);
+  await wait(2000);
+  assert.ok((await host.call("leave_for_you", { tab, note: "Look" })).ok);
+  await settle();
+  await x.settings("on", { on: false });
+  const view = () => x.js(`viewFor(${w.id})`);
+  assert.ok((await view()).spaces.some(s => s.id === AGENT), "what an agent left you can be seen with agents off");
+  // Going to its tab yourself (the command bar, ⌃Tab): the sidebar shows its space.
+  await x.b.tabs.update(tab, { active: true });
+  await settle();
+  assert.equal((await view()).space, AGENT);
+  await x.b.tabs.update(tabIn(ff, WORK).id, { active: true });
+  await settle();
+  // (A saved tab closed while loaded is unloaded, in its place; closed again, it goes.)
+  for (let i = 0; i < 3; i++) {
+    for (const t of [...ff.tabs.values()].filter(t => t.cookieStoreId === AGENT)) await x.b.tabs.remove(t.id);
+    await settle();
+  }
+  assert.equal([...ff.tabs.values()].filter(t => t.cookieStoreId === AGENT).length, 0);
+  assert.ok(!(await view()).spaces.some(s => s.id === AGENT), "empty, it rests");
   x.kill();
 });
 
@@ -957,7 +1057,7 @@ test("answers do not pile up in memory while the bridge stays on", async () => {
 
 test("the background scripts: what others call into is there before they can call", () => {
   // A sidebar can say hello while the scripts are still loading (Firefox starts it by itself
-  // at a start), and a view then calls here (bridgeRests, forYouNotes). With this at the end
+  // at a start), and a view then calls here (bridgeRestingSpace, forYouNotes). With this at the end
   // of the list that was an error and a blank sidebar, on every machine, also with it off.
   const { scripts } = JSON.parse(readFileSync(new URL("../manifest.json", import.meta.url), "utf8")).background;
   for (const user of ["tabsync.js", "spaces.js", "sidebar-view.js"]) assert.ok(scripts.indexOf("bridge.js") < scripts.indexOf(user), user);

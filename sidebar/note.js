@@ -48,7 +48,7 @@
 
   // The text stays while the line fades out; only its being shown changes. It is set once
   // per note: a screen reader says it again whenever it is set, and every view brings it.
-  let shown = null;
+  let shown = null, undoNext = false;
   const drawNote = note => {
     const same = note?.id === shown?.id;
     if (shown && !note) {
@@ -71,6 +71,9 @@
     text.textContent = note.text;
     text.title = note.text;
     act.hidden = !note.undo;
+    // Cleared from the keys: the keyboard goes to Undo, right there, not nowhere.
+    if (undoNext && note.undo) act.focus();
+    undoNext = false;
   };
 
   // While the pointer or the keyboard is on the line, its time stands still (holdNote,
@@ -90,12 +93,14 @@
 
   // The line goes at once: the tabs take a moment to come back. Its room stays as always,
   // and a double click's second click lands on nothing (secondclick.js).
-  const undo = () => {
+  const undo = e => {
     const note = shown ?? going;
     if (!note?.undo) return false;
     send({ type: "undo", note: note.id });
     drawNote(null);
     going = null;
+    // From the keys, the keyboard stays in the sidebar, on the tab you are on (keys.js).
+    if (e && !e.detail) moveCursor(startOfKeys());
     return true;
   };
   act.onclick = secondClick.acts(undo);
@@ -103,10 +108,13 @@
   // ⌘Z (Ctrl+Z elsewhere) while the line offers Undo, with the keyboard in the sidebar.
   addEventListener("keydown", e => {
     if (e.key.toLowerCase() !== "z" || !(e.metaKey || e.ctrlKey) || e.shiftKey || e.altKey || e.target.closest?.("input")) return;
-    if (undo()) e.preventDefault();
+    if (undo(e)) e.preventDefault();
   });
 
-  const clear = () => send({ type: "clearSpace", space: view.space });
+  const clear = e => {
+    undoNext = !e?.detail; // Clear goes once it has nothing more to clear, and with it the keyboard
+    send({ type: "clearSpace", space: view.space });
+  };
 
   // Clear shows only with the pointer near the line between folders and today's tabs.
   // The area it listens on lies over that gap, so nothing is taller for it.

@@ -428,7 +428,9 @@ async function barSnapshot(bar) {
     barTabItems(ctx), barArchivedItems(ctx), barUses.get(), browser.storage.local.get(BAR_ASKED),
     browser.commands.getAll(), browser.runtime.getPlatformInfo(),
   ]);
-  const shortcuts = new Map(commands.map(c => [c.name, c.shortcut]));
+  // Only keys that work: one Firefox still has for itself (⌘D until about:keyboard clears it)
+  // would be a promise the key does not keep (keys-commands.js).
+  const shortcuts = await workingShortcuts(commands, os);
   if (barKeysScript) startPeek(); // the bar's keys may have changed since barkeys.js was given them
   const space = ctx.spaces.find(s => s.id === ctx.space);
   barAccents.clear();

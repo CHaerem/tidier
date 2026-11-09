@@ -13,8 +13,12 @@
 .space { position: relative; }
 .space.agent-active .dot { outline: 1.5px solid var(--color); outline-offset: 3px; }
 
-/* The note on a tab it left you: quieter than the title, and fading out as the title does. */
+/* The note on a tab it left you, on a line of its own under the title, as far in as the
+ * title: it is what the agent wants you to read, and shared with the title it was cut to a
+ * few words at every width. Two lines at most; the tooltip has all of it. */
+.row.noted { flex-wrap: wrap; height: auto; min-height: var(--row); padding-top: 6px; padding-bottom: 6px; row-gap: 1px; }
 .row .agent-note {
-  flex: 1 1 0; min-width: 0; color: var(--muted); font-size: var(--size-small);
-  white-space: nowrap; overflow: hidden; mask-image: linear-gradient(to right, #000 calc(100% - 20px), transparent);
+  flex: 0 0 100%; box-sizing: border-box; padding-left: calc(var(--icon) + var(--icon-gap)); padding-right: 4px;
+  color: var(--muted); font-size: var(--size-small); line-height: 16px; white-space: normal; overflow-wrap: anywhere;
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden;
 }

@@ -15,6 +15,13 @@ const allowReading = bridgeEl("button", { id: "bridge-allow-reading", textConten
 const bridgeDetails = bridgeEl("div", { id: "bridge-details" });
 const bridgeStatus = bridgeEl("p", { id: "bridge-status" });
 const bridgeHowTo = bridgeEl("pre", { id: "bridge-how" });
+// The command to paste into a terminal, copied in one click: on a narrow page it wraps
+// where it has to, and selecting it by hand is fiddly.
+const bridgeCopyHow = bridgeEl("button", { id: "bridge-copy-how", className: "quiet", textContent: "Copy" });
+bridgeCopyHow.onclick = () => navigator.clipboard.writeText(bridgeHowTo.textContent).then(() => {
+  bridgeCopyHow.textContent = "Copied";
+  setTimeout(() => { bridgeCopyHow.textContent = "Copy"; }, 2000);
+}, err => console.warn("Tidier: copying the command", err));
 const bridgeSpacesBox = bridgeEl("div", { id: "bridge-spaces" });
 const bridgeLogBox = bridgeEl("ol", { id: "bridge-log" });
 
@@ -26,7 +33,7 @@ bridgeBox.append(
   bridgeEl("p", { className: "hint", textContent: "Agents such as Claude Code get a space of their own, Agent, with its own logins, and see and touch only that. What they do shows in the sidebar, with a Stop. Nothing runs while this is off." }),
   readingLine, allowReading, bridgeDetails,
 );
-bridgeDetails.append(bridgeStatus, bridgeHowTo,
+bridgeDetails.append(bridgeStatus, bridgeHowTo, bridgeCopyHow,
   bridgeEl("h3", { textContent: "Other spaces" }),
   bridgeEl("p", { className: "hint", textContent: "Closed unless you open one here. A space you open is open to any agent you run, with the logins in it." }),
   bridgeSpacesBox,
@@ -46,7 +53,7 @@ function bridgeDrawState(state) {
       .map(([value, textContent]) => bridgeEl("option", { value, textContent, selected: (s.mode ?? "") === value })));
     choose.dataset.space = s.id;
     choose.onchange = () => { bridgeAsk("allow", { space: s.id, mode: choose.value || null }); }; // not drawn again: the keyboard stays on this list
-    return bridgeEl("div", { className: "line" }, bridgeEl("span", { textContent: "●", style: `color:${s.color}` }), bridgeEl("span", { className: "bridge-space-name", textContent: s.name }), choose);
+    return bridgeEl("div", { className: "line" }, bridgeEl("span", { textContent: "●", ariaHidden: "true", style: `color:${s.color}` }), bridgeEl("span", { className: "bridge-space-name", textContent: s.name }), choose);
   }));
 }
 
@@ -56,7 +63,7 @@ function bridgeDrawLive(live) {
   bridgeSwitch.checked = live.wanted;
   bridgeDetails.hidden = !live.wanted;
   bridgeStatus.textContent = live.ready ? "Ready for an agent." : live.problem ? `Agents cannot connect: ${live.problem}` : "Starting…";
-  bridgeHowTo.hidden = !live.ready || !live.how;
+  bridgeHowTo.hidden = bridgeCopyHow.hidden = !live.ready || !live.how;
   bridgeHowTo.textContent = live.how ?? "";
   const format = new Intl.DateTimeFormat(undefined, { timeStyle: "medium" });
   bridgeLogBox.replaceChildren(...[...(live.log ?? [])].reverse().map(entry => bridgeEl("li", { className: entry.refused ? "refused" : "", textContent: `${format.format(entry.when)}  ${entry.text}` })));
@@ -64,7 +71,7 @@ function bridgeDrawLive(live) {
 
 copySwitch.onchange = () => {
   if (copySwitch.checked) askToRead();
-  bridgeAsk("copy", { on: copySwitch.checked }).then(bridgeDrawState);
+  bridgeAsk("copy", { on: copySwitch.checked }).then(state => { bridgeDrawState(state); drawKeys(); }); // its keys are listed only while it is on (settings/keys.js)
 };
 bridgeSwitch.onchange = () => {
   if (bridgeSwitch.checked) askToRead();

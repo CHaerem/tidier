@@ -13,6 +13,8 @@ and writes PNGs at twice the size, as on a Retina screen:
     window-SPACE-SCHEME          the whole window around it, with userChrome.css
     hover-*, menu-*, state-*     one thing at a time, at 300 px, light and dark (state-closed-row-room and
                                  state-saved-tab-unloaded with the mouse where it clicked)
+    hover-*, menu-*, state-*     one thing at a time, at 300 px, light and dark
+    keys-*                       with the keyboard in the sidebar, for real: the cursor, a menu by key
     state-essentials-N-WIDTH     one, two and three essentials, at each width
     bar-empty-SCHEME, bar-typed-SCHEME   the command bar's own window
     window-no-container-, window-sidebar-closed-, window-bar-SCHEME   where the window meets other things
@@ -577,6 +579,52 @@ def marks(cam):
           if (plus) { plus.hidden = true; plus.classList.remove("drop-into"); }""")
 
 
+def keys(m, *keys_down):
+    """Real key presses, to wherever the keyboard is: with keyboard_in_sidebar, the sidebar."""
+    acts = [{"type": "keyDown", "value": k} for k in keys_down] + [{"type": "keyUp", "value": k} for k in reversed(keys_down)]
+    m.cmd("WebDriver:PerformActions", {"actions": [{"type": "key", "id": "kb", "actions": acts}]})
+    m.cmd("WebDriver:ReleaseActions")
+
+
+def keyboard_in_sidebar(m):
+    m.js(CHROME + """w.focus(); const outer = w.SidebarController.browser; outer.focus(); await wait(100);
+      outer.contentDocument.getElementById("webext-panels-browser").focus(); await wait(300); return 1;""")
+
+
+def keyboard(cam):
+    """For real, with the keyboard in the sidebar: the cursor on a row (its one ring), on a
+    tile, and a menu opened from the keys (⇧F10), its first item with the keyboard."""
+    m = cam.m
+    if not cam.wanted("keys-"):
+        return
+    select(m, on_tab(PERSONAL), PERSONAL["ctx"])
+    cam.mouse_away()
+    keyboard_in_sidebar(m)
+    DOWN, HOME, F10, SHIFT, ESC = "\ue015", "\ue011", "\ue03a", "\ue008", "\ue00c"
+    keys(m, DOWN)
+    keys(m, DOWN)
+    cam.shoot("keys-cursor-row")
+    keys(m, SHIFT, F10)
+    in_sidebar(m, """await until(() => !doc.getElementById("menu").hidden, "the menu");""")
+    cam.shoot("keys-menu")
+    keys(m, ESC)
+    keys(m, HOME)
+    cam.shoot("keys-cursor-tile")
+    in_sidebar(m, """doc.activeElement?.blur();""")
+
+
+def agent_note(cam):
+    """By hand: the note an agent left on a tab in For you, on its own line under the title
+    (sidebar/agent.js draws it from the view; an agent is not run here)."""
+    select(cam.m, on_tab(PERSONAL), PERSONAL["ctx"])
+    in_sidebar(cam.m, """const row = doc.querySelector("#tabs .folder .tab"); if (!row) return;
+      const note = doc.createElement("span"); note.className = "agent-note";
+      note.textContent = "I compared the three offers; this one has the shortest notice period and no fee.";
+      row.querySelector(".title").after(note); row.classList.add("noted");""")
+    cam.shoot("state-agent-note")
+    in_sidebar(cam.m, """const row = doc.querySelector("#tabs .tab.noted"); row?.querySelector(".agent-note")?.remove(); row?.classList.remove("noted");""")
+
+
 def notices(cam):
     """By hand, with made-up words: the real ones take a fault."""
     select(cam.m, on_tab(PERSONAL), PERSONAL["ctx"])
@@ -1037,7 +1085,7 @@ def placeholder_on_show(cam):
         cam.write(f"window-placeholder-{scheme}", png)
 
 
-STEPS = (space_by_space, hover, hover_more, menus, folders_closed, live_closed, folder_rename, marks, notices, space_rename, quiet_lines, picked, bar_marks,
+STEPS = (space_by_space, hover, hover_more, menus, folders_closed, live_closed, folder_rename, marks, keyboard, agent_note, notices, space_rename, quiet_lines, picked, bar_marks,
          little_window, little_window_real, command_bar, window_edges, archived, scrolled, under_the_hand, empty_spaces, few_essentials, icons_that_vanish, settings,
          moved, no_space, placeholder_on_show)
 

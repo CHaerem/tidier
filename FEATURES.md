@@ -26,8 +26,9 @@ on the second Mac (PLAN.md, part C).
 | Drag tabs to reorder, into and out of folders | Z A S | Done | Tidier alone, checked, every window follows; also to a place among the essentials and to a space; an essential dragged out lands where it is dropped, in a folder too; marks only where a drop does something; a drop shows in its new place at once; the list scrolls at its edges |
 | Select several tabs (⇧/⌘ click) and act on them | Z A S | Done | Tidier alone, checked: move, close, drag and the menu; the selection lives in the sidebar only; ⌘-click takes the selected tab along only from the same folder, or from today's tabs |
 | Context menu on tabs, folders and spaces | Z A S | Done | Tidier alone, checked: Tidier's own short menu on tabs, tiles, folders, spaces and the list, just below what it is about (which is marked) and never over it; a list opens in its place; a space's menu starts with its name |
-| Keyboard navigation in the sidebar | S | Done | Tidier alone: ↑↓, Enter, ⌫, ←→ |
-| Search/filter the tabs | S A | Done | Tidier alone, checked, in the command bar (⌘⇧K) |
+| Keyboard navigation in the sidebar | S | Done | Tidier alone, checked: ↑↓, the essentials' grid, Home and End, Enter or Space, ⌫, ←→ to fold, F2 to rename, ⇧F10 or ⌃↵ for the menu; one place and one ring for the keyboard. Firefox gives no key to put the keyboard there, and gives it to the page whenever the selected tab changes |
+| Rows, folders, essentials and spaces for a screen reader | | Done | Tidier alone, checked: a tree of tabs and folders with what is selected and open, the essentials a list to choose from, each space's dot named by its space and the one you are in marked; not yet heard with VoiceOver |
+| Search/filter the tabs | S A | Done | Tidier alone, checked, in the command bar (⇧⌘K) |
 | Sound indicator and mute on a tab | Z A S | Done | Tidier alone, checked: a mark and mute on a row, a tile and a closed folder, and on a space's dot, whose mark goes to the tab that plays |
 | Tab preview on hover | S | No | a picture needs access to all websites; the tooltip shows title and address |
 | The list shows the selected tab, each space keeps its scroll | S | Done | Tidier alone, checked; also a selected tab in a closed folder; closing passes over closed folders and unloaded tabs |
@@ -119,10 +120,10 @@ on the second Mac (PLAN.md, part C).
 
 | Feature | From | Status | Notes |
 |---|---|---|---|
-| ⌘⇧C copies the address | Z A | Done | |
-| A command bar: search tabs, essentials, history and commands | A Z | Done | Tidier alone, checked: ⌘⇧K (⌘T once cleared in about:keyboard), a small window; every space's tabs, essentials, folders, closed and archived tabs, and commands; history and bookmarks once allowed |
-| Next and previous tab as shown, the n-th tab of this space, next and previous space | A | Done | Tidier alone, checked: ⌃⌘ and an arrow; ⌘1 to ⌘9 once Firefox's own are cleared |
-| All shortcuts set in one place, in Tidier | | Done | Tidier alone, checked: the settings page's Keys section; Firefox's own keys in about:keyboard |
+| ⇧⌘C copies the address | Z A | Done | |
+| A command bar: search tabs, essentials, history and commands | A Z | Done | Tidier alone, checked: ⇧⌘K (⌘T once cleared in about:keyboard), a small window; every space's tabs, essentials, folders, closed and archived tabs, and commands; history and bookmarks once allowed |
+| Next and previous tab as shown, the n-th tab of this space, next and previous space | A | Partly | Tidier alone, checked: ⌃⌘ and an arrow. ⌘1 to ⌘9, ⌘D and ⌘T only once Firefox's own are cleared in about:keyboard, which the dotfiles do not do yet (README, Keys); until then the settings page marks them as Firefox's and the command bar leaves them out |
+| All shortcuts set in one place, in Tidier | | Done | Tidier alone, checked: the settings page's Keys section, Copy for Claude's too; Firefox's own keys in about:keyboard |
 
 ## Look
 
@@ -153,6 +154,6 @@ agents' space goes into sync or copies.
 | Feature | From | Status | Notes |
 |---|---|---|---|
 | Copy a page or a list of tabs as clean text for Claude; ask Claude about a page | | Done | Tidier alone, checked; from the tab menu, the space's menu and the command bar |
-| An MCP server, so Claude Code can work in the browser | | Done | Tidier alone, checked: local only, a socket only you can reach, and nothing runs while it is off; not yet tried with Claude Code itself |
+| An MCP server, so Claude Code can work in the browser | | Done | Tidier alone, checked: local only, a socket only you can reach, and nothing runs while it is off; each agent's last tab is its own; not yet tried with Claude Code itself |
 | Agents have a space of their own, with its own logins | | Done | Tidier alone, checked: they see and touch only that space, unless you allow another |
-| What an agent does is visible, and one click stops it | | Done | Tidier alone, checked |
+| What an agent does is visible, and one click stops it | | Done | Tidier alone, checked: a line and a ring while it works; a log with each call once, how it went, and what was refused, file: addresses included; with agents off, what it left you stays on the bar |

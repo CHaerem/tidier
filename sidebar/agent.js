@@ -52,10 +52,15 @@ function drawAgentNotes(next) {
       note.className = "agent-note";
       note.textContent = t.note;
       row.querySelector(".title")?.after(note);
+      row.classList.add("noted");
       row.title = `${t.note}\n${t.title}`;
     }
   }
-  for (const id of agentNoted) if (!noted.has(id)) document.querySelector(`#tabs [data-tab="${id}"] .agent-note`)?.remove();
+  for (const id of agentNoted) if (!noted.has(id)) {
+    const row = document.querySelector(`#tabs [data-tab="${id}"]`);
+    row?.querySelector(".agent-note")?.remove();
+    row?.classList.remove("noted");
+  }
   agentNoted = noted;
 }
 
@@ -64,7 +69,9 @@ port.onMessage.addListener(next => { drawAgent(); drawAgentNotes(next); });
 
 // In the tab menu and on a space's menu, where those are here. On DOMContentLoaded, so
 // the order of the scripts in sidebar.html does not matter. Only once you have turned it on.
-document.addEventListener("DOMContentLoaded", () => {
+// On the window, after sidebar/isolation.js's listener there (it loads before this): it puts
+// its cookies item after Copy address too, and the two Copy items belong together.
+addEventListener("DOMContentLoaded", () => {
   const after = TAB_MENU.findIndex(item => item.id === "copy") + 1;
   TAB_MENU.splice(after || TAB_MENU.length, 0,
     { id: "claude-copy", group: 2, many: true, label: n => (n > 1 ? `Copy ${n} tabs for Claude` : "Copy page for Claude"),

@@ -91,7 +91,12 @@ function pageMarkdown(root) {
       case "STRONG": case "B": return wrap("**", kids(node));
       case "EM": case "I": return wrap("*", kids(node));
       case "CODE": case "KBD": case "SAMP": return wrap("`", shown(node).replace(/\s+/g, " "));
-      case "PRE": { const code = shown(node); left -= code.length; return `\n\n\`\`\`\n${code.replace(/\n$/, "")}\n\`\`\`\n\n`; }
+      case "PRE": { // (one holding only what is left out, a field say, is no block at all)
+        const code = shown(node);
+        if (!code.trim()) return "";
+        left -= code.length;
+        return `\n\n\`\`\`\n${code.replace(/\n$/, "")}\n\`\`\`\n\n`;
+      }
       case "IMG": { const alt = (node.alt ?? "").replace(/\s+/g, " ").trim(); return alt ? `![${alt}]` : ""; } // what it shows, not where it is
       case "UL": case "OL": {
         let n = Number(node.getAttribute("start")) || 1;
@@ -274,16 +279,22 @@ function pageType(call) {
 }
 
 // Until it shows or the time is up. By the page's own changes, not by looking again and again.
+var PAGE_WAIT_LOOK_MS = 150; // (var: this script is brought in again before each call)
 function pageWait({ selector, text, ms }) {
   const needle = text?.toLowerCase();
   const there = () => (selector ? [...pageSelect(selector)].some(pageVisible) : (document.body?.innerText ?? "").toLowerCase().includes(needle));
   if (there()) return { found: true };
+  // Looked at in the observer itself: agents work in tabs in the background, where Firefox
+  // stretches a timer to a second or more, so a timer alone made each wait about 2 s. A busy
+  // page is still looked at a few times a second, no more. And once more a moment after a
+  // change, by a timer: what was just added may count as shown only once it is laid out.
   return new Promise(resolve => {
-    let soon = null;
-    const finish = found => { clearTimeout(soon); clearTimeout(limit); watcher.disconnect(); resolve({ found }); };
+    let soon = null, lookedAt = 0, done = false;
+    const look = () => { soon = null; lookedAt = performance.now(); if (!done && there()) finish(true); };
+    const finish = found => { done = true; clearTimeout(soon); clearTimeout(limit); watcher.disconnect(); resolve({ found }); };
     const watcher = new MutationObserver(() => {
-      if (soon) return;
-      soon = setTimeout(() => { soon = null; if (there()) finish(true); }, 150); // a busy page is looked at a few times a second, no more
+      if (performance.now() - lookedAt >= PAGE_WAIT_LOOK_MS) look();
+      if (!done && !soon) soon = setTimeout(look, PAGE_WAIT_LOOK_MS);
     });
     const limit = setTimeout(() => finish(false), Math.max(0, ms));
     watcher.observe(document.documentElement, { subtree: true, childList: true, characterData: true, attributes: true });

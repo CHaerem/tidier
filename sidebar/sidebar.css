@@ -346,6 +346,9 @@ html.space-arriving .folder > .children { transition: none; } /* a whole space c
 /* A dot is too small to show a fill, so it gets a ring, in the colour of the space it is. */
 .space.drop-into { background: none; box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--color) 62%, transparent); }
 .cursor { outline: 1.5px solid var(--accent-line); outline-offset: -1.5px; }
+/* The cursor's row has the focus itself (keys.js): one ring, the cursor's, not a second one. */
+.row:focus, .tile:focus { outline: none; }
+.row.cursor, .tile.cursor { outline: 1.5px solid var(--accent-line); outline-offset: -1.5px; }
 
 /* The motion itself is off in tokens.css; these would still jump. */
 @media (prefers-reduced-motion: reduce) {

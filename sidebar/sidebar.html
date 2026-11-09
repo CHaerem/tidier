@@ -16,13 +16,13 @@
   <div id="hiding" class="notice" hidden>
     <button id="allow-hiding">Let Tidier hide the other spaces' tabs</button>
   </div>
-  <section id="essentials" aria-label="Essentials"></section>
+  <section id="essentials" role="listbox" aria-label="Essentials"></section>
   <div id="space-name"></div>
   <div id="actions">
     <button id="new-tab" title="New tab">New tab</button>
     <button id="new-folder" title="New folder" aria-label="New folder"></button>
   </div>
-  <main id="tabs" aria-label="Tabs"></main>
+  <main id="tabs" role="tree" aria-label="Tabs" tabindex="-1"></main>
   <div id="problem" class="notice" hidden></div>
   <div id="note" role="status"></div>
   <nav id="spaces" aria-label="Spaces"></nav>

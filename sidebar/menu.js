@@ -33,12 +33,14 @@ function holdMenu(e) {
   browser.menus.overrideContext({ showDefaults: false });
 }
 
+// `about`: what it is about (a row, a tile, a folder's head), which it opens clear of.
+// `byKey`: opened from the keys (keys.js), so its first item has the keyboard at once.
 let menuAt = { x: 0, y: 0, about: null };
-function showMenu(items, x, y, about = null) {
+function showMenu(items, x, y, about = null, byKey = false) {
   closeMenu();
   // Measured now: by the time a tab's menu comes from the background, the list can have moved.
   menuAt = { x, y, about: about?.getBoundingClientRect?.() ?? null };
-  drawMenu(items);
+  drawMenu(items, null, byKey);
 }
 
 const MENU_GAP = 4, MENU_EDGE = 4;
@@ -132,10 +134,20 @@ function placeMenu(menu) {
   } else menu.style.top = MENU_EDGE + "px"; // a window too short for that: the whole height, scrolling
 }
 
+// What had the keyboard when a menu was opened from the keys (keys.js): it gets it back when
+// the menu closes, as with Firefox's own menus, rather than leaving it nowhere.
+let menuReturn = null;
 const closeMenu = () => {
-  document.getElementById("menu").hidden = true;
+  const menu = document.getElementById("menu"), hadKeys = !!menu.contains?.(document.activeElement);
+  menu.hidden = true;
   menuFor = [];
   for (const e of document.querySelectorAll(".menu-for")) e.classList.remove("menu-for");
+  const back = menuReturn;
+  menuReturn = null;
+  if (hadKeys && back?.isConnected) {
+    back.focus({ preventScroll: true });
+    if (back.matches(".tile, .row")) moveCursor(back); // keys.js
+  }
 };
 addEventListener("blur", closeMenu);
 addEventListener("keydown", e => { if (e.key === "Escape") closeMenu(); });

@@ -50,8 +50,16 @@ async function chooseKey(name, shortcut) {
   await drawKeys(name);
 }
 
+// A key Firefox still has for itself is not shown as Tidier's (keys-commands.js): it is
+// marked, and a line says so until about:keyboard has cleared it. Numbered keys share one.
+function firefoxNote(commands) {
+  const held = commands.filter(c => c.firefox);
+  if (held.length < 2) return held[0]?.firefox ?? "";
+  return `Firefox's own ${held[0].pretty} to ${held.at(-1).pretty} act too until they are cleared in about:keyboard.`;
+}
+
 function keyLine({ label, commands }) {
-  const said = commands.map(c => keyNotes.get(c.name)).find(Boolean);
+  const said = commands.map(c => keyNotes.get(c.name)).find(Boolean) ?? firefoxNote(commands);
   const note = el("p", { className: "key-note", textContent: said ?? "", hidden: !said });
   const line = el("div", { className: "key-line" }, el("span", { className: "key-label", textContent: label }), el("span", { className: "key-group" }, ...commands.map(c => keyButton(c, note))));
   return el("div", {}, line, note);
@@ -59,7 +67,9 @@ function keyLine({ label, commands }) {
 
 function keyButton(c, note) {
   const shown = c.pretty || "none";
-  const key = el("button", { className: c.pretty ? "key" : "key none", textContent: shown, title: c.label });
+  const key = el("button", { className: (c.pretty ? "key" : "key none") + (c.firefox ? " firefox" : ""), textContent: shown, title: c.firefox ? `${c.label}. ${c.firefox}` : c.label });
+  // Named by what it does, with the key after: a screen reader would read only "⌃⌘↓".
+  key.setAttribute("aria-label", `${c.label}: ${c.pretty || "no key"}`);
   key.dataset.command = c.name;
   const stop = () => { key.classList.remove("recording"); key.textContent = shown; };
   key.onclick = () => {
@@ -86,7 +96,8 @@ function keyButton(c, note) {
 let keysMac = false;
 async function startKeys() {
   keysMac = (await browser.runtime.getPlatformInfo()).os === "mac";
-  $("keys-back").onclick = async () => { keyNotes.clear(); await ask("keysBack"); await drawKeys(); };
+  // The button goes once nothing is changed, and the keyboard goes to the first key, not nowhere.
+  $("keys-back").onclick = async () => { keyNotes.clear(); await ask("keysBack"); await drawKeys($("keys").querySelector("[data-command]")?.dataset.command); };
   await drawKeys();
   // Changed on Firefox's own page meanwhile, and by what is above.
   browser.commands.onChanged?.addListener(() => { if (!document.querySelector(".key.recording")) drawKeys(); });

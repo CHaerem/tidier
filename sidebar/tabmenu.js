@@ -84,11 +84,18 @@ function tabMenuItems(tabs) {
 let tabMenuAsked = 0;
 function openTabMenu(e, id) {
   holdMenu(e);
+  openTabMenuAt(id, e.clientX, e.clientY, false, e.target?.closest?.("[data-tab]"));
+}
+// Also from the keys (keys.js), where there is no click to hold Firefox's own menu back in.
+// `about`: the row or tile it is about; from the keys, the tab's own.
+function openTabMenuAt(id, x, y, byKey = false, about = null) {
   const ids = selectedTabs(id); // selection.js
-  const asked = ++tabMenuAsked, { clientX: x, clientY: y } = e, about = e.target?.closest?.("[data-tab]");
+  const asked = ++tabMenuAsked;
   browser.runtime.sendMessage({ type: "tabMenu", tabIds: ids }).then(tabs => {
     if (asked !== tabMenuAsked || !tabs?.length) return; // a newer click, or the tab is gone
-    showMenu(tabMenuItems(tabs), x, y, about);
+    const back = menuReturn; // showMenu closes what was open, and with it what it would give back
+    showMenu(tabMenuItems(tabs), x, y, about ?? document.querySelector(`[data-tab="${id}"]`), byKey);
+    menuReturn = back;
     // Which tabs it is about, while the pointer is away from them: a tile has no text.
     markMenuAbout(tabs.map(t => `[data-tab="${t.id}"]`));
   }, err => console.error("Tidier: tab menu", err));

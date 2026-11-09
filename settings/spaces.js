@@ -28,7 +28,7 @@ function spaceIcon(iconUrl, color) {
 async function drawSpaces(force) {
   if (!force && document.activeElement?.closest?.("#spaces")) return;
   if (!state.report.alone) {
-    $("spaces").replaceChildren(...state.spaces.map(s => el("div", { className: "line" }, el("span", { className: "dot", style: `color:${s.color}` }), nameField(s))));
+    $("spaces").replaceChildren(...state.spaces.map(s => el("div", { className: "line" }, el("span", { className: "dot", ariaHidden: "true", style: `color:${s.color}` }), nameField(s))));
     return;
   }
   isolated = await isolation("get");

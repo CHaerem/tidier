@@ -338,10 +338,10 @@ const mergeLine = ([id, n]) => {
   const comes = [counted(n.essentials, "essential"), counted(n.folders, "folder"), counted(n.savedTabs, "saved tab"), counted(n.rules, "rule")].filter(part => !part.startsWith("0 "));
   const text = [...comes, ...(n.isNew ? ["a new space"] : [])].join(", ");
   // A space with nothing new has nothing to choose: said, without a box.
-  if (!text) return el("p", { className: "line nothing-new" }, el("span", { className: "dot", style: `color:${n.color}` }), `${n.name}: nothing new`);
+  if (!text) return el("p", { className: "line nothing-new" }, el("span", { className: "dot", ariaHidden: "true", style: `color:${n.color}` }), `${n.name}: nothing new`);
   return el("label", { className: "line" },
     el("input", { type: "checkbox", checked: true, value: id }),
-    el("span", { className: "dot", style: `color:${n.color}` }),
+    el("span", { className: "dot", ariaHidden: "true", style: `color:${n.color}` }),
     el("span", { className: "label-text", textContent: `${n.name}: ${text}` }));
 };
 $("copy-file").onchange = e => orSay($("merge-result"), async () => {

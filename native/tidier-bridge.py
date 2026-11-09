@@ -178,7 +178,9 @@ def handle_line(conn, serial, line):
     if busy:
         answer(conn, {"id": client_id, "ok": False, "error": "Too many calls at once."})
         return
-    to_firefox({"type": "call", "id": wrapped, "tool": tool, "args": args})
+    # `refused`: the MCP server refused this already and passes it on only for the person's log;
+    # the extension then carries nothing out. It can only make a call be refused.
+    to_firefox({"type": "call", "id": wrapped, "tool": tool, "args": args, **({"refused": True} if message.get("refused") is True else {})})
 
 
 def serve_connection(conn, serial):

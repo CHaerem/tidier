@@ -156,12 +156,15 @@ class Refusals(Base):
         ff.answer_calls(lambda m: {"ok": True, "text": "opened"})
         for url in ("file:///etc/passwd", "FILE:///etc/passwd", " file:///etc/passwd", "about:config", "about:debugging", "moz-extension://x/settings/settings.html",
                     "chrome://browser/content/browser.xhtml", "resource://gre/modules/x", "javascript:alert(1)", "data:text/html,x", "view-source:https://example.org/",
-                    "blob:https://example.org/1", "jar:file:///x!/y", "ftp://example.org/", "https://", "not an address", "https://me:secret@example.org/", "", None, 5):
+                    "blob:https://example.org/1", "jar:file:///x!/y", "ftp://example.org/", "https://", "not an address", "https://me:secret@example.org/", "", None, 5,
+                    "http:///etc/passwd", "https:example.org", "http:\\\\example.org", "https:// example.org"):
             for name, args in (("open_tab", {"url": url}), ("navigate", {"url": url, "tab": 1})):
                 text, is_error, _ = client.call(name, **args)
                 self.assertTrue(is_error, f"{name} {url!r} must be refused, got {text}")
                 self.assertIn("Refused", text)
-        self.assertEqual(ff.asked, [], "and none of them even reaches the extension")
+        # Each reaches the extension only marked as refused, for the person's log (the fake here
+        # even answers "opened"): what is asked of it is still a refusal.
+        self.assertTrue(ff.asked and all(m.get("refused") is True for m in ff.asked), ff.asked[:2])
         for url in ("https://example.org/a?b#c", "http://localhost:3000/"):
             self.assertFalse(client.call("open_tab", url=url)[1], url)
 
@@ -287,6 +290,22 @@ class Messages(Base):
         self.assertEqual(ff.asked[0]["tool"], "screenshot")
         self.assertEqual(ff.asked[0]["args"], {"tab": 5})
         self.assertEqual(ff.asked[0]["type"], "call")
+
+    def test_the_last_tab_is_each_agents_own(self):
+        # Two agents, each with its own MCP server: one that has opened nothing must not act on
+        # the other's tab when it names none.
+        ff = self.firefox()
+        ff.answer_calls(lambda m: {"ok": True, "text": json.dumps({"tab": 41}) if m["tool"] == "open_tab" else "done"})
+        a, b = self.mcp(), self.mcp()
+        a.call("open_tab", url="https://example.org/")
+        text, is_error, _ = b.call("navigate", url="https://example.org/next")
+        self.assertTrue(is_error)
+        self.assertIn("No tab", text)
+        self.assertNotIn("navigate", [m["tool"] for m in ff.asked], "it did not even reach the extension")
+        a.call("read_page")
+        self.assertEqual(ff.asked[-1]["args"], {"tab": 41}, "the one that opened it reads it, by its id")
+        a.call("close_tab")
+        self.assertIn("No tab", a.call("read_page")[0], "closed, it is no one's last tab")
 
     def test_a_refusal_from_the_extension_is_an_error(self):
         ff = self.firefox()
