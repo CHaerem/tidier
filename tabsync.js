@@ -1336,6 +1336,7 @@ async function start(delayMs) {
     await step(essentialsAgree);
     // Without the roles every tab looks unsynced, and reconcileAll would act on that.
     if (await step(loadRoles)) {
+      await step(foldersBackToSidebery); // moveover.js: after going back, before the windows are filled
       await step(initSynced);
       await step(() => reconcileAll({ firefoxStart: firefoxStarting })); // also adds missing essentials, via fillWindow
     }
@@ -1355,6 +1356,7 @@ async function start(delayMs) {
   if (focusedWindowId !== browser.windows.WINDOW_ID_NONE) { pullSelected(focusedWindowId); selectedEssential(focusedWindowId); }
   await step(seeUnseenTabs);
   await step(startSync); // sync.js
+  await step(afterMoving); // moveover.js: the settings page again, after moving over or back
 }
 
 // A tab opened while Tidier was starting went unseen (a link that started Firefox, say,

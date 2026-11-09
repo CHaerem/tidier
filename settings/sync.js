@@ -11,7 +11,8 @@ function drawSyncState(r) {
   const state = $("sync-state"), left = $("sync-left");
   state.hidden = !r.on;
   state.className = r.problem ? "notice" : "hint";
-  state.textContent = r.problem ? `Stopped: ${r.problem}` : `${syncKB(r.bytes)} KB of the ${syncKB(r.limit)} KB Firefox Sync allows is used.`;
+  // Tidier cannot see whether this Firefox is signed in: what it needs is said with what is used.
+  state.textContent = r.problem ? `Stopped: ${r.problem}` : `${syncKB(r.bytes)} KB of the ${syncKB(r.limit)} KB Firefox Sync allows is used. It reaches your other machines while this Firefox is signed in to Firefox Sync with Add-ons on.`;
   // What does not fit is said plainly: it is here, and not on your other machines.
   left.hidden = !r.left.length;
   if (r.left.length) {
@@ -27,12 +28,12 @@ function drawSpacesHere(r) {
   const box = $("spaces-here");
   box.hidden = !r.alone || r.spaces.length < 2;
   const showing = r.spaces.filter(s => !s.hidden).length;
-  const ticks = r.spaces.map(s => {
+  const ticks = inBarOrder(r.spaces).map(s => {
     if (s.declared) return el("span", { className: "line", title: "Hidden on this machine by its setup", textContent: `${s.name}: hidden by this machine's setup` });
     const last = !s.hidden && showing < 2; // a window needs a space to show
     const tick = el("input", { type: "checkbox", checked: !s.hidden, disabled: last, title: last ? "A window needs a space to show" : "" });
     tick.onchange = async () => drawSync(await browser.runtime.sendMessage({ type: "sync:hide", space: s.id, hidden: !tick.checked }));
-    return el("label", { className: "line" }, tick, el("span", { textContent: "●", style: `color:${s.color}` }), s.name);
+    return el("label", { className: "line" }, tick, el("span", { className: "dot", style: `color:${s.color}` }), el("span", { className: "label-text", textContent: last ? `${s.name} (a window needs one space to show)` : s.name }));
   });
   box.replaceChildren(
     el("h3", { textContent: "Shown on this machine" }),
@@ -60,5 +61,6 @@ browser.storage.onChanged.addListener((changes, area) => {
   // A page left open must not save an old list of rules over one that came from another machine.
   if ("rules" in changes) refresh();
 });
-browser.contextualIdentities.onUpdated.addListener(() => { refreshSync(); refresh(); });
+// Spaces made, changed or deleted, here or by another part of Tidier: every list on the page follows.
+for (const event of ["onCreated", "onUpdated", "onRemoved"]) browser.contextualIdentities[event].addListener(() => { refreshSync(); refresh(); });
 refreshSync();

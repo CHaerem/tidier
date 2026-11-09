@@ -3,7 +3,7 @@
 // answer, and an agent that may not read pages can still see tabs and addresses.
 const bridgePort = browser.runtime.connect({ name: "agent-settings" });
 const bridgeAsk = (what, more) => browser.runtime.sendMessage({ type: "bridge:" + what, ...more });
-const askToRead = () => { browser.permissions.request({ origins: ["<all_urls>"] }).catch(err => console.warn("Tidier: asking to read pages", err)); };
+const askToRead = () => { browser.permissions.request({ origins: ["*://*/*"] }).catch(err => console.warn("Tidier: asking to read pages", err)); };
 
 const bridgeBox = document.getElementById("claude-section");
 const bridgeEl = (tag, props = {}, ...kids) => { const e = Object.assign(document.createElement(tag), props); e.append(...kids); return e; };

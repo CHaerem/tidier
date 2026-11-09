@@ -336,8 +336,14 @@ async function moveEssential(windowId, tabId, beforeId) {
 }
 
 // The toolbar button shows or hides the sidebar: without a sidebar, a window has
-// no list of tabs at all (the tab bar is hidden in userChrome.css).
-browser.browserAction.onClicked.addListener(() => browser.sidebarAction.toggle());
+// no list of tabs at all (the tab bar is hidden in userChrome.css). On Sidebery the sidebar
+// is Sidebery's, and Firefox's Extensions menu invites a click on Tidier: that click would
+// swap Sidebery out for Tidier's sidebar, so there it opens the settings page instead, where
+// moving over is. (Both in the click itself, which Firefox requires of them.)
+browser.browserAction.onClicked.addListener(() => { if (tidierAlone) browser.sidebarAction.toggle(); else browser.runtime.openOptionsPage(); });
+// On Sidebery, Tidier's own sidebar (chosen in Firefox's sidebar menu, or still open after going
+// back) only says where the tab list is: it is made for Tidier alone, and half of it would work.
+aloneRead.then(() => { if (!tidierAlone) browser.sidebarAction.setPanel({ panel: "sidebar/sidebery.html" }).catch(noteError); });
 for (const event of ["onCreated", "onMoved", "onAttached", "onDetached"]) {
   browser.tabs[event].addListener((tabOrId, info) => viewSoon(tabOrId.windowId ?? info?.windowId ?? info?.newWindowId ?? info?.oldWindowId));
 }

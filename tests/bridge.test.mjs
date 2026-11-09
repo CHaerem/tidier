@@ -548,7 +548,7 @@ test("the setting stays out of the copies, so it cannot reach another machine", 
 
 test("the manifest: only optional access to pages, and no content script", () => {
   const manifest = JSON.parse(readFileSync(new URL("../manifest.json", import.meta.url), "utf8"));
-  assert.ok(manifest.optional_permissions.includes("<all_urls>"));
+  assert.ok(manifest.optional_permissions.includes("*://*/*"));
   assert.ok(!manifest.permissions.includes("<all_urls>") && !manifest.permissions.includes("activeTab"));
   assert.equal(manifest.content_scripts, undefined, "nothing runs in a page by itself");
   assert.equal(manifest.web_accessible_resources, undefined, "a page cannot load or frame anything of Tidier's");

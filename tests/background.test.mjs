@@ -607,12 +607,14 @@ test("a rule opens an address in its space, for a tab's first page only", async 
 // --- Moving over from Sidebery ------------------------------------------------------------
 test("moving over keeps every folder and tab, and moving back brings the pages back", async () => {
   const ff = new FakeFirefox();
+  ff.granted = new Set(["management"]); ff.sidebery = "on";
   ff.store.syncedTabs = {
     F: entry("moz-extension://sb/sidebery/group.html#Work", { group: true }),
     a: entry("https://a.example/", { parentKey: "F", saved: { url: "https://a.example/", title: "A" } }),
     b: entry("https://b.example/"),
   };
   const w = ff.addWindow({ focused: true });
+  ff.addTab(w.id, { url: "https://e.example/", pinned: true, cookieStoreId: C1 }); // an essential of the space
   ff.addTab(w.id, { url: "moz-extension://sb/sidebery/group.html#Work", cookieStoreId: C1 }, { syncKey: "F", syncRole: "copy" });
   ff.addTab(w.id, { url: "https://a.example/", active: true, cookieStoreId: C1 }, { syncKey: "a", syncRole: "live" });
   ff.addTab(w.id, { url: "https://b.example/", cookieStoreId: C1 }, { syncKey: "b", syncRole: "live" });
@@ -622,27 +624,120 @@ test("moving over keeps every folder and tab, and moving back brings the pages b
   x.b.runtime.sendNativeMessage = async () => ({ saved: "file" });
   const report = await x.js("moveReport")();
   assert.deepEqual(JSON.parse(JSON.stringify(report.folders.map(f => [f.name, f.tabs]))), [["Work", 1]]);
+  assert.equal(report.sidebery, "on");
+  // Both at once would fight over every tab: refused, and nothing changes.
+  assert.match((await x.js("moveOver")()).refused, /Sidebery is still on/);
+  assert.equal(reloaded, 0);
+  assert.ok(!ff.store.tidierAlone && !ff.store.syncedTabs.F.own);
+  ff.sidebery = "off";
   await x.js("moveOver")();
   assert.equal(reloaded, 1);
   assert.equal(ff.store.tidierAlone, true);
   assert.equal(ff.store.syncedTabs.F.own, true, "the record is written before Tidier starts again");
   assert.equal(ff.store.syncedTabs.F.name, "Work");
-  // Tidier starts again: only now is the page closed, and every tab stays.
+  assert.equal(ff.store.movedNote.kind, "over", "for the settings page, which the move closes");
+  // Tidier starts again: only now is the page closed, and every tab stays; the settings page opens again.
   x.kill();
+  let opened = 0;
+  ff.adapt = b => { b.runtime.openOptionsPage = async () => { opened++; }; };
   const y = await run(ff, "onInstalled");
   assert.equal(y.js("tidierAlone"), true);
   assert.ok(!ff.list(w.id).some(t => t.url.includes("group.html")));
   assert.deepEqual(Object.keys(ff.synced).sort(), ["F", "a", "b"]);
   assert.ok(ff.synced.a.saved);
-  // And back.
+  assert.equal(opened, 1);
+  // On Tidier alone: renamed, and a folder made here with b in it.
+  await y.js(`(async () => {
+    const all = await getSynced();
+    all.F.name = "Work things";
+    all.M = { group: true, own: true, name: "Made here", cookieStoreId: "${C1}", parentKey: null, rank: 2, added: 1, collapsed: true };
+    all.b.parentKey = "M";
+    saveSynced(all); await flushWrites();
+  })()`);
+  // And back, with Sidebery off. On, it is refused: running, Sidebery would leave the tabs outside their folders.
   let again = 0;
   y.b.runtime.reload = () => { again++; };
+  ff.sidebery = "on";
+  assert.match((await y.js("moveBack")()).refused, /Sidebery is on/);
+  ff.sidebery = "off";
+  const back = (await y.js("moveReport")()).back;
+  assert.deepEqual([back.folders, back.made, back.renamed, back.closed], [2, 1, 1, 1], "what comes back is said first");
   await y.js("moveBack")();
   assert.equal(again, 1);
   assert.equal(ff.store.tidierAlone, false);
-  assert.ok(ff.list(w.id).some(t => t.url.includes("group.html")));
-  assert.equal(ff.store.syncedTabs.F.url, "moz-extension://sb/sidebery/group.html#Work");
-  assert.ok(!ff.store.syncedTabs.F.own);
+  assert.equal(ff.store.syncedTabs.F.url, "moz-extension://sb/sidebery/group.html#Work%20things", "under its new name");
+  assert.equal(ff.store.syncedTabs.M.url, "moz-extension://sb/sidebery/group.html#Made%20here", "and one made here gets a page too");
+  assert.ok(!ff.store.syncedTabs.F.own && !ff.store.syncedTabs.M.own);
+  assert.equal(ff.store.syncedTabs.b.parentKey, "M");
+  y.kill();
+  // Tidier starts again on Sidebery: each folder's page, unloaded, right before its tabs, and
+  // each tab an opener that makes Sidebery's tree when it is turned on.
+  const z = await run(ff, "onInstalled");
+  const tabs = ff.list(w.id), page = name => tabs.find(t => t.url.endsWith("#" + encodeURIComponent(name)));
+  const [work, made, essential] = [page("Work things"), page("Made here"), tabs.find(t => t.pinned)];
+  const at = url => tabs.find(t => t.url === url);
+  assert.ok(work && made, tabs.map(t => t.url).join(" "));
+  assert.ok(work.discarded && made.discarded, "unloaded: Sidebery is off, and its pages load once it is on");
+  assert.equal(work.title, "Work things");
+  assert.equal(at("https://a.example/").openerTabId, work.id);
+  assert.equal(at("https://b.example/").openerTabId, made.id);
+  assert.equal(work.openerTabId, essential.id, "a page has its space's essential, so Sidebery puts it in that space");
+  assert.ok(tabs.indexOf(work) < tabs.indexOf(at("https://a.example/")) && tabs.indexOf(made) < tabs.indexOf(at("https://b.example/")));
+  assert.equal(ff.store.foldersBack, undefined, "once");
+  assert.equal(ff.synced.a.parentKey, "F");
+  assert.ok(ff.synced.a.saved && ff.synced.b.saved);
+  z.kill();
+});
+
+test("the archive time is whole hours from 0 up, and an answer that is none changes nothing", async () => {
+  const ff = new FakeFirefox();
+  emptySession(ff);
+  const x = await run(ff);
+  const set = hours => x.js("settingsAction")({ type: "settings:archiveHours", hours });
+  assert.equal(await set("-5"), 12, "a negative time would close every ordinary tab at the next round");
+  assert.equal(ff.store.archiveAfterHours, undefined);
+  for (const none of ["", " ", "e", "Infinity", null]) assert.equal(await set(none), 12, String(none));
+  assert.equal(await set("1.5"), 2);
+  assert.equal(await set("0"), 0, "0 is never");
+  assert.equal(await set("99999"), 24 * 365);
+  // One stored before this was checked counts as unset, not as "now is long after".
+  ff.store.archiveAfterHours = -5;
+  assert.equal(x.js("archiveHours")(ff.store.archiveAfterHours), 12);
+  x.kill();
+});
+
+test("a container Sidebery had no space for, holding nothing, is hidden at the move, and the page says so", async () => {
+  const ff = new FakeFirefox();
+  ff.granted = new Set(["management"]); ff.sidebery = "off";
+  ff.identities = { [C1]: { name: "Work" }, "firefox-container-2": { name: "Home" }, "firefox-container-3": { name: "Shopping" } };
+  ff.store.syncedTabs = { a: entry("https://a.example/") };
+  const w = ff.addWindow({ focused: true });
+  ff.addTab(w.id, { url: "https://a.example/", active: true, cookieStoreId: C1 }, { syncKey: "a", syncRole: "live" });
+  const x = await run(ff);
+  x.b.runtime.reload = () => {};
+  await x.js("importSidebery")({ containers: { [C1]: { id: C1, name: "Work" }, "firefox-container-2": { id: "firefox-container-2", name: "Home" } },
+    sidebar: { nav: ["p1", "p2"], panels: { p1: { newTabCtx: C1 }, p2: { newTabCtx: "firefox-container-2" } } } });
+  await x.js("moveOver")();
+  assert.deepEqual(ff.store.hiddenSpaces, ["firefox-container-3"]);
+  assert.deepEqual(ff.store.movedNote.hidden, ["Shopping"]);
+  x.kill();
+});
+
+test("on Sidebery, Tidier's button opens its settings, and its sidebar only says where the tab list is", async () => {
+  const ff = new FakeFirefox();
+  emptySession(ff);
+  let opened = 0, toggled = 0;
+  ff.adapt = b => { b.runtime.openOptionsPage = async () => { opened++; }; b.sidebarAction.toggle = async () => { toggled++; }; };
+  const x = await run(ff);
+  x.b.browserAction.onClicked.fire();
+  assert.deepEqual([opened, toggled], [1, 0], "a click in Firefox's Extensions menu must not swap Sidebery out of the sidebar");
+  assert.equal(ff.sidebarPanel, "sidebar/sidebery.html");
+  x.kill();
+  const y = await alone(ff);
+  ff.sidebarPanel = undefined;
+  y.b.browserAction.onClicked.fire();
+  assert.deepEqual([opened, toggled], [1, 1], "with Tidier alone it shows or hides the sidebar");
+  assert.equal(ff.sidebarPanel, undefined);
   y.kill();
 });
 

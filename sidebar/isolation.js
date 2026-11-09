@@ -11,7 +11,7 @@
 // place for a new space is the bar's last child, which the bar's draw keeps (sidebar.js).
 
 const DECLINED = "isolationDeclined"; // localStorage: per browser, and you can still give it on the settings page
-const ISOLATION_ASK = { permissions: ["webRequest", "webRequestBlocking"], origins: ["<all_urls>"] };
+const ISOLATION_ASK = { permissions: ["webRequest", "webRequestBlocking"], origins: ["*://*/*"] };
 let hostAllowed = false;
 const isolationTell = (type, more) => browser.runtime.sendMessage({ type: "isolation:" + type, ...more }).catch(err => console.error("Tidier: isolation", err));
 const thisWindow = browser.windows.getCurrent().then(w => w.id);
@@ -54,7 +54,7 @@ function goQuietly(notice) {
 // Each view only looks at this: permissions change rarely, and views come all the time.
 let isolationGiven = true;
 async function readPermissions() {
-  hostAllowed = await browser.permissions.contains({ origins: ["<all_urls>"] }).catch(() => false);
+  hostAllowed = await browser.permissions.contains({ origins: ["*://*/*"] }).catch(() => false);
   isolationGiven = await browser.permissions.contains(ISOLATION_ASK).catch(() => false);
   drawAskLine();
 }

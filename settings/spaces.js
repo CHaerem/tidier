@@ -13,6 +13,7 @@ const mayAsk = async permissions => { try { return await browser.permissions.req
 const moreOpen = new Set(); // the spaces showing More
 const asking = new Map(); // space -> what it is asking: "signOut" or "delete"
 const spaceFacts = new Map(); // space -> a line to show under it, until the next change
+const unsavedNetwork = new Map(); // space -> a proxy typed that could not be saved, kept to be put right
 let isolated = null;
 
 function spaceIcon(iconUrl, color) {
@@ -27,27 +28,46 @@ function spaceIcon(iconUrl, color) {
 async function drawSpaces(force) {
   if (!force && document.activeElement?.closest?.("#spaces")) return;
   if (!state.report.alone) {
-    $("spaces").replaceChildren(...state.spaces.map(s => {
-      const name = el("input", { type: "text", value: s.name });
-      name.onchange = () => ask("space", { id: s.id, changes: { name: name.value } });
-      return el("div", { className: "line" }, el("span", { textContent: "●", style: `color:${s.color}` }), name);
-    }));
+    $("spaces").replaceChildren(...state.spaces.map(s => el("div", { className: "line" }, el("span", { className: "dot", style: `color:${s.color}` }), nameField(s))));
     return;
   }
   isolated = await isolation("get");
+  // Asked while you came into the list (a space made here, say, and its name given the keyboard).
+  if (!force && document.activeElement?.closest?.("#spaces")) return;
   $("new-space").hidden = false;
-  $("allow-isolation").hidden = await browser.permissions.contains({ permissions: ["webRequest", "webRequestBlocking"], origins: ["<all_urls>"] });
-  $("spaces").replaceChildren(...isolated.spaces.map(spaceCard));
+  $("isolation-ask").hidden = $("allow-isolation").hidden = await browser.permissions.contains({ permissions: ["webRequest", "webRequestBlocking"], origins: ["*://*/*"] });
+  const focused = document.activeElement?.closest?.("[data-color], [data-icon]");
+  const again = focused && { space: focused.closest("[data-space]")?.dataset.space, color: focused.dataset.color, icon: focused.dataset.icon };
+  $("spaces").replaceChildren(...inBarOrder(isolated.spaces).map(spaceCard));
+  // A colour or an icon chosen: the keyboard stays on it, rather than going back to the top.
+  if (again?.space) $("spaces").querySelector(`[data-space="${again.space}"] ${again.color ? `[data-color="${again.color}"]` : `[data-icon="${again.icon}"]`}`)?.focus();
+}
+
+// A space's name. An emptied field is no name: the one it has comes back, and is kept as
+// the field's own, so that clearing it after a rename does not bring back an older one.
+function nameField(s) {
+  const name = el("input", { type: "text", value: s.name, ariaLabel: `Name of ${s.name}` });
+  name.dataset.nameOf = s.id;
+  name.onchange = () => {
+    const given = name.value.trim();
+    if (!given) { name.value = s.name; return; }
+    if (given === s.name) return;
+    s.name = given;
+    ask("space", { id: s.id, changes: { name: given } });
+  };
+  return name;
 }
 
 function spaceCard(s) {
   const open = moreOpen.has(s.id);
-  const name = el("input", { type: "text", value: s.name, ariaLabel: "Name" });
-  name.dataset.nameOf = s.id;
-  name.onchange = () => ask("space", { id: s.id, changes: { name: name.value.trim() || s.name } });
-  const more = el("button", { className: "quiet more", textContent: open ? "Less" : "More", ariaExpanded: String(open) });
+  const more = el("button", { className: "quiet more", textContent: open ? "Less" : "More", ariaExpanded: String(open), title: open ? "" : "Colour, icon, proxy, user agent, signing out, deleting" });
   more.onclick = () => { if (!moreOpen.delete(s.id)) moreOpen.add(s.id); asking.delete(s.id); spaceFacts.delete(s.id); drawSpaces(true); };
-  const card = el("div", { className: "space-card" }, el("div", { className: "line" }, spaceIcon(s.iconUrl, s.colorCode), name, more));
+  // What changes every page in the space is said on its line, also with More closed.
+  // A space not on the bar (hidden on this machine, under Shown on this machine) says so too.
+  const hiddenHere = !!state.order?.length && !state.order.includes(s.id);
+  const special = [hiddenHere && "hidden here", s.network.proxy && "proxy", s.network.userAgent && "own user agent"].filter(Boolean).join(" · ");
+  const card = el("div", { className: "space-card" }, el("div", { className: "line" }, spaceIcon(s.iconUrl, s.colorCode), nameField(s),
+    el("span", { className: "space-special", textContent: special, hidden: !special }), more));
   card.dataset.space = s.id;
   if (open) card.append(spaceMore(s));
   return card;
@@ -91,33 +111,48 @@ function networkFields(s) {
   const port = el("input", { type: "number", value: proxy.port ?? "", placeholder: "port", min: 1, max: 65535, ariaLabel: "Proxy port", className: "port" });
   const agent = el("input", { type: "text", value: s.network.userAgent ?? "", placeholder: "Firefox's own", ariaLabel: "User agent" });
   const save = el("button", { textContent: "Save", className: "save", hidden: true });
+  const proxyProblem = el("p", { className: "hint field-problem", hidden: true });
+  const typed = unsavedNetwork.get(s.id); // what was typed before the list was drawn again
+  if (typed) { type.value = typed.type; host.value = typed.host; port.value = typed.port; agent.value = typed.agent; save.hidden = false; proxyProblem.textContent = typed.problem ?? ""; proxyProblem.hidden = !typed.problem; }
   const shown = () => { host.hidden = port.hidden = !type.value; };
   shown();
-  for (const input of [type, host, port, agent]) input.oninput = () => { shown(); save.hidden = false; };
+  // A change makes what was said about the last one old: it goes.
+  for (const input of [type, host, port, agent]) input.oninput = () => { shown(); save.hidden = false; proxyProblem.hidden = true; if (spaceFacts.get(s.id) === "Saved.") { spaceFacts.delete(s.id); box()?.querySelector(".fact")?.remove(); } };
+  const box = () => $("spaces").querySelector(`[data-space="${s.id}"]`);
   save.onclick = async () => {
     const usesProxy = !!type.value, usesAgent = !!agent.value.trim();
     // (A proxy needs both: isolation.js, notPastProxy.)
     const wanted = [...(usesProxy ? ["proxy"] : []), ...(usesProxy || usesAgent ? ["webRequest", "webRequestBlocking"] : [])];
-    const asked = { permissions: wanted, origins: ["<all_urls>"] };
+    const asked = { permissions: wanted, origins: ["*://*/*"] };
     if (wanted.length && !await mayAsk(asked) && !await browser.permissions.contains(asked)) {
       spaceFacts.set(s.id, "Firefox did not give Tidier the permission for this, so nothing changed.");
       return drawSpaces(true);
     }
     const stored = await isolation("network", { id: s.id, proxy: usesProxy ? { type: type.value, host: host.value, port: port.value } : null, userAgent: agent.value });
-    spaceFacts.set(s.id, usesProxy && !stored.proxy ? "That proxy is not complete: it needs a host, without http://, and a port. Nothing is in use." : "Saved.");
+    if (usesProxy && !stored.proxy) {
+      // Kept as typed, to be put right, with what is missing said under it.
+      unsavedNetwork.set(s.id, { type: type.value, host: host.value, port: port.value, agent: agent.value, problem: "Not saved: a proxy needs a host, without http://, and a port from 1 to 65535. Until then there is none." });
+      spaceFacts.delete(s.id);
+    } else {
+      unsavedNetwork.delete(s.id);
+      spaceFacts.set(s.id, "Saved.");
+    }
     drawSpaces(true);
   };
   return [
-    spaceField("Proxy", el("div", { className: "line tight" }, type, host, port)),
+    spaceField("Proxy", el("div", { className: "line tight proxy-line" }, type, host, port), proxyProblem),
     spaceField("User agent", el("div", { className: "line tight" }, agent)),
     spaceField("", save),
   ];
 }
 
+// A question asked in place takes the keyboard to its safe answer, Keep.
+const keepFocused = async id => { await drawSpaces(true); $("spaces").querySelector(`[data-space="${id}"] .keep`)?.focus(); };
+
 function questionPart(s, kind, sentence, yes, act) {
   if (asking.get(s.id) !== kind) return null;
   const go = el("button", { className: "danger", textContent: yes });
-  const keep = el("button", { textContent: "Keep" });
+  const keep = el("button", { textContent: "Keep", className: "keep" });
   keep.onclick = () => { asking.delete(s.id); drawSpaces(true); };
   go.onclick = act;
   return [el("p", { className: "question", textContent: sentence }), el("div", { className: "line tight" }, go, keep)];
@@ -136,20 +171,24 @@ function signOutPart(s) {
   });
   if (question) return question;
   const b = el("button", { textContent: "Sign out of everything in this space", className: "sign-out" });
-  b.onclick = () => { asking.set(s.id, "signOut"); spaceFacts.delete(s.id); drawSpaces(true); };
+  b.onclick = () => { asking.set(s.id, "signOut"); spaceFacts.delete(s.id); keepFocused(s.id); };
   return [b];
 }
 
 const spaceCount = (n, one, many) => (n === 1 ? `1 ${one}` : `${n} ${many}`);
-function whatGoesWithSpace({ essentials, folders, tabs }) {
-  const parts = [...(essentials ? [spaceCount(essentials, "essential", "essentials")] : []), ...(folders ? [spaceCount(folders, "folder", "folders")] : []), ...(tabs ? [spaceCount(tabs, "tab", "tabs")] : []), "all its logins"];
-  return parts.length > 1 ? `${parts.slice(0, -1).join(", ")} and ${parts.at(-1)}` : parts[0];
+// Everything that goes with a space, its rules too, as one sentence that starts with a capital.
+function whatGoesWithSpace({ essentials, folders, tabs }, rules) {
+  const parts = [...(essentials ? [spaceCount(essentials, "essential", "essentials")] : []), ...(folders ? [spaceCount(folders, "folder", "folders")] : []), ...(tabs ? [spaceCount(tabs, "tab", "tabs")] : []),
+    ...(rules ? [spaceCount(rules, "rule", "rules")] : []), "all its logins"];
+  const list = parts.length > 1 ? `${parts.slice(0, -1).join(", ")} and ${parts.at(-1)}` : parts[0];
+  return list[0].toUpperCase() + list.slice(1);
 }
 
 function deletePart(s) {
   const n = s.contents;
   const keeps = n.essentials || n.folders ? " A copy of its essentials and folders is kept first." : "";
-  const question = questionPart(s, "delete", `Delete ${s.name}? ${whatGoesWithSpace(n)} go.${keeps}`, `Delete ${s.name}`, async () => {
+  const rules = state.rules.filter(r => r.space === s.id).length;
+  const question = questionPart(s, "delete", `Delete ${s.name}? ${whatGoesWithSpace(n, rules)} go.${keeps}`, "Delete", async () => {
     const r = await isolation("delete", { id: s.id });
     asking.delete(s.id);
     if (r?.refused) spaceFacts.set(s.id, `${s.name} stays. ${r.refused}`);
@@ -159,7 +198,7 @@ function deletePart(s) {
   });
   if (question) return question;
   const b = el("button", { textContent: "Delete this space", className: "quiet delete" });
-  b.onclick = () => { asking.set(s.id, "delete"); spaceFacts.delete(s.id); drawSpaces(true); };
+  b.onclick = () => { asking.set(s.id, "delete"); spaceFacts.delete(s.id); keepFocused(s.id); };
   return [b];
 }
 
@@ -173,5 +212,5 @@ addEventListener("DOMContentLoaded", () => {
     name?.focus();
     name?.select();
   };
-  $("allow-isolation").onclick = () => mayAsk({ permissions: ["webRequest", "webRequestBlocking"], origins: ["<all_urls>"] }).then(() => drawSpaces(true));
+  $("allow-isolation").onclick = () => mayAsk({ permissions: ["webRequest", "webRequestBlocking"], origins: ["*://*/*"] }).then(() => drawSpaces(true));
 });

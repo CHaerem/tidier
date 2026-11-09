@@ -12,40 +12,79 @@
   <div id="notices"></div>
 
   <section id="alone-section">
-    <h2>Tidier alone</h2>
+    <h2 id="alone-title">Tidier alone</h2>
+    <p class="notice info" id="moved" hidden></p>
+    <p class="notice info" id="windows-without" hidden></p>
     <p id="alone-state"></p>
     <button id="allow-hiding" hidden>Let Tidier hide the other spaces' tabs</button>
+
+    <!-- With Sidebery: moving over, in steps the page checks as they are done (moveover.js). -->
     <div id="move" hidden>
-      <p>This moves this browser from Sidebery to Tidier's own sidebar, spaces and folders. Nothing is closed until the record of it is written, and it can be undone.</p>
       <ul id="report"></ul>
-      <ol>
-        <li>Disable Sidebery in <code>about:addons</code>. Keep it installed. (With it running, closing a folded folder's page would close the tabs in it.)</li>
-        <li><button id="move-over">Move to Tidier alone</button></li>
+      <ol class="steps">
+        <li id="step-export">
+          <div class="step-text"><strong>Take in Sidebery's export.</strong> In Sidebery's settings, click Create snapshot, then Export addon data, and choose that file here. Its rules, order of spaces and closed folders are kept nowhere else.</div>
+          <label class="choose">Choose Sidebery's export… <input type="file" class="file-input" id="sidebery-file" accept=".json"></label>
+          <p class="step-result" id="sidebery-result"></p>
+        </li>
+        <li id="step-allow">
+          <div class="step-text"><strong>Allow what Tidier needs on its own:</strong> hiding the other spaces' tabs, stopping pages from loading in the wrong space, and seeing whether Sidebery is on.</div>
+          <button id="allow-move">Allow…</button>
+          <p class="step-result" id="allow-result"></p>
+        </li>
+        <li id="step-off">
+          <div class="step-text"><strong>Turn Sidebery off</strong> in <code>about:addons</code>, and keep it installed. With it on, closing a closed folder's page would close the tabs in it. This window then has no tab list until the next step.</div>
+          <p class="step-result" id="sidebery-state"></p>
+        </li>
+        <li id="step-move">
+          <button id="move-over" disabled>Move to Tidier alone</button>
+          <p class="step-result" id="move-result"></p>
+        </li>
       </ol>
     </div>
-    <div id="move-back" hidden>
-      <p>To go back: enable Sidebery in <code>about:addons</code> first.</p>
-      <button id="do-move-back">Go back to Sidebery</button>
+
+    <div id="import-alone" hidden>
+      <p class="hint">Rules, the order of spaces and closed folders can come from Sidebery's export, also from another machine's, matched to spaces by name.</p>
+      <label class="choose">Take in Sidebery's export… <input type="file" class="file-input" id="sidebery-file-alone" accept=".json"></label>
+      <p class="step-result" id="sidebery-result-alone"></p>
     </div>
-    <p><label>Import Sidebery's export (rules, order, closed folders) <input type="file" class="file-input" id="sidebery-file" accept=".json"></label></p>
-    <p id="sidebery-result"></p>
+
+    <!-- With Tidier alone, moved over from Sidebery: going back. -->
+    <div id="move-back" hidden>
+      <h3>Going back to Sidebery</h3>
+      <p id="back-report"></p>
+      <ol class="steps">
+        <li id="step-back-off">
+          <div class="step-text"><strong>Sidebery stays off</strong> while Tidier gives it its folders back.</div>
+          <p class="step-result" id="back-state"></p>
+        </li>
+        <li id="step-back">
+          <button id="do-move-back">Go back to Sidebery</button>
+          <p class="step-result" id="back-result"></p>
+        </li>
+        <li><div class="step-text">Then turn Sidebery on in <code>about:addons</code>, and press ⌃E in each window to show it.</div></li>
+      </ol>
+    </div>
   </section>
 
   <section>
     <h2>Spaces</h2>
     <p class="hint">A space is a Firefox container, with its own logins.</p>
     <div id="spaces"></div>
-    <div id="spaces-here" hidden></div>
     <div class="line after-spaces">
       <button id="new-space" hidden>New space</button>
-      <button id="allow-isolation" class="quiet" hidden title="Without this, a page's first request can go out in the wrong container before it is opened again in the right one.">Let Tidier stop pages loading in the wrong space</button>
     </div>
+    <div id="isolation-ask" hidden>
+      <p class="hint">Without the next permission, a page's first request can go out in the wrong space before Tidier opens it again in the right one.</p>
+      <button id="allow-isolation">Let Tidier stop pages loading in the wrong space</button>
+    </div>
+    <div id="spaces-here" hidden></div>
   </section>
 
   <section id="sync-section" hidden>
     <h2>The same on every machine</h2>
-    <label class="line"><input type="checkbox" id="sync-on"> Keep essentials, folders, saved tabs, rules and spaces the same on every machine</label>
-    <p class="hint">Through Firefox Sync, which must have Add-ons turned on in its settings. Ordinary tabs and what is open stay on each machine. When you turn this on, what is here and what your other machines have are put together, after a copy is made.</p>
+    <label class="line"><input type="checkbox" id="sync-on"><span class="label-text">Keep essentials, folders, saved tabs, rules and spaces the same on every machine</span></label>
+    <p class="hint">Through Firefox Sync: this Firefox must be signed in to a Firefox account, with Add-ons ticked in its Sync settings. Ordinary tabs and what is open stay on each machine. When you turn this on, what is here and what your other machines have are put together, after a copy is made.</p>
     <p id="sync-state" hidden></p>
     <p id="sync-left" hidden></p>
   </section>
@@ -54,12 +93,14 @@
     <h2>Rules</h2>
     <p class="hint">An address always opens in a given space. Text to find in the address, or /a regular expression/ (no look-around or back-references). Looked at for a tab's first page and an address you choose, never for a link inside a page or a redirect.</p>
     <div id="rules"></div>
+    <p class="line hint" id="rule-undo" hidden></p>
     <button id="add-rule">Add a rule</button>
   </section>
 
   <section>
     <h2>Tabs that tidy themselves</h2>
-    <label>Close tabs not used for <input type="number" id="archive-hours" min="0" step="1"> hours (0: never)</label>
+    <label>Close tabs not used for <input type="number" id="archive-hours" min="0" max="8760" step="1" required> <span class="nowrap">hours (0: never)</span></label>
+    <p class="hint">Essentials, tabs in folders, the tabs you are looking at and tabs playing sound stay. With Tidier alone, a closed tab is in its space's list of archived tabs.</p>
   </section>
 
   <section id="keys-section" hidden>
@@ -71,20 +112,23 @@
 
   <section id="little-section" hidden>
     <h2>Links from other apps</h2>
-    <label class="line"><input type="checkbox" id="little-window"> Open them in a small window, to read and close, or to keep</label>
+    <label class="line"><input type="checkbox" id="little-window"><span class="label-text">Open them in a small window, to read and close, or to keep</span></label>
     <p class="hint" id="peek-state"></p>
     <button id="peek-allow" hidden>Allow access to all websites</button>
   </section>
 
   <section>
     <h2>A copy of your essentials and folders</h2>
+    <p class="hint">They are kept nowhere else, so Tidier makes a copy once a day, and keeps those of the last two weeks in <code>~/.config/tidier/copies</code> (its helper does that: <code>native/install.sh</code>). Taking one in adds what is missing here, and removes nothing; it can also bring another machine's spaces here.</p>
     <p id="copy-state"></p>
     <button id="copy-now">Make a copy now</button>
     <button id="copy-save">Save a copy as a file…</button>
     <p><label>Take in a copy (from this or another machine) <input type="file" class="file-input" id="copy-file" accept=".json"></label></p>
     <div id="merge" hidden>
+      <h3>Choose what to take in</h3>
       <div id="merge-spaces"></div>
       <button id="merge-go">Take these in</button>
+      <button id="merge-cancel" class="quiet">Cancel</button>
     </div>
     <p id="merge-result"></p>
   </section>

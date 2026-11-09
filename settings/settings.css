@@ -20,7 +20,17 @@ li:has(button) { margin-top: 10px; list-style-position: outside; }
 label { color: var(--muted); }
 #version { margin: 0; font-size: var(--size-small); color: var(--faint); }
 code { padding: 1px 4px; border-radius: var(--radius-sm); background: var(--tile); font: 12px ui-monospace, Menlo, monospace; color: var(--text); }
-.notice { padding: 8px 10px; margin: 0 0 8px; border-radius: var(--radius); background: var(--tile); color: var(--text); }
+/* Something you should know: a live folder that stopped, a copy not made. Warm, so it is
+ * found among the soft fills; what Tidier only tells you (.info) is a plain one. */
+.notice { padding: 8px 10px; margin: 0 0 8px; border-radius: var(--radius); background: light-dark(rgb(255 190 60 / .2), rgb(255 190 60 / .11)); color: var(--text); }
+.notice.info { background: var(--tile); }
+.note-line { display: block; }
+.note-line + .note-line { margin-top: 4px; }
+/* A notice with the one click that mends it, beside its words while there is room. */
+.notice.with-button { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+.notice.with-button > span { flex: 1 1 240px; }
+.notice.with-button > button { background-color: var(--tile-hover); }
+.notice.with-button > button:hover { background-color: var(--selected); }
 #notices:has(.notice) { margin-bottom: 28px; }
 
 /* The controls: soft fills, nothing of the browser's default look. */
@@ -29,6 +39,10 @@ button, input[type=text], input[type=number], select, label:has(input[type=file]
   height: 30px; border: 0; border-radius: var(--radius); background-color: var(--tile);
   transition: background-color var(--quick), box-shadow var(--quick), transform var(--quick);
 }
+/* A button grows with its words, on a narrow page too. */
+button { height: auto; min-height: 30px; padding-block: 5px; text-align: center; }
+button:disabled { opacity: .45; transform: none; }
+button:disabled:hover { background-color: var(--tile); }
 button:hover, input[type=text]:hover, input[type=number]:hover, select:hover, label:has(input[type=file]):hover { background-color: var(--tile-hover); }
 button, label:has(input[type=file]) { padding: 0 12px; }
 button:active, label:has(input[type=file]):active { transform: scale(.98); }
@@ -45,11 +59,15 @@ select {
   background-image: light-dark(url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M4.5 6.5L8 10l3.5-3.5' fill='none' stroke='%23857f79' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"), url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M4.5 6.5L8 10l3.5-3.5' fill='none' stroke='%23a5a09a' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"));
 }
 input[type=number] { appearance: textfield; width: 52px; margin: 0 4px; text-align: center; }
+/* An empty box has an edge, so it reads as one to tick on every tint. */
 input[type=checkbox] {
-  appearance: none; flex: none; width: 16px; height: 16px; margin: 0; border-radius: 5px; background-color: var(--press);
+  appearance: none; flex: none; width: 16px; height: 16px; margin: 2px 0 0; border-radius: 5px; background-color: var(--tile);
+  box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--text) 30%, transparent);
   background-position: center; background-size: 16px; background-repeat: no-repeat;
-  transition: background-color var(--quick);
+  transition: background-color var(--quick), box-shadow var(--quick);
 }
+input[type=checkbox]:checked { box-shadow: none; }
+input[type=checkbox]:disabled { opacity: .5; }
 input[type=checkbox]:checked {
   background-color: var(--text);
   background-image: light-dark(url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M4.5 8.25L7 10.75l4.5-5.5' fill='none' stroke='%23fff' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"), url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M4.5 8.25L7 10.75l4.5-5.5' fill='none' stroke='%231f1f23' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"));
@@ -68,18 +86,28 @@ label:has(input:focus-visible) { outline: 2px solid var(--accent-line); outline-
 .line { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-bottom: 4px; color: var(--text); }
 .line input[type=text] { flex: 1 1 200px; min-width: 0; }
 .line select { max-width: 100%; }
+/* A box and its words: the box on the first line, the words wrapping beside it. */
+label.line:has(> input[type=checkbox]) { flex-wrap: nowrap; align-items: flex-start; gap: 8px; }
+.label-text { flex: 1; min-width: 0; }
+/* A space, wherever it is listed: a dot in its colour. */
+.dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+label.line > .dot { margin-top: 6px; }
 
-/* Spaces: a dot and a name. The name has only a trace of a fill at rest, enough to say
- * it can be changed, and is as wide as a name needs. */
+/* Spaces: an icon in the space's colour and a name. The name has only a trace of a fill at
+ * rest, enough to say it can be changed, and is as wide as a name needs. */
 #spaces .line { margin-bottom: 2px; flex-wrap: nowrap; gap: 10px; }
-/* (With Sidebery the line's mark is a dot; with Tidier alone it is the space's icon, .space-icon, which this must not reach.) */
-#spaces .line > span:not(.space-icon) { flex: none; width: 8px; height: 8px; border-radius: 50%; background: currentColor; font-size: 0; }
 #spaces input[type=text] { flex: 0 1 240px; background-color: color-mix(in srgb, var(--tile) 50%, transparent); }
+.space-special { flex: 0 1 auto; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: var(--size-small); color: var(--faint); }
+/* On a narrow page what a space has gives way, and its name keeps room to be read. */
+#spaces .space-card input[type=text] { min-width: 120px; }
+.nowrap { white-space: nowrap; }
 #spaces input[type=text]:hover { background-color: var(--tile); }
 #spaces input[type=text]:focus { background-color: var(--selected); }
 
-/* Rules: removing one is always there, but in the faintest ink until you come for it. */
+/* Rules: removing one is always there, but in the faintest ink until you come for it. A
+ * space's name has a width of its own, so one long name does not push every rule onto two lines. */
 #rules:not(:empty) { margin-bottom: 8px; }
+#rules select { flex: 0 1 150px; min-width: 90px; text-overflow: ellipsis; }
 #rules button {
   width: 28px; height: 28px; flex: none; padding: 0; margin: 0; background: none; color: var(--faint);
   font-size: 0; line-height: 0; display: flex; align-items: center; justify-content: center;
@@ -88,8 +116,33 @@ label:has(input:focus-visible) { outline: 2px solid var(--accent-line); outline-
 #rules button:hover { background: var(--press); color: var(--text); }
 
 #merge { margin-top: 12px; }
+#merge h3 { margin-top: 0; }
 #merge-spaces { margin-bottom: 8px; }
 #merge-spaces .line { flex-wrap: nowrap; gap: 8px; color: var(--muted); }
+#merge-spaces .nothing-new { margin: 0 0 4px 24px; color: var(--faint); align-items: center; }
+
+/* Moving over and back: numbered steps, each ticked as it is done, the one to do next
+ * plain, those done quieter. */
+ol.steps { list-style: none; counter-reset: step; padding: 0; margin: 14px 0 0; }
+ol.steps > li { counter-increment: step; position: relative; padding-left: 30px; margin: 0 0 16px; color: var(--muted); }
+ol.steps > li::before {
+  content: counter(step); position: absolute; left: 0; top: 0; width: 20px; height: 20px; border-radius: 50%;
+  display: grid; place-items: center; font-size: var(--size-small); font-weight: 600; color: var(--text);
+  box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--text) 30%, transparent);
+}
+ol.steps > li.done::before {
+  content: ""; box-shadow: none; background-color: var(--text);
+  background-image: light-dark(url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M4.5 8.25L7 10.75l4.5-5.5' fill='none' stroke='%23fff' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"), url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M4.5 8.25L7 10.75l4.5-5.5' fill='none' stroke='%231f1f23' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"));
+  background-size: 16px; background-position: center; background-repeat: no-repeat;
+}
+ol.steps > li.done .step-text { color: var(--faint); }
+ol.steps > li.done .step-text strong { color: var(--muted); }
+.step-text strong { font-weight: 600; color: var(--text); }
+ol.steps > li > button, ol.steps > li > .choose { margin: 8px 0 0; }
+ol.steps > li > button:first-child { margin-top: -5px; } /* a step that is only its button: level with its number */
+.step-result { margin: 6px 0 0; }
+.step-result.wrong, .wrong { color: light-dark(#a8381f, #ff9a7a); }
+#move-back h3 { margin-top: 20px; }
 
 /* What other parts of the page add: a file field under its line, a heading inside a
  * subject, and a row of ticks. */
@@ -100,25 +153,34 @@ h3 { margin: 14px 0 6px; font-size: var(--size); line-height: 20px; font-weight:
 
 /* Spaces: one calm line each, the rest under More. */
 .space-card { padding: 2px 0; }
-.space-card + .space-card { border-top: 1px solid color-mix(in srgb, CanvasText 6%, transparent); }
+.space-card + .space-card { border-top: 1px solid var(--line); }
 .space-card > .line { margin: 4px 0; }
 .space-icon { flex: none; display: inline-block; width: 18px; height: 18px; background: var(--color); -webkit-mask: var(--icon) center / contain no-repeat; mask: var(--icon) center / contain no-repeat; }
-.quiet { border: 0; background: none; color: color-mix(in srgb, CanvasText 60%, transparent); padding: 3px 6px; border-radius: 6px; }
-.quiet:hover { background: color-mix(in srgb, CanvasText 8%, transparent); color: CanvasText; }
-.more { flex: none; width: 44px; text-align: center; padding: 3px 0; } /* More and Less: nothing moves */
-.space-more { padding: 6px 0 12px 26px; }
-.field { display: grid; grid-template-columns: 84px 1fr; gap: 8px; align-items: baseline; margin-bottom: 8px; }
-.field .label { color: color-mix(in srgb, CanvasText 60%, transparent); }
+/* A quiet button is words you can press, with no fill until the pointer comes to it, More and
+ * Less alike. */
+.quiet, .quiet[aria-expanded="true"] { border: 0; background: none; color: var(--muted); padding: 5px 8px; border-radius: var(--radius-sm); }
+.quiet:hover { background: var(--press); color: var(--text); }
+.more { flex: none; width: 48px; margin-left: auto; text-align: center; padding-inline: 0; } /* More and Less: nothing moves */
+.space-more { padding: 6px 0 12px 28px; }
+/* A label stands level with the first row of what it names. */
+.field { display: grid; grid-template-columns: 84px minmax(0, 1fr); gap: 8px; align-items: start; margin-bottom: 8px; }
+.field .label { display: flex; align-items: center; min-height: 30px; color: var(--muted); }
+.field-problem { margin: 4px 0 0; color: light-dark(#a8381f, #ff9a7a); }
+/* At a narrow width the kind of proxy keeps its line, and host and port go onto the next. */
+#spaces .proxy-line { flex-wrap: wrap; }
+.proxy-line .host { flex: 1 1 150px; }
+.proxy-line select { flex: 0 0 auto; }
 .field .content { min-width: 0; }
 .line.tight { margin: 0; }
 .line:has(> .rule-problem:not([hidden])) { flex-wrap: wrap; }
 .rule-problem { flex-basis: 100%; margin: 0; }
 .choices { display: flex; flex-wrap: wrap; gap: 4px; }
-.swatch { width: 22px; height: 22px; padding: 0; border-radius: 50%; border: 0; background: var(--color); box-shadow: inset 0 0 0 1px color-mix(in srgb, CanvasText 12%, transparent); }
-.swatch.chosen { box-shadow: 0 0 0 2px Canvas, 0 0 0 4px var(--color); }
-.icon-choice { display: grid; place-items: center; width: 28px; height: 28px; padding: 0; border: 0; border-radius: 6px; background: none; }
-.icon-choice:hover { background: color-mix(in srgb, CanvasText 8%, transparent); }
-.icon-choice.chosen { background: color-mix(in srgb, CanvasText 12%, transparent); }
+.choices { min-height: 30px; align-items: center; }
+.swatch, .swatch:hover { width: 22px; min-height: 22px; height: 22px; padding: 0; border-radius: 50%; border: 0; background: var(--color); box-shadow: inset 0 0 0 1px var(--line); }
+.swatch.chosen { box-shadow: 0 0 0 2px var(--frame), 0 0 0 4px var(--color); }
+.icon-choice { display: grid; place-items: center; width: 28px; min-height: 28px; height: 28px; padding: 0; border: 0; border-radius: var(--radius-sm); background: none; }
+.icon-choice:hover { background: var(--press); }
+.icon-choice.chosen { background: var(--tile-hover); box-shadow: inset 0 0 0 1px var(--line); }
 .port { width: 72px; flex: none; }
 .line input.host { flex: 1; }
 .question { margin: 0 0 6px; }
@@ -128,9 +190,10 @@ h3 { margin: 14px 0 6px; font-size: var(--size); line-height: 20px; font-weight:
 .key-line { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 4px 12px; min-height: 28px; margin-bottom: 2px; }
 .key-label { flex: 1 1 auto; }
 .key-group { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 4px; }
-.key { min-width: 38px; padding: 2px 8px; border: 1px solid transparent; border-radius: 6px; background: color-mix(in srgb, CanvasText 7%, transparent); color: inherit; text-align: center; font-variant-numeric: tabular-nums; cursor: pointer; }
-.key:hover { background: color-mix(in srgb, CanvasText 12%, transparent); }
-.key.none { color: color-mix(in srgb, CanvasText 45%, transparent); }
-.key.recording { border-color: color-mix(in srgb, CanvasText 45%, transparent); background: transparent; }
-.key-note { margin: 0 0 6px; color: color-mix(in srgb, CanvasText 60%, transparent); font-size: 13px; }
+/* Key caps lift off the surface as buttons do. */
+.key { min-width: 38px; min-height: 26px; padding: 2px 8px; border: 1px solid transparent; border-radius: var(--radius-sm); background: var(--tile); color: inherit; text-align: center; font-variant-numeric: tabular-nums; cursor: pointer; }
+.key:hover { background: var(--tile-hover); }
+.key.none { color: var(--faint); }
+.key.recording { border-color: var(--accent-line); background: var(--selected); }
+.key-note { margin: 0 0 6px; color: var(--muted); font-size: var(--size); }
 #keys-back { margin-top: 10px; }

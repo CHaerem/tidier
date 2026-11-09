@@ -1137,7 +1137,9 @@ test("the sidebar answers with the selection, also when the tab you are on is no
 
 test("moving back to Sidebery takes the bar's keys away again", async () => {
   const ff = new FakeFirefox();
+  ff.granted = new Set(["management"]); ff.sidebery = "off"; // as going back has it
   world(ff);
+  ff.managed = {}; ff.store.tidierAlone = true; // moved over by hand: a machine set to Tidier alone in its setup cannot go back
   const x = await started(ff);
   const reset = [];
   x.b.commands.reset = async name => { reset.push(name); };

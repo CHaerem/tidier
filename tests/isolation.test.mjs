@@ -354,7 +354,7 @@ test("a page already loaded outside any space when Tidier starts is moved, with 
 });
 
 test("moving over: the listener is there as the page loads again, so Firefox remembers it", async () => {
-  const ff = new FakeFirefox(); ff.granted = new Set(GUARD);
+  const ff = new FakeFirefox(); ff.granted = new Set([...GUARD, "management"]); ff.sidebery = "off";
   aWindow(ff);
   const x = await run(ff, { alone: false });
   assert.ok(!ff.pageStorageData.isolationAtStart);

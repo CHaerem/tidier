@@ -25,7 +25,7 @@
 const BRIDGE_HOST = "tidier_bridge";
 const BRIDGE_PAGE_SCRIPT = "/bridge-page.js"; // what runs in a page, in Firefox's isolated world
 const AGENT_SPACE = { name: "Agent", color: "turquoise", icon: "fingerprint" };
-const READ_PAGES = { origins: ["<all_urls>"] }; // optional, asked for in the click that turns these on
+const READ_PAGES = { origins: ["*://*/*"] }; // optional, asked for in the click that turns these on
 const BRIDGE_RETRIES_MS = [1000, 5000, 20000]; // a host that goes away is started again a few times, then a notice says so
 const AGENT_QUIET_MS = 20000; // how long after its last action an agent still counts as active
 const AGENT_LOG = 50; // actions kept, in memory only, for the settings page

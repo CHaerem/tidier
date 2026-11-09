@@ -244,7 +244,7 @@ export class FakeFirefox {
     b.menus = { onShown: ev(), onHidden: ev(), onClicked: ev(), removeAll: async () => {}, create() {}, remove: async () => {}, refresh() {} };
     b.browserAction = { onClicked: ev(), setBadgeText: async o => { ff.badge = o.text; }, setTitle: async () => {} };
     b.permissions = { onAdded: ev(), onRemoved: ev(), contains: async () => false };
-    b.sidebarAction = { toggle: async () => {} };
+    b.sidebarAction = { toggle: async () => {}, open: async () => {}, isOpen: async () => true, setPanel: async o => { ff.sidebarPanel = o.panel; } };
     addIsolationApis(ff, b);
     ff.adapt?.(b); // a fake built on this one changes the API here, before the scripts see it
     const errors = [];
@@ -299,11 +299,20 @@ function addIsolationApis(ff, b) {
   const apis = () => {
     if (ff.granted.has("webRequest")) b.webRequest ??= { onBeforeRequest: ev(), onBeforeSendHeaders: ev() };
     if (ff.granted.has("proxy")) b.proxy ??= { onRequest: ev() };
+    // Sidebery as Firefox's management API sees it, once Tidier may: ff.sidebery is "on", "off" or "missing".
+    if (ff.granted.has("management")) b.management ??= {
+      get: async id => {
+        if (id !== "{3c078156-979c-498b-8990-85f7987dd929}" || (ff.sidebery ?? "missing") === "missing") throw new Error(`No such addon ${id}`);
+        return { id, name: "Sidebery", enabled: ff.sidebery === "on", optionsUrl: "moz-extension://sb/page.setup/setup.html" };
+      },
+      onEnabled: ev(), onDisabled: ev(), onInstalled: ev(), onUninstalled: ev(),
+    };
     if (ff.granted.has("browsingData")) b.browsingData ??= { remove: async (o, kinds) => { ff.log.push(["browsingData", o, kinds]); ff.cookies = ff.cookies.filter(c => c.storeId !== o.cookieStoreId); } };
   };
   apis();
   ff.grant = (...names) => { names.forEach(n => ff.granted.add(n)); apis(); b.permissions.onAdded.fire({ permissions: names, origins: [] }); };
-  b.permissions.contains = async ({ permissions = [], origins = [] }) => [...permissions, ...origins].every(p => ff.granted.has(p));
+  // As in Firefox, "<all_urls>" (given before Tidier asked for "*://*/*") holds every website.
+  b.permissions.contains = async ({ permissions = [], origins = [] }) => [...permissions, ...origins].every(p => ff.granted.has(p) || (p === "*://*/*" && ff.granted.has("<all_urls>")));
   b.contentScripts ??= { register: async () => ({ unregister: async () => {} }) }; // what else access to all websites starts (littlewindow.js)
   // Answers a top-level request as Firefox would ask it: undefined if nothing listens.
   ff.request = async ({ tabId, url, requestId = "r" + (ff.nextRequest = (ff.nextRequest || 0) + 1), originUrl, type = "main_frame", method = "GET" }) => {

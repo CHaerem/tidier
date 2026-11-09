@@ -332,7 +332,7 @@ async function linkInSpace(tab, url, space) {
 // of which only the last could be taken back.
 //
 // The command bar's barkeys.js comes and goes with it (commandbar.js, startBarKeys).
-const ALL_SITES = { origins: ["<all_urls>"] };
+const ALL_SITES = { origins: ["*://*/*"] };
 let peekScript = null, peekChange = Promise.resolve();
 function startPeek() {
   peekChange = peekChange.then(async () => {

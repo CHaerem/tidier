@@ -17,7 +17,11 @@
 // Nothing here contacts anyone by itself, and with nothing happening nothing runs.
 
 // --- 1. No request in the wrong container ------------------------------------------
-const ISOLATION_PERMISSIONS = { permissions: ["webRequest", "webRequestBlocking"], origins: ["<all_urls>"] };
+// Every website (http, https and their web sockets), and no local files: "<all_urls>" would
+// also put "Access local files on your computer" in Firefox's list of what Tidier may do, also on
+// the daily browser on Sidebery, where none of it is used. One given before as "<all_urls>" still
+// counts: Firefox finds this inside it, and keeps it over an update.
+const ISOLATION_PERMISSIONS = { permissions: ["webRequest", "webRequestBlocking"], origins: ["*://*/*"] };
 const AT_START = "isolationAtStart"; // localStorage: what must already work while Firefox starts, see below
 const REOPEN_LIMIT_MS = 5000; // a tab Firefox never finishes creating must not hold a request for ever
 const BY_HAND_MS = 5000;
@@ -548,7 +552,7 @@ async function startIsolation() {
   if (!tidierAlone) return stopIsolation();
   await readSpaces();
   networkNow = await spaceNetwork.get();
-  hostsGiven = !!await browser.permissions.contains?.({ origins: ["<all_urls>"] }).catch(() => false);
+  hostsGiven = !!await browser.permissions.contains?.({ origins: ["*://*/*"] }).catch(() => false);
   if (await browser.permissions.contains?.(ISOLATION_PERMISSIONS).catch(() => false)) guardRequests();
   else unguardRequests();
   applyNetwork();

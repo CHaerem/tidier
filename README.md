@@ -58,7 +58,7 @@ folders as Tidier's own data (`ownfolders.js`); rules for addresses; and a setti
 page. It sits behind a setting, off by default, since Sidebery and Tidier would fight
 over the same tabs: `tidierAlone` in the extension's storage, or declared for a
 machine in managed storage. A browser is moved over on the settings page
-(`moveover.js`), never by an update, and can be moved back.
+(`moveover.js`), never by an update, and can be moved back: see *Moving over and back* below.
 
 With it come what Sidebery does well, each as one fixed behaviour: Tidier's own short
 menu on tabs, tiles, folders and spaces; selecting several tabs; one quiet line with
@@ -326,6 +326,34 @@ for a machine by name in managed storage, next to `tidierAlone`:
 `"data": { "tidierAlone": true, "hiddenSpaces": ["Name of the space"] }`. Firefox reads
 that file once each time Tidier starts, so a change there needs a restart of Firefox.
 
+## Moving over and back
+
+On the settings page, in numbered steps it ticks itself as they are done:
+
+1. **Take in Sidebery's export** (in Sidebery's settings: Create snapshot, then Export addon
+   data). Its rules, the order of its spaces and which folders are closed are kept nowhere else,
+   and only Sidebery, running, can make it. A folder closed in any window comes over closed.
+2. **Allow** what Tidier alone needs, in one click: hiding other spaces' tabs, stopping pages
+   before they load in the wrong space, and seeing whether Sidebery is on.
+3. **Turn Sidebery off** in `about:addons`, and keep it installed. The page sees it at once and
+   comes to the front, since the window has no tab list until the next step.
+4. **Move to Tidier alone.** Refused while Sidebery runs: both would work on every tab, and Sidebery
+   closes a closed folder's tabs with its page. The record is written first; then Tidier starts
+   again, closes the folder pages, and opens the settings page again to say what came over, which
+   other window still has no sidebar (⌃⇧S there), and that Firefox asks once whether Tidier may hide
+   tabs (Keep Tabs Hidden). A container that had no space in Sidebery and holds nothing (Firefox's
+   own "Shopping") is hidden on this machine rather than being a new space on the bar.
+
+Going back is the same the other way, again with Sidebery off: Tidier gives every window its folder
+pages back, unloaded and right before their tabs, also for folders made or renamed on Tidier alone,
+and only closed folders come back open; the page says all of that first, and follows folders made or
+renamed while it is open. Then you turn Sidebery on and press ⌃E in each window.
+Sidebery takes a tab's parent only when the tab is created or when its sidebar starts, from the tab's
+opener, so Tidier sets each tab's opener (its folder's page, else an essential of its space, which
+also puts a new page in the right space) before Sidebery runs. The smoke test reads Sidebery's own
+tree afterwards (`move_over`). While the browser is on Sidebery, Tidier's toolbar button opens the
+settings page, and Tidier's sidebar only says where the tab list is.
+
 ## Placeholders (ghost.html)
 
 Firefox cannot give an unloaded tab a title or icon. Ghosts and essential
@@ -511,6 +539,15 @@ that). Everything works without them, as it says here:
   in a space.
 - `search`, `history` and `bookmarks`, when you choose *Also search history and bookmarks*
   in the command bar.
+- `management`, in the click that allows what moving over needs (or the one that goes back):
+  only to see whether Sidebery is on, since both steps are refused while it runs.
+
+"Access to all websites" is `*://*/*` (http, https and their web sockets), not `<all_urls>`,
+which would also list *Access local files on your computer* in about:addons, on the daily
+browser on Sidebery too, where none of it is used. One given earlier as `<all_urls>` still
+counts. Firefox's Extensions menu still says Tidier "needs permission" on a website while
+this is not given: it says that of any extension that may ask for a site, and a click on
+Tidier there opens the settings page while the browser is on Sidebery.
 
 No required host permissions and no data collection. The only network use is icons: a
 placeholder with no saved icon tries the site's `/favicon.ico`, and Tidier's sidebar
@@ -657,7 +694,9 @@ Not guaranteed:
   (the slow-load sign and warming up a tab). `sidebar/tokens.css` holds the colours and
   sizes of every page Tidier draws.
 - `copies.js` – the daily copy of Tidier's data, and taking one in, matched to spaces by name.
-- `moveover.js`, `settings/` – the settings page, and moving a browser over from Sidebery.
+- `moveover.js`, `settings/` – the settings page, and moving a browser over from Sidebery and
+  back. `sidebar/sidebery.html` – Tidier's sidebar while a browser is on Sidebery: only where
+  the tab list is.
 - `tools/fix_spaces.py` – put tabs back in their own Sidebery space (in your
   own Firefox, which it restarts).
 - `tools/shoot.py` – pictures of what Tidier draws, for working on its look: every

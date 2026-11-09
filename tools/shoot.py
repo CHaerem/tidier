@@ -905,9 +905,14 @@ def icons_that_vanish(cam):
 SETTINGS_IN_FULL = """
   const $ = id => document.getElementById(id), add = (parent, tag, cls, text) => { const e = document.createElement(tag); e.className = cls; e.textContent = text; parent.append(e); return e; };
   add($("notices"), "p", "notice", "Tidier could not read the record of its folders, and is working from the copy made this morning.");
-  $("allow-hiding").hidden = $("move").hidden = $("move-back").hidden = $("merge").hidden = false;
+  $("allow-hiding").hidden = $("move").hidden = $("move-back").hidden = $("merge").hidden = $("moved").hidden = $("windows-without").hidden = $("import-alone").hidden = false;
   $("alone-state").textContent = "This browser uses Sidebery for its tab list, spaces and folders.";
-  $("sidebery-result").textContent = "Imported 2 rules and the order of 3 spaces.";
+  for (const text of ["Moved: 5 folders and 23 tabs are Tidier's own now.", "When Firefox asks whether Tidier may hide tabs, choose Keep Tabs Hidden.", "Going back is below."]) add($("moved"), "span", "note-line", text);
+  $("windows-without").textContent = "One window has no sidebar yet: press ⌃⇧S there to show Tidier's.";
+  $("sidebery-result").textContent = "Took in 2 rules and the order of 3 spaces.";
+  $("step-export").classList.add("done"); $("step-allow").classList.add("done");
+  $("sidebery-state").textContent = "Sidebery is on."; $("sidebery-state").classList.add("wrong");
+  $("back-report").textContent = "5 folders get their page in Sidebery again, with their tabs. Essentials, tabs and rules stay as they are.";
   for (const [name, on] of [["Personal: 7 essentials, 3 folders, 12 saved tabs", true], ["Work: 12 essentials, 2 folders, 30 saved tabs", false]]) {
     const line = add($("merge-spaces"), "label", "line", "");
     const box = document.createElement("input");
