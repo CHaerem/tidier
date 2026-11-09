@@ -69,8 +69,10 @@ function withWindows(ff, x) {
     from.forEach(closeIfEmpty);
   };
   ff.winValues ??= new Map();
-  b.sessions.setWindowValue = async (id, k, v) => { ff.winValues.set(`${id}/${k}`, v); (ff.winValueLog ??= []).push([id, k, v]); };
-  b.sessions.getWindowValue = async (id, k) => ff.winValues.get(`${id}/${k}`);
+  // As in Firefox, a window that has closed is refused (windowTracker.getWindow, ext-sessions).
+  const known = id => { if (!ff.wins.has(id)) throw new Error(`Invalid window ID: ${id}`); };
+  b.sessions.setWindowValue = async (id, k, v) => { known(id); ff.winValues.set(`${id}/${k}`, v); (ff.winValueLog ??= []).push([id, k, v]); };
+  b.sessions.getWindowValue = async (id, k) => { known(id); return ff.winValues.get(`${id}/${k}`); };
   b.menus.update = async (id, p) => { (ff.menuUpdates ??= []).push([id, p]); };
   return x;
 }
@@ -732,7 +734,6 @@ test("a private window's link goes nowhere else", async () => {
 
 test("nothing is kept for tabs that are gone", async () => {
   const ff = new FakeFirefox();
-  ff.closesEmptyWindows = true; // a small window whose tab has gone has closed, as in Firefox
   const { w } = session(ff);
   const x = await start(ff);
   const a = linkFromOutside(ff, x, w.id);
