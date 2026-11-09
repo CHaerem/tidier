@@ -72,7 +72,7 @@ async function setSpace(windowId, space) {
 // opened in the space, see below, or is a page that cannot be: about:, extensions'
 // pages). Firefox cannot hide a pinned tab or the selected one. How many it hid.
 // Not while hidingHeld: right after moving over, until the settings page is in front to
-// say what Firefox then asks (afterMovingOver, moveover.js).
+// say what Firefox then asks (aftermove.js).
 let hidingHeld = false;
 async function showSpace(windowId) {
   if (!tidierAlone || hidingHeld) return 0;
@@ -136,7 +136,7 @@ async function usedLastOf(tabs) {
 
 // Switching: back to the tab you used last in that space, else a new tab there.
 async function switchSpace(windowId, space) {
-  askHidingSeen(); // moveover.js: Firefox's question comes now if it has not been answered
+  askHidingSeen(); // aftermove.js: the sidebar's line about Firefox's question goes
   const last = await lastUsedIn(windowId, space);
   if (!await browser.windows.get(windowId).catch(() => null)) return; // closed meanwhile
   activeSpace.set(windowId, space); // before the tab is selected, so onActivated agrees

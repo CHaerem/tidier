@@ -58,13 +58,7 @@ folders as Tidier's own data (`ownfolders.js`); rules for addresses; and a setti
 page. It sits behind a setting, off by default, since Sidebery and Tidier would fight
 over the same tabs: `tidierAlone` in the extension's storage, or declared for a
 machine in managed storage. A browser is moved over on the settings page
-(`moveover.js`), never by an update, and can be moved back. Each way waits for Sidebery
-to be in the state it needs: off to move over, on to go back. Right after the move the
-settings page comes back in front, and only then are tabs hidden, so that Firefox's
-question about hidden tabs (answer *Keep Tabs Hidden*; *Disable Extension* would turn
-Tidier off) comes while the page says what to choose, and not over the sidebar; Firefox
-forgets the answer whenever Tidier is turned off and on, which starting again alone is.
-A window that came over without Tidier's sidebar shows the page too, with a button for it.
+(`moveover.js`), never by an update, and can be moved back.
 
 With it come what Sidebery does well, each as one fixed behaviour: Tidier's own short
 menu on tabs, tiles, folders and spaces; selecting several tabs; one quiet line with
@@ -485,7 +479,13 @@ is first of use: a permission added to the required ones makes Firefox hold ever
 later update until it is approved, with only a badge to show it (a unit test stops
 that). Everything works without them, as it says here:
 
-- `tabHide`, when Tidier alone is turned on: other spaces' tabs hidden.
+- `tabHide`, when Tidier alone is turned on: other spaces' tabs hidden. At the first tab
+  hidden, Firefox asks in a note over the top of the sidebar whether that may go on: the
+  answer is *Keep Tabs Hidden* (*Disable Extension* turns Tidier off), and until it is given
+  the note comes back at every tab hidden. Firefox forgets it whenever Tidier is turned off
+  and on, which the move over is, so right after the move no tab is hidden until the
+  settings page is back in front to say what to answer; the sidebar says it too, until the
+  first switch of space (`aftermove.js`).
 - `webRequest`, `webRequestBlocking` and access to all websites, in the same click:
   a page stopped before it loads in the wrong space (below, Isolation). For this Tidier
   reads no page and keeps no record of where you go; all it looks at is the address of a
@@ -501,8 +501,6 @@ that). Everything works without them, as it says here:
   in a space.
 - `search`, `history` and `bookmarks`, when you choose *Also search history and bookmarks*
   in the command bar.
-- `management`, in the click that moves a browser over or back: only to see whether
-  Sidebery is on, so that neither runs in the wrong order (`moveover.js`).
 
 No required host permissions and no data collection. The only network use is icons: a
 placeholder with no saved icon tries the site's `/favicon.ico`, and Tidier's sidebar
@@ -649,6 +647,8 @@ Not guaranteed:
   sizes of every page Tidier draws.
 - `copies.js` – the daily copy of Tidier's data, and taking one in, matched to spaces by name.
 - `moveover.js`, `settings/` – the settings page, and moving a browser over from Sidebery.
+  `aftermove.js` – right after the move: the hidden-tabs question while the settings page is
+  in front, and a button for Tidier's sidebar in any other window, which Firefox leaves without.
 - `tools/fix_spaces.py` – put tabs back in their own Sidebery space (in your
   own Firefox, which it restarts).
 - `tools/shoot.py` – pictures of what Tidier draws, for working on its look: every

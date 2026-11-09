@@ -244,11 +244,11 @@ export class FakeFirefox {
     b.browserAction = { onClicked: ev(), setBadgeText: async o => { ff.badge = o.text; }, setTitle: async () => {} };
     b.permissions = { onAdded: ev(), onRemoved: ev(), contains: async () => false };
     // Which windows have Tidier's sidebar open: all of them unless a test says otherwise.
-    b.sidebarAction = { toggle: async () => {}, open: async () => { ff.log.push(["sidebarOpen"]); }, isOpen: async ({ windowId }) => !ff.noSidebar?.has(windowId) };
+    b.sidebarAction = { toggle: async () => {}, open: async () => { ff.log.push(["sidebarOpen"]); }, isOpen: async ({ windowId }) => !ff.noSidebar?.has(windowId), setPanel: async o => { ff.sidebarPanel = o.panel; } };
     addIsolationApis(ff, b);
     ff.adapt?.(b); // a fake built on this one changes the API here, before the scripts see it
     const errors = [];
-    const quiet = { ...console, error: (...a) => { errors.push(a.map(x => x?.message ?? String(x)).join(" ")); }, warn() {} };
+    const quiet = { ...console, error: (...a) => { errors.push(a.map(x => x?.message ?? String(x)).join(" ")); }, warn() {}, info() {} }; // info: what you did (trace, common.js)
     // performance runs as much faster as the timers, so that waits worked out from it agree with
     // them; a fake with a clock of its own (chaos_firefox.mjs) brings both.
     const scaledNow = { now: () => performance.now() * SCALE };
@@ -299,8 +299,14 @@ function addIsolationApis(ff, b) {
   const apis = () => {
     if (ff.granted.has("webRequest")) b.webRequest ??= { onBeforeRequest: ev(), onBeforeSendHeaders: ev() };
     if (ff.granted.has("proxy")) b.proxy ??= { onRequest: ev() };
-    // Other add-ons, as ff.addons: { id: { enabled } }.
-    if (ff.granted.has("management")) b.management ??= { get: async id => { const a = ff.addons?.[id]; if (!a) throw new Error(`No such addon ${id}`); return { id, ...a }; }, onEnabled: ev(), onDisabled: ev(), onInstalled: ev(), onUninstalled: ev() };
+    // Sidebery as Firefox's management API sees it, once Tidier may: ff.sidebery is "on", "off" or "missing".
+    if (ff.granted.has("management")) b.management ??= {
+      get: async id => {
+        if (id !== "{3c078156-979c-498b-8990-85f7987dd929}" || (ff.sidebery ?? "missing") === "missing") throw new Error(`No such addon ${id}`);
+        return { id, name: "Sidebery", enabled: ff.sidebery === "on", optionsUrl: "moz-extension://sb/page.setup/setup.html" };
+      },
+      onEnabled: ev(), onDisabled: ev(), onInstalled: ev(), onUninstalled: ev(),
+    };
     if (ff.granted.has("browsingData")) b.browsingData ??= { remove: async (o, kinds) => { ff.log.push(["browsingData", o, kinds]); ff.cookies = ff.cookies.filter(c => c.storeId !== o.cookieStoreId); } };
   };
   apis();

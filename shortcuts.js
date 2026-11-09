@@ -1,6 +1,7 @@
 // What Tidier can do from a key, in one table, shared with the command bar: each
-// command has a name (the one in manifest.json), a label (the manifest's description,
-// which Firefox's own page shows too; a unit test keeps the two the same), the key
+// command has a name (the one in manifest.json), a label (the manifest's description, which
+// Firefox's own page shows too, there with "(with Tidier alone)" after it, since the daily
+// browser on Sidebery lists them all; a unit test keeps the two the same), the key
 // Tidier gives it (keys-commands.js) and an action that takes the window. The keys are
 // changed on the settings page.
 //
@@ -61,7 +62,7 @@ const COMMANDS = [
   // window, where its key closes it. ⌘⇧K, since Firefox keeps ⌘K and ⌘T for itself; ⌘T goes
   // to the bar as soon as Firefox lets go of it (customKeys.json in the dotfiles).
   { name: "command-bar", label: "Open or close the command bar", key: "Ctrl+Shift+K" },
-  { name: "command-bar-t", label: "The command bar's second key, once Firefox lets go of it", key: "Ctrl+T" },
+  { name: "command-bar-t", label: "A second key for the command bar, such as ⌘T once Firefox lets go of it", key: "Ctrl+T" },
   // Copy for Claude, carried out by bridge.js once turned on, with a key only if you give it one.
   { name: "claude-copy-page", label: "Copy this page for Claude (once turned on in Tidier's settings)" },
   { name: "claude-copy-tabs", label: "Copy this space's tabs for Claude (once turned on in Tidier's settings)" },

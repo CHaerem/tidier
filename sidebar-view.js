@@ -178,7 +178,7 @@ browser.runtime.onConnect.addListener(port => {
       windowId = msg.windowId;
       if (!sidebarPorts.has(windowId)) sidebarPorts.set(windowId, new Set());
       sidebarPorts.get(windowId).add(port);
-      sidebarHere(windowId); // moveover.js
+      sidebarHere(windowId); // aftermove.js
       viewSoon(windowId);
     } else if (windowId === null) {
       return;
@@ -233,7 +233,7 @@ async function sidebarAction(windowId, msg) {
   else if (msg.type === "unloadSpace") await unloadSpace(msg.space);
   else if (msg.type === "renameSpace") await renameSpace(msg.space, msg.name);
   else if (msg.type.startsWith("little:")) await littleAction(windowId, msg); // littlewindow.js
-  else if (msg.type === "askHidingSeen") askHidingSeen(); // moveover.js
+  else if (msg.type === "askHidingSeen") askHidingSeen(); // aftermove.js
   viewSoon(windowId);
 }
 
@@ -269,8 +269,14 @@ async function moveEssential(windowId, tabId, beforeId) {
 }
 
 // The toolbar button shows or hides the sidebar: without a sidebar, a window has
-// no list of tabs at all (the tab bar is hidden in userChrome.css).
-browser.browserAction.onClicked.addListener(() => browser.sidebarAction.toggle());
+// no list of tabs at all (the tab bar is hidden in userChrome.css). On Sidebery the sidebar
+// is Sidebery's, and Firefox's Extensions menu invites a click on Tidier: that click would
+// swap Sidebery out for Tidier's sidebar, so there it opens the settings page instead, where
+// moving over is. (Both in the click itself, which Firefox requires of them.)
+browser.browserAction.onClicked.addListener(() => { if (tidierAlone) browser.sidebarAction.toggle(); else browser.runtime.openOptionsPage(); });
+// On Sidebery, Tidier's own sidebar (chosen in Firefox's sidebar menu, or still open after going
+// back) only says where the tab list is: it is made for Tidier alone, and half of it would work.
+aloneRead.then(() => { if (!tidierAlone) browser.sidebarAction.setPanel({ panel: "sidebar/sidebery.html" }).catch(noteError); });
 for (const event of ["onCreated", "onMoved", "onAttached", "onDetached"]) {
   browser.tabs[event].addListener((tabOrId, info) => viewSoon(tabOrId.windowId ?? info?.windowId ?? info?.newWindowId ?? info?.oldWindowId));
 }

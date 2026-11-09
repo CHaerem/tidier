@@ -389,7 +389,7 @@ browser.runtime.onMessage.addListener((msg, sender) => {
     newsMarks, newsSeen,
     settled,
     littles, newBlanks, // littlewindow.js
-    wantsSidebar, // moveover.js
+    wantsSidebar, // aftermove.js
   };
   // Counted once Tidier is done with what it was doing (the helper page
   // asking this causes a little work), so a list only shows what it keeps.
@@ -1320,11 +1320,12 @@ async function start(delayMs) {
   await serial(async () => {
     await step(bringBackSpaces); // isolation.js: before anything is opened in a container that is gone
     await step(closeOldFolderPages); // moveover.js
-    await step(afterMovingOver); // moveover.js: the settings page back, before any tab is hidden
+    await step(holdHidingAfterMove); // aftermove.js: right after moving over, no tab hidden until the settings page is back
     await step(initList);
     await step(essentialsAgree);
     // Without the roles every tab looks unsynced, and reconcileAll would act on that.
     if (await step(loadRoles)) {
+      await step(foldersBackToSidebery); // moveover.js: after going back, before the windows are filled
       await step(initSynced);
       await step(() => reconcileAll({ firefoxStart: firefoxStarting })); // also adds missing essentials, via fillWindow
     }
@@ -1344,6 +1345,7 @@ async function start(delayMs) {
   if (focusedWindowId !== browser.windows.WINDOW_ID_NONE) { pullSelected(focusedWindowId); selectedEssential(focusedWindowId); }
   await step(seeUnseenTabs);
   await step(startSync); // sync.js
+  await step(afterMoving); // moveover.js: the settings page again, after moving over or back
 }
 
 // A tab opened while Tidier was starting went unseen (a link that started Firefox, say,

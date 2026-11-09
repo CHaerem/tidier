@@ -1249,9 +1249,38 @@ def real_sidebery_export(m):
       return {ver: "5.6.1", ...(await storage(args[0], ["containers", "sidebar", "snapshots"]))};""", SIDEBERY_ID)
 
 
+# What the settings page's moving steps say, read from the page itself.
+MOVE_STEPS = """await wait(600);
+  const done = id => doc.getElementById(id)?.classList.contains("done");
+  return {export: done("step-export"), allow: done("step-allow"), off: done("step-off"), canMove: !doc.getElementById("move-over").disabled,
+          state: doc.getElementById("sidebery-state").textContent, moved: doc.getElementById("moved").hidden ? "" : doc.getElementById("moved").textContent,
+          backOff: done("step-back-off"), canGoBack: !doc.getElementById("move-back").hidden && !doc.getElementById("do-move-back").disabled};"""
+
+# Sidebery's own tree in each window, from what it keeps for each tab (its "data" in the
+# session, which it starts from): for each folder page, the record's tabs in that folder
+# that Sidebery does not have under it, and whether the page is in its container's space.
+SIDEBERY_TREE = H + """const {ExtensionParent} = ChromeUtils.importESModule("resource://gre/modules/ExtensionParent.sys.mjs");
+  const tabId = t => ExtensionParent.apiManager.global.tabTracker.getId(t);
+  const sb = (w, t) => { try { return JSON.parse(w.SessionStore.getCustomTabValue(t, "extension:%(sb)s:data") || "{}"); } catch (e) { return {}; } };
+  const all = (await storage("%(ext)s", ["syncedTabs"])).syncedTabs, pf = await panelFor(), out = [];
+  for (const w of wins()) {
+    const tabs = w.gBrowser.tabs, byKey = new Map(tabs.filter(t => key(w, t)).map(t => [JSON.parse(key(w, t)), t]));
+    for (const [k, e] of Object.entries(all)) {
+      const page = e.group && byKey.get(k);
+      if (!page) continue;
+      const outside = Object.keys(all).filter(x => all[x].parentKey === k && byKey.get(x) && sb(w, byKey.get(x)).parentId !== tabId(page)).map(x => byKey.get(x).label);
+      out.push({folder: page.label, outside, inItsSpace: sb(w, page).panelId === pf[ctxOf(page)], tabs: Object.keys(all).filter(x => all[x].parentKey === k).length});
+    }
+  }
+  return out;""" % {"sb": SIDEBERY_ID, "ext": EXT_ID}
+MOVE_PERMISSIONS = (["tabHide", "webRequest", "webRequestBlocking", "management"], ["<all_urls>"])
+
+
 def move_over(m):
     # Moving this browser from Sidebery to Tidier alone, and back (PLAN.md, part D): every
-    # folder and tab stays, folder pages go, and the record is what carries it.
+    # folder and tab stays, folder pages go, and the record is what carries it. Both ways
+    # with Sidebery off, in the steps the settings page checks, and back again Sidebery's
+    # own tree has every folder's tabs under its page.
     record = H + """const all = (await storage("%s", ["syncedTabs"])).syncedTabs;
       const name = e => e.own ? e.name : decodeURIComponent((e.url.split("#")[1] || "").replace(/~!.*!~$/, ""));
       const folders = {};
@@ -1259,6 +1288,8 @@ def move_over(m):
       return {folders, tabs: Object.keys(all).filter(k => !all[k].group).sort(), saved: Object.values(all).filter(e => e.saved).length,
               pages: wins().map(w => w.gBrowser.tabs.filter(t => url(t).includes("group.html")).length)};""" % EXT_ID
     tabs_here = H + """return wins().map(w => w.gBrowser.tabs.filter(t => !t.pinned && role(w, t) && role(w, t) !== "copy").map(t => key(w, t)).sort()).sort();"""
+    sidebery_enabled = lambda on: m.js(H + """const {AddonManager} = ChromeUtils.importESModule("resource://gre/modules/AddonManager.sys.mjs");
+      await (await AddonManager.getAddonByID("%s"))[args[0] ? "enable" : "disable"](); await wait(args[0] ? 4000 : 1500); return 1;""" % SIDEBERY_ID, on)
     before, tabs0 = m.js(record), m.js(tabs_here)
     keys_now = """return Object.fromEntries((await WebExtensionPolicy.getByID(args[0]).extension.shortcuts.allCommands()).map(c => [c.name, c.shortcut]));"""
     keys0 = m.js(keys_now, EXT_ID)
@@ -1267,9 +1298,18 @@ def move_over(m):
     check("with Sidebery, the settings page offers nothing for agents", r is True, str(r))
     report = extension_message(m, {"type": "settings:get"})["report"]
     check("the report before moving names the folders and their tabs", len(report["folders"]) == len(before["folders"]) and not report["alone"] and report["tabs"] == len(before["tabs"]), str(report))
+    steps = ext_page(m, "/settings/settings.html", MOVE_STEPS)
+    check("before anything is done, no step is ticked and Move cannot be clicked", not steps["export"] and not steps["allow"] and not steps["off"] and not steps["canMove"], str(steps))
+    # Step 2, as its click would give it (Firefox's prompt cannot be clicked here).
+    m.js(GIVE_PERMISSIONS, EXT_ID, *MOVE_PERMISSIONS)
+    steps = ext_page(m, "/settings/settings.html", MOVE_STEPS)
+    check("with Sidebery on, the page says so, and Move cannot be clicked", steps["allow"] and not steps["off"] and not steps["canMove"] and "on" in steps["state"], str(steps))
+    refused = extension_message(m, {"type": "settings:moveOver"})
+    check("moving over is refused while Sidebery runs, and nothing changes", "refused" in (refused or {}) and m.js(record) == before and m.js(tabs_here) == tabs0, f"{refused}")
     # Sidebery's real export, with one folder closed in its snapshot: the record has an address
     # with a suffix Sidebery adds, the snapshot one without. (Closing it in Sidebery's sidebar for
     # real is out of reach here: the sidebar's page cannot be scripted, so `folded` is set here.)
+    # Closed in one window only, as Sidebery opens every folder in a new window: it counts.
     clicked, export = real_sidebery_export(m)
     closed_folder = sorted(before["folders"])[0]
     in_snapshot = 0
@@ -1277,48 +1317,54 @@ def move_over(m):
         for panel in window:
             for tab in panel:
                 if isinstance(tab, dict) and "group.html#" + closed_folder.replace(" ", "%20") in tab["url"]:
-                    tab["folded"] = True
                     in_snapshot += 1
+                    tab["folded"] = in_snapshot == 1
     imported = extension_message(m, {"type": "settings:importSidebery", "backup": export})
-    check("Sidebery's own export and snapshot are understood, and a closed folder is found by its address", clicked and in_snapshot == len(before["pages"]) and imported["folds"] == 1 and imported["order"] == 3, f"{clicked}, {in_snapshot}, {imported}")
+    check("Sidebery's own export and snapshot are understood, and a folder closed in one window is found by its address", clicked and in_snapshot == len(before["pages"]) and imported["folds"] == 1 and imported["order"] == 3, f"{clicked}, {in_snapshot}, {imported}")
+    again = extension_message(m, {"type": "settings:importSidebery", "backup": export})
+    check("the same export again is nothing new", [again["rules"], again["order"], again["newFolds"]] == [0, 0, 0], str(again))
     check("taking its folds in changes nothing until the move", m.js(tabs_here) == tabs0 and m.js(record) == before, str(m.js(record)))
-    # What the click that moves asks for (permissions.request needs a click, which a test has
-    # no way to make): management to see whether Sidebery is on, tabHide for the spaces.
-    m.js(GIVE_PERMISSIONS, EXT_ID, ["management", "tabHide"], [])  # (defined further down, with the isolation groups)
-    r = extension_message(m, {"type": "settings:moveOver"})
-    check("moving over is refused while Sidebery is still on, and changes nothing", "Sidebery is still on" in str((r or {}).get("refused")) and m.js(record) == before and m.js(tabs_here) == tabs0, str(r))
-    m.js(H + """const {AddonManager} = ChromeUtils.importESModule("resource://gre/modules/AddonManager.sys.mjs");
-      await (await AddonManager.getAddonByID("%s")).disable(); await wait(1500); return 1;""" % SIDEBERY_ID)
+    sidebery_enabled(False)
     still = m.js(tabs_here)
     check("disabling Sidebery closes no folder page and no tab", m.js(record)["pages"] == before["pages"] and still == tabs0, f"{before['pages']} -> {m.js(record)['pages']}")
+    steps = ext_page(m, "/settings/settings.html", MOVE_STEPS)
+    check("with Sidebery off, every step is ticked, and Move can be clicked", steps["export"] and steps["allow"] and steps["off"] and steps["canMove"], str(steps))
+    m.js(H + """for (const w of wins()) for (const t of [...w.gBrowser.tabs]) if (url(t).includes("/settings/settings.html")) w.gBrowser.removeTab(t); await wait(300); return 1;""")
     fire_message(m, {"type": "settings:moveOver"})
     # Firefox's note about hidden tabs hangs over the top of the sidebar, with Disable Extension
     # where New tab is: it must come while the settings page is in front to say what to choose.
     note = m.js(H + """const page = w => url(w.gBrowser.selectedTab).split("/").slice(3).join("/");
-      for (let i = 0; i < 80; i++) {
+      for (let i = 0; i < 120; i++) {
         const w = main(), open = w.document.getElementById("extension-notification-panel")?.state === "open";
         if (open && !w.document.getElementById("extension-tab-hide-notification").hidden)
-          return {page: page(w), front: Services.wm.getMostRecentWindow("navigator:browser") === w, pages: wins().map(page)};
+          return {page: page(w), front: Services.wm.getMostRecentWindow("navigator:browser") === w};
         await wait(250);
       }
-      return {page: null, pages: wins().map(page)};""")
+      return {page: page(main())};""")
+    ask = ext_page(m, "/settings/settings.html", """return {ask: !doc.getElementById("moved-ask").hidden && doc.getElementById("moved-ask").textContent, without: doc.getElementById("windows-without").hidden ? "" : doc.getElementById("windows-without-text").textContent};""")
     check("after moving over, Firefox asks about hidden tabs while the settings page is in front, saying what to choose",
-          note["page"] == "settings/settings.html#moved" and note.get("front"), str(note))
-    check("after moving over, a window without Tidier's sidebar shows the page too", note["pages"] == ["settings/settings.html#moved"] * 2, str(note))
-    m.js(H + "await wait(4000); return 1;")
-    # The second window's button gives it the sidebar: a click in a page of Tidier's is what lets it.
+          note["page"] == "settings/settings.html" and note.get("front") and "Keep Tabs Hidden" in str(ask["ask"]), f"{note}, {ask}")
+    # The second window came over with no sidebar, and so no list of tabs: it shows the page too,
+    # whose button gives it the sidebar (a click in a page of Tidier's is what lets that happen).
+    other_page = m.js(H + """for (let i = 0; i < 40 && !url(other().gBrowser.selectedTab).includes("/settings/settings.html"); i++) await wait(250);
+      return url(other().gBrowser.selectedTab).split("/").slice(3).join("/");""")
+    check("after moving over, a window without Tidier's sidebar shows the page too, and the page in front says so",
+          other_page == "settings/settings.html" and "Another window has no sidebar yet" in ask["without"], f"{other_page}, {ask}")
     handle = m.js(H + """const {NavigableManager} = ChromeUtils.importESModule("chrome://remote/content/shared/NavigableManager.sys.mjs");
       main().document.getElementById("extension-notification-panel")?.hidePopup?.(); other().focus(); await wait(500);
-      return NavigableManager.getIdForBrowser(other().gBrowser.tabs.find(t => url(t).includes("settings.html#moved")).linkedBrowser);""")
+      return NavigableManager.getIdForBrowser(other().gBrowser.selectedTab.linkedBrowser);""")
     m.cmd("Marionette:SetContext", {"value": "content"})
     m.cmd("WebDriver:SwitchToWindow", {"handle": handle, "focus": False})
-    button = m.cmd("WebDriver:FindElement", {"using": "css selector", "value": "#moved button"})
+    said = m.cmd("WebDriver:ExecuteScript", {"script": """const d = (window.wrappedJSObject || window).document;
+      return d.getElementById("windows-without").hidden ? "" : d.getElementById("windows-without-text").textContent;""", "args": []})
+    button = m.cmd("WebDriver:FindElement", {"using": "css selector", "value": "#show-sidebar"})
     m.cmd("WebDriver:ElementClick", {"id": next(iter(button.values()))})
     m.chrome()
     r = m.js(H + """for (let i = 0; i < 20 && !other().SidebarController.isOpen; i++) await wait(100);
       const ids = wins().map(w => w.SidebarController.isOpen && w.SidebarController.currentID); main().focus();
-      await removeWhere((w, t) => url(t).includes("settings.html#moved")); return ids;""")
-    check("its button gives the second window Tidier's sidebar", "6844a953" in str(r[1]), str(r))
+      for (const t of [...other().gBrowser.tabs]) if (url(t).includes("/settings/settings.html")) other().gBrowser.removeTab(t);
+      await wait(300); return ids;""")
+    check("its button gives the second window Tidier's sidebar", "This window has no sidebar yet" in str(said) and "6844a953" in str(r[1]), f"{said}, {r}")
     m.js(AFTER_MOVE_OVER, EXT_ID)
     after = m.js(record)
     check("after moving over, every folder has its tabs, and the pages are gone",
@@ -1328,6 +1374,9 @@ def move_over(m):
     check("after moving over, the folder closed in Sidebery's snapshot is closed, and no other", folds == [closed_folder], f"{folds}, {closed_folder}")
     r = m.js(H + "await wait(1500); return wins().map(w => [...new Set(w.gBrowser.tabs.filter(t => !t.pinned && !t.hidden && t.userContextId).map(t => t.userContextId))].length);")
     check("after moving over, each window shows one space", all(x == 1 for x in r), str(r))
+    moved = m.js(H + """return wins().flatMap(w => w.gBrowser.tabs).filter(t => url(t).includes("/settings/settings.html")).length;""")
+    steps = ext_page(m, "/settings/settings.html", MOVE_STEPS) if moved else {}
+    check("after moving over, the settings page is open again, and says what came over", moved == 1 and steps["moved"].startswith("Moved: ") and steps["canGoBack"], f"{moved}, {steps}")
     no_problems(m, "after moving over")
     keys = m.js(keys_now, EXT_ID)
     check("after moving over, Tidier's keys are given", keys["tab-1"] == "Ctrl+1" and keys["space-1"] == "MacCtrl+1" and keys["next-tab"] == "Ctrl+MacCtrl+Down", str(keys))
@@ -1335,17 +1384,22 @@ def move_over(m):
     # after moving back it has its icon.
     # (/icon-png: Firefox shows an SVG icon through an address of its own, not as data:.)
     icon_key = m.js(H + """const t = main().gBrowser.addTrustedTab(args[0] + "/icon-png", {userContextId: 1, inBackground: true}); await wait(4000); return JSON.parse(key(main(), t));""", m.pages)
-    # And back: Sidebery on first, and its folder pages return. With it off, its pages could not
-    # load, and Sidebery would take them for ordinary tabs: every folder would be lost there.
-    r = extension_message(m, {"type": "settings:moveBack"})
-    check("going back is refused while Sidebery is off", "Sidebery is off" in str((r or {}).get("refused")) and m.js(record)["pages"] == [0, 0], str(r))
-    m.js(H + """const {AddonManager} = ChromeUtils.importESModule("resource://gre/modules/AddonManager.sys.mjs");
-      await (await AddonManager.getAddonByID("%s")).enable(); await wait(4000); return 1;""" % SIDEBERY_ID)
+    # And back, with Sidebery still off: Tidier gives each window its folder pages, and
+    # Sidebery, turned on afterwards, builds its tree from them.
+    m.js(H + """for (const w of wins()) for (const t of [...w.gBrowser.tabs]) if (url(t).includes("/settings/settings.html")) w.gBrowser.removeTab(t); await wait(300); return 1;""")
     fire_message(m, {"type": "settings:moveBack"})
     m.js(H + "await wait(10000); return 1;")
     back = m.js(record)
     check("after moving back, every folder has its tabs and its pages", back["folders"] == before["folders"] and [k for k in back["tabs"] if k != icon_key] == before["tabs"] and back["pages"] == before["pages"], f"{before} -> {back}")
     check("after moving back, Sidebery has the keys again", m.js(keys_now, EXT_ID) == keys0, str(m.js(keys_now, EXT_ID)))
+    sidebery_enabled(True)
+    m.js(H + """for (const w of wins()) { await w.SidebarController.show("_3c078156-979c-498b-8990-85f7987dd929_-sidebar-action"); } await wait(6000); return 1;""")
+    tree = m.js(SIDEBERY_TREE)
+    check("after moving back and turning Sidebery on, Sidebery's own tree has every folder's tabs under its page, in its space, in every window",
+          len(tree) == 2 * len(before["folders"]) and all(not f["outside"] and f["inItsSpace"] for f in tree), str(tree))
+    m.js(H + "await wait(8000); return 1;")  # Sidebery's first sort and Tidier's folders first are done by now
+    later = m.js(record)
+    check("some seconds later, Tidier's record still has every folder with its tabs", later["folders"] == before["folders"] and later["saved"] >= before["saved"], f"{before} -> {later}")
     r = m.js(H + """const copies = () => wins().flatMap(w => w.gBrowser.tabs.filter(t => value(w, t, "syncKey") === args[0] && value(w, t, "syncRole") === "ghost"));
       for (let i = 0; i < 80 && !(copies().length && copies().every(t => t.image && !t.linkedPanel)); i++) await wait(250);
       return copies().map(t => ({icon: (t.image || "").slice(0, 10), loaded: !!t.linkedPanel}));""", icon_key)

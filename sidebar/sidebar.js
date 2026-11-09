@@ -285,7 +285,7 @@ document.getElementById("tabs").oncontextmenu = e => {
 };
 // Asking needs your click, so it is here and not in the background.
 document.getElementById("allow-hiding").onclick = () => browser.permissions.request({ permissions: ["tabHide"] });
-// Right after moving over, until the first switch of space (moveover.js): Firefox's note
+// Right after moving over, until the first switch of space (aftermove.js): Firefox's note
 // about hidden tabs hangs over this part of the sidebar, with Disable Extension where New tab is.
 document.getElementById("ask-hiding-no").onclick = () => {
   document.getElementById("ask-hiding").hidden = true;

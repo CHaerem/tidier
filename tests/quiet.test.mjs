@@ -595,6 +595,15 @@ test("a second click on Undo, or one on a line already gone, does nothing", asyn
   assert.equal(ff.restored.length, 2);
   assert.deepEqual(keysOf(ff, w.id), ["a", "b", "c"]);
   assert.deepEqual(x.errors, []);
+  // An Undo that once brought nothing back could not be made to happen again: each click,
+  // what it found and what came back are kept (trace, common.js), as is a menu item clicked.
+  port.send({ type: "trace", what: "menu: Archived tabs" });
+  await wait(100);
+  const traces = JSON.parse(JSON.stringify(x.js("traces"))).map(t => t.slice(13));
+  assert.deepEqual(traces.filter(t => t.startsWith("undo") || t.startsWith("bring")), [
+    `undo ${id + 1} in ${w.id}: another line now (${id})`, `undo ${id} in ${w.id}: taken`, `undo ${id} in ${w.id}: no line any more`, "bring back 2 of 2",
+  ]);
+  assert.ok(traces.includes(`sidebar ${w.id}: menu: Archived tabs`));
   x.kill();
 });
 

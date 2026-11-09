@@ -18,6 +18,18 @@
 const ARCHIVE_DEFAULT_HOURS = 12;
 const ARCHIVE_CHECK_MINUTES = 10;
 
+// The time as it may be set: whole hours from 0 (never) up to a year, else null, which
+// is no answer at all. A negative number would make every ordinary tab count as unused
+// (now - lastUsed is never less than it), and the next round would close them all; an
+// emptied field is not "never". A value stored before this was checked counts as unset.
+const ARCHIVE_MOST_HOURS = 24 * 365;
+function archiveHoursFrom(value) {
+  if (typeof value !== "number" && (typeof value !== "string" || !value.trim())) return null;
+  const hours = Number(value);
+  return Number.isFinite(hours) && hours >= 0 ? Math.min(Math.round(hours), ARCHIVE_MOST_HOURS) : null;
+}
+const archiveHours = stored => archiveHoursFrom(stored) ?? ARCHIVE_DEFAULT_HOURS;
+
 // A Sidebery folder, or a tab anywhere below one: by the stored parents, and
 // by the tree as it is now (Sidebery keeps openerTabId equal to the parent),
 // since a tab can be moved into a folder after it was opened.
@@ -34,7 +46,7 @@ function inFolder(all, key, live, tabsById) {
 // look at its own tabs); `explain` returns why each tab was kept.
 async function archiveIdleTabs({ now = Date.now(), onlyKeys, explain = false } = {}) {
   const stored = await browser.storage.local.get(["archiveAfterHours", "archiveSince"]);
-  const hours = stored.archiveAfterHours ?? ARCHIVE_DEFAULT_HOURS;
+  const hours = archiveHours(stored.archiveAfterHours);
   if (!hours) return [];
   let since = stored.archiveSince;
   if (!since) {
