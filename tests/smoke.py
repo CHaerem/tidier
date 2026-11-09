@@ -1412,18 +1412,28 @@ def alone_second_window(m):
     check("not on a tab opened there in the background since, and the first window stays where it is", not got.get("behind") and got.get("firstStays"), str(got))
 
     # Closed and reopened (⌘⇧N): the window comes back in its own space, on its own tab, and
-    # the window you are in keeps its tab. Its pages loading again are no news.
+    # the window you are in keeps its tab. Its pages loading again are no news, and an
+    # essential you had unloaded, with its page, stays unloaded: sent to its placeholder, it
+    # was loaded first, and what its title said on the way was taken for news.
     r = m.js(H + """const a = main(), b = other(); a.focus(); await wait(300);
       const was = {key: key(b, b.gBrowser.selectedTab), space: b.gBrowser.selectedTab.userContextId, mine: key(a, a.gBrowser.selectedTab)};
-      await close(b); a.focus(); await wait(800);
+      const asleep = a.gBrowser.tabs.find(t => t.pinned && !t.selected && t.linkedPanel && /^https?:/.test(url(t)));
+      if (asleep) { a.gBrowser.discardBrowser(asleep); await wait(500); }
+      b.gBrowser.selectedTab.toggleMuteAudio(); await wait(300); // you muted the page there
+      await close(b); a.focus(); await wait(1500);
+      const heir = a.gBrowser.tabs.find(t => key(a, t) === was.key), heirMuted = !!heir?.muted;
       const w = a.SessionStore.undoCloseWindow(0); w.__smoke = true;
       for (let i = 0; i < 100 && !(w.gBrowser && w.gBrowser.tabs.length > 2); i++) await wait(100);
       await wait(7000); // past news's five seconds of quiet
       return {...was, back: key(w, w.gBrowser.selectedTab), backSpace: w.gBrowser.selectedTab.userContextId, mineNow: key(a, a.gBrowser.selectedTab),
+              asleep: asleep ? {still: !asleep.linkedPanel && /^https?:/.test(url(asleep))} : null, heirMuted,
               loaded: wins().flatMap(x => x.gBrowser.tabs.filter(t => t.pinned && t.linkedPanel && !url(t).includes("ghost.html")).map(t => key(x, t) ?? ek(x, t))).length};""")
     marks = extension_message(m, {"type": "stats"})["sizes"].get("newsMarks")
+    check("a muted page whose window closes stays muted in the window that takes it over", r.get("heirMuted"), str(r))
     check("a window reopened with ⌘⇧N is back in its own space, on its own tab", r.get("back") == r.get("key") and r.get("backSpace") == r.get("space"), str(r))
     check("and the window you are in keeps its tab", r.get("mineNow") == r.get("mine"), str(r))
+    check("(an essential with its page, unloaded, to see what a reopen does with it)", r.get("asleep") is not None, str(r))
+    check("an unloaded essential stays unloaded when a window is reopened", (r.get("asleep") or {}).get("still"), str(r))
     check("its pages loading again put no news marks anywhere", marks == 0, f"{marks} {r}")
 
 
@@ -1669,6 +1679,32 @@ def alone_safe_moves(m):
     r = m.js(where_script, "smoke-safe-rule")
     check("and it is still there a moment later, once", r["at"] == [there], str(r))
     set_rules([])
+
+    # What a tab was goes with it: an unloaded one arrives unloaded, so nothing is asked of
+    # the site in a space you are not looking at, and a muted one stays muted, so it cannot
+    # play there out of sight. One line says where they went, and Undo brings them back.
+    for part in ("smoke-safe-muted", "smoke-safe-asleep"):
+        open_in(f"https://example.org/?{part}", here)
+        registered_where(part)
+    m.js(H + """const w = main(), byPart = p => w.gBrowser.tabs.find(t => url(t).includes(p));
+      byPart("smoke-safe-muted").toggleMuteAudio(); w.gBrowser.discardBrowser(byPart("smoke-safe-asleep")); await wait(800); return 1;""")
+    state = """const state = async space => Object.fromEntries((await page.browser.tabs.query({cookieStoreId: space})).filter(t => /smoke-safe-(muted|asleep)/.test(t.url))
+      .map(t => [t.url.includes("muted") ? "muted" : "asleep", {muted: !!t.mutedInfo?.muted, unloaded: t.discarded, title: t.title}]));"""
+    r = sidebar_page(m, drop_on_space + state + """const ids = [await tabWith("smoke-safe-muted"), await tabWith("smoke-safe-asleep")];
+      for (const id of ids) send({type: "moveToSpace", tabId: id, space: args[0], leaving: ids});
+      for (let i = 0; i < 50 && Object.keys(await state(args[0])).length < 2; i++) await wait(100);
+      await wait(800);
+      const out = {there: await state(args[0]), line: doc.querySelector("#note .text")?.textContent ?? null, undo: doc.querySelector("#note .act")?.textContent ?? null};
+      doc.querySelector("#note .act")?.click();
+      for (let i = 0; i < 50 && Object.keys(await state(args[1])).length < 2; i++) await wait(100);
+      await wait(800);
+      out.back = await state(args[1]);
+      return out;""", there, here)
+    check("a muted tab moved to another space stays muted, and an unloaded one arrives unloaded, with its title",
+          r.get("there", {}).get("muted", {}).get("muted") and r["there"].get("asleep", {}).get("unloaded") and not (r["there"].get("asleep", {}).get("title") or "http").startswith(("http", "about:")), str(r))
+    check("one line says where they went, with Undo", re.fullmatch(r"2 tabs moved to .+", r.get("line") or "") and r.get("undo") == "Undo", str(r))
+    check("and Undo brings them back as they were", r.get("back", {}).get("muted", {}).get("muted") and r["back"].get("asleep", {}).get("unloaded"), str(r))
+    m.js(H + """for (const w of wins()) for (const t of w.gBrowser.tabs.filter(t => /smoke-safe-(muted|asleep)/.test(url(t)))) w.gBrowser.removeTab(t); await wait(1200); return 1;""")
 
     # The selected tab: it goes, and you stay in the space, on a tab that was there.
     open_in("https://example.org/?smoke-safe-selected", here)
@@ -3291,7 +3327,10 @@ def alone_news(m):
       await removeWhere((x, t) => url(t).includes(args[0]));
       return 1;""", name)
     stats = extension_message(m, {"type": "stats"})
-    check("no mark stays once its pages are gone, and nothing is kept of them", stats["sizes"]["newsMarks"] == 0 and stats["sizes"]["newsSeen"] <= remembered, f"{remembered} -> {stats['sizes']}")
+    # What is remembered is for pages loaded now (news.js forgets one as it is unloaded), which
+    # a tab selected meanwhile can have added to.
+    loaded = m.js(H + """return wins().flatMap(w => w.gBrowser.tabs.filter(t => t.linkedPanel && /^https?:/.test(url(t)))).length;""")
+    check("no mark stays once its pages are gone, and nothing is kept of them", stats["sizes"]["newsMarks"] == 0 and stats["sizes"]["newsSeen"] <= loaded, f"{remembered}, {loaded} loaded -> {stats['sizes']}")
 
 
 def alone_touches(m):
@@ -5867,9 +5906,27 @@ def alone_update(m):
         print("SKIP  alone_update (needs Tidier installed for real: Developer Edition, or --xpi)", flush=True)
         return
     before = m.js(SNAP_ALONE)
+    look = """() => ({url: doc.URL, born: Math.round(content.performance.timeOrigin), ready: doc.readyState, space: doc.documentElement.dataset.space || null,
+      own: doc.head ? doc.head.querySelectorAll("style").length : 0, rows: doc.querySelectorAll("#tabs .tab").length})"""
+    was = in_sidebar(m, look)
     bar_open(m)  # an update can come at any moment, also with the bar open
     m.cmd("Addon:Install", {"path": m.update_xpi(), "temporary": False})
-    m.js(H + "await wait(9000); return 1;")
+    # The sidebar while Tidier starts again: in the space's look from its first moment, not a
+    # blank, untinted panel until the background part answers.
+    seen, t0 = [], time.time()
+    while time.time() - t0 < 6:
+        try:  # (a page being replaced may never answer, or not be there yet)
+            s = m.js(H + IN_SIDEBAR + "return await Promise.race([inSidebar(...args), wait(800).then(() => null)]);", look)
+        except Exception:
+            m.chrome()
+            s = None
+        if isinstance(s, dict) and s.get("url", "").endswith("/sidebar/sidebar.html") and s.get("ready") != "loading" and s != (seen[-1] if seen else None):
+            seen.append(s)
+        time.sleep(0.05)
+    m.js(H + "await wait(6000); return 1;")
+    again = [s for s in seen if s["born"] != was.get("born")]  # the page as it is loaded again
+    bare = [s for s in again if not s["space"] or (was.get("own") and not s["own"])]
+    check("during an update the sidebar keeps its space's look until it has its view", again and not bare, f"before {was}, then {seen[:6]}")
     after = m.js(SNAP_ALONE)
     check("after an update with Tidier alone, the same tabs, folders and one space shown", before == after, f"{before} -> {after}")
     left = m.js(H + """return wins().filter(w => !w.toolbar.visible).length;""")

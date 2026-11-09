@@ -692,7 +692,60 @@ def little_window(cam):
       await wait(800); main().focus(); await wait(300); return 1;""")
 
 
-STEPS = (space_by_space, hover, hover_more, menus, folders_closed, live_closed, folder_rename, marks, notices, scrolled, empty_spaces, few_essentials, icons_that_vanish, settings, little_window)
+def moved(cam):
+    """Two tabs moved to another space: one line says where they went, with Undo, which takes them back."""
+    select(cam.m, on_tab(PERSONAL), PERSONAL["ctx"])
+    if not cam.wanted("state-moved"):
+        return
+    in_sidebar(cam.m, """const port = await connect(), [titles, to] = args;
+      const ids = port.view().tabs.filter(t => titles.includes(t.title)).map(t => t.id);
+      for (const id of ids) port.send({type: "moveToSpace", tabId: id, space: to, leaving: ids});
+      await until(() => doc.querySelector("#note .text")?.textContent.includes("moved"), "the line");
+      port.close();""", ["Weather for Oslo", "Podcast: slow radio"], f"firefox-container-{WORK['ctx']}")
+    cam.mouse_away()
+    cam.shoot("state-moved")
+    in_sidebar(cam.m, """doc.querySelector("#note .act").click();
+      await until(() => [...doc.querySelectorAll("#tabs .tab .title")].some(t => t.textContent === "Weather for Oslo"), "Undo");""")
+
+
+def no_space(cam):
+    """A page that cannot be in a space (the settings page) is listed in the one it was opened in only."""
+    if not cam.wanted("state-no-space"):
+        return
+    select(cam.m, on_tab(STUDIO), STUDIO["ctx"])
+    in_sidebar(cam.m, """await page.browser.runtime.openOptionsPage(); await until(() => [...doc.querySelectorAll("#tabs .tab .title")].some(t => /Tidier/.test(t.textContent)), "the settings page's row");""")
+    cam.mouse_away()
+    cam.shoot("state-no-space-here")
+    cam.shoot("window-no-space", whole_window=True)
+    select(cam.m, on_tab(PERSONAL), PERSONAL["ctx"])
+    cam.shoot("state-no-space-elsewhere")
+    cam.m.js(CHROME + """for (const t of gB.tabs.filter(t => t.linkedBrowser.currentURI.spec.includes("/settings/settings.html"))) gB.removeTab(t); await wait(500); return 1;""")
+
+
+def placeholder_on_show(cam):
+    """A second window left on a placeholder whose page is in the window you use: it says which page it stands for."""
+    if not cam.wanted("window-placeholder"):
+        return
+    select(cam.m, on_tab(STUDIO), STUDIO["ctx"])
+    for scheme in sorted(SCHEMES, key=lambda s: s != cam.current):
+        cam.scheme(scheme)
+        png = cam.m.js(CHROME + """const [page] = args, other = w.OpenBrowserWindow(); other.__shot = true;
+          for (let i = 0; i < 100 && !(other.gBrowser && other.gBrowser.tabs.length > 20); i++) await wait(100);
+          await wait(2500); w.focus(); await wait(800);
+          const ghost = other.gBrowser.tabs.find(t => t.linkedBrowser.currentURI.spec.includes("ghost.html") && !t.pinned && t.label === page);
+          other.gBrowser.selectedTab = ghost; await wait(2500);
+          const scale = other.devicePixelRatio, drawn = other.browsingContext.currentWindowGlobal;
+          const all = await drawn.drawSnapshot(new other.DOMRect(0, 0, other.innerWidth, other.innerHeight), scale, "rgb(255,255,255)");
+          const canvas = other.document.createElementNS("http://www.w3.org/1999/xhtml", "canvas");
+          canvas.width = all.width; canvas.height = all.height; canvas.getContext("2d").drawImage(all, 0, 0);
+          const out = canvas.toDataURL("image/png").split(",")[1];
+          other.close(); await wait(1500); w.focus(); await wait(300);
+          return out;""", "Grid systems")
+        cam.write(f"window-placeholder-{scheme}", png)
+
+
+STEPS = (space_by_space, hover, hover_more, menus, folders_closed, live_closed, folder_rename, marks, notices, scrolled, empty_spaces, few_essentials, icons_that_vanish, settings, little_window,
+         moved, no_space, placeholder_on_show)
 
 
 def take_pictures(cam):
