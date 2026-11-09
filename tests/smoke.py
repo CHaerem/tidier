@@ -2704,7 +2704,9 @@ def alone_hand(m):
     time.sleep(0.5)
     later = hand_spot(m, """const b = row(args[0]); return {top: b && box(b).top, room: !!doc.querySelector("#tabs .room")};""", p["below"])
     check("a double click on × closes one tab", "hand-3" not in left and len(left) == 11 and after["gone"], f"{left} {after}")
-    check("the row below stays under the pointer while it is in the list, and comes up when it leaves", after["top"] == p["top"] and after["room"] and later["top"] == p["top"] - 32 and not later["room"], f"{p} {after} {later}")
+    # (Once the pointer has left, the row comes up, or, at the end of a scrolled list, the rows
+    # above it come down, as the list gets shorter.)
+    check("the row below stays under the pointer while it is in the list, and moves when it leaves", after["top"] == p["top"] and after["room"] and abs(later["top"] - p["top"]) == 32 and not later["room"], f"{p} {after} {later}")
 
     # A middle click closes, with Firefox's autoscroll on, and the next click works. (Firefox
     # starts it only in what can scroll, so the list gets room at its end for this.)
@@ -2900,7 +2902,7 @@ def alone_hand(m):
     closed = m.js(ctrl_w, "hand-12")
     back = m.js(ctrl_shift_t, "hand-12")
     check("⌘W on a loaded saved tab leaves its row in its folder, unloaded", closed["closed"]["rows"] == 1 and closed["closed"]["inFolder"] and not closed["closed"]["loaded"], str(closed))
-    check("⌘⇧T brings it back in its folder, loaded, and the list does not move by itself", back["tops"] == [0] and back["last"]["rows"] == 1 and back["last"]["inFolder"] and back["last"]["loaded"] and back["selected"] == "hand-12" and order == ["hand-11", "hand-12"] and long > 200, f"{back} {order} {long}")
+    check("⌘⇧T brings it back in its folder, loaded, and the list does not move by itself", len(back["tops"]) == 1 and back["last"]["rows"] == 1 and back["last"]["inFolder"] and back["last"]["loaded"] and back["selected"] == "hand-12" and order == ["hand-11", "hand-12"] and long > 200, f"{back} {order} {long}")
     # Removed for good: × on its placeholder, after a ⌘W that left the page in Recently Closed.
     m.js(ctrl_w, "hand-11")
     p = hand_spot(m, """const r = row("hand-11"); r.scrollIntoView({block: "center"}); return box(r.querySelector(".close"));""")
@@ -9284,14 +9286,17 @@ def alone_folds_rest(m):
     t = m.js(REST + """return {tabs: each(args[0]), still: resting(args[0], ["shown/loaded", "shown/unloaded"])};""", keys)
     check("a double click on a folder renames it, and leaves it open", r["renaming"] and not r["closed"] and r["name"] == "Resting", str(r))
     check("a double click on a folder unloads and hides nothing", t["still"], str(t))
-    # Closed, by one click with the mouse: the head shows it at once, and once no second click
-    # has come the tabs are hidden in both windows, and the real ones unloaded, on the address
-    # they had. Then the page's tab gives way to the tab that was selected.
+    # Closed, by one click with the mouse: the head shows it as soon as most double clicks would
+    # have had their second click (FOLD_SHOWS_MS, a quarter of a second, so that a double click
+    # renames with nothing folding first), and once no second click has come the tabs are hidden
+    # in both windows, and the real ones unloaded, on the address they had. Then the page's tab
+    # gives way to the tab that was selected.
     real_clicks(m, head_at["x"], head_at["y"], 1)
     fold_seen = sidebar_page(m, """const box = doc.querySelector(`[data-folder-head="${args[0]}"]`).parentElement;
+      for (let i = 0; i < 20 && !box.classList.contains("collapsed"); i++) await wait(50);
       return {closed: box.classList.contains("collapsed"), count: box.querySelector(".count").textContent};""", s["key"])
     m.js(H + "const w = main(); w.gBrowser.selectedTab = w.__beforeRename; delete w.__beforeRename; return 1;")
-    check("one click with the mouse closes a folder at once, with its count", fold_seen == {"closed": True, "count": "3"}, str(fold_seen))
+    check("one click with the mouse closes a folder within a moment, with its count", fold_seen == {"closed": True, "count": "3"}, str(fold_seen))
     r = m.js(REST + """const ok = await until(() => resting(args[0]));
       return {ok, tabs: each(args[0]), urls: args[0].map(k => url(rep(main(), k))), selected: url(main().gBrowser.selectedTab),
               ctrlTab: args[0].filter(k => main().ctrlTab.tabList.includes(rep(main(), k))).length};""", keys)

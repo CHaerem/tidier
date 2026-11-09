@@ -103,8 +103,9 @@ function icon(item) {
 
 // A middle press in a list that can scroll starts Firefox's autoscroll (general.autoScroll,
 // on by default on a Mac), and then no middle click comes at all, and the next click only
-// ends the autoscroll. Firefox's own tab strip keeps it off its tabs the same way.
-const noAutoscroll = e => { if (e.button === 1) e.preventDefault(); };
+// ends the autoscroll. Firefox's own tab strip keeps it off its tabs the same way. (Not in
+// a row's rename box, which starts no autoscroll, and which that would take the focus from.)
+const noAutoscroll = e => { if (e.button === 1 && !e.target.closest?.("input")) e.preventDefault(); };
 
 // --- Essentials ----------------------------------------------------------------
 function tile(item) {
