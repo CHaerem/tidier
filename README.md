@@ -324,7 +324,8 @@ a tab; F2 renames a folder, a saved tab or an essential; ⇧F10 or ⌃↵ opens 
 the cursor is on, and Esc gives the keyboard back to it. The row under the cursor has the
 keyboard itself, so there is one ring, and a button you Tab to (New tab, a space's dot)
 answers its own Enter and Space. Tab comes into the list once, on the tab you are on, and
-the next Tab goes on past it. Rows, folders, essentials and spaces are named for a
+the next Tab goes on past it, as ⇧Tab goes back out: a row's ×, its speaker and Clear are
+for the pointer (⌫ and the menus do the same by key). Rows, folders, essentials and spaces are named for a
 screen reader, with what is selected and what is open (`sidebar/keys.js`, `alone_keyboard`
 in `tests/smoke.py`). Two things Firefox decides: no key puts the keyboard in the sidebar
 (F6 skips it, and an extension's page cannot take the focus from the page, tried in the test

@@ -3100,13 +3100,13 @@ def alone_hand(m):
     check("a click on Undo just after the line faded closes, brings back and selects nothing", after == before, f"{before} -> {after}")
 
     # ⌘Z in the sidebar, while the line offers Undo.
-    close_two("hand-8", "hand-9")
+    said = close_two("hand-8", "hand-9")
     n = len(hands())
     m.js(FOCUS_SIDEBAR)
     press(m, "z", CMD)
     back = m.js(H + """const w = main(); for (let i = 0; i < 50 && w.gBrowser.tabs.filter(t => /^hand-[89]$/.test(t.label)).length < 2; i++) await wait(100);
       return w.gBrowser.tabs.filter(t => /^hand-[89]$/.test(t.label)).length;""")
-    check("⌘Z in the sidebar undoes what the line offers", back == 2 and len(hands()) == n + 2 and not in_sidebar(m, """() => doc.getElementById("note").classList.contains("shown")"""), f"{back} {n} {hands()}")
+    check("⌘Z in the sidebar undoes what the line offers", back == 2 and len(hands()) == n + 2 and not in_sidebar(m, """() => doc.getElementById("note").classList.contains("shown")"""), f"{back} {n} {hands()}, the line: {said!r}")
 
     # ⌘W, with Firefox's closing animation: the row goes at once and does not come back.
     gone = m.js(H + IN_SIDEBAR + """const w = main(); Services.prefs.setIntPref("ui.prefersReducedMotion", 0); await wait(200);
@@ -3502,8 +3502,10 @@ def alone_sound(m):
       fold();
       await until(() => head("Sound folder").parentElement.classList.contains("collapsed"));
       return {tile: !!tile("sound tile"), row: !!row("sound row"), unloaded: row("sound row").classList.contains("unloaded") && tile("sound tile").classList.contains("unloaded"),
-              marks: doc.querySelectorAll(".sound").length, boxes: places(args[1])};""", here, away)
-    check("with nothing playing there is no mark anywhere", r["marks"] == 0, str(r))
+              marks: doc.querySelectorAll(".sound").length, boxes: places(args[1]),
+              on: [...doc.querySelectorAll(".sound")].map(e => (e.closest("[data-tab], [data-folder-head], .space")?.title ?? "?").split("\n")[0] + (e.classList.contains("muted") ? " (muted)" : ""))};""", here, away)
+    loud = m.js(H + """return wins().flatMap(w => w.gBrowser.tabs.filter(t => t.muted || t.soundPlaying).map(t => (t.muted ? "muted " : "playing ") + t.label));""")
+    check("with nothing playing there is no mark anywhere", r["marks"] == 0, f"{r} {loud}")
     check("this window has only placeholders of those tabs", r["tile"] and r["row"] and r["unloaded"], str(r))
     before = r["boxes"]
 
@@ -4506,7 +4508,9 @@ def alone_isolation(m):
     visit(m, space, f"{base}/r/dropped")
     time.sleep(2.5)
     r = sidebar_page(m, """
-      const row = plainTabs().find(x => x.title === "Recorded" || x.querySelector(".title").textContent === "Recorded");
+      // By its address: every page of the test server's /r/ is called "Recorded", and a group before can leave one.
+      let row = null;
+      for (const x of plainTabs()) if ((await page.browser.tabs.get(Number(x.dataset.tab))).url.includes("/r/dropped")) { row = x; break; }
       const spot = doc.querySelector(".new-space");
       const out = {row: !!row, hiddenBefore: spot.hidden};
       if (!row) return out;
@@ -6170,13 +6174,14 @@ def alone_sync_hide(m):
     r = until(m, """const n = args[1], left = main().gBrowser.tabs.filter(t => t.userContextId === n).length; return {ok: left > 0, left};""", other)
     check("the declaration taken away, it can be shown again on the settings page", r["ok"], str(r))
     # With sync on and nothing happening: nothing at all, and nothing written.
-    ext_page(m, settings, """await wait(7000); page.__smokeWrites = 0; page.browser.storage.onChanged.addListener(() => { page.__smokeWrites++; }); return 1;""")
+    ext_page(m, settings, """await wait(7000); page.__smokeWrites = []; page.browser.storage.onChanged.addListener((changes, area) => { page.__smokeWrites.push(area + ": " + Object.keys(changes).join(" ")); }); return 1;""")
     idle = extension_message(m, {"type": "idle", "ms": 12000})
-    writes = ext_page(m, settings, "return page.__smokeWrites;")
+    written = ext_page(m, settings, "return [...page.__smokeWrites];")  # (what, should anything be)
+    writes = len(written)
     if idle["alarms"]:
         print(f"SKIP  idle check with sync on: a timed check ran meanwhile ({idle})", flush=True)
     else:
-        check("with sync on and nothing happening, Tidier does nothing and writes nothing", idle["jobs"] == 0 and idle["views"] == 0 and idle["lookups"] == 0 and writes == 0, f"{idle}, {writes}")
+        check("with sync on and nothing happening, Tidier does nothing and writes nothing", idle["jobs"] == 0 and idle["views"] == 0 and idle["lookups"] == 0 and writes == 0, f"{idle}, {written}")
     # As found, for the groups after this one.
     r = ext_page(m, settings, """doc.getElementById("sync-on").click(); await wait(800); await page.browser.storage.sync.clear();
       return doc.getElementById("sync-on").checked;""")
