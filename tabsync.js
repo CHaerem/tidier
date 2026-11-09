@@ -384,7 +384,7 @@ browser.runtime.onMessage.addListener((msg, sender) => {
     unruled,
     earlyKeys,
     quietNotes, goneNotes, closeGroups,
-    removedTabs, // sidebar-view.js
+    removedTabs, restoredKeys, // sidebar-view.js
     closingOrder,
     successorDue,
     newsMarks, newsSeen,

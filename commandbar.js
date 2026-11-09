@@ -178,7 +178,10 @@ const BAR_COMMANDS = [
   { name: "undo", each: ctx => { const note = quietNotes.get(ctx.windowId); return note?.undo ? [{ label: `Undo: ${note.text}`, value: String(note.id) }] : []; }, free: true,
     run: (ctx, id) => undoNote(ctx.windowId, Number(id)) },
   { name: "copy-url", label: ctx => barCount(ctx, "Copy address", "Copy # addresses"), when: ctx => ctx.addresses.length > 0,
-    run: ctx => navigator.clipboard.writeText(ctx.addresses.join("\n")) },
+    run: async ctx => { // and says so, as ⇧⌘C does (copyUrl, shortcuts.js)
+      await navigator.clipboard.writeText(ctx.addresses.join("\n"));
+      say(ctx.windowId, ctx.addresses.length > 1 ? `${ctx.addresses.length} addresses copied` : "Address copied", { brief: true });
+    } },
   { name: "rename-tab", label: "Rename this tab", when: ctx => barOnlyThisTab(ctx) && barIsKept(ctx),
     ask: ctx => ({ placeholder: "A name, or nothing for the page's title", value: barNameOf(ctx) }),
     run: (ctx, name) => renameTab(ctx.tab.id, name) },

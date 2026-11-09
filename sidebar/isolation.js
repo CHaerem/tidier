@@ -33,14 +33,17 @@ askNo.onclick = secondClick.acts(() => {
 
 // A notice you dismiss fades where it is and keeps its room until the pointer has left it,
 // so the essentials below do not come up under the pointer at the moment of the click.
+// (Also the lasting notice below the list, once you have seen it: render, sidebar.js.)
 function goQuietly(notice) {
+  if (notice.classList.contains("going")) return;
   notice.classList.add("going");
   const pointerIn = e => { const r = notice.getBoundingClientRect(); return e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom; };
   const gone = () => {
-    notice.hidden = true;
-    notice.classList.remove("going");
     removeEventListener("mousemove", moved, true);
     document.documentElement.removeEventListener("mouseleave", gone);
+    if (!notice.classList.contains("going")) return; // shown again meanwhile
+    notice.hidden = true;
+    notice.classList.remove("going");
   };
   const moved = e => { if (!pointerIn(e)) gone(); };
   addEventListener("mousemove", moved, true);

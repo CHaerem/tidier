@@ -57,13 +57,14 @@ function sessionsRestore(ff, x) {
 
 // The sidebar's end of it: what a window's sidebar sends, and every view it is sent.
 function sidebar(x, windowId) {
-  const listeners = [];
+  const listeners = [], gone = [];
   const port = {
     name: "sidebar", sender: { id: "tidier" }, views: [],
     onMessage: { addListener: f => listeners.push(f) },
-    onDisconnect: { addListener() {} },
+    onDisconnect: { addListener: f => gone.push(f) },
     postMessage(v) { this.views.push(v); },
     send(msg) { for (const f of listeners) f(msg); },
+    close() { for (const f of gone) f(); },
   };
   for (const { f } of x.b.runtime.onConnect.ls) f(port);
   port.send({ type: "hello", windowId });
@@ -369,6 +370,15 @@ test("the line waits while the pointer or the keyboard is on it, and a while aft
   assert.equal(noteIn(x, w.id), null);
   port.send({ type: "holdNote", note: next, held: true }); // gone: nothing to hold, and no timer left
   assert.equal(x.js("quietNotes").size, 0);
+  // The sidebar closed with the pointer on the line: it goes on by itself.
+  x.js(`say(${w.id}, "Folder deleted", { undo: async () => {} })`);
+  const last = noteIn(x, w.id).id;
+  port.send({ type: "holdNote", note: last, held: true });
+  port.close();
+  await wait(1000);
+  assert.equal(noteIn(x, w.id)?.id, last);
+  await wait(10000);
+  assert.equal(noteIn(x, w.id), null, "not held for good by a sidebar that is gone");
   x.kill();
 });
 

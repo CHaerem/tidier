@@ -16,6 +16,7 @@
 // (forgetClosedPlaceholders, common.js).
 
 const NOTE_MS = 10000;
+const NOTE_BRIEF_MS = 4000; // a line that only says something was done, with nothing to undo (`brief`)
 const NOTE_AFTER_MS = 2000; // left by the pointer or the keyboard, it stays at least this long
 const NOTE_GRACE_MS = 1500; // an Undo clicked as the line fades still counts (it fades for .2 s, and a message takes its time)
 const CLOSE_GROUP_MS = 300; // closes this close together are one thing you did
@@ -26,12 +27,14 @@ let noteCount = 0;
 let bringingBack = 0; // undos in progress, see the rules below
 
 // `undo` is run in the queue when you click it: it must not wait for serial() itself,
-// which would wait for it in turn.
-function say(windowId, text, { undo } = {}) {
+// which would wait for it in turn. `brief`: only a word that something was done, which
+// need not take the line's room for long.
+function say(windowId, text, { undo, brief } = {}) {
   if (!tidierAlone) return;
   clearTimeout(quietNotes.get(windowId)?.timer);
   goneNotes.delete(windowId);
-  quietNotes.set(windowId, { id: ++noteCount, text, undo, until: performance.now() + NOTE_MS, timer: setTimeout(() => dropNote(windowId), NOTE_MS) });
+  const ms = brief && !undo ? NOTE_BRIEF_MS : NOTE_MS;
+  quietNotes.set(windowId, { id: ++noteCount, text, undo, until: performance.now() + ms, timer: setTimeout(() => dropNote(windowId), ms) });
   viewSoon(windowId);
 }
 

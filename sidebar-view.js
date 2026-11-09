@@ -120,11 +120,14 @@ async function viewFor(windowId) {
     : here.filter(t => isSideberyGroup(t.url)).map(t => ({ key: syncKeyByTab.get(t.id), id: t.id, name: folderName(t.url), tabs: [] }));
   const byKey = new Map(folders.map(f => [f.key, f]));
   const rowKey = await rowKeys(here);
+  const standIns = tidierAlone && started ? await restoredInPlace(here, all) : new Map();
+  const replaced = new Set(standIns.values());
   const loose = [];
   for (const t of here) {
-    if (isSideberyGroup(t.url)) continue;
-    const folder = byKey.get(folderKeyOf(all, rowKey.get(t.id)));
-    const record = all[rowKey.get(t.id)];
+    if (isSideberyGroup(t.url) || replaced.has(t.id)) continue;
+    const key = rowKey.get(t.id) ?? (standIns.has(t.id) ? restoredKeys.get(t.id) : undefined);
+    const folder = byKey.get(folderKeyOf(all, key));
+    const record = all[key];
     (folder ? folder.tabs : loose).push(tabItem(t, record?.name || record?.title, record));
   }
   for (const f of folders) f.news = f.tabs.some(t => t.news);
@@ -133,6 +136,33 @@ async function viewFor(windowId) {
   // changes, and a load starting and ending must not replace its icon (sidebar/touches.js).
   const loading = tidierAlone ? tabs.filter(tabIsLoading).map(t => t.id) : [];
   return { alone: tidierAlone, needsHiding: tidierAlone && !browser.tabs.hide, problem: [...notices.values()][0] ?? null, note: noteFor(windowId), spaces, space, essentials, folders, tabs: loose, loading, little: await littleRows(spaces) };
+}
+
+// A tab Firefox gives back (⌘⇧T) has its key among its values at once, but Tidier takes it
+// in only once it has settled (registerSoon, tabsync.js). A saved tab's comes back next to the
+// placeholder its ⌘W left (unloadSaved), and until it is taken in it would be drawn as a new
+// tab, by its place in the window: at the end of today's tabs, since a tab in a folder lies
+// last in the window. The list would scroll there to show it, as the selected tab
+// (stayput.js), and it would then jump back into its folder. So it is drawn in its
+// placeholder's place, as it will be (reopenedSaved): returned as tab id -> placeholder's id.
+// (Not where its page is open somewhere: that is a duplicate's key, and it becomes a tab of
+// its own.) Each tab is asked once.
+const restoredKeys = new Map(); // tabId -> the key among its values, or null, until it is taken in
+browser.tabs.onRemoved.addListener(tabId => restoredKeys.delete(tabId));
+async function restoredInPlace(tabs, all) {
+  const standIns = new Map();
+  for (const id of restoredKeys.keys()) if (syncKeyByTab.has(id)) restoredKeys.delete(id);
+  const waiting = tabs.filter(t => !syncKeyByTab.has(t.id));
+  if (!waiting.length) return standIns;
+  await Promise.all(waiting.filter(t => !restoredKeys.has(t.id)).map(t => browser.sessions.getTabValue(t.id, SYNC_KEY).then(key => restoredKeys.set(t.id, key ?? null), () => {})));
+  for (const t of waiting) {
+    const key = restoredKeys.get(t.id), entry = key ? all[key] : null;
+    if (!entry || entry.group || isOwnFolder(entry)) continue;
+    const reps = await repsNow(key);
+    const placeholder = reps.find(r => r.windowId === t.windowId && isGhostUrl(r.url) && tabs.some(x => x.id === r.id));
+    if (placeholder && !reps.some(r => !r.discarded && !isGhostUrl(r.url))) standIns.set(t.id, placeholder.id);
+  }
+  return standIns;
 }
 
 // Which entry of the record each row is. Until Tidier has started (the first seconds after
@@ -187,7 +217,7 @@ const viewSpaceSoon = space => { for (const windowId of sidebarPorts.keys()) if 
 
 browser.runtime.onConnect.addListener(port => {
   if (port.name !== "sidebar" || port.sender?.id !== browser.runtime.id) return;
-  let windowId = null;
+  let windowId = null, holding = null; // the quiet line's note this sidebar holds (holdNote)
   port.onMessage.addListener(async msg => {
     if (msg.type === "hello") {
       windowId = msg.windowId;
@@ -209,6 +239,7 @@ browser.runtime.onConnect.addListener(port => {
     } else if (msg.type === "undo") {
       await undoNote(windowId, msg.note); // quiet.js: taken at once, carried out in the queue
     } else if (msg.type === "holdNote") {
+      holding = msg.held ? msg.note : null;
       holdNote(windowId, msg.note, msg.held); // quiet.js: the line waits while you are on it
     } else if (msg.type === "goToSound") {
       await goToSound(windowId, msg.tabId); // sounds.js; like select, not behind what the queue is doing
@@ -223,6 +254,8 @@ browser.runtime.onConnect.addListener(port => {
     }
   });
   port.onDisconnect.addListener(() => {
+    // A sidebar closed with the pointer on the line tells no more: the line goes on by itself.
+    if (holding !== null) holdNote(windowId, holding, false);
     const set = sidebarPorts.get(windowId);
     if (!set) return;
     set.delete(port);

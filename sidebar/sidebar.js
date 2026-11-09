@@ -338,9 +338,15 @@ function render(next) {
   document.documentElement.classList.toggle("alone", !!view.alone);
 
   document.getElementById("hiding").hidden = !view.needsHiding;
+  // The lasting notice goes once you have clicked it (isolation.js): under the pointer it
+  // fades in place first, so the list does not come into its room at the moment of the click.
   const problem = document.getElementById("problem");
-  problem.hidden = !view.problem;
-  problem.textContent = view.problem || "";
+  if (view.problem) {
+    problem.classList.remove("going");
+    problem.hidden = false;
+    problem.textContent = view.problem;
+  } else if (!problem.hidden && problem.matches(":hover")) goQuietly(problem);
+  else if (!problem.classList.contains("going")) problem.hidden = true;
 
   place(document.getElementById("essentials"), view.essentials.map(tile));
   document.getElementById("space-name").textContent = view.alone ? space?.name || "" : "";

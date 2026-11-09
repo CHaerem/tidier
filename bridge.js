@@ -366,7 +366,8 @@ async function bridgeLeaveForYou(ctx) {
     await moveTab(ctx.tab.windowId, ctx.tab.id, null, folder);
     forYouCount(all);
   });
-  say(await bridgeWindow(), "An agent left you a tab");
+  // Said once, by the agent's own line ("left you a tab from …", agentDid), and marked on the
+  // space's dot: the quiet line saying it as well was two lines for one thing.
   pushAgentState();
   return { text: "Left in the folder For you." };
 }

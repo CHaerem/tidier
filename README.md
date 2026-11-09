@@ -274,7 +274,8 @@ With Tidier alone, the keys follow what the sidebar shows (`shortcuts.js`,
 `keys-commands.js`): ⌃⌘↓ and ⌃⌘↑ go to the next and previous tab as shown, past other
 spaces' tabs and closed folders; ⌃⌘→ and ⌃⌘← to the next and previous space; ⌘1 to ⌘9 to
 the n-th tab of this space, essentials first; ⌘D makes a tab an essential or ordinary
-again; ⌥⌘N makes a new folder; ⌃1 to ⌃5, ⌃⇧S and ⌘⇧C are as before. Each key is given
+again; ⌥⌘N makes a new folder; ⌃1 to ⌃5, ⌃⇧S and ⌘⇧C are as before, and ⌘Z in the
+sidebar undoes what the quiet line offers while it shows. Each key is given
 once, at the first start with Tidier alone, and changed in the settings page's Keys
 section; a key you change stays that way, and moving back to Sidebery takes them all back.
 ⌘1 to ⌘9 and ⌘D are Firefox's own until they are cleared in `about:keyboard` (the

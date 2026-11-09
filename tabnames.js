@@ -46,6 +46,9 @@ async function renameTab(tabId, name) {
     if (!essential || !setName(essential, text)) return;
     setList([...list]);
     viewAllSoon(); // the list, unlike the record, tells no sidebar by itself
+    // A tile shows only its icon, so nothing you can see would change: the quiet line says
+    // the name it has now (quiet.js). A row shows its name itself.
+    say(tab.windowId, `Named “${text || essential.title || tab.title}”`, { brief: true });
     await redrawPlaceholders(await copiesOf(essentialKey));
     return;
   }

@@ -2732,6 +2732,32 @@ def alone_hand(m):
     check("a click on a playing tab's speaker, where it was before the pointer came, mutes it", s == {"open": True, "muted": True} and over["x"] == rest["x"], f"{s} {rest} {over}")
     m.js(H + """const w = main(), t = w.gBrowser.tabs.find(x => x.label === "hand-6"); t.toggleAttribute("soundplaying", false); w.gBrowser._tabAttrModified(t, ["soundplaying"]); if (t.muted) t.toggleMuteAudio(); return 1;""")
 
+    # A notice dismissed with a double click on its ×: it fades where it is, so what is below it
+    # does not come up under the pointer, and the second click reaches nothing. Its room goes once
+    # the pointer has left it. (The line that asks for the isolation permission; where the test
+    # Firefox has given it, it is taken away for a moment.)
+    given = m.js("""return WebExtensionPolicy.getByID(args[0]).hasPermission("webRequestBlocking");""", EXT_ID)
+    if given:
+        m.js("""const [id] = args; const {ExtensionPermissions} = ChromeUtils.importESModule("resource://gre/modules/ExtensionPermissions.sys.mjs");
+          await ExtensionPermissions.remove(id, {permissions: ["webRequest", "webRequestBlocking"], origins: ["<all_urls>"]}, WebExtensionPolicy.getByID(id).extension);
+          await new Promise(r => ChromeUtils.importESModule("resource://gre/modules/Timer.sys.mjs").setTimeout(r, 800)); return 1;""", EXT_ID)
+    hand(m, hand_to(away))
+    sidebar_until(m, """() => !doc.querySelector(".ask-line").hidden""")
+    p = hand_spot(m, """return {...box(doc.querySelector(".ask-line .ask-no")), below: Math.round(doc.getElementById("space-name").getBoundingClientRect().top)};""")
+    picked = m.js(H + """return main().gBrowser.selectedTab.label;""")
+    hand(m, hand_to(p), hand_pause(150), *hand_click(), hand_pause(60), *hand_click())
+    time.sleep(0.8)
+    at = in_sidebar(m, """() => ({shown: !doc.querySelector(".ask-line").hidden, below: Math.round(doc.getElementById("space-name").getBoundingClientRect().top)})""")
+    still = m.js(H + """return main().gBrowser.selectedTab.label;""")
+    hand(m, hand_to(away))
+    time.sleep(0.5)
+    left = in_sidebar(m, """() => ({shown: !doc.querySelector(".ask-line").hidden, below: Math.round(doc.getElementById("space-name").getBoundingClientRect().top)})""")
+    in_sidebar(m, """() => { content.localStorage.removeItem("isolationDeclined"); return 1; }""")  # as it was: the line asks again
+    if given:
+        m.js(GIVE_PERMISSIONS, EXT_ID, ["webRequest", "webRequestBlocking"], ["<all_urls>"])
+    check("a double click on a notice's × fades it in place, and the second click reaches nothing", at["shown"] and at["below"] == p["below"] and still == picked, f"{p} {at} {picked} -> {still}")
+    check("and its room goes once the pointer has left it", not left["shown"] and left["below"] < p["below"], str(left))
+
     def close_two(a, b):
         p = hand_spot(m, """const [a, b] = args; row(a).scrollIntoView({block: "center"}); return {...box(row(a).querySelector(".close")), second: box(row(b).querySelector(".close"))};""", a, b)
         o = m.js(SIDEBAR_AT)
@@ -2842,8 +2868,50 @@ def alone_hand(m):
     check("a double click on a closed folder's head renames it, and nothing folds or unfolds first", r and r["collapsed"] and "o" not in r["folds"], str(r))
     hand(m, hand_to(away))
 
+    # ⌘W and ⌘⇧T on a saved tab, with the list at its top: the list does not move by itself,
+    # and the tab is back in its folder. Then removed for good (× on its placeholder) and
+    # brought back with ⌘⇧T: in its folder again, not among today's tabs.
+    m.js(H + """const w = main(), [pages, ctx] = args;
+      for (let i = 1; i <= 30; i++) { w.gBrowser.addTrustedTab(pages + "/titled?fill-" + i, {userContextId: ctx, inBackground: true}); await wait(40); }
+      for (let i = 0; i < 100 && w.gBrowser.tabs.filter(t => t.label.startsWith("fill-")).length < 30; i++) await wait(100);
+      await wait(2000); return 1;""", m.pages, int(here.split("-")[-1]))
+    # (Moved into its folder again, so that it lies last in the window, as a tab put in a folder
+    # does: given back before Tidier has taken it in, it would be drawn there, below all of today's.)
+    sidebar_page(m, """send({type: "foldFolder", key: args[0], collapsed: false});
+      for (const name of ["hand-11", "hand-12"]) send({type: "moveTab", tabId: Number([...doc.querySelectorAll("#tabs .tab")].find(r => r.title.startsWith(name)).dataset.tab), folder: args[0], before: null});
+      await wait(800); return 1;""", folder)
+    m.js(H + """const w = main(); for (const t of [...w.gBrowser.tabs]) if (url(t).includes("/sidebar/sidebar.html")) w.gBrowser.removeTab(t); await wait(500); return 1;""")
+    order = m.js(H + """return main().gBrowser.tabs.filter(t => !t.hidden).slice(-2).map(t => t.label);""")
+    long = in_sidebar(m, """() => { const l = doc.getElementById("tabs"); return l.scrollHeight - l.clientHeight; }""")
+    ctrl_w = H + IN_SIDEBAR + """const w = main(), name = args[0]; Services.prefs.setIntPref("ui.prefersReducedMotion", 0); w.focus();
+      w.gBrowser.selectedTab = w.gBrowser.tabs.find(t => t.label === name); await wait(1500);
+      await inSidebar(() => { doc.getElementById("tabs").scrollTop = 0; return 1; }); await wait(300);
+      w.BrowserCommands.closeTabOrWindow(); await wait(2000);
+      const where = () => inSidebar(n => { const rows = [...doc.querySelectorAll("#tabs .tab")].filter(r => r.title.startsWith(n));
+        return {top: doc.getElementById("tabs").scrollTop, rows: rows.length, inFolder: rows.every(r => !!r.closest(".folder")), loaded: rows.some(r => !r.classList.contains("unloaded"))}; }, name);
+      return {closed: await where()};"""
+    ctrl_shift_t = H + IN_SIDEBAR + """const w = main(), name = args[0];
+      const where = () => inSidebar(n => { const rows = [...doc.querySelectorAll("#tabs .tab")].filter(r => r.title.startsWith(n));
+        return {top: doc.getElementById("tabs").scrollTop, rows: rows.length, inFolder: rows.every(r => !!r.closest(".folder")), loaded: rows.some(r => !r.classList.contains("unloaded"))}; }, name);
+      w.SessionStore.undoCloseTab(w, 0); const seen = [];
+      for (let i = 0; i < 30; i++) { await wait(100); seen.push(await where()); }
+      Services.prefs.clearUserPref("ui.prefersReducedMotion");
+      return {tops: [...new Set(seen.map(s => s.top))], last: seen.at(-1), selected: w.gBrowser.selectedTab.label};"""
+    closed = m.js(ctrl_w, "hand-12")
+    back = m.js(ctrl_shift_t, "hand-12")
+    check("⌘W on a loaded saved tab leaves its row in its folder, unloaded", closed["closed"]["rows"] == 1 and closed["closed"]["inFolder"] and not closed["closed"]["loaded"], str(closed))
+    check("⌘⇧T brings it back in its folder, loaded, and the list does not move by itself", back["tops"] == [0] and back["last"]["rows"] == 1 and back["last"]["inFolder"] and back["last"]["loaded"] and back["selected"] == "hand-12" and order == ["hand-11", "hand-12"] and long > 200, f"{back} {order} {long}")
+    # Removed for good: × on its placeholder, after a ⌘W that left the page in Recently Closed.
+    m.js(ctrl_w, "hand-11")
+    p = hand_spot(m, """const r = row("hand-11"); r.scrollIntoView({block: "center"}); return box(r.querySelector(".close"));""")
+    hand(m, hand_to(p), hand_pause(150), *hand_click(), hand_to(away))
+    gone = m.js(H + """const w = main(); for (let i = 0; i < 30 && w.gBrowser.tabs.some(t => t.label === "hand-11"); i++) await wait(100); await wait(1500);
+      return !w.gBrowser.tabs.some(t => t.label === "hand-11");""")
+    back = m.js(ctrl_shift_t, "hand-11")
+    check("a saved tab removed for good and brought back with ⌘⇧T is in its folder again", gone and back["last"]["rows"] == 1 and back["last"]["inFolder"] and back["selected"] == "hand-11", f"{gone} {back}")
+
     sidebar_page(m, """send({type: "deleteFolder", key: args[0]}); await wait(800); return 1;""", folder)
-    m.js(H + """Services.prefs.clearUserPref("general.autoScroll"); await removeWhere((w, t) => t.label.startsWith("hand-") || url(t).includes("/sidebar/sidebar.html")); return 1;""")
+    m.js(H + """Services.prefs.clearUserPref("general.autoScroll"); await removeWhere((w, t) => /^(hand|fill)-/.test(t.label) || url(t).includes("/sidebar/sidebar.html")); return 1;""")
 
 
 def alone_new_tab(m):

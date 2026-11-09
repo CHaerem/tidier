@@ -18,9 +18,12 @@
 //   keypress, and Firefox's key acts when that comes back.
 // - Copying the address is the one command that works without Tidier alone too.
 
+// A key that copies shows nothing of itself, so the quiet line says it did (as Arc does).
 async function copyUrl(windowId) {
   const [tab] = await browser.tabs.query({ active: true, windowId });
-  if (tab && isWeb(tab.url)) await navigator.clipboard.writeText(tab.url);
+  if (!tab || !isWeb(tab.url)) return;
+  await navigator.clipboard.writeText(tab.url);
+  say(windowId, "Address copied", { brief: true }); // quiet.js
 }
 
 // Through the queue: selecting a placeholder pulls its real tab in, which changes the

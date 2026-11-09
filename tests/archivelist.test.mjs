@@ -7,6 +7,10 @@ import { FakeFirefox, wait, realSleep, GHOST } from "./fake_firefox.mjs";
 const C1 = "firefox-container-1", C2 = "firefox-container-2";
 const entry = (url, more = {}) => ({ url, title: url, cookieStoreId: C1, parentKey: null, group: false, added: 1, ...more });
 const LATER = () => Date.now() + 13 * 3600e3;
+const until = async (test, what = "the state waited for") => {
+  for (let i = 0; i < 400; i++) { if (test()) return; await realSleep(5); }
+  assert.fail(`never came: ${what}`);
+};
 
 async function run(ff) {
   const x = ff.boot();
@@ -419,5 +423,49 @@ test("Clear's tabs can be found in the list, and Undo takes them out again", asy
   await x.js("serial")(x.js("quietNotes").get(w.id).undo);
   await wait(300);
   assert.deepEqual(await listed(x, C1), [], "they are open again");
+  x.kill();
+});
+
+test("a saved tab removed for good goes back into its folder, from the list and with ⌘⇧T; not once the folder is gone, nor typed anew", async () => {
+  const saved = (url, folder = "F") => [url.split(".")[0].replace("https://", ""), url, { title: url, parentKey: folder, saved: { url, title: url } }];
+  const { x, ff, w, ids } = await session([saved("https://one.example/"), saved("https://two.example/"), saved("https://three.example/"), saved("https://four.example/", "G")], { more: f => {
+    f.store.syncedTabs.F = { group: true, own: true, name: "Folder", cookieStoreId: C1, parentKey: null, rank: 1, added: 1 };
+    f.store.syncedTabs.G = { group: true, own: true, name: "Gone soon", cookieStoreId: C1, parentKey: null, rank: 2, added: 1 };
+  } });
+  for (const key of ["one", "two", "three", "four"]) { ff.rm(ids[key]); await wait(400); }
+  await wait(1000);
+  assert.deepEqual((await listed(x, C1)).map(r => r.url).sort(), ["https://four.example/", "https://one.example/", "https://three.example/", "https://two.example/"]);
+  assert.ok(!ff.synced.one, "removed for good");
+  const inFolder = url => Object.values(ff.synced).find(e => e.url === url && !e.own);
+
+  // From the list: back in its folder, saved again.
+  assert.equal(await x.send({ type: "reopenArchived", item: { space: C1, url: "https://one.example/" }, windowId: w.id }), true);
+  await until(() => inFolder("https://one.example/"), "its record");
+  await wait(500);
+  assert.equal(inFolder("https://one.example/").parentKey, "F");
+  assert.equal(inFolder("https://one.example/").saved?.url, "https://one.example/");
+
+  // ⌘⇧T: Firefox gives the tab back with its values.
+  const t = ff.addTab(w.id, { url: "https://two.example/", title: "two", cookieStoreId: C1 }, { syncKey: "two", syncRole: "live" });
+  x.b.tabs.onCreated.fire(ff.snap(t));
+  await until(() => inFolder("https://two.example/"), "its record");
+  await wait(500);
+  assert.equal(inFolder("https://two.example/").parentKey, "F");
+  assert.deepEqual((await listed(x, C1)).map(r => r.url).sort(), ["https://four.example/", "https://three.example/"], "and it leaves the list");
+
+  // The same address opened anew is a tab of its own.
+  const typed = ff.addTab(w.id, { url: "https://three.example/", title: "three", cookieStoreId: C1 });
+  x.b.tabs.onCreated.fire(ff.snap(typed));
+  await until(() => inFolder("https://three.example/"), "its record");
+  await wait(500);
+  assert.equal(inFolder("https://three.example/").parentKey, null);
+
+  // Its folder deleted meanwhile: among today's tabs.
+  await x.js("k => serial(() => deleteFolder(k))")("G");
+  await until(() => !ff.synced.G, "the folder gone");
+  assert.equal(await x.send({ type: "reopenArchived", item: { space: C1, url: "https://four.example/" }, windowId: w.id }), true);
+  await until(() => inFolder("https://four.example/"), "its record");
+  await wait(500);
+  assert.equal(inFolder("https://four.example/").parentKey, null);
   x.kill();
 });

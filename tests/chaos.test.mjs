@@ -404,7 +404,7 @@ export function generate(seed, alone) {
 
 // --- What must always hold ----------------------------------------------------------------
 // (Lists other packages keep are here too: a new list in memory belongs in one of these.)
-const TAB_SETS = ["syncKeyByTab", "syncRoleByTab", "keyByTab", "createdAt", "staleOpener", "firstPage", "newTabs", "newsSeen", "requestOfTab", "settled", "newBlanks", "unruled", "earlyKeys"];
+const TAB_SETS = ["syncKeyByTab", "syncRoleByTab", "keyByTab", "createdAt", "staleOpener", "firstPage", "newTabs", "newsSeen", "requestOfTab", "settled", "newBlanks", "unruled", "earlyKeys", "restoredKeys"];
 const WINDOW_SETS = ["lastOrder", "activeSpace", "viewRest", "quietNotes", "goneNotes", "closeGroups", "littles"];
 const EMPTY_WHEN_IDLE = ["syncBusy", "busy", "pending", "movedTabs", "moveTimers", "orderQueries", "refreshTimers", "showTimers", "viewTimers", "closedIn", "newTabs", "toForget", "awaitingIcon", "foldersTimers", "ownFolderMoves", "ownMoves",
   "ownPins", "viewsBuilding", "successorDue", "closingOrder", "loadedSeen"];

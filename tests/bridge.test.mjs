@@ -434,6 +434,8 @@ test("For you: a folder that exists only while it has something, and the note go
   const key = Object.keys(ff.synced).find(k => ff.synced[k].url === "https://a.example/");
   assert.equal(ff.synced[key].parentKey, folders()[0][0]);
   assert.equal(x.js(`forYouNotes.get(${JSON.stringify(key)})`), "Look at the third table");
+  assert.match(x.js("agentLine"), /^left you a tab from a\.example/, "said on the agent's line");
+  assert.equal(x.js("quietNotes").size, 0, "and only there: one line for one thing");
   // A second tab goes in the same folder.
   const second = JSON.parse((await host.call("open_tab", { url: "https://b.example/" })).text).tab;
   await wait(2000);
