@@ -60,7 +60,8 @@ that:
     tab each, folders with their tabs, and tab sync and new windows still work
     (only where Tidier can be installed for real: Developer Edition, or --xpi);
   - a browser that never moved over from Sidebery is moved at its first start:
-    a copy first, then its folders as Tidier's own, then their pages closed.
+    a copy first, then its folders as Tidier's own, then their pages closed, and
+    its sidebar says so until you have seen it.
 
 The chain (alone_*) checks everything else, with tabs hidden as once you allow it: spaces,
 folders, the sidebar and its menus, keys, the command bar, isolation, small windows for links,
@@ -1038,8 +1039,12 @@ def old_browser(m):
     check("its tabs stay in it, saved, in every window", r["inIt"] == sorted([k, True] for k in picked["two"]) and r["copies"] == [[1, 1], [1, 1]], str(r))
     check("only then are the folder pages closed, and none is left in Recently Closed", r["pages"] == [0, 0] and r["closed"] == 0, str(r))
     view = sidebar_page(m, """send({type: "space", space: "firefox-container-2"}); await wait(1500);
-      return {folders: folders().filter(f => f.name === "Old folder").map(f => [f.tabs.length, f.collapsed])};""")
+      const line = () => doc.getElementById("problem").hidden ? null : doc.getElementById("problem").textContent;
+      const said = line();
+      doc.getElementById("problem").click(); await wait(800);
+      return {folders: folders().filter(f => f.name === "Old folder").map(f => [f.tabs.length, f.collapsed]), said, after: line()};""")
     check("the sidebar shows it as a folder, closed", view.get("folders") == [[0, True]] or view.get("folders") == [[2, True]], str(view))
+    check("and says what happened, until you have seen it", "Sidebery's folders are now Tidier's own" in (view.get("said") or "") and "Sidebery" not in (view.get("after") or ""), str(view))
     shown = ext_page(m, "/settings/settings.html", """await wait(800); return doc.getElementById("moved").hidden ? null : doc.getElementById("moved").textContent;""")
     check("the settings page says the move happened, after a copy", "copy" in (shown or ""), str(shown))
     r = m.js(state, EXT_ID)

@@ -7,8 +7,9 @@
 //   1. A copy of everything (copies.js): through the native host, or else in Firefox's own
 //      storage (`copyBeforeMove`).
 //   2. Sidebery's folders become Tidier's own in the record, which is written before anything
-//      else happens: each keeps its tabs, which stay saved tabs, and its name. Which of them
-//      Sidebery had closed comes from its export, taken in before or after (importSidebery).
+//      else happens: each keeps its tabs, which stay saved tabs, its name and its place, and
+//      a live folder stays one. Which of them Sidebery had closed comes from its export, taken
+//      in before or after (importSidebery). Tidier's button and sidebar say what happened.
 //   3. Only then are the folder pages closed (closeOldFolderPages). A crash at any point
 //      leaves either the old record, and the move happens at the next start, or the new one,
 //      and pages that close at the next start.
@@ -25,22 +26,52 @@ const groupName = url => decodeURIComponent((url.split("#")[1] || "").replace(/~
 
 async function moveOverOnce() {
   const all = await getSynced();
-  const old = Object.values(all).filter(e => e.group && !e.own);
+  const old = Object.keys(all).filter(k => all[k].group && !all[k].own);
   if (old.length) {
     const copy = await makeCopy();
     if (!copy?.saved) await browser.storage.local.set({ copyBeforeMove: await theCopy() }); // no helper here: at least inside Firefox's storage
     const closed = new Set(listIn((await browser.storage.local.get("importedFolds")).importedFolds)); // importSidebery
-    for (const e of old) {
+    const live = new Map(Object.entries(await liveFolderState.get()).map(([id, s]) => [s.groupKey, id])); // livefolders.js
+    // Sidebery's tree put tabs under tabs too. Here a tab is in its nearest folder or in none,
+    // and a folder in no other: what Tidier's own folders are, and what deleting one and
+    // undoing that count on (ownfolders.js, quiet.js). Looked up before anything changes.
+    const folderOf = new Map(Object.keys(all).filter(k => !all[k].group && all[k].parentKey).map(k => [k, folderKeyOf(all, k)]));
+    for (const [k, folder] of folderOf) all[k].parentKey = folder;
+    for (const k of await inSideberyOrder(old)) {
+      const e = all[k];
       // `oldUrl`: its address in Sidebery, by which Sidebery's export says whether it was closed.
-      Object.assign(e, { own: true, name: groupName(e.url), oldUrl: e.url, rank: (foldersOf(all, e.cookieStoreId).at(-1)?.rank ?? 0) + 1 });
+      Object.assign(e, { own: true, name: groupName(e.url), oldUrl: e.url, parentKey: null, rank: (foldersOf(all, e.cookieStoreId).at(-1)?.rank ?? 0) + 1 });
       if (closed.has(foldKey(e.cookieStoreId, e.url))) e.collapsed = true;
+      // A live folder's page was one of Sidebery's too; as Tidier's own it is marked as one, or
+      // it would be shared through sync, kept in copies and take tabs dragged in like any other.
+      if (live.has(k)) e.live = live.get(k);
     }
     noteSaved(all);
     saveSynced(all);
     await flushWrites();
     await browser.storage.local.set({ importedFolds: [], movedFromSidebery: Date.now() });
+    // Shown on Tidier's button, which is where to look: Sidebery's sidebar has lost its folders,
+    // and Tidier's own takes its place. Gone when you have seen it (sidebar/isolation.js).
+    setNotice("moved", "Sidebery's folders are now Tidier's own, after a copy of everything. Tidier's sidebar takes Sidebery's place; Sidebery can be removed in about:addons.");
   }
   await closeOldFolderPages();
+}
+
+// Folders in the order Sidebery showed them, each space's first and in the same order in every
+// window: by where their pages are in the window that has the most of them. One with no page
+// there comes last, in the record's order.
+async function inSideberyOrder(keys) {
+  const pages = (await browser.tabs.query({})).filter(t => isSideberyGroup(t.url));
+  const count = new Map();
+  for (const t of pages) count.set(t.windowId, (count.get(t.windowId) ?? 0) + 1);
+  const most = [...count].sort((a, b) => b[1] - a[1])[0]?.[0];
+  const place = new Map();
+  for (const t of pages.filter(t => t.windowId === most).sort((a, b) => a.index - b.index)) {
+    const key = await browser.sessions.getTabValue(t.id, SYNC_KEY).catch(() => null);
+    if (key && !place.has(key)) place.set(key, place.size);
+  }
+  const at = k => place.get(k) ?? Number.MAX_SAFE_INTEGER;
+  return [...keys].sort((a, b) => at(a) - at(b));
 }
 
 // The pages of folders that are now Tidier's own, and any Sidebery folder page left, are

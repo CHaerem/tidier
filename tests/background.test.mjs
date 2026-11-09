@@ -597,14 +597,21 @@ function neverMoved(ff, { host = true } = {}) {
     a: entry("https://a.example/", { parentKey: "F", saved: { url: "https://a.example/", title: "A" } }),
     deep: entry("https://d.example/", { parentKey: "a", saved: { url: "https://d.example/", title: "D" } }), // below a tab in it, as Sidebery's tree allowed
     b: entry("https://b.example/"),
+    L: entry("moz-extension://sb/sidebery/group.html#Reviews", { group: true }), // a live folder's, above Work in Sidebery
+    under: entry("https://u.example/", { parentKey: "b" }), // below an ordinary tab
   };
   ff.store.importedFolds = ["firefox-container-1|group.html#Work"]; // an older Tidier kept the export's closed folders for the move
+  ff.store.liveFolders = { reviews: { groupKey: "L", dismissed: [] } };
   const w = ff.addWindow({ focused: true }), v = ff.addWindow();
-  for (const win of [w, v]) ff.addTab(win.id, { url: "moz-extension://sb/sidebery/group.html#Work~!1!~", cookieStoreId: C1 }, { syncKey: "F", syncRole: "copy" });
+  for (const win of [w, v]) {
+    ff.addTab(win.id, { url: "moz-extension://sb/sidebery/group.html#Reviews~!1!~", cookieStoreId: C1 }, { syncKey: "L", syncRole: "copy" });
+    ff.addTab(win.id, { url: "moz-extension://sb/sidebery/group.html#Work~!1!~", cookieStoreId: C1 }, { syncKey: "F", syncRole: "copy" });
+  }
   ff.addTab(w.id, { url: "https://a.example/", active: true, cookieStoreId: C1 }, { syncKey: "a", syncRole: "live" });
   ff.addTab(w.id, { url: "https://d.example/", cookieStoreId: C1 }, { syncKey: "deep", syncRole: "live" });
   ff.addTab(w.id, { url: "https://b.example/", cookieStoreId: C1 }, { syncKey: "b", syncRole: "live" });
-  for (const key of ["a", "deep", "b"]) ff.addTab(v.id, { url: GHOST("ghost", key), discarded: true, cookieStoreId: C1 }, { syncKey: key, syncRole: "ghost" });
+  ff.addTab(w.id, { url: "https://u.example/", cookieStoreId: C1 }, { syncKey: "under", syncRole: "live" });
+  for (const key of ["a", "deep", "b", "under"]) ff.addTab(v.id, { url: GHOST("ghost", key), discarded: true, cookieStoreId: C1 }, { syncKey: key, syncRole: "ghost" });
   const copies = [], order = [];
   ff.adapt = b => {
     b.runtime.sendNativeMessage = async (host_, msg) => { if (msg.backup) { copies.push(msg.backup); order.push("copy"); } return host && msg.backup ? { saved: "file" } : Promise.reject(new Error("no host")); };
@@ -621,17 +628,24 @@ test("a browser that never moved over is moved at its first start: a copy, the r
   assert.deepEqual(order.filter((o, i) => order.indexOf(o) === i), ["copy", "pages, after the record"]);
   assert.equal(copies[0].data.syncedTabs.F.own, undefined, "the copy is of the record as it was");
   assert.equal(ff.store.copyBeforeMove, undefined, "the helper has it");
-  const F = ff.synced.F;
+  const F = ff.synced.F, L = ff.synced.L;
   assert.deepEqual([F.own, F.name, F.oldUrl, F.collapsed], [true, "Work", "moz-extension://sb/sidebery/group.html#Work", true]);
-  assert.deepEqual(Object.keys(ff.synced).sort(), ["F", "a", "b", "deep"]);
+  assert.deepEqual([L.own, L.name, L.live, !!L.collapsed], [true, "Reviews", "reviews", false], "a live folder stays one");
+  assert.ok(L.rank < F.rank, "in the order Sidebery showed them");
+  assert.deepEqual(Object.keys(ff.synced).sort(), ["F", "L", "a", "b", "deep", "under"]);
   assert.ok(ff.synced.a.saved && ff.synced.deep.saved && !ff.synced.b.saved, "its tabs stay saved tabs");
+  assert.deepEqual([ff.synced.deep.parentKey, ff.synced.under.parentKey, F.parentKey], ["F", null, null], "a tab is in its nearest folder, or in none");
   for (const win of [w, v]) {
     assert.ok(!ff.urls(win.id).some(u => u.includes("group.html")), "no folder page is left");
-    assert.equal(ff.list(win.id).filter(t => ["a", "deep", "b"].includes(ff.values.get(t.id)?.syncKey)).length, 3, "every tab is in every window");
+    assert.equal(ff.list(win.id).filter(t => ["a", "deep", "b", "under"].includes(ff.values.get(t.id)?.syncKey)).length, 4, "every tab is in every window");
   }
   assert.deepEqual(ff.store.importedFolds, []);
   assert.ok(ff.store.movedFromSidebery);
   assert.ok(!(ff.recentlyClosed || []).some(c => c.tab?.url.includes("group.html")), "no page is left in Recently Closed either");
+  assert.equal(ff.badge, "!", "Tidier's button says what happened");
+  assert.match(x.js("notices.get('moved')"), /Sidebery's folders are now Tidier's own/);
+  await x.send({ type: "isolation:seen" }, { url: "moz-extension://tidier/sidebar/sidebar.html" });
+  assert.equal(x.js("notices.has('moved')"), false, "until you have seen it");
   x.kill();
   // The next start has nothing to move, and takes no copy for it.
   const y = await run(ff, "onInstalled");
@@ -667,7 +681,7 @@ test("a move with Sidebery still running, closing a folder's tabs with its page,
     };
   };
   const x = await run(ff);
-  assert.deepEqual(Object.keys(ff.synced).sort(), ["F", "a", "b", "deep"]);
+  assert.deepEqual(Object.keys(ff.synced).sort(), ["F", "L", "a", "b", "deep", "under"]);
   assert.ok(ff.list(w.id).some(t => ff.values.get(t.id)?.syncKey === "a"), "it has a placeholder again");
   assert.ok(ff.list(w.id).some(t => ff.values.get(t.id)?.syncKey === "deep"));
   x.kill();

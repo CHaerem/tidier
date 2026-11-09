@@ -35,7 +35,11 @@ async function homeWindowId() {
 // The folder: one with this name in this space, or a new one.
 async function ensureFolderGroup(folder, state) {
   const all = await getSynced();
-  if (state.groupKey && all[state.groupKey]) return state.groupKey;
+  if (state.groupKey && all[state.groupKey]) {
+    // One of Sidebery's moved over by a click (an older Tidier) is not marked as a live folder.
+    if (isOwnFolder(all[state.groupKey]) && !all[state.groupKey].live) { all[state.groupKey].live = folder.id; saveSynced(all); }
+    return state.groupKey;
+  }
   const existing = Object.entries(all).find(([, e]) => isOwnFolder(e) && e.cookieStoreId === folder.cookieStoreId && e.name === folder.name);
   state.groupKey = existing ? existing[0] : await createFolder(folder.name, folder.cookieStoreId, { live: folder.id }); // ownfolders.js
   await saveFolderState();

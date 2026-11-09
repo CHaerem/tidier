@@ -951,6 +951,6 @@ async function isolationAction(msg) {
     case "copy": return copyToSpace(msg.tabIds, msg.space, msg.windowId);
     case "moveFolder": return moveFolderToSpace(msg.key, msg.space, msg.windowId);
     case "newSpaceWith": return newSpaceWith(msg.tabIds, msg.windowId);
-    case "seen": setNotice("spaceBack", null); return true;
+    case "seen": setNotice("spaceBack", null); setNotice("moved", null); return true; // (and the move from Sidebery's, moveover.js)
   }
 }

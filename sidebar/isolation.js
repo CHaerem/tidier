@@ -49,7 +49,8 @@ browser.permissions.onAdded.addListener(readPermissions);
 browser.permissions.onRemoved.addListener(readPermissions);
 readPermissions();
 
-// A lasting notice about a space that came back goes when you have seen it.
+// A lasting notice, about a space that came back or the move from Sidebery, goes when you
+// have seen it.
 document.getElementById("problem").addEventListener("click", () => isolationTell("seen"));
 
 // --- Menus ------------------------------------------------------------------------------
