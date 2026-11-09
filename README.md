@@ -522,7 +522,13 @@ is first of use: a permission added to the required ones makes Firefox hold ever
 later update until it is approved, with only a badge to show it (a unit test stops
 that). Everything works without them, as it says here:
 
-- `tabHide`, when Tidier alone is turned on: other spaces' tabs hidden.
+- `tabHide`, when Tidier alone is turned on: other spaces' tabs hidden. At the first tab
+  hidden, Firefox asks in a note over the top of the sidebar whether that may go on: the
+  answer is *Keep Tabs Hidden* (*Disable Extension* turns Tidier off), and until it is given
+  the note comes back at every tab hidden. Firefox forgets it whenever Tidier is turned off
+  and on, which the move over is, so right after the move no tab is hidden until the
+  settings page is back in front to say what to answer; the sidebar says it too, until the
+  first switch of space (`aftermove.js`).
 - `webRequest`, `webRequestBlocking` and access to all websites, in the same click:
   a page stopped before it loads in the wrong space (below, Isolation). For this Tidier
   reads no page and keeps no record of where you go; all it looks at is the address of a
@@ -697,6 +703,8 @@ Not guaranteed:
 - `moveover.js`, `settings/` – the settings page, and moving a browser over from Sidebery and
   back. `sidebar/sidebery.html` – Tidier's sidebar while a browser is on Sidebery: only where
   the tab list is.
+- `aftermove.js` – right after the move: the hidden-tabs question while the settings page is
+  in front, and a button for Tidier's sidebar in any other window, which Firefox leaves without.
 - `tools/fix_spaces.py` – put tabs back in their own Sidebery space (in your
   own Firefox, which it restarts).
 - `tools/shoot.py` – pictures of what Tidier draws, for working on its look: every
@@ -777,6 +785,15 @@ tests/soak.py [--alone] [--minutes N] [--seed N] [--port P]          # a long ru
 TIDIER_MANY=1000 tests/smoke.py --only alone_setup,alone_many         # measured with a thousand tabs
 tools/shoot.py                                                       # pictures of what Tidier draws
 ```
+
+For what went wrong once and could not be made to happen again, Tidier keeps the last
+forty things you did and what came of them (an Undo and what it brought back, a menu item
+pressed and clicked, a key that reached it), in its console and in the smoke test's
+`stats` message (`trace` in `common.js`), beside the errors. Quick ⌃⌘↓ presses over
+unloaded tabs, about one in eight lost in a slowed-down test Firefox, never reached Tidier
+at all: Firefox hands an extension's key over only once the page's process has seen it,
+and the page just selected is then still starting to load. Its own ⌃PageDown does not
+wait for that. The `key` lines show whether this happens on a real machine too.
 
 `tests/chaos.test.mjs` plays random sequences of browser use on the real background
 scripts, on a fake Firefox (`tests/chaos_firefox.mjs`) that refuses what Firefox refuses,

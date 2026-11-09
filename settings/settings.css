@@ -31,6 +31,8 @@ code { padding: 1px 4px; border-radius: var(--radius-sm); background: var(--tile
 .notice.with-button > span { flex: 1 1 240px; }
 .notice.with-button > button { background-color: var(--tile-hover); }
 .notice.with-button > button:hover { background-color: var(--selected); }
+/* Right after moving over: a window without Tidier's sidebar gets its button under the line. */
+#windows-without > button { margin: 0 0 12px; }
 #notices:has(.notice) { margin-bottom: 28px; }
 
 /* The controls: soft fills, nothing of the browser's default look. */

@@ -277,7 +277,7 @@ html.space-arriving .folder > .children { transition: none; } /* a whole space c
   border-radius: var(--radius); background: var(--tile); color: var(--muted); line-height: var(--line-height);
   transition: background-color var(--quick);
 }
-#hiding, .ask-line { margin-top: 4px; }
+#hiding, #ask-hiding, .ask-line { margin-top: 4px; }
 .notice:has(> button) { padding: 0; }
 .notice > button { border: 0; background: none; color: var(--text); text-align: left; }
 .notice > button:first-child { flex: 1; align-self: stretch; min-width: 0; padding: 6px var(--pad); border-radius: var(--radius); }

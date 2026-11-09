@@ -136,6 +136,7 @@ function sidebarPage() {
     browser: { runtime: { connect: () => ({ onMessage: { addListener() {} }, postMessage() {} }) }, windows: { getCurrent: async () => ({ id: 1 }) }, storage: { managed: { get: async () => ({}) } } },
     document: { createElement: element, getElementById: element, documentElement: element(), head: element(), addEventListener() {} },
     addEventListener() {},
+    secondClick: { acts: f => f, acted() {} }, // sidebar/secondclick.js, loaded before it
   });
   vm.runInContext(read("sidebar/sidebar.js"), ctx);
   return code => vm.runInContext(code, ctx);

@@ -82,10 +82,12 @@ function noteFor(windowId) {
 // run out meanwhile), and the line goes at once. A click as it faded counts too
 // (goneNotes). A second click, or one long after, finds nothing to do.
 async function undoNote(windowId, id) {
-  const note = [quietNotes.get(windowId), goneNotes.get(windowId)].find(n => n?.id === id);
+  const current = quietNotes.get(windowId);
+  const note = [current, goneNotes.get(windowId)].find(n => n?.id === id);
+  trace(`undo ${id} in ${windowId}: ${!note ? (!current ? "no line any more" : `another line now (${current.id})`) : !note.undo ? "nothing to undo" : note === current ? "taken" : "taken as it faded"}`);
   if (!note) return;
   goneNotes.delete(windowId);
-  if (quietNotes.get(windowId) === note) {
+  if (current === note) {
     clearTimeout(note.timer);
     quietNotes.delete(windowId);
     viewSoon(windowId);
@@ -219,6 +221,7 @@ async function bringBack(windowId, items, tabs) {
   const open = new Set((await browser.tabs.query({})).map(t => `${t.cookieStoreId} ${t.url}`));
   const reopened = i => i.page && !closed.some(t => t.url === i.url) && open.has(`${i.entry.cookieStoreId} ${i.url}`);
   const back = items.filter(i => !all[i.key] && !reopened(i));
+  trace(`bring back ${back.length} of ${items.length}` + (back.length < items.length ? `: ${items.filter(i => all[i.key]).length} still in the record, ${items.filter(i => !all[i.key] && reopened(i)).length} open again` : ""));
   for (const { key, entry } of back) {
     all[key] = { ...entry };
     if (entry.parentKey && !all[entry.parentKey]) { all[key].parentKey = null; delete all[key].saved; }

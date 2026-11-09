@@ -244,11 +244,12 @@ export class FakeFirefox {
     b.menus = { onShown: ev(), onHidden: ev(), onClicked: ev(), removeAll: async () => {}, create() {}, remove: async () => {}, refresh() {} };
     b.browserAction = { onClicked: ev(), setBadgeText: async o => { ff.badge = o.text; }, setTitle: async () => {} };
     b.permissions = { onAdded: ev(), onRemoved: ev(), contains: async () => false };
-    b.sidebarAction = { toggle: async () => {}, open: async () => {}, isOpen: async () => true, setPanel: async o => { ff.sidebarPanel = o.panel; } };
+    // Which windows have Tidier's sidebar open: all of them unless a test says otherwise.
+    b.sidebarAction = { toggle: async () => {}, open: async () => { ff.log.push(["sidebarOpen"]); }, isOpen: async ({ windowId }) => !ff.noSidebar?.has(windowId), setPanel: async o => { ff.sidebarPanel = o.panel; } };
     addIsolationApis(ff, b);
     ff.adapt?.(b); // a fake built on this one changes the API here, before the scripts see it
     const errors = [];
-    const quiet = { ...console, error: (...a) => { errors.push(a.map(x => x?.message ?? String(x)).join(" ")); }, warn() {} };
+    const quiet = { ...console, error: (...a) => { errors.push(a.map(x => x?.message ?? String(x)).join(" ")); }, warn() {}, info() {} }; // info: what you did (trace, common.js)
     // performance runs as much faster as the timers, so that waits worked out from it agree with
     // them; a fake with a clock of its own (chaos_firefox.mjs) brings both.
     const scaledNow = { now: () => performance.now() * SCALE };

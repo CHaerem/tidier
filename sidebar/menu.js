@@ -81,8 +81,11 @@ function drawMenu(items, back = null, byKey = false) {
       b.setAttribute("aria-haspopup", "menu");
       b.onclick = secondClick.acts(ev => drawMenu(act, { label, items }, !ev.detail));
     } else {
-      b.onclick = secondClick.acts(() => { closeMenu(); act(); });
+      b.onclick = secondClick.acts(() => { closeMenu(); send({ type: "trace", what: `menu: ${label}` }); act(); });
     }
+    // A press that never becomes a click (once, Archived tabs did nothing) shows as a press
+    // alone in Tidier's traces (common.js): the click went elsewhere, as to Firefox's own note.
+    b.onpointerdown = () => send({ type: "trace", what: `menu: press on ${label}` });
     return b;
   });
   if (back) {

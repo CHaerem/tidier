@@ -74,6 +74,7 @@ const COMMANDS = [
 
 // _execute_sidebar_action never comes here: Firefox carries that one out itself.
 browser.commands.onCommand.addListener(async (name, tab) => {
+  trace(`key ${name}`); // common.js: whether a press reached Tidier at all (quick ⌃⌘↓ presses were seen lost)
   const command = COMMANDS.find(c => c.name === name);
   if (!command?.action || !(tidierAlone || command.always)) return; // (one with no action is carried out where it is made)
   const windowId = tab?.windowId ?? (await browser.tabs.query({ active: true, currentWindow: true }))[0]?.windowId;

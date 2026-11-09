@@ -391,13 +391,14 @@ browser.runtime.onMessage.addListener((msg, sender) => {
     settled,
     littles, newBlanks, // littlewindow.js
     ownUnpins, unpinPlaces, landedIn, // essentials.js, sidebar-view.js
+    wantsSidebar, // aftermove.js
   };
   // Counted once Tidier is done with what it was doing (the helper page
   // asking this causes a little work), so a list only shows what it keeps.
   return (async () => {
     for (let i = 0; i < 20 && (orderQueries.size || pending.size); i++) await sleep(100);
     await serial(() => {});
-    return { ...work, problems, sizes: Object.fromEntries(Object.entries(lists).map(([name, list]) => [name, list.size])) };
+    return { ...work, problems, traces, sizes: Object.fromEntries(Object.entries(lists).map(([name, list]) => [name, list.size])) };
   })();
 });
 
@@ -1332,6 +1333,7 @@ async function start(delayMs) {
   await serial(async () => {
     await step(bringBackSpaces); // isolation.js: before anything is opened in a container that is gone
     await step(closeOldFolderPages); // moveover.js
+    await step(holdHidingAfterMove); // aftermove.js: right after moving over, no tab hidden until the settings page is back
     await step(initList);
     await step(essentialsAgree);
     // Without the roles every tab looks unsynced, and reconcileAll would act on that.

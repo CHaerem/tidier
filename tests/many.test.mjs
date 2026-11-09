@@ -285,6 +285,7 @@ function sidebarPage() {
     browser: { runtime: { connect: () => ({ onMessage: { addListener() {} }, postMessage() {} }) }, windows: { getCurrent: async () => ({ id: 1 }) }, storage: { managed: { get: async () => ({}) } } },
     document: { createElement: element, getElementById: element, documentElement: element(), head: element(), addEventListener() {} },
     addEventListener() {},
+    secondClick: { acts: f => f, acted() {} }, // sidebar/secondclick.js, loaded before it
   });
   vm.runInContext(readFileSync(new URL("../sidebar/sidebar.js", import.meta.url), "utf8"), ctx);
   return code => vm.runInContext(code, ctx);
@@ -298,6 +299,7 @@ test("the sidebar asks for its view only once every script of its page is there"
     browser: { runtime: { connect: () => ({ onMessage: { addListener() {} }, postMessage: m => posted.push(m) }) }, windows: { getCurrent: async () => ({ id: 1 }) }, storage: { managed: { get: async () => ({}) } } },
     document: { readyState: "loading", getElementById: () => ({ style: {}, dataset: {}, addEventListener() {}, append() {} }), documentElement: { dataset: {} }, head: {}, createElement: () => ({ dataset: {}, style: {}, classList: { add() {} }, append() {}, addEventListener() {} }), addEventListener() {} },
     addEventListener: (type, f) => { if (type === "DOMContentLoaded") loaded.push(f); },
+    secondClick: { acts: f => f, acted() {} },
   });
   vm.runInContext(readFileSync(new URL("../sidebar/sidebar.js", import.meta.url), "utf8"), ctx);
   await realSleep(10);

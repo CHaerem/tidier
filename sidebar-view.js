@@ -139,7 +139,7 @@ async function viewFor(windowId) {
   // Tabs still loading go apart from their rows: a row is drawn again when anything in it
   // changes, and a load starting and ending must not replace its icon (sidebar/touches.js).
   const loading = tidierAlone ? tabs.filter(tabIsLoading).map(t => t.id) : [];
-  return { alone: tidierAlone, needsHiding: tidierAlone && !browser.tabs.hide, problem: [...notices.values()][0] ?? null, note: noteFor(windowId), spaces, space, essentials, folders, tabs: loose, loading, little: await littleRows(spaces), landed };
+  return { alone: tidierAlone, needsHiding: tidierAlone && !browser.tabs.hide, askHiding: tidierAlone && askHidingLine, problem: [...notices.values()][0] ?? null, note: noteFor(windowId), spaces, space, essentials, folders, tabs: loose, loading, little: await littleRows(spaces), landed };
 }
 const landedIn = new Map(); // windowId -> the name of the last drop carried out there
 
@@ -228,9 +228,12 @@ browser.runtime.onConnect.addListener(port => {
       windowId = msg.windowId;
       if (!sidebarPorts.has(windowId)) sidebarPorts.set(windowId, new Set());
       sidebarPorts.get(windowId).add(port);
+      sidebarHere(windowId); // aftermove.js
       viewSoon(windowId);
     } else if (windowId === null) {
       return;
+    } else if (msg.type === "trace") {
+      trace(`sidebar ${windowId}: ${String(msg.what).slice(0, 120)}`); // common.js
     } else if (msg.type === "select") {
       await browser.tabs.update(msg.tabId, { active: true }).catch(() => {});
     } else if (msg.type === "close") {
@@ -294,6 +297,7 @@ async function sidebarActionNow(windowId, msg) {
   else if (msg.type === "unloadSpace") await unloadSpace(msg.space, windowId);
   else if (msg.type === "renameSpace") await renameSpace(msg.space, msg.name);
   else if (msg.type.startsWith("little:")) await littleAction(windowId, msg); // littlewindow.js
+  else if (msg.type === "askHidingSeen") askHidingSeen(); // aftermove.js
 }
 
 // A tab dropped on a tile is an essential at that place: Firefox pins it after the

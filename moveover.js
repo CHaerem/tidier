@@ -11,7 +11,9 @@
 //      in the record, which is written before anything else happens, and Tidier starts again
 //      alone. Only then are the folder pages closed (closeOldFolderPages). A crash at any
 //      point leaves either the old record, or the new one and pages that close at the next
-//      start. The settings page then opens again and says what came over (afterMoving).
+//      start. The settings page then opens again and says what came over (afterMoving), and
+//      only then are tabs hidden: Firefox asks about that, and the page says what to answer
+//      (aftermove.js). Another window without Tidier's sidebar gets a button for it there.
 //
 // Sidebery stays installed for a few weeks, and moveBack undoes it all, again with Sidebery
 // off: Tidier puts its folder pages back first (foldersBackToSidebery), and Sidebery, turned on
@@ -83,7 +85,8 @@ async function moveReport() {
 const SIDEBERY_ON = "Sidebery is still on. Turn it off in about:addons first, and keep it installed.";
 const SIDEBERY_UNSEEN = "Tidier cannot see whether Sidebery is on: it needs to be allowed that first.";
 
-async function moveOver() {
+// `from`: the settings page's tab, where the page comes back (afterMoving).
+async function moveOver(from) {
   if (tidierAlone) return { refused: "This browser is on Tidier alone already." };
   // Both at once would fight over every tab, and Sidebery would close a closed folder's tabs
   // with its page. Asked here, not only on the page: the page may be an old one.
@@ -107,7 +110,8 @@ async function moveOver() {
   await browser.storage.local.set({
     tidierAlone: true, importedFolds: [], movedFromSidebery: true,
     // What the settings page says when it opens again (afterMoving): the move closes it.
-    movedNote: { kind: "over", folders, closed: closedNow, tabs: Object.values(all).filter(e => !e.group).length, hidden: hidden.map(s => s.name), windows: (await normalWindows()).length },
+    movedNote: { kind: "over", folders, closed: closedNow, tabs: Object.values(all).filter(e => !e.group).length, hidden: hidden.map(s => s.name), windows: (await normalWindows()).length,
+      at: from ? { windowId: from.windowId, index: from.index } : null },
     ...(hidden.length ? { [HIDDEN_KEY]: [...new Set([...listIn((await browser.storage.local.get(HIDDEN_KEY))[HIDDEN_KEY]), ...hidden.map(s => s.id)])] } : {}),
   });
   await guardAfterReload();
@@ -251,11 +255,19 @@ async function pagesAfterMovingBack() {
 
 // Moving closes the settings page (Tidier starts again), so it is opened again once Tidier has
 // started, to say what happened and what is left to do. Once: the note goes as it is shown.
+// After moving over it comes back where it was, in front, and no tab is hidden until it is
+// drawn (aftermove.js).
 async function afterMoving() {
   const { movedNote } = await browser.storage.local.get("movedNote");
   if (!movedNote || movedNote.opened) return;
   await browser.storage.local.set({ movedNote: { ...movedNote, opened: true } });
-  await browser.runtime.openOptionsPage().catch(noteError);
+  const at = movedNote.kind === "over" && movedNote.at;
+  const there = at && await browser.tabs.query({ windowId: at.windowId }).catch(() => null); // (the window may be gone)
+  const page = there?.length
+    ? await browser.tabs.create({ url: browser.runtime.getURL("settings/settings.html"), windowId: at.windowId, index: Math.min(at.index ?? there.length, there.length), active: true }).catch(noteError)
+    : await browser.runtime.openOptionsPage().then(() => browser.tabs.query({ active: true, lastFocusedWindow: true })).then(([t]) => t, noteError);
+  if (page) await browser.windows.update(page.windowId, { focused: true }).catch(() => {});
+  if (movedNote.kind === "over") holdUntilShown(page?.windowId ?? null);
 }
 
 // --- Sidebery's export -----------------------------------------------------------
@@ -376,10 +388,10 @@ async function importSidebery(backup) {
 // --- The settings page -------------------------------------------------------------
 browser.runtime.onMessage.addListener((msg, sender) => {
   if (!msg?.type?.startsWith("settings:") || sender.id !== browser.runtime.id || !sender.url?.startsWith(browser.runtime.getURL(""))) return;
-  return serial(() => settingsAction(msg));
+  return serial(() => settingsAction(msg, sender));
 });
 
-async function settingsAction(msg) {
+async function settingsAction(msg, sender) {
   switch (msg.type.slice("settings:".length)) {
     case "get": {
       const stored = await browser.storage.local.get(["archiveAfterHours", "lastCopy", "movedNote"]);
@@ -394,6 +406,7 @@ async function settingsAction(msg) {
         moved: stored.movedNote?.opened ? stored.movedNote : null, started,
         // The bar's order (spaces.js), which the page's lists of spaces follow.
         order: tidierAlone ? (await spaceList(new Set((await containerSpaces()).map(s => s.id)))).map(s => s.id) : [],
+        afterMove: await afterMoveState(), // aftermove.js
       };
     }
     case "archiveHours": { // what is stored, which the page then shows: an hour count that is no answer changes nothing
@@ -403,7 +416,8 @@ async function settingsAction(msg) {
     }
     case "rules": rulesList.set(msg.rules.filter(r => r.url && r.space).map(r => ({ url: r.url, space: r.space }))); setNotice("rule", null); viewAllSoon(); return true;
     case "space": await browser.contextualIdentities.update(msg.id, msg.changes).catch(noteError); return true;
-    case "moveOver": return moveOver();
+    case "moveOver": return moveOver(sender.tab);
+    case "movedShown": movedPageShown(sender.tab?.windowId); return true; // aftermove.js
     case "moveBack": return moveBack();
     case "sidebery": return sideberyState();
     case "importSidebery": return importSidebery(msg.backup);

@@ -1330,8 +1330,55 @@ def move_over(m):
     steps = ext_page(m, "/settings/settings.html", MOVE_STEPS)
     check("with Sidebery off, every step is ticked, and Move can be clicked", steps["export"] and steps["allow"] and steps["off"] and steps["canMove"], str(steps))
     m.js(H + """for (const w of wins()) for (const t of [...w.gBrowser.tabs]) if (url(t).includes("/settings/settings.html")) w.gBrowser.removeTab(t); await wait(300); return 1;""")
+    # The click on Move opens Tidier's sidebar in its window (settings.js), and Firefox brings it
+    # back there as Tidier starts again; a click cannot be made here, so it is opened like this.
+    m.js(H + """await main().SidebarController.show("_6844a953-9931-4334-9ff6-257c246485cb_-sidebar-action"); await wait(500); return 1;""")
     fire_message(m, {"type": "settings:moveOver"})
-    m.js(H + "await wait(10000); return 1;")
+    # Firefox's note about hidden tabs hangs over the top of the sidebar, with Disable Extension
+    # where New tab is: it must come while the settings page is in front to say what to choose.
+    note = m.js(H + """const page = w => url(w.gBrowser.selectedTab).split("/").slice(3).join("/");
+      for (let i = 0; i < 120; i++) {
+        const w = main(), open = w.document.getElementById("extension-notification-panel")?.state === "open";
+        if (open && !w.document.getElementById("extension-tab-hide-notification").hidden)
+          return {page: page(w), front: Services.wm.getMostRecentWindow("navigator:browser") === w};
+        await wait(250);
+      }
+      return {page: page(main())};""")
+    def windows_shot(when):  # the windows as you find them, to look at (Firefox's note itself is not drawn)
+        if not os.environ.get("TIDIER_SHOTS"):
+            return
+        m.chrome()
+        for n, handle in enumerate(m.cmd("WebDriver:GetWindowHandles")):
+            m.cmd("WebDriver:SwitchToWindow", {"handle": handle, "focus": True})
+            time.sleep(1.5)  # a window behind is drawn only once it is in front
+            open(os.path.join(os.environ["TIDIER_SHOTS"], f"moved-{when}-window-{n + 1}.png"), "wb").write(base64.b64decode(m.cmd("WebDriver:TakeScreenshot", {})))
+        m.chrome()
+    windows_shot("asked")
+    ask = ext_page(m, "/settings/settings.html", """return {ask: !doc.getElementById("moved-ask").hidden && doc.getElementById("moved-ask").textContent, without: doc.getElementById("windows-without").hidden ? "" : doc.getElementById("windows-without-text").textContent};""")
+    check("after moving over, Firefox asks about hidden tabs while the settings page is in front, saying what to choose",
+          note["page"] == "settings/settings.html" and note.get("front") and "Keep Tabs Hidden" in str(ask["ask"]), f"{note}, {ask}")
+    # The second window came over with no sidebar, and so no list of tabs: it shows the page too,
+    # whose button gives it the sidebar (a click in a page of Tidier's is what lets that happen).
+    other_page = m.js(H + """for (let i = 0; i < 40 && !url(other().gBrowser.selectedTab).includes("/settings/settings.html"); i++) await wait(250);
+      return url(other().gBrowser.selectedTab).split("/").slice(3).join("/");""")
+    check("after moving over, a window without Tidier's sidebar shows the page too, and the page in front says so",
+          other_page == "settings/settings.html" and ask["without"].startswith("Another window has no sidebar yet: it shows this page too, with a button for it"), f"{other_page}, {ask}")
+    handle = m.js(H + """const {NavigableManager} = ChromeUtils.importESModule("chrome://remote/content/shared/NavigableManager.sys.mjs");
+      main().document.getElementById("extension-notification-panel")?.hidePopup?.(); other().focus(); await wait(500);
+      return NavigableManager.getIdForBrowser(other().gBrowser.selectedTab.linkedBrowser);""")
+    m.cmd("Marionette:SetContext", {"value": "content"})
+    m.cmd("WebDriver:SwitchToWindow", {"handle": handle, "focus": False})
+    said = m.cmd("WebDriver:ExecuteScript", {"script": """const d = (window.wrappedJSObject || window).document;
+      return d.getElementById("windows-without").hidden ? "" : d.getElementById("windows-without-text").textContent;""", "args": []})
+    button = m.cmd("WebDriver:FindElement", {"using": "css selector", "value": "#show-sidebar"})
+    m.cmd("WebDriver:ElementClick", {"id": next(iter(button.values()))})
+    m.chrome()
+    r = m.js(H + """for (let i = 0; i < 20 && !other().SidebarController.isOpen; i++) await wait(100);
+      const ids = wins().map(w => w.SidebarController.isOpen && w.SidebarController.currentID); main().focus();
+      for (const t of [...other().gBrowser.tabs]) if (url(t).includes("/settings/settings.html")) other().gBrowser.removeTab(t);
+      await wait(300); return ids;""")
+    windows_shot("later")
+    check("its button gives the second window Tidier's sidebar", "This window has no sidebar yet" in str(said) and "6844a953" in str(r[1]), f"{said}, {r}")
     m.js(AFTER_MOVE_OVER, EXT_ID)
     after = m.js(record)
     check("after moving over, every folder has its tabs, and the pages are gone",
@@ -6511,6 +6558,35 @@ def alone_tab_names(m):
           row(args[1]).dispatchEvent(new page.MouseEvent("dblclick", {bubbles: true}));
           return {plain, dbl: !!box()};""", setup["plain"], saved)
         check("an ordinary tab gets no box, and a double click on a saved tab opens none", r == {"plain": False, "dbl": False}, str(r))
+
+        # A folder made while Firefox's note about hidden tabs has the keyboard keeps its name: its
+        # box would get the keyboard back only once the note goes, with the name still all selected,
+        # and the last letters typed meanwhile would become the name (once "re"). With the keyboard
+        # here, New folder opens its box as ever.
+        def new_folder():
+            return in_front("""const heads = () => [...doc.querySelectorAll("#tabs .folder .head")], known = new Set(heads().map(h => h.dataset.folderHead));
+              const focus = doc.hasFocus();
+              doc.getElementById("new-folder").click();
+              const head = await until(() => heads().find(h => !known.has(h.dataset.folderHead)));
+              await wait(500);
+              const out = {focus, open: !!box(), name: head?.querySelector(".title")?.textContent ?? null};
+              box()?.blur(); // which keeps "New folder"
+              await wait(300);
+              page.folderMenu(head.dataset.folderHead, false).find(i => i?.[0]?.startsWith("Delete"))[1]();
+              await until(() => !heads().includes(head));
+              return out;""")
+        with_keys = new_folder()
+        behind("""const {ExtensionSettingsStore} = ChromeUtils.importESModule("resource://gre/modules/ExtensionSettingsStore.sys.mjs");
+          await ExtensionSettingsStore.initialize(); await ExtensionSettingsStore.removeSetting(args[0], "tabHideNotification", args[0]); return 1;""", EXT_ID)
+        in_front("""await page.browser.tabs.hide([args[0]]); await until(() => !doc.hasFocus(), 3000); return 1;""", setup["plain"])
+        away = new_folder()
+        behind("""const {ExtensionSettingsStore} = ChromeUtils.importESModule("resource://gre/modules/ExtensionSettingsStore.sys.mjs");
+          const note = main().document.getElementById("extension-notification-panel"), was = note?.state;
+          note?.hidePopup?.();
+          await ExtensionSettingsStore.addSetting(args[0], "tabHideNotification", args[0], true, () => false); await wait(300); return was;""", EXT_ID)
+        in_front("""await page.browser.tabs.show([args[0]]); return 1;""", setup["plain"])
+        check("New folder opens its box when the sidebar has the keyboard, and not while Firefox's note about hidden tabs has it",
+              with_keys.get("focus") and with_keys.get("open") and away.get("focus") is False and away.get("open") is False and away.get("name") == "New folder", f"{with_keys}, {away}")
 
         # A menu item opens the box from inside a real click, which must not take the focus back.
         # Enter on a box you did not change names nothing, or the title would stop following its page.

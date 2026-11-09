@@ -124,14 +124,16 @@ function drawMoving() {
 
 // After a move, once: what came over and what is left to do. Moving starts Tidier again, which
 // closes this page, so Tidier opens it again then (afterMoving, moveover.js).
+let movedShownSaid = false;
 function drawMovedNote() {
   const n = movedNote;
   $("moved").hidden = !n;
+  $("moved-ask").hidden = n?.kind !== "over";
+  sidebarsToOpen();
   if (!n) return;
   // One thing a line: what happened first, then what is left to do, so it reads at a glance.
   const lines = n.kind === "over" ? [
     `Moved: ${counted(n.folders, "folder")} and ${counted(n.tabs, "tab")} are Tidier's own now${n.closed ? `, ${n.closed} of the folders closed, as in Sidebery` : ""}.`,
-    "When Firefox asks whether Tidier may hide tabs, choose Keep Tabs Hidden.",
     n.hidden.length && `${andList(n.hidden)} had no space in Sidebery and ${n.hidden.length === 1 ? "is" : "are"} empty, so ${n.hidden.length === 1 ? "it is" : "they are"} hidden here: tick ${n.hidden.length === 1 ? "it" : "them"} under Shown on this machine to show ${n.hidden.length === 1 ? "it" : "them"}.`,
     "Going back is below.",
   ] : [
@@ -140,20 +142,31 @@ function drawMovedNote() {
     state.report.sidebery === "on" ? "Sidebery is on: press ⌃E in each window where it does not show yet." : "Now turn Sidebery on in about:addons, then press ⌃E in each window to show it.",
   ];
   $("moved").replaceChildren(...lines.filter(Boolean).map(text => el("span", { className: "note-line", textContent: text })));
-  if (n.kind === "over") sidebarsToOpen();
+  // Drawn, with what to answer (#moved-ask): only now does Tidier hide tabs, and Firefox ask (aftermove.js).
+  if (n.kind === "over" && !movedShownSaid) { movedShownSaid = true; ask("movedShown"); }
 }
 
 // Firefox opens a sidebar after Tidier starts again only in a window where it was the last one
-// open, so other windows have no tab list until you show it there: said, and taken back as you do.
+// open, so other windows have no tab list until you show it there. Each of them shows this page
+// too (aftermove.js), with a button: a click in a page of Tidier's is what lets it open the
+// sidebar in that window. Said, and taken back as you do it, until Firefox restarts.
+const thisWindow = browser.windows.getCurrent().then(w => w.id, () => null);
 async function sidebarsToOpen() {
+  if (!state.afterMove && movedNote?.kind !== "over") { $("windows-without").hidden = true; return; }
   const windows = (await browser.windows.getAll({ windowTypes: ["normal"] })).filter(w => !w.incognito);
   const without = [];
-  for (const w of windows) if (!(await browser.sidebarAction.isOpen({ windowId: w.id }).catch(() => true))) without.push(w);
+  for (const w of windows) if (!(await browser.sidebarAction.isOpen({ windowId: w.id }).catch(() => true))) without.push(w.id);
+  const me = await thisWindow, here = without.includes(me), others = without.filter(id => id !== me).length;
+  const key = state.afterMove?.sidebarKey || "the key for Tidier's sidebar";
   $("windows-without").hidden = !without.length;
-  $("windows-without").textContent = without.length === 1 ? (windows.length === 1 ? "This window has no sidebar yet: press ⌃⇧S to show Tidier's." : "One window has no sidebar yet: press ⌃⇧S there to show Tidier's.")
-    : `${without.length} windows have no sidebar yet: press ⌃⇧S in each to show Tidier's.`;
+  $("windows-without-text").textContent = [
+    here && "This window has no sidebar yet, so no list of tabs.",
+    others && `${others === 1 ? "Another window has" : `${others} other windows have`} ${here ? "none either" : "no sidebar yet"}: ${others === 1 ? "it shows" : "each shows"} this page too, with a button for it, or press ${key} there.`,
+  ].filter(Boolean).join(" ");
+  $("show-sidebar").hidden = !here;
 }
-browser.windows.onFocusChanged.addListener(() => { if (movedNote?.kind === "over") sidebarsToOpen(); });
+$("show-sidebar").onclick = () => { browser.sidebarAction.open().catch(() => {}); setTimeout(sidebarsToOpen, 500); };
+browser.windows.onFocusChanged.addListener(() => { if (state) sidebarsToOpen(); });
 
 // Sidebery turned on or off in about:addons: each step says so at once. Turned off in step 3, this
 // page comes to the front, since the window has no tab list to find it with until the move.

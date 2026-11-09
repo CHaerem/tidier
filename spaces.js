@@ -70,11 +70,14 @@ async function setSpace(windowId, space) {
 // Show the active space's tabs and hide the others', and those in a closed folder
 // (foldrest.js). A tab without a container is shown wherever you are (it is about to be
 // opened in the space, see below, or is a page that cannot be: about:, extensions'
-// pages). Firefox cannot hide a pinned tab or the selected one.
+// pages). Firefox cannot hide a pinned tab or the selected one. How many it hid.
+// Not while hidingHeld: right after moving over, until the settings page is in front to
+// say what Firefox then asks (aftermove.js).
+let hidingHeld = false;
 async function showSpace(windowId) {
-  if (!tidierAlone) return;
+  if (!tidierAlone || hidingHeld) return 0;
   const space = activeSpace.get(windowId);
-  if (!space) return;
+  if (!space) return 0;
   // Only tabs that may have to change, as this runs for every burst of new tabs: the hidden
   // ones that may show here (usually none), and those shown (not the other spaces' hidden ones).
   const tabs = (await Promise.all([
@@ -87,7 +90,8 @@ async function showSpace(windowId) {
   const hide = tabs.filter(t => !t.hidden && !visible(t) && !t.active).map(t => t.id);
   if (show.length) await browser.tabs.show(show).catch(() => {});
   // Without the permission (asked for in the sidebar) tabs.hide is not there.
-  if (hide.length) await browser.tabs.hide?.(hide).catch(() => {});
+  if (!hide.length || !browser.tabs.hide) return 0;
+  return (await browser.tabs.hide(hide).catch(() => []))?.length ?? 0;
 }
 
 // The tab to go back to in a space: the one used last, an essential counts. A placeholder
@@ -132,6 +136,7 @@ async function usedLastOf(tabs) {
 
 // Switching: back to the tab you used last in that space, else a new tab there.
 async function switchSpace(windowId, space) {
+  askHidingSeen(); // aftermove.js: the sidebar's line about Firefox's question goes
   const last = await lastUsedIn(windowId, space);
   if (!await browser.windows.get(windowId).catch(() => null)) return; // closed meanwhile
   activeSpace.set(windowId, space); // before the tab is selected, so onActivated agrees

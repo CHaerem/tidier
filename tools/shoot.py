@@ -580,10 +580,10 @@ def marks(cam):
 def notices(cam):
     """By hand, with made-up words: the real ones take a fault."""
     select(cam.m, on_tab(PERSONAL), PERSONAL["ctx"])
-    in_sidebar(cam.m, """doc.getElementById("hiding").hidden = false;
+    in_sidebar(cam.m, """doc.getElementById("hiding").hidden = false; doc.getElementById("ask-hiding").hidden = false;
       doc.getElementById("problem").hidden = false; doc.querySelector("#problem .text").textContent = 'Live folder "Pull requests" is not updating: GitHub wants you to sign in again (gh auth login)';""")
     cam.shoot("state-notices")
-    in_sidebar(cam.m, """doc.getElementById("hiding").hidden = true; doc.getElementById("problem").hidden = true;""")
+    in_sidebar(cam.m, """doc.getElementById("hiding").hidden = true; doc.getElementById("ask-hiding").hidden = true; doc.getElementById("problem").hidden = true;""")
 
 
 def space_rename(cam):
@@ -905,10 +905,12 @@ def icons_that_vanish(cam):
 SETTINGS_IN_FULL = """
   const $ = id => document.getElementById(id), add = (parent, tag, cls, text) => { const e = document.createElement(tag); e.className = cls; e.textContent = text; parent.append(e); return e; };
   add($("notices"), "p", "notice", "Tidier could not read the record of its folders, and is working from the copy made this morning.");
-  $("allow-hiding").hidden = $("move").hidden = $("move-back").hidden = $("merge").hidden = $("moved").hidden = $("windows-without").hidden = $("import-alone").hidden = false;
+  $("allow-hiding").hidden = $("move").hidden = $("move-back").hidden = $("merge").hidden = $("import-alone").hidden = false;
+  // Right after moving over (aftermove.js), in a window that came over without the sidebar.
+  $("moved").hidden = $("moved-ask").hidden = $("windows-without").hidden = $("show-sidebar").hidden = false;
+  $("windows-without-text").textContent = "This window has no sidebar yet, so no list of tabs.";
   $("alone-state").textContent = "This browser uses Sidebery for its tab list, spaces and folders.";
-  for (const text of ["Moved: 5 folders and 23 tabs are Tidier's own now.", "When Firefox asks whether Tidier may hide tabs, choose Keep Tabs Hidden.", "Going back is below."]) add($("moved"), "span", "note-line", text);
-  $("windows-without").textContent = "One window has no sidebar yet: press ⌃⇧S there to show Tidier's.";
+  for (const text of ["Moved: 5 folders and 23 tabs are Tidier's own now, 2 of the folders closed, as in Sidebery.", "Going back is below."]) add($("moved"), "span", "note-line", text);
   $("sidebery-result").textContent = "Took in 2 rules and the order of 3 spaces.";
   $("step-export").classList.add("done"); $("step-allow").classList.add("done");
   $("sidebery-state").textContent = "Sidebery is on."; $("sidebery-state").classList.add("wrong");

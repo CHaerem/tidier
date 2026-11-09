@@ -395,6 +395,10 @@ function render(next) {
 
   const hiding = document.getElementById("hiding");
   if (hiding.hidden !== !view.needsHiding) hiding.hidden = !view.needsHiding;
+  // Right after moving over (aftermove.js); put away with its ×, it fades in place first.
+  const askHiding = document.getElementById("ask-hiding");
+  if (view.askHiding && askHiding.hidden) askHiding.hidden = false;
+  else if (!view.askHiding && !askHiding.hidden && !askHiding.classList.contains("going")) askHiding.hidden = true;
   // The lasting notice goes once you put it away with its × (isolation.js): under the pointer
   // it fades in place first, so the list does not come into its room at the moment of the click.
   const problem = document.getElementById("problem");
@@ -431,7 +435,11 @@ function render(next) {
 
   for (const id of kept.keys()) if (!drawn.has(id)) kept.delete(id);
   const keys = new Set(view.folders.map(f => f.key));
-  if (renameNext) for (const k of keys) if (!folderKeys.has(k)) { renameNext = false; rename(k); }
+  // Not while something else has the keyboard, such as Firefox's note about hidden tabs: the
+  // box would get it back only later, with its name still all selected, and the letters typed
+  // meanwhile went elsewhere, so the last few would silently become the name (once "re").
+  // The folder keeps its name, and you rename it, which shows that nothing was taken.
+  if (renameNext) for (const k of keys) if (!folderKeys.has(k)) { renameNext = false; if (document.hasFocus?.() ?? true) rename(k); }
   folderKeys = keys;
 }
 
@@ -442,3 +450,10 @@ document.getElementById("tabs").oncontextmenu = e => {
 };
 // Asking needs your click, so it is here and not in the background.
 document.getElementById("allow-hiding").onclick = () => browser.permissions.request({ permissions: ["tabHide"] });
+// Right after moving over, until the first switch of space (aftermove.js): Firefox's note
+// about hidden tabs hangs over this part of the sidebar, with Disable Extension where New tab is.
+// Put away, it fades where it is (goQuietly, isolation.js), and the next click there does nothing.
+document.getElementById("ask-hiding-no").onclick = secondClick.acts(() => {
+  goQuietly(document.getElementById("ask-hiding"));
+  send({ type: "askHidingSeen" });
+});

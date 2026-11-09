@@ -115,6 +115,10 @@ links from real apps, real sound and calls, and real Firefox Sync between two ma
       ways refused while Sidebery runs, and the page opens again after a move to say what
       happened. Going back gives Sidebery its folders back, each tab under its folder's page in
       Sidebery's own tree in every window, also folders made or renamed on Tidier alone.
+- [x] After the move no tab is hidden until the settings page is back in front, so that
+      Firefox's question about hidden tabs comes while the page says what to answer, and not
+      over the sidebar. Another window, which Firefox leaves without Tidier's sidebar, shows
+      the page too, with a button for it.
 - [ ] Sidebery disabled but installed for a few weeks.
 
 ## E. Without Sidebery, everywhere

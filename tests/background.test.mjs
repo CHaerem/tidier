@@ -741,6 +741,91 @@ test("on Sidebery, Tidier's button opens its settings, and its sidebar only says
   y.kill();
 });
 
+// What moving over left for the first start alone (moveOver, moveover.js), the settings page
+// having been at `index` in window `windowId`.
+const justMoved = (windowId, index) => ({ tidierAlone: true, movedNote: { kind: "over", folders: 0, closed: 0, tabs: 2, hidden: [], windows: 1, at: { windowId, index } } });
+
+test("after moving over, the settings page comes back where it was, in front, before any tab is hidden", async () => {
+  // Firefox asks about hidden tabs at the first one hidden, in a note over the top of the
+  // sidebar: it should come while the settings page is there to say what to choose.
+  const ff = new FakeFirefox();
+  ff.store.syncedTabs = { a: entry("https://a.example/"), b: entry("https://b.example/", { cookieStoreId: "firefox-container-2" }) };
+  const w = ff.addWindow({ focused: true });
+  ff.addTab(w.id, { url: "https://a.example/", active: true, cookieStoreId: C1 }, { syncKey: "a", syncRole: "live" });
+  const b = ff.addTab(w.id, { url: "https://b.example/", cookieStoreId: "firefox-container-2" }, { syncKey: "b", syncRole: "live" });
+  const other = ff.addWindow();
+  ff.addTab(other.id, { url: GHOST("ghost", "a"), active: true, cookieStoreId: C1, discarded: true }, { syncKey: "a", syncRole: "ghost" });
+  ff.noSidebar = new Set([other.id]); // Firefox gave it no sidebar as Tidier started again
+  ff.granted = new Set(["tabHide"]);
+  Object.assign(ff.store, justMoved(w.id, 1));
+  const x = await run(ff, "onInstalled");
+  await wait(300);
+  const page = ff.list(w.id).find(t => t.url.includes("settings.html"));
+  assert.ok(page?.active && ff.list(w.id).findIndex(t => t.id === page.id) === 1, "the settings page is back, in front, where it was");
+  assert.equal(ff.focused, w.id);
+  assert.ok(!ff.tabs.get(b.id).hidden, "nothing hidden yet");
+  const settings = { url: "moz-extension://tidier/settings/settings.html", tab: ff.snap(page) };
+  const got = await x.send({ type: "settings:get" }, settings);
+  assert.equal(got.moved.kind, "over");
+  assert.ok(got.afterMove, "the page knows it is right after the move");
+  // A page in another window saying it is drawn does not count: Firefox asks in the window in front.
+  await x.send({ type: "settings:movedShown" }, { ...settings, tab: { id: 999, windowId: other.id } });
+  await wait(1000);
+  assert.ok(!ff.tabs.get(b.id).hidden);
+  await x.send({ type: "settings:movedShown" }, settings);
+  await wait(1000);
+  assert.ok(ff.tabs.get(b.id).hidden, "hidden once the page is there");
+  assert.ok(ff.list(other.id).find(t => t.url.includes("settings.html"))?.active, "the window without a sidebar shows the page too, for its button");
+  assert.equal(ff.list(w.id).filter(t => t.url.includes("settings.html")).length, 1);
+  // The sidebar says it once too, until the first switch of space.
+  assert.equal((await x.js("viewFor")(w.id)).askHiding, true);
+  await x.js("serial")(() => x.js("switchSpace")(w.id, "firefox-container-2"));
+  assert.equal((await x.js("viewFor")(w.id)).askHiding, false);
+  // The window without a sidebar gets it at the first key of Tidier's pressed there, and only then.
+  x.b.commands.onCommand.fire("next-tab", ff.snap(ff.list(w.id)[0]));
+  assert.equal(ff.log.filter(e => e[0] === "sidebarOpen").length, 0);
+  x.b.commands.onCommand.fire("next-tab", ff.snap(ff.list(other.id)[0]));
+  x.b.commands.onCommand.fire("next-tab", ff.snap(ff.list(other.id)[0]));
+  assert.equal(ff.log.filter(e => e[0] === "sidebarOpen").length, 1);
+  x.kill();
+});
+
+test("after moving over, tabs are hidden in the end even if the settings page never says it is there", async () => {
+  const ff = new FakeFirefox();
+  ff.store.syncedTabs = { a: entry("https://a.example/"), b: entry("https://b.example/", { cookieStoreId: "firefox-container-2" }) };
+  const w = ff.addWindow({ focused: true });
+  ff.addTab(w.id, { url: "https://a.example/", active: true, cookieStoreId: C1 }, { syncKey: "a", syncRole: "live" });
+  const b = ff.addTab(w.id, { url: "https://b.example/", cookieStoreId: "firefox-container-2" }, { syncKey: "b", syncRole: "live" });
+  ff.granted = new Set(["tabHide"]);
+  Object.assign(ff.store, justMoved(w.id, 1));
+  const x = await run(ff, "onInstalled");
+  await wait(1000);
+  assert.ok(!ff.tabs.get(b.id).hidden);
+  await wait(10000);
+  assert.ok(ff.tabs.get(b.id).hidden);
+  x.kill();
+});
+
+test("after moving over with nothing to hide, one tab is hidden and shown again, so that Firefox asks then", async () => {
+  const ff = new FakeFirefox();
+  ff.store.syncedTabs = { a: entry("https://a.example/"), b: entry("https://b.example/") };
+  const w = ff.addWindow({ focused: true });
+  ff.addTab(w.id, { url: "https://a.example/", active: true, cookieStoreId: C1 }, { syncKey: "a", syncRole: "live" });
+  const b = ff.addTab(w.id, { url: "https://b.example/", cookieStoreId: C1 }, { syncKey: "b", syncRole: "live" });
+  ff.granted = new Set(["tabHide"]);
+  Object.assign(ff.store, justMoved(w.id, 1));
+  const x = await run(ff, "onInstalled");
+  await wait(300);
+  const page = ff.list(w.id).find(t => t.url.includes("settings.html"));
+  await x.send({ type: "settings:movedShown" }, { url: "moz-extension://tidier/settings/settings.html", tab: ff.snap(page) });
+  await wait(1000);
+  const hides = ff.log.filter(e => e[0] === "hide" || e[0] === "show").map(e => [e[0], [e[1]].flat()]);
+  const [id] = hides[0]?.[1] ?? [];
+  assert.deepEqual(JSON.parse(JSON.stringify(hides)), [["hide", [id]], ["show", [id]]]);
+  assert.ok(ff.tabs.get(id).url.startsWith("https://") && !ff.tabs.get(id).hidden && !ff.tabs.get(b.id).hidden, "a tab of the space, shown again");
+  x.kill();
+});
+
 test("Sidebery's rules and order of spaces come from its export", async () => {
   const ff = new FakeFirefox();
   emptySession(ff);

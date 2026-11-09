@@ -73,6 +73,7 @@
       "copies.js",
       "tabnames.js",
       "moveover.js",
+      "aftermove.js",
       "quiet.js",
       "isolation.js",
       "hiddenspaces.js",
