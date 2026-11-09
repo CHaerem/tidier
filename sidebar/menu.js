@@ -41,22 +41,6 @@ function showMenu(items, x, y, about = null) {
   drawMenu(items);
 }
 
-// The second click of a double click lands on whatever came under the pointer after the
-// first: the list that replaced the menu, or the row under a menu that closed. Either would
-// then act on something you never pointed at (a space you never chose, a tab that loads). So
-// for a moment after the menu changed, a click that is the second of a double click counts
-// for nothing, here and below the menu. (A click from the keys has no detail.)
-let menuChangedAt = -Infinity;
-const secondClick = e => e.detail > 1 && performance.now() - menuChangedAt < DOUBLE_CLICK_MS; // sidebar.js
-const menuChanged = () => { menuChangedAt = performance.now(); };
-for (const type of ["click", "dblclick", "auxclick"]) {
-  addEventListener(type, e => {
-    if (!secondClick(e)) return;
-    e.stopImmediatePropagation();
-    e.preventDefault();
-  }, true);
-}
-
 const MENU_GAP = 4, MENU_EDGE = 4;
 const MENU_SHORTEST = 120; // less room than this beside what it is about: it may cover it, rather than be a slit
 function drawMenu(items, back = null, byKey = false) {
@@ -72,21 +56,29 @@ function drawMenu(items, back = null, byKey = false) {
     if (item.heading !== undefined) {
       const heading = el("div", "heading");
       heading.append(el("span", "label", item.heading));
-      if (item.color) heading.prepend(menuDot(item.color));
+      if (item.color) {
+        const dot = el("span", "dot");
+        dot.style.setProperty("--color", item.color);
+        heading.prepend(dot);
+      }
       return heading;
     }
     const [label, act, { color, plus } = {}] = item;
     const b = el("button", "item");
     b.setAttribute("role", "menuitem");
     b.append(el("span", "label", label));
-    if (color) b.prepend(menuDot(color));
-    else if (plus) b.prepend(el("span", "plus"));
+    if (plus) b.prepend(el("span", "dot plus")); // where the others have their dots, so its name lines up with theirs
+    if (color) {
+      const dot = el("span", "dot");
+      dot.style.setProperty("--color", color);
+      b.prepend(dot);
+    }
     if (Array.isArray(act)) {
       b.classList.add("more");
       b.setAttribute("aria-haspopup", "menu");
-      b.onclick = ev => { if (secondClick(ev)) return; menuChanged(); drawMenu(act, { label, items }, !ev.detail); };
+      b.onclick = ev => drawMenu(act, { label, items }, !ev.detail);
     } else {
-      b.onclick = ev => { if (secondClick(ev)) return; menuChanged(); closeMenu(); act(); };
+      b.onclick = () => { closeMenu(); act(); };
     }
     return b;
   });
@@ -94,7 +86,7 @@ function drawMenu(items, back = null, byKey = false) {
     const b = el("button", "item back");
     b.setAttribute("role", "menuitem");
     b.append(el("span", "label", back.label));
-    b.onclick = ev => { if (secondClick(ev)) return; menuChanged(); drawMenu(back.items, null, !ev.detail); };
+    b.onclick = ev => drawMenu(back.items, null, !ev.detail);
     rows.unshift(b, el("div", "line"));
   }
   menu.replaceChildren(...rows);
@@ -113,12 +105,6 @@ function drawMenu(items, back = null, byKey = false) {
   // In the menu, so the arrow keys are for it (keys.js leaves them alone there).
   (byKey ? menu.querySelector(".item:not(.back)") : menu).focus({ preventScroll: true });
 }
-const menuDot = color => {
-  const dot = el("span", "dot");
-  dot.style.setProperty("--color", color);
-  return dot;
-};
-
 // Just below what it is about, from the pointer's side, or just above it if it does not fit
 // below; on the side with more room, scrolling, if it fits on neither. With nothing it is
 // about (the empty part of the list), at the pointer. Measured from the corner: where it

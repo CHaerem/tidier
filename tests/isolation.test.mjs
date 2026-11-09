@@ -489,6 +489,12 @@ test("a new space takes a colour and icon no space has", async () => {
   assert.deepEqual({ ...look }, { color: "green", icon: "tree" });
   const all = next([{ color: "blue", icon: "circle" }], ["blue"], ["circle"]);
   assert.deepEqual({ ...all }, { color: "blue", icon: "circle" }, "all taken: one anyway");
+  // Firefox's colours, in its order: with blue and orange in use, not yellow beside orange but
+  // as far from both as there is.
+  const ring = ["blue", "turquoise", "green", "yellow", "orange", "red", "pink", "purple", "toolbar"];
+  assert.equal(next([{ color: "blue" }, { color: "orange" }], ring, ["circle"]).color, "green");
+  assert.equal(next([{ color: "blue" }, { color: "orange" }, { color: "green" }], ring, ["circle"]).color, "pink");
+  assert.equal(next(ring.slice(0, 8).map(color => ({ color })), ring, ["circle"]).color, "toolbar", "only grey left");
   x.kill();
 });
 
@@ -774,6 +780,19 @@ test("a folder moved says where it went, a muted tab in it stays muted, and Undo
   assert.deepEqual([ff.synced.t.cookieStoreId, ff.synced.t.parentKey], [A, "F"]);
   assert.deepEqual([ff.synced.s.parentKey, !!ff.synced.s.saved], ["F", true], "the tab that stayed is in it again, and saved");
   assert.equal(said.length, 1, "Undo says nothing more");
+  x.kill();
+});
+
+test("a folder moved keeps its tabs' order, which the record's own order need not be", async () => {
+  const ff = new FakeFirefox();
+  aFolder(ff); // s before t in the record
+  const w = ff.addWindow({ focused: true });
+  ff.addTab(w.id, { url: "https://o.example/", cookieStoreId: A, active: true }, { syncKey: "o", syncRole: "live" });
+  ff.addTab(w.id, { url: "https://t.example/", cookieStoreId: A, discarded: true }, { syncKey: "t", syncRole: "live" });
+  ff.addTab(w.id, { url: "https://s.example/", cookieStoreId: A, discarded: true }, { syncKey: "s", syncRole: "live" });
+  const x = await run(ff);
+  await x.js("serial")(() => x.js("moveFolderToSpace")("F", B, w.id));
+  assert.deepEqual(ff.list(w.id).filter(t => t.cookieStoreId === B).map(t => ff.values.get(t.id)?.syncKey), ["t", "s"]);
   x.kill();
 });
 

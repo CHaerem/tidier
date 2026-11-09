@@ -119,7 +119,7 @@ addEventListener("DOMContentLoaded", () => { addToTabMenu(); addToSpaceMenu(); }
 // The place exists only during a tab's drag, and it is not one of the bar's dots, which
 // are for the spaces there are. Dropping is handled here, before drag.js sees the event.
 // On the bar's line, after its last dot, so it never lies over one: a drop meant for a space
-// must not make a new one. (The dots make room for it while you drag.)
+// must not make a new one. (The bar keeps its dots where they were: sidebar.css.)
 const dropForSpace = el("button", "new-space", "+");
 dropForSpace.title = "A new space with this tab";
 dropForSpace.hidden = true;

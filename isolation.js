@@ -645,10 +645,19 @@ async function spaceLooks() {
   };
 }
 
-// The first colour and icon no space has, so a new space looks like itself at once.
+// A colour and an icon no space has, so a new space looks like itself at once. The colour
+// is the free one furthest round Firefox's colour circle from those in use: the first free
+// one could be yellow next to an orange space, and two dots that close are hard to tell apart.
+// (Grey, "toolbar", is no colour of its own: last.)
 function nextLook(spaces, colors, icons) {
   const free = (list, used) => list.find(x => !used.includes(x)) ?? list[spaces.length % list.length];
-  return { color: free(colors, spaces.map(s => s.color)), icon: free(icons, spaces.map(s => s.icon)) };
+  const used = spaces.map(s => s.color), ring = colors.filter(c => c !== "toolbar");
+  const apart = c => Math.min(Infinity, ...used.filter(u => ring.includes(u)).map(u => {
+    const d = Math.abs(ring.indexOf(c) - ring.indexOf(u));
+    return Math.min(d, ring.length - d);
+  }));
+  const best = ring.filter(c => !used.includes(c)).reduce((a, c) => (a === null || apart(c) > apart(a) ? c : a), null);
+  return { color: best ?? free(colors, used), icon: free(icons, spaces.map(s => s.icon)) };
 }
 
 // A container's data as Firefox has it (containerSpaces gives the colour's code only).
@@ -892,7 +901,10 @@ async function moveFolderToSpace(key, space, windowId, { quiet = false } = {}) {
   if (!isOwnFolder(folder) || folder.cookieStoreId === space) return { moved: 0, stayed: 0 };
   const from = folder.cookieStoreId, after = foldersOf(all, from).map(f => f.key);
   const nextFolder = after[after.indexOf(key) + 1] ?? null;
-  const inFolder = Object.keys(all).filter(k => folderKeyOf(all, k) === key);
+  // In the order the folder shows them, which the record's own order need not be: each one
+  // arrives at the end of the tabs there, so they are opened in that order.
+  const shown = new Map((await tabsNow(windowId)).map((t, i) => [t.key, i])); // quiet.js
+  const inFolder = Object.keys(all).filter(k => folderKeyOf(all, k) === key).sort((a, b) => (shown.get(a) ?? Infinity) - (shown.get(b) ?? Infinity));
   const was = new Map(); // read before leaving, which unloads the pages
   for (const k of inFolder) {
     const reps = await repsNow(k);

@@ -2563,12 +2563,13 @@ def alone_tab_menu(m):
         # Move to space: there, gone here, and you stay.
         selected = m.js(MENU_TABS + "return idOf(main().gBrowser.selectedTab);")
         r = sidebar_page(m, MENU_PAGE + """await rightClick(rowOf(args[0])); choose("Move to space");
-          const list = shown(), dots = menu.querySelectorAll(".dot").length;
+          const list = shown(), dots = menu.querySelectorAll(".dot:not(.plus)").length, plus = !!menu.querySelector(".item:last-child .dot.plus");
           menu.querySelector(".back").click(); const again = plain(shown());
           choose("Move to space"); choose(list[2]);
           await until(() => !rowOf(args[0]) && doc.getElementById("note").classList.contains("shown"));
-          return {list, dots, again, gone: !rowOf(args[0]), active: spaces().find(s => s.active).id, note: doc.querySelector("#note .text")?.textContent};""", d)
+          return {list, dots, plus, again, gone: !rowOf(args[0]), active: spaces().find(s => s.active).id, note: doc.querySelector("#note .text")?.textContent};""", d)
         check("Move to space lists the other spaces with their colours, and the row back goes back", r["dots"] == len(r["list"]) - 3 and r["list"][-1] == "New space" and r["dots"] >= 2 and no_cookies_item(r["again"]) == ROW_MENU, str(r))
+        check("New space has a + where the spaces have their dots", r["plus"], str(r))
         moved = m.js(MENU_TABS + """await until(() => tabs().some(x => url(x.t).includes("smoke-menu-a") && x.t.userContextId !== args[0]));
           return {there: tabs().filter(x => url(x.t).includes("smoke-menu-a") && x.t.userContextId !== args[0]).length, selected: idOf(main().gBrowser.selectedTab)};""", ctx)
         check("Move to space moves the tab, and you stay where you are", r["gone"] and r["active"] == space and moved["there"] >= 1 and moved["selected"] == selected, f"{r}, {moved}")
@@ -2607,31 +2608,12 @@ def alone_tab_menu(m):
         s = m.js(MOVED, space)
         check("Undo brings them back as they were: unloaded, and muted", s["unloaded"]["space"] == space and s["unloaded"]["loaded"] == 0 and s["muted"]["muted"]
               and len(seen(m, "smoke-move-unloaded")) == asked, str(s))
-        r = sidebar_page(m, MENU_PAGE + "await until(() => rowOf(args[0]) && rowOf(args[1])); return [!!rowOf(args[0]), !!rowOf(args[1])];", u, mu)
-        check("and in this space's list again", r == [True, True], str(r))
-
-        # The second click of a double click must not act on what came under the pointer after
-        # the first: the list that replaced the menu, or the row under a menu that closed. Real
-        # clicks, which Firefox counts as a double click, in the sidebar's page in front.
-        m.js(H + """const w = main(); w.__beforeDouble = w.gBrowser.selectedTab; w.gBrowser.selectedTab = w.gBrowser.tabs.find(t => url(t).includes("/sidebar/sidebar.html")); await wait(500); return 1;""")
-        try:
-            at = sidebar_page(m, MENU_PAGE + """await rightClick(rowOf(args[0]));
-              const b = [...menu.querySelectorAll(".item")].find(x => x.textContent === "Move to space").getBoundingClientRect();
-              return {x: Math.round(b.left + 30), y: Math.round(b.top + b.height / 2)};""", u)
-            real_clicks(m, at["x"], at["y"], 2)
-            r = sidebar_page(m, MENU_PAGE + """await wait(600); return {open: !menu.hidden, back: !!menu.querySelector(".back"), here: !!rowOf(args[0])};""", u)
-            check("a double click on Move to space opens its list and chooses nothing", r == {"open": True, "back": True, "here": True}, str(r))
-            r = sidebar_page(m, MENU_PAGE + """menu.hidden = true; await rightClick(doc.querySelector("#tabs > .tab:not(.active)")); // the first of today's tabs: rows lie under its menu
-              const b = [...menu.querySelectorAll(".item")].find(x => x.textContent === "Copy address").getBoundingClientRect();
-              const x = Math.round(b.left + 30), y = Math.round(b.top + b.height / 2);
-              menu.style.visibility = "hidden"; const under = doc.elementFromPoint(x, y)?.closest("[data-tab]")?.dataset.tab ?? null; menu.style.visibility = "";
-              return {x, y, under};""")
-            selected = m.js(H + "return url(main().gBrowser.selectedTab);")
-            real_clicks(m, r["x"], r["y"], 2)
-            after = m.js(H + "await wait(800); return url(main().gBrowser.selectedTab);")
-            check("a double click on a menu item acts once, and leaves the row under the menu alone", r["under"] and after == selected, f"{r}, {selected} -> {after}")
-        finally:
-            m.js(H + "const w = main(); w.gBrowser.selectedTab = w.__beforeDouble; delete w.__beforeDouble; await wait(300); return 1;")
+        # (As new tabs, opened in this space again: found by their pages.)
+        ids = m.js(MENU_TABS + """const all = await record();
+          return Array.from(args, text => { const [k] = Object.entries(all).find(([, e]) => e.url?.includes(text)) ?? [];
+            const t = tabs().find(x => x.w === main() && key(x.w, x.t) === JSON.stringify(k))?.t; return t ? idOf(t) : null; });""", "smoke-move-unloaded", "smoke-move-muted")
+        r = sidebar_page(m, MENU_PAGE + "const ids = Array.from(args); await until(() => ids.every(id => rowOf(id))); return ids.map(id => !!rowOf(id));", *ids)
+        check("and in this space's list again", r == [True, True], f"{ids} {r}")
 
         # Several tabs, as window.selectedTabs says (a function of the page's own: this is how
         # to make one where no script can be added). What the selection itself does has its own checks.
@@ -7106,8 +7088,11 @@ def alone_drag_details(m):
       const box = e => e.getBoundingClientRect(), bg = () => page.getComputedStyle(plus).backgroundColor;
       const known = new Set(spaces().map(s => s.id));
       out.atRest = plus.hidden;
+      const dotsAt = () => [...doc.querySelectorAll("#spaces .space")].map(d => box(d.querySelector(".dot")));
+      const was = dotsAt();
       start(row);
-      const dots = [...doc.querySelectorAll("#spaces .space")].map(d => box(d.querySelector(".dot"))), p = box(plus);
+      const dots = dotsAt(), p = box(plus);
+      out.dotsStay = dots.every((d, i) => Math.abs(d.left - was[i].left) < 0.5);
       out.inBar = plus.parentElement.id === "spaces";
       out.afterLast = p.left >= dots.at(-1).right;
       out.onLine = Math.abs((p.top + p.bottom) / 2 - (dots[0].top + dots[0].bottom) / 2) < 1;
@@ -7127,6 +7112,7 @@ def alone_drag_details(m):
       return out;""")
     check("the place for a new space shows only during a drag, on the bar's line after the last dot",
           r["atRest"] is True and r["inBar"] and r["afterLast"] and r["onLine"], str(r))
+    check("and the dots stay where they were when it comes", r["dotsStay"], str(r))
     check("it lights up when a tab is over it", r["lit"], str(r))
     check("a tab dropped there makes a space whose name box opens, ready to type, and the line says where the tab went",
           r["placed"] and r["box"] == {"value": "New space", "focus": True} and r["note"] == "Moved to a new space", str(r))
@@ -7583,8 +7569,9 @@ def alone_space_menu(m):
             break
         time.sleep(0.1)
     check("unloading another space unloads its tabs", len(before["loaded"]) >= 3 and not after["loaded"], f"{before} -> {after}")
-    note = sidebar_until(m, """(id) => doc.getElementById("note").classList.contains("shown") ? {text: doc.querySelector("#note .text").textContent, name: dot(id).title} : null""", there)
-    check("and says so, since nothing you see changes", bool(note) and re.fullmatch(rf"\d+ tabs? unloaded in {re.escape(note['name'])}", note["text"]) is not None, str(note))
+    # (The line may still show what came before, the Clear above, for a moment.)
+    note = sidebar_until(m, """(id) => doc.getElementById("note").classList.contains("shown") && /unload/i.test(doc.querySelector("#note .text").textContent) ? {text: doc.querySelector("#note .text").textContent, name: dot(id).title} : {wait: doc.querySelector("#note .text")?.textContent ?? ""}""", there)
+    check("and says so, since nothing you see changes", bool(note) and not note.get("wait") and re.fullmatch(rf"\d+ tabs? unloaded in {re.escape(note['name'])}", note["text"]) is not None, str(note))
     check("and leaves its essentials, and you where you are", after["essentials"] == before["essentials"] > 0 and after["selected"] == before["selected"], f"{before} -> {after}")
 
     # Unloading this one: the rows dim, except the selected tab, and a page with unsaved input stays.

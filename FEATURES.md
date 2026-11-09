@@ -25,7 +25,7 @@ on the second Mac (PLAN.md, part C).
 | New tab button at the top of the list | A Z | Done | Tidier alone |
 | Drag tabs to reorder, into and out of folders | Z A S | Done | Tidier alone, checked, every window follows; also to a place among the essentials and to a space; an essential dragged out lands where it is dropped, in a folder too; marks only where a drop does something; a drop shows in its new place at once; the list scrolls at its edges |
 | Select several tabs (⇧/⌘ click) and act on them | Z A S | Done | Tidier alone, checked: move, close, drag and the menu; the selection lives in the sidebar only; ⌘-click takes the selected tab along only from the same folder, or from today's tabs |
-| Context menu on tabs, folders and spaces | Z A S | Done | Tidier alone, checked: Tidier's own short menu on tabs, tiles, folders, spaces and the list, just below what it is about (which is marked) and never over it; a list opens in its place; a space's menu starts with its name; a double click on an item acts once |
+| Context menu on tabs, folders and spaces | Z A S | Done | Tidier alone, checked: Tidier's own short menu on tabs, tiles, folders, spaces and the list, just below what it is about (which is marked) and never over it; a list opens in its place; a space's menu starts with its name |
 | Keyboard navigation in the sidebar | S | Done | Tidier alone: ↑↓, Enter, ⌫, ←→ |
 | Search/filter the tabs | S A | Done | Tidier alone, checked, in the command bar (⌘⇧K) |
 | Sound indicator and mute on a tab | Z A S | Done | Tidier alone, checked: a mark and mute on a row, a tile and a closed folder, and on a space's dot, whose mark goes to the tab that plays |
