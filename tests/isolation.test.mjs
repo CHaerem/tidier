@@ -489,6 +489,12 @@ test("a new space takes a colour and icon no space has", async () => {
   assert.deepEqual({ ...look }, { color: "green", icon: "tree" });
   const all = next([{ color: "blue", icon: "circle" }], ["blue"], ["circle"]);
   assert.deepEqual({ ...all }, { color: "blue", icon: "circle" }, "all taken: one anyway");
+  // Firefox's colours, in its order: with blue and orange in use, not yellow beside orange but
+  // as far from both as there is.
+  const ring = ["blue", "turquoise", "green", "yellow", "orange", "red", "pink", "purple", "toolbar"];
+  assert.equal(next([{ color: "blue" }, { color: "orange" }], ring, ["circle"]).color, "green");
+  assert.equal(next([{ color: "blue" }, { color: "orange" }, { color: "green" }], ring, ["circle"]).color, "pink");
+  assert.equal(next(ring.slice(0, 8).map(color => ({ color })), ring, ["circle"]).color, "toolbar", "only grey left");
   x.kill();
 });
 
@@ -719,7 +725,7 @@ function aFolder(ff) {
   };
 }
 
-test("a folder moved to another space: its tabs are unloaded placeholders there, nothing loads, and you stay", async () => {
+test("a folder moved to another space: each tab arrives as it was, nothing unloaded loads, and you stay", async () => {
   const ff = new FakeFirefox(); ff.granted = new Set(GUARD);
   aFolder(ff);
   const w = ff.addWindow({ focused: true }), other = ff.addWindow();
@@ -740,13 +746,53 @@ test("a folder moved to another space: its tabs are unloaded placeholders there,
   assert.equal(ff.synced.o.cookieStoreId, A, "others untouched");
   assert.ok(!ff.tabs.has(s.id));
   assert.ok(!ff.tabs.has(t.id));
-  for (const id of [w.id, other.id]) {
-    const here = ff.list(id);
-    for (const k of ["s", "t"]) assert.deepEqual(here.filter(x2 => x2.url === GHOST("ghost", k)).map(x2 => x2.cookieStoreId), [B], `${k} in window ${id}`);
-  }
-  assert.ok(!ff.log.some(l => l[0] === "create" && /^https/.test(l[3] || "")), "nothing was loaded");
+  // s was loaded (you were on it): loaded there too, in its window. t was a placeholder: one there, everywhere.
+  assert.deepEqual(ff.list(w.id).filter(x2 => x2.url === "https://s.example/").map(x2 => [x2.cookieStoreId, x2.discarded]), [[B, false]]);
+  assert.deepEqual(ff.list(other.id).filter(x2 => x2.url === GHOST("ghost", "s")).map(x2 => x2.cookieStoreId), [B]);
+  for (const id of [w.id, other.id]) assert.deepEqual(ff.list(id).filter(x2 => x2.url === GHOST("ghost", "t")).map(x2 => [x2.cookieStoreId, x2.discarded]), [[B, true]], `t in window ${id}`);
+  assert.ok(!ff.log.some(l => l[0] === "create" && /t\.example/.test(l[3] || "")), "what was not loaded was not loaded");
   assert.equal(ff.tabs.get(o.id).active, true, "you are on a tab that stayed, in the space you were in");
   assert.deepEqual(x.errors, []);
+  x.kill();
+});
+
+test("a folder moved says where it went, a muted tab in it stays muted, and Undo brings it back to its place, with a tab that stayed back in it", async () => {
+  const ff = new FakeFirefox();
+  aFolder(ff);
+  ff.store.syncedTabs.E = { group: true, own: true, name: "Next", cookieStoreId: A, parentKey: null, rank: 2 };
+  const w = ff.addWindow({ focused: true });
+  ff.addTab(w.id, { url: "https://o.example/", cookieStoreId: A, active: true }, { syncKey: "o", syncRole: "live" });
+  const s = ff.addTab(w.id, { url: "https://s.example/", cookieStoreId: A }, { syncKey: "s", syncRole: "live" });
+  ff.addTab(w.id, { url: "https://t.example/", cookieStoreId: A, discarded: true, mutedInfo: { muted: true } }, { syncKey: "t", syncRole: "live" });
+  ff.refuseDiscard = new Set([s.id]);
+  const x = await run(ff);
+  const said = [];
+  x.ctx.say = (windowId, text, options) => said.push({ text, ...options });
+  await x.js("serial")(() => x.js("moveFolderToSpace")("F", B, w.id));
+  await wait(300);
+  assert.deepEqual(said.map(n => n.text), ["Folder moved to firefox-container-2, one tab with unsaved input stayed"]);
+  assert.deepEqual(ff.list(w.id).filter(t => t.cookieStoreId === B).map(t => [t.discarded, !!t.mutedInfo?.muted]), [[true, true]], "t unloaded and muted there");
+  ff.refuseDiscard.clear();
+  await x.js("serial")(() => said[0].undo());
+  await wait(500);
+  assert.equal(ff.synced.F.cookieStoreId, A);
+  assert.deepEqual(Array.from(x.js("foldersOf")(ff.synced, A), f => f.key), ["F", "E"], "before the folder it was before");
+  assert.deepEqual([ff.synced.t.cookieStoreId, ff.synced.t.parentKey], [A, "F"]);
+  assert.deepEqual([ff.synced.s.parentKey, !!ff.synced.s.saved], ["F", true], "the tab that stayed is in it again, and saved");
+  assert.equal(said.length, 1, "Undo says nothing more");
+  x.kill();
+});
+
+test("a folder moved keeps its tabs' order, which the record's own order need not be", async () => {
+  const ff = new FakeFirefox();
+  aFolder(ff); // s before t in the record
+  const w = ff.addWindow({ focused: true });
+  ff.addTab(w.id, { url: "https://o.example/", cookieStoreId: A, active: true }, { syncKey: "o", syncRole: "live" });
+  ff.addTab(w.id, { url: "https://t.example/", cookieStoreId: A, discarded: true }, { syncKey: "t", syncRole: "live" });
+  ff.addTab(w.id, { url: "https://s.example/", cookieStoreId: A, discarded: true }, { syncKey: "s", syncRole: "live" });
+  const x = await run(ff);
+  await x.js("serial")(() => x.js("moveFolderToSpace")("F", B, w.id));
+  assert.deepEqual(ff.list(w.id).filter(t => t.cookieStoreId === B).map(t => ff.values.get(t.id)?.syncKey), ["t", "s"]);
   x.kill();
 });
 

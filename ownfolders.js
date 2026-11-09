@@ -139,28 +139,49 @@ async function moveInWindow(tabs, tabId, beforeId) {
 }
 
 // A tab moved to another space: Firefox cannot change a tab's container, so it is
-// opened again there and closed here, in every window. A page that may hold unsaved
-// input stays, and so does a tab that cannot be opened there; no rule sends it back,
-// since you moved it; and you stay where you are (safemoves.js).
+// opened again there and closed here, in every window, and arrives as it left
+// (reopenIn, safemoves.js). A page that may hold unsaved input stays, and so does a tab
+// that cannot be opened there; no rule sends it back, since you moved it; and you stay
+// where you are. On its own it leaves its folder, which stays here: it lands at the end
+// of today's tabs there.
 //
 // The address is the page's own while it is loaded: the record follows a page once it
 // has finished loading, and a tab can be moved before that. A placeholder's own address
 // says nothing, so then it is the record's.
-async function moveToSpace(tabId, space, leaving = []) {
+//
+// What happened: "moved", "stayed" (unsaved input), "gone" (no such space) or nothing.
+// It says so itself unless `quiet`: the menu says one line for all the tabs it moves
+// (moveRealsToSpace, tabactions.js).
+async function moveToSpace(tabId, space, leaving = [], { quiet = false } = {}) {
   const tab = await browser.tabs.get(tabId).catch(() => null);
   if (!tab || tab.cookieStoreId === space || tab.pinned) return;
+  await register(tabId); // opened a moment ago, it is not in the record yet: tab sync waits for redirects first
   const key = syncKeyByTab.get(tabId), live = await pageTab(tab, key);
-  const url = isWeb(live?.url) ? live.url : (await getSynced())[key]?.url;
+  const all = await getSynced(), entry = key ? all[key] : undefined;
+  const url = isWeb(live?.url) ? live.url : entry?.url;
   if (!isWeb(url)) return;
-  const noSpace = () => void say(tab.windowId, "That space could not be opened, so the tab stayed here");
+  const noSpace = () => { if (!quiet) say(tab.windowId, "That space could not be opened, so the tab stayed here"); return "gone"; };
   // Asked first, since leaving unloads the tab and selects another one. (Only a window
   // closing or a space removed this very moment can still refuse the new tab below.)
   if (await spaceGone(space)) return noSpace();
-  if (!(await leavesQuietly(live, key, leaving))) return sayStayed(tab.windowId);
-  const opened = await openUnruled({ windowId: tab.windowId, cookieStoreId: space, url, active: false }).catch(() => null);
-  if (!opened) return noSpace();
+  const was = pageState(live, tab);
+  if (!(await leavesQuietly(live, key, leaving))) { if (!quiet) sayStayed(tab.windowId); return "stayed"; }
+  if (!entry) {
+    // A tab the record does not keep (in a space hidden on this machine, say): only this one.
+    const opened = await openUnruled({ windowId: tab.windowId, cookieStoreId: space, url, active: false,
+      ...(was.windowId ? {} : { discarded: true, title: tab.title || url }), ...(was.muted ? { muted: true } : {}) }).catch(() => null);
+    if (!opened) return noSpace();
+    await browser.tabs.remove(tabId).catch(() => {});
+    await forgetClosedPages([url]);
+    return "moved";
+  }
+  if (!(await reopenIn(key, space, { ...was, url }, all))) return noSpace();
   // (A live folder's pull request counts as closed, or the next search brings it back.)
-  if (key) await closeEverywhere(key);
-  else await browser.tabs.remove(tabId).catch(() => {});
-  await forgetClosedPages([url]); // you moved it: ⌘⇧T must not bring it back in the space it left
+  await noteLiveFolderDismissed(entry);
+  for (const field of ["liveFolder", "liveUrl"]) delete entry[field];
+  // Out of its folder it counts as new, as a tab opened there would, or archiving could take it at its next look.
+  Object.assign(entry, { parentKey: null, added: Date.now() });
+  noteSaved(all, [key]);
+  saveSynced(all);
+  return "moved";
 }

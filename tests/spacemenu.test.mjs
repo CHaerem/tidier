@@ -66,6 +66,18 @@ test("unloading a space leaves essentials, selected tabs, sound and calls, and r
   x.kill();
 });
 
+test("unloading a space says what it did, also for a space you are not looking at, where nothing you see changes", async () => {
+  const ff = new FakeFirefox();
+  const { a } = session(ff);
+  const x = await alone(ff);
+  const said = [];
+  x.ctx.say = (windowId, text) => said.push([windowId, text]);
+  await x.js(`sidebarAction(${a.id}, { type: "unloadSpace", space: "${C1}" })`);
+  await x.js(`sidebarAction(${a.id}, { type: "unloadSpace", space: "${C1}" })`);
+  assert.deepEqual(said, [[a.id, "3 tabs unloaded in firefox-container-1"], [a.id, "Nothing to unload in firefox-container-1"]]);
+  x.kill();
+});
+
 test("a selected tab that is not in the tab record yet stays too", async () => {
   // A new tab page, which is never in the record, or a tab opened a moment ago.
   const ff = new FakeFirefox();
@@ -177,31 +189,36 @@ function sidebar({ alone = true, active = C1, tabs = [{ id: 1, active: true }, {
     for (const { f, capture } of listeners.contextmenu) if (capture) f({ target, preventDefault: () => prevented.push(1), stopPropagation() {} });
     return prevented.length > 0;
   };
-  const labels = items => Array.from(items, i => i[0]); // arrays of another realm
+  // (Arrays of another realm.) A line is "|", the quiet first line its name in brackets.
+  const labels = items => Array.from(items, i => (i === null ? "|" : i.heading !== undefined ? `(${i.heading})` : i[0]));
   return { ctx, sent, menus, options, rightClick, labels, list: () => vm.runInContext("listMenu()", ctx) };
 }
 
-test("a space's menu: Clear only for the space you are in, and only with something to clear", () => {
+// A space is only a dot on the bar, so its menu says which one it is first; Clear, which
+// closes tabs, is apart at the end, as Close is in the tab menu.
+const OWN = ["(One)", "Rename", "Unload this space", "Archived tabs", "|", "Settings", "|", "Clear today's tabs"];
+test("a space's menu: its name first, then in groups; Clear apart, only for the space you are in, and only with something to clear", () => {
   const s = sidebar();
   assert.ok(s.rightClick("#spaces .space", { space: C1 }));
-  assert.deepEqual(s.labels(s.menus.at(-1)), ["Rename", "Unload this space", "Clear today's tabs", "Archived tabs", "Settings"]);
+  assert.deepEqual(s.labels(s.menus.at(-1)), OWN);
   assert.ok(s.rightClick("#spaces .space", { space: C2 }));
-  assert.deepEqual(s.labels(s.menus.at(-1)), ["Rename", "Unload this space", "Archived tabs", "Settings"]);
+  assert.deepEqual(s.labels(s.menus.at(-1)), ["(Two)", "Rename", "Unload this space", "Archived tabs", "|", "Settings"]);
+  assert.equal(s.menus.at(-1)[0].color, "#000", "with its dot's colour");
   const lone = sidebar({ tabs: [{ id: 1, active: true }] });
   lone.rightClick("#spaces .space", { space: C1 });
-  assert.deepEqual(lone.labels(lone.menus.at(-1)), ["Rename", "Unload this space", "Archived tabs", "Settings"]);
+  assert.deepEqual(lone.labels(lone.menus.at(-1)), ["(One)", "Rename", "Unload this space", "Archived tabs", "|", "Settings"]);
 });
 
 test("the name above the list has the same menu, for the space you are in", () => {
   const s = sidebar();
   assert.ok(s.rightClick("#space-name"));
-  assert.deepEqual(s.labels(s.menus.at(-1)), ["Rename", "Unload this space", "Clear today's tabs", "Archived tabs", "Settings"]);
+  assert.deepEqual(s.labels(s.menus.at(-1)), OWN);
 });
 
 test("the items send what the background knows, and Settings needs no message", () => {
   const s = sidebar();
   s.rightClick("#spaces .space", { space: C1 });
-  const item = name => s.menus.at(-1).find(i => i[0] === name)[1];
+  const item = name => s.menus.at(-1).find(i => i?.[0] === name)[1];
   item("Unload this space")();
   item("Clear today's tabs")();
   assert.deepEqual(s.sent.map(m => ({ ...m })), [{ type: "unloadSpace", space: C1 }, { type: "clearSpace", space: C1 }]);
@@ -214,14 +231,14 @@ test("Archived tabs in a space's menu is that space's list, also of a space you 
   const asked = [];
   s.ctx.openArchived = space => asked.push(space);
   s.rightClick("#spaces .space", { space: C2 });
-  s.menus.at(-1).find(i => i[0] === "Archived tabs")[1]();
+  s.menus.at(-1).find(i => i?.[0] === "Archived tabs")[1]();
   assert.deepEqual(asked, [C2]);
 });
 
 test("Clear acts on the space it was offered for, wherever the window is by the time of the click", () => {
   const s = sidebar();
   s.rightClick("#spaces .space", { space: C1 });
-  const fromDot = s.menus.at(-1).find(i => i[0] === "Clear today's tabs")[1], fromList = s.list()[1][1];
+  const fromDot = s.menus.at(-1).find(i => i?.[0] === "Clear today's tabs")[1], fromList = s.list()[1][1];
   vm.runInContext(`view.space = ${JSON.stringify(C2)}`, s.ctx);
   fromDot();
   fromList();

@@ -225,7 +225,9 @@ export class ChaosFirefox extends FakeFirefox {
         if (p.discarded && active) throw new Error("Active tabs cannot be created and discarded.");
         if (p.discarded && p.pinned) throw new Error("Pinned tabs cannot be created and discarded.");
         if (p.title && !p.discarded) throw new Error("Title may only be set for discarded tabs.");
-        return this.snap(this.openTab(windowId, { url: p.url ?? "about:newtab", active, pinned: !!p.pinned, cookieStoreId: p.cookieStoreId, index: p.index, openerTabId: p.openerTabId ?? undefined, discarded: !!p.discarded, title: p.title }));
+        const made = this.openTab(windowId, { url: p.url ?? "about:newtab", active, pinned: !!p.pinned, cookieStoreId: p.cookieStoreId, index: p.index, openerTabId: p.openerTabId ?? undefined, discarded: !!p.discarded, title: p.title });
+        if (p.muted) made.mutedInfo = { muted: true }; // toggleMuteAudio, after the tab is made
+        return this.snap(made);
       },
       // ext-tabs.js update(): in this order.
       update: (id, p) => {

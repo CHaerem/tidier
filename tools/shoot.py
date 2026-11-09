@@ -504,6 +504,28 @@ def menus(cam):
             cam.shoot(name)
         cam.close_menus()
         cam.mouse_away()
+    # Where a menu stands: clear of what it is about. On a tile, which has no text, below it;
+    # on another space's dot, above the bar, starting with the space's name; and a list that
+    # replaces a menu, where the menu was. At the narrowest width too, where room is short.
+    for px in (WIDTH, 220):
+        cam.width(px)
+        for name, selector in (("menu-tile", "#essentials .tile:not(.active)"), ("menu-space", "#spaces .space:not(.active)"), ("menu-tab", ROW)):
+            if px != WIDTH:
+                name += f"-{px}"
+            elif name == "menu-tab":
+                continue  # above
+            at = cam.wanted(name) and cam.point_at(selector)
+            if at and cam.right_click(*at):
+                cam.shoot(name)
+            cam.close_menus()
+            cam.mouse_away()
+    cam.width(WIDTH)
+    at = cam.wanted("menu-tab-move-list") and cam.point_at(ROW)
+    if at and cam.right_click(*at):
+        in_sidebar(cam.m, """[...doc.querySelectorAll("#menu .item")].find(b => b.textContent === "Move to space")?.click();""")
+        cam.shoot("menu-tab-move-list")
+    cam.close_menus()
+    cam.mouse_away()
     select(cam.m, on_tab(STUDIO), STUDIO["ctx"])
     if cam.wanted("menu-list"):  # on the empty part of the list
         box = cam.sidebar_box()
@@ -543,6 +565,16 @@ def marks(cam):
         by_hand(cam.m, selector, cls)
         cam.shoot(f"state-{name}")
         by_hand(cam.m, selector, cls)
+    # While a tab is dragged, the place on the bar for a new space after the last dot; with
+    # the tab over it, lit. (By hand: what a drag shows, as the sidebar marks it, drag.js.)
+    for name, lit in (("drop-new-space", False), ("drop-new-space-over", True)):
+        if not cam.wanted(f"state-{name}"):
+            continue
+        in_sidebar(cam.m, """doc.documentElement.dataset.dragging = "tab"; const plus = doc.querySelector(".new-space");
+          if (plus) { plus.hidden = false; plus.classList.toggle("drop-into", args[0]); }""", lit)
+        cam.shoot(f"state-{name}")
+        in_sidebar(cam.m, """delete doc.documentElement.dataset.dragging; const plus = doc.querySelector(".new-space");
+          if (plus) { plus.hidden = true; plus.classList.remove("drop-into"); }""")
 
 
 def notices(cam):
@@ -822,6 +854,13 @@ def empty_spaces(cam):
       for (let i = 0; i < 100 && urls.some(u => !byUrl(u)?.image); i++) await wait(50);
       gB.discardBrowser(byUrl(urls[1])); await wait(300); return 1;""", urls, ctx)
     cam.shoot("state-no-essentials")
+    # A tab dragged there: the space's name is where the first essential goes, and says so.
+    if cam.wanted("state-drop-first-essential"):
+        in_sidebar(m, """doc.documentElement.dataset.dragging = "tab";""")
+        cam.shoot("state-drop-first-essential")
+        in_sidebar(m, """doc.getElementById("space-name").classList.add("drop-into");""")
+        cam.shoot("state-drop-first-essential-over")
+        in_sidebar(m, """delete doc.documentElement.dataset.dragging; doc.getElementById("space-name").classList.remove("drop-into");""")
     # No tabs: only essentials, the selected one among them.
     m.js(CHROME + """const [urls, ctx] = args;
       gB.selectedTab = byUrl(urls[0]); await wait(200);

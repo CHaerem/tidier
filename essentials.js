@@ -221,6 +221,20 @@ async function ensureAllWindows() {
 }
 
 const pinPlaces = new Map(); // tab ID -> the essential's tab it was dropped before (sidebar-view.js)
+// The other way: an essential dragged out of the grid lands where it was dropped among the
+// tabs, also in a folder. It has that place only once tab sync has it in the record, so the
+// place waits here for that (register, tabsync.js).
+const unpinPlaces = new Map(); // tab ID -> { windowId, before, folder }
+// An unpin from the sidebar or the tab menu is yours for certain, so it need not wait to see
+// whether it lasts (UNPIN_SETTLE_MS), nor for redirects of a page already there: the other
+// windows follow as quickly as they do any other change. Forgotten a few seconds later, as an
+// unpin that never came to anything.
+const ownUnpins = new Set();
+const OWN_UNPIN_MS = 5000;
+function unpinYourself(tabId) {
+  ownUnpins.add(tabId);
+  setTimeout(() => { ownUnpins.delete(tabId); unpinPlaces.delete(tabId); }, OWN_UNPIN_MS);
+}
 
 // New essential (the tab was pinned). A placeholder that is pinned (a ghost,
 // or a live folder tab never opened) stands for its synced tab's page; tab
@@ -282,8 +296,9 @@ async function onUnpinned(tab) {
   const entry = list.find(e => e.key === key);
   setList(list.filter(e => e.key !== key));
   // A loaded page stays as it is, and nothing about it changes, so tab sync must be
-  // told: it is an ordinary tab now, in every window.
-  if (!isGhostUrl(tab.url)) registerSoon(tab.id);
+  // told: it is an ordinary tab now, in every window. (Your own unpin, at once, in this job.)
+  const own = ownUnpins.has(tab.id);
+  if (!isGhostUrl(tab.url) && !own) registerSoon(tab.id);
   if (isGhostUrl(tab.url)) {
     if (entry) await browser.tabs.update(tab.id, { url: entry.url }).catch(() => {});
     else {
@@ -297,6 +312,7 @@ async function onUnpinned(tab) {
   const copies = pinned.filter((t, i) => t.id !== tab.id && keys[i] === key);
   await removeTabs(copies.map(t => t.id), busy);
   await forgetClosedCopies(key, copies, entry?.url);
+  if (own && !isGhostUrl(tab.url)) await register(tab.id);
 }
 
 // Copies Tidier closed. In Recently Closed, ⌘⇧T would bring one back instead of the tab you
@@ -338,7 +354,7 @@ browser.tabs.onUpdated.addListener((tabId, change, tab) => {
   setTimeout(() => serial(async () => {
     const now = await browser.tabs.get(tabId).catch(() => null);
     if (now && !now.pinned) await onUnpinned(now);
-  }), UNPIN_SETTLE_MS);
+  }), ownUnpins.has(tabId) ? 0 : UNPIN_SETTLE_MS);
 }, { properties: ["pinned"] });
 
 // Keep each essential's title and icon current, from whichever copy is loaded.

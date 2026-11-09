@@ -32,7 +32,8 @@ async function sidebar({ os = "mac", alone = true, rows = [1, 2, 3, 4, 5], tiles
   const listeners = {}, sent = [], viewListeners = [];
   const ctx = {
     view: { alone, space: "s" }, kept, send: m => sent.push(m), closeMenu() {}, cursor: null, moveCursor(c) { ctx.cursor = c || null; },
-    reachable: () => els, dragging: null, marks() {}, dropAt: () => null, secondClick: { acted() {} },
+    reachable: () => els, dragging: null, marks() {}, settleDrag() {}, dropAt: () => null, secondClick: { acted() {} },
+    sendDrop: msgs => msgs.forEach(m => sent.push(m)), // drag.js: what it adds (shown at once, a name for the last) is its own to test
     nextTab: e => { const list = els.filter(x => x.classes.has("tab")); return list[list.indexOf(e) + 1] ?? null; },
     port: { onMessage: { addListener: f => viewListeners.push(f) } },
     browser: { runtime: { getPlatformInfo: async () => ({ os }) } },
@@ -97,6 +98,22 @@ test("the first ⌘-click takes the selected tab in; the next add and remove; th
   assert.deepEqual(s.picked(), []);
   s.add(2);
   assert.deepEqual(s.picked(), [1, 2]);
+});
+
+test("the first ⌘-click takes the selected tab in only from the same part of the list; a ⇧-click is from it wherever it is", async () => {
+  const s = await sidebar();
+  s.el(1).dataset.folder = "F"; // you are on a saved tab in a folder
+  for (const id of [2, 3, 4, 5]) s.el(id).dataset.folder = "";
+  s.add(3);
+  s.add(4);
+  assert.deepEqual(s.picked(), [3, 4], "not the saved tab far up: a drag would take it out of its folder unseen");
+  s.click(5);
+  s.el(2).dataset.folder = "F";
+  s.add(2);
+  assert.deepEqual(s.picked(), [1, 2], "from the same folder it comes along");
+  s.click(5);
+  s.range(3);
+  assert.deepEqual(s.picked(), [1, 2, 3], "a range starts where you are");
 });
 
 test("Ctrl-click is the key elsewhere; on a Mac it is a right click and picks nothing", async () => {
@@ -274,10 +291,10 @@ test("tabs already together in that place do not move", async () => {
   assert.equal(await dropping([4, 5], null), 0, "last already");
 });
 
-test("to a space or the essentials they go in order; essentials unpinned in reverse, since each lands first", async () => {
-  const space = await dropOf({ type: "moveToSpace", tabId: 3, space: "b" });
-  assert.deepEqual(space.sent.map(m => m.tabId), [1, 3, 5]);
-  assert.deepEqual(Array.from(space.sent[0].leaving), [1, 3, 5], "what the selected tab must not step onto");
+test("to a space they go as one move, in order; to the essentials one by one, unpinned in reverse, since each lands first", async () => {
+  const space = await dropOf({ type: "tabAction", action: "space", tabIds: [3], space: "b" });
+  assert.equal(space.sent.length, 1, "one move, so one line says where they went");
+  assert.deepEqual(Array.from(space.sent[0].tabIds), [1, 3, 5]);
   const pin = await dropOf({ type: "pin", tabId: 3, pinned: true });
   assert.deepEqual(pin.sent.map(m => m.tabId), [1, 3, 5]);
   const unpin = await dropOf({ type: "pin", tabId: 3, pinned: false });

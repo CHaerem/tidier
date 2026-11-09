@@ -80,6 +80,54 @@ async function leavesQuietly(live, key, leaving = []) {
   return false;
 }
 
+// --- Arriving as it left -----------------------------------------------------------
+// A tab moved to another space is the same tab there: the same entry in the record, under
+// the same key, so its title, icon and name come along, and its folder when the folder
+// moves too. It also arrives as it was. Unloaded if it was: Firefox can make a tab unloaded,
+// with its title, from the start, so nothing loads in a space you are not looking at.
+// Loaded, in the window that had its page, if it was. Muted if it was: a muted podcast
+// must not start playing out of sight. A tab moved on its own and a folder's tabs go the
+// same way (reopenIn).
+//
+// What it was is read before it leaves, since leaving unloads its page to find out whether
+// it holds unsaved input (closesQuietly, tabsync.js). `live` is the tab with its page, if
+// there is one (pageTab); without one, a placeholder (`row`) that was muted stays muted.
+function pageState(live, row) {
+  const loaded = !!live && !live.discarded && !isGhostUrl(live.url) && isWeb(live.url);
+  return { windowId: loaded ? live.windowId : null, url: isWeb(live?.url) ? live.url : null, muted: !!(live ?? row)?.mutedInfo?.muted };
+}
+
+// Entry `key` of `all` into `space`, as `was` (pageState) says, in every window. The new
+// tabs come first and the old ones go after, so no window is left for a moment without a
+// tab it can show, which would make Firefox close it. If Firefox makes none of them (a space
+// removed this very moment, a window closing), the old tabs stay as they were, and this
+// says so (false). The caller saves `all`.
+async function reopenIn(key, space, was, all) {
+  const entry = all[key], from = { cookieStoreId: entry.cookieStoreId, url: entry.url };
+  const old = (await repsNow(key)).map(t => ({ t, role: syncRoleByTab.get(t.id) })); // tabsync.js: this tab's, not every tab once per tab
+  old.forEach(({ t }) => { syncBusy.add(t.id); forget(t.id); });
+  Object.assign(entry, { cookieStoreId: space, ...(was.url ? { url: was.url } : {}) }); // the page it is on, which the record may not have caught up with yet
+  const muted = was.muted ? { muted: true } : {};
+  let made = 0;
+  for (const w of await normalWindows()) {
+    if (w.id !== was.windowId) { if (await createRep(w.id, key, entry, undefined, undefined, muted).catch(() => null)) made++; continue; }
+    // (openUnruled: no rule sends it back, and isolation lets its first request go in that space.)
+    const tab = await openUnruled({ windowId: w.id, cookieStoreId: space, url: entry.url, active: false, ...muted }).catch(() => null);
+    if (!tab) continue;
+    syncBusy.add(tab.id);
+    setTimeout(() => syncBusy.delete(tab.id), SETTLE_MS);
+    if (await setRole(tab.id, key, "live")) made++;
+  }
+  if (!made) {
+    Object.assign(entry, from);
+    for (const { t, role } of old) { await setRole(t.id, key, role).catch(() => {}); syncBusy.delete(t.id); }
+    return false;
+  }
+  await removeTabs(old.map(({ t }) => t.id), syncBusy).catch(() => {});
+  await forgetClosedReps(key, old.map(({ t }) => t)); // ⌘⇧T must not bring it back in the space it left
+  return true;
+}
+
 // One line for all the tabs of one move, however they are sent: the selection's tabs
 // arrive one by one.
 const STAYED_GROUP_MS = 2000;

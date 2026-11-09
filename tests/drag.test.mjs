@@ -190,6 +190,45 @@ test("a drop on a tile for a tab pinned meanwhile leaves no place behind for a l
   x.kill();
 });
 
+// As in Arc: an essential dragged out lands where it is dropped, with the same line a row
+// shows, also in a folder. Your own unpin need not wait to see whether it lasts (a drag to
+// another window unpins and pins again), so the other window follows as quickly as for
+// any other change, not a second or two later.
+const pages = (ff, windowId) => ff.list(windowId).filter(t => !t.pinned && t.url !== "about:blank").map(t => (t.url === "about:newtab" ? "new" : ff.store.syncedTabs[ff.values.get(t.id)?.syncKey]?.url.replace(/^https:\/\/|\.example\/$/g, "") ?? "?"));
+test("an essential dragged out lands where it was dropped, and the other window follows at once", async () => {
+  const { ff, x, w, other, tiles, tabY } = await two();
+  const t0 = Date.now();
+  sidebar(x, w.id)({ type: "pin", tabId: tiles.a, pinned: false, before: tabY.id, folder: null });
+  for (let i = 0; i < 100 && !pages(ff, other.id).includes("a"); i++) await wait(20);
+  const took = Date.now() - t0;
+  assert.ok(took < 1000, `the other window had it after ${took} ms`);
+  await wait(300);
+  assert.deepEqual(pages(ff, w.id), ["x", "a", "y", "new"]);
+  assert.deepEqual(pages(ff, other.id), ["x", "a", "y"]);
+  assert.deepEqual(order(ff), ["b", "z"]);
+  assert.equal(x.js("unpinPlaces.size") + x.js("ownUnpins.size"), 0, "nothing left waiting");
+  x.kill();
+});
+
+test("an essential dragged onto a folder goes into it, and is saved there", async () => {
+  const { ff, x, w, tiles } = await two();
+  sidebar(x, w.id)({ type: "pin", tabId: tiles.b, pinned: false, before: null, folder: "folder" });
+  await wait(800);
+  const [key] = Object.entries(ff.store.syncedTabs).find(([, e]) => e.url === "https://b.example/") ?? [];
+  assert.ok(key);
+  assert.equal(ff.store.syncedTabs[key].parentKey, "folder");
+  assert.ok(ff.store.syncedTabs[key].saved, "saved, as every tab in a folder");
+  x.kill();
+});
+
+test("an essential dropped on the list with no place goes where Firefox puts it, first among the tabs", async () => {
+  const { ff, x, w, tiles } = await two();
+  sidebar(x, w.id)({ type: "pin", tabId: tiles.a, pinned: false });
+  await wait(800);
+  assert.deepEqual(pages(ff, w.id), ["a", "x", "y", "new"]);
+  x.kill();
+});
+
 test("what the sidebar is told about a tab says whether it can be more than a row: a page or its placeholder", async () => {
   const { x, w, other, ff } = await two();
   const seen = [];

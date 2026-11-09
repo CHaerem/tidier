@@ -7,7 +7,8 @@
 //   space", "Clear this site's cookies in this space" and "New space".
 // - While a tab is being dragged, a place on the bar to drop it for a new space.
 //
-// Nothing here is drawn into the rows or the bar themselves, whose draws reset them.
+// Nothing here is drawn into the rows or the dots themselves, whose draws reset them. The
+// place for a new space is the bar's last child, which the bar's draw keeps (sidebar.js).
 
 const DECLINED = "isolationDeclined"; // localStorage: per browser, and you can still give it on the settings page
 const ISOLATION_ASK = { permissions: ["webRequest", "webRequestBlocking"], origins: ["<all_urls>"] };
@@ -106,8 +107,16 @@ function addToTabMenu() {
   const move = TAB_MENU.find(i => i.id === "space");
   if (move) {
     const { choices } = move;
-    move.choices = tabs => [...choices(tabs), ["New space", async () => isolationTell("newSpaceWith", { tabIds: tabs.map(t => t.id), windowId: await thisWindow })]];
+    // A + where the spaces have their dots, so its name lines up with theirs.
+    move.choices = tabs => [...choices(tabs), ["New space", () => newSpaceFor(tabs.map(t => t.id)), { plus: true }]];
   }
+}
+
+// A new space with these tabs in it, and then its name ready to change, as one made
+// from the space's menu is: "New space" is no name to keep.
+async function newSpaceFor(tabIds) {
+  namingNewSpace = await isolationTell("newSpaceWith", { tabIds, windowId: await thisWindow });
+  nameNewSpace();
 }
 
 // The space's menu (spacemenu.js): New space, and then its name is
@@ -135,10 +144,12 @@ addEventListener("DOMContentLoaded", () => { addToTabMenu(); addToSpaceMenu(); }
 // --- A new space by dropping tabs on the bar --------------------------------------------
 // The place exists only during a tab's drag, and it is not one of the bar's dots, which
 // are for the spaces there are. Dropping is handled here, before drag.js sees the event.
+// On the bar's line, after its last dot, so it never lies over one: a drop meant for a space
+// must not make a new one. (The bar keeps its dots where they were: sidebar.css.)
 const dropForSpace = el("button", "new-space", "+");
 dropForSpace.title = "A new space with this tab";
 dropForSpace.hidden = true;
-document.getElementById("spaces").after(dropForSpace);
+document.getElementById("spaces").append(dropForSpace);
 let draggedTabs = null;
 addEventListener("dragstart", e => {
   const id = Number(e.target.closest?.(".row.tab")?.dataset.tab);
@@ -149,10 +160,16 @@ addEventListener("dragstart", e => {
 addEventListener("dragend", () => { draggedTabs = null; dropForSpace.hidden = true; dropForSpace.classList.remove("drop-into"); }, true);
 dropForSpace.addEventListener("dragover", e => { e.preventDefault(); e.stopPropagation(); e.dataTransfer.dropEffect = "move"; dropForSpace.classList.add("drop-into"); });
 dropForSpace.addEventListener("dragleave", () => dropForSpace.classList.remove("drop-into"));
+// The drag ends here: the row goes to the new space, and its dragend, sent to the row, would
+// never reach this page.
 dropForSpace.addEventListener("drop", async e => {
   e.preventDefault();
   e.stopPropagation();
   const tabIds = draggedTabs;
+  draggedTabs = null;
+  dropForSpace.hidden = true;
   dropForSpace.classList.remove("drop-into");
-  if (tabIds) isolationTell("newSpaceWith", { tabIds, windowId: await thisWindow });
+  dragging = null; // drag.js
+  settleDrag();
+  if (tabIds) newSpaceFor(tabIds);
 });

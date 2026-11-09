@@ -18,6 +18,7 @@ function startDrag(e, what) {
   pressed = null;
   if (!view?.alone || onButton) { e.preventDefault(); return; }
   dragging = what;
+  document.documentElement.dataset.dragging = what.kind; // for what shows only during a drag (sidebar.css)
   e.dataTransfer.effectAllowed = "move";
   e.dataTransfer.setData("text/plain", ""); // Firefox starts no drag without data
   e.stopPropagation();
@@ -25,8 +26,8 @@ function startDrag(e, what) {
 addEventListener("dragend", () => { dragging = null; settleDrag(); });
 // Past the sidebar's edge a drop does nothing here, and no more dragover comes to take
 // the mark away. (A leave with no next element is the leaving of the page itself.)
-addEventListener("dragleave", e => { if (!e.relatedTarget) settleDrag(); });
-const settleDrag = () => { marks(); dragScroll(0); };
+addEventListener("dragleave", e => { if (!e.relatedTarget) { marks(); dragScroll(0); } });
+const settleDrag = () => { marks(); dragScroll(0); if (!dragging) delete document.documentElement.dataset.dragging; };
 
 const MARKS = ["drop-before", "drop-after", "drop-left", "drop-right", "drop-into"];
 const MARKED = MARKS.map(c => "." + c).join();
@@ -63,8 +64,7 @@ let dragScrolling = null; // { speed, timer, last, carry }
 
 function dragEdgeSpeed(e) {
   const list = document.getElementById("tabs");
-  // An essential has no place in the list to be scrolled to: anywhere there unpins it.
-  if (!dragging || dragging.kind === "essential" || !list.contains(e.target)) return 0;
+  if (!dragging || !list.contains(e.target)) return 0;
   const box = list.getBoundingClientRect();
   const fromTop = e.clientY - box.top, fromBottom = box.bottom - e.clientY, near = Math.min(fromTop, fromBottom);
   if (near >= EDGE_ZONE) return 0;
@@ -135,6 +135,14 @@ function dropAt(e) {
   // at. Pinned from Firefox's own menu it has a tile, but no place among the essentials.
   const bare = [...view.essentials, ...view.tabs].some(i => i.id === dragging.tabId && !i.page);
   if (bare && (!t.closest("#tabs") || (dragging.kind === "tab" && (t.dataset.folderHead || t.dataset.folder)))) return null;
+  // An essential dragged out of the grid: anywhere in the list takes it, and where a tab
+  // would land there, it lands too, into a folder as well; else (a folder's indent, a live
+  // folder) where Firefox puts it, first among the tabs, with the whole list as its mark.
+  if (dragging.kind === "essential" && t.closest("#tabs")) {
+    const place = bare ? null : tabPlace(e, t, over, own);
+    if (place) return { ...place, msg: { type: "pin", tabId: dragging.tabId, pinned: false, folder: place.msg.folder, before: place.msg.before } };
+    return { target: document.getElementById("tabs"), cls: "drop-into", msg: { type: "pin", tabId: dragging.tabId, pinned: false } };
+  }
   // With no essentials the grid takes no room, and the space's name is where it would be.
   if (t.id === "space-name") {
     if (dragging.kind !== "tab" || document.querySelector("#essentials .tile")) return null;
@@ -142,10 +150,11 @@ function dropAt(e) {
   }
   if (t.classList.contains("space")) {
     if (dragging.kind !== "tab" || t.dataset.space === view.space) return null;
-    return { target: t, cls: "drop-into", msg: { type: "moveToSpace", tabId: dragging.tabId, space: t.dataset.space } };
+    // As the menu's Move to space does, with its line and Undo (tabactions.js).
+    return { target: t, cls: "drop-into", msg: { type: "tabAction", action: "space", tabIds: [dragging.tabId], space: t.dataset.space } };
   }
   const inEssentials = t.id === "essentials" || t.classList.contains("tile");
-  if (dragging.kind === "essential" && !inEssentials) return { target: document.getElementById("tabs"), cls: "drop-into", msg: { type: "pin", tabId: dragging.tabId, pinned: false } };
+  if (dragging.kind === "essential" && !inEssentials) return null;
   if (inEssentials) {
     const place = tilePlace(e);
     if (!place) return null;
@@ -154,6 +163,13 @@ function dropAt(e) {
     if (place.before === own || place.before === own.nextElementSibling) return null;
     return { target: place.tile, cls: place.cls, msg: { type: "moveEssential", tabId: dragging.tabId, before } };
   }
+  return tabPlace(e, t, over, own);
+}
+
+// Where a tab lands in the list, under the pointer: { target, cls, msg }, or null. `t` is
+// what the pointer is over (a row, a folder's head, the list), `own` what is dragged.
+function tabPlace(e, t, over, own) {
+  const after = el => { const r = el.getBoundingClientRect(); return e.clientY > r.top + r.height / 2; };
   // A tab in a live folder stays there, whatever is dropped (the search decides, see
   // moveTab), and it has no order of its own to change.
   const held = !!own.closest(".live");
@@ -189,7 +205,54 @@ addEventListener("dragover", e => {
 });
 addEventListener("drop", e => {
   const drop = dropAt(e);
-  settleDrag();
   dragging = null;
-  if (drop) { e.preventDefault(); send(drop.msg); }
+  settleDrag();
+  if (drop) { e.preventDefault(); sendDrop([drop.msg]); }
+});
+
+// --- A drop shows where it lands, at once ----------------------------------------------
+// The background moves the tab in every window and then sends a view: on a busy machine a
+// few hundred milliseconds later. Until then the row would stand where it was, as if the
+// drop had failed, and then jump. So it is put there here, at once, and the view that comes
+// once the move is done confirms it, or puts it back if the move could not be made. A view
+// built before that knows nothing of the move, and after each such view the row is put in
+// its new place again, before anything is drawn. (Each drop is known by a name the
+// background gives back in the view that comes after it: sidebarAction, sidebar-view.js.)
+//
+// Only what can be moved as it is drawn: rows, folders and tiles among their own kind. A
+// tab that becomes a tile or a tile that becomes a row waits for its view.
+const LANDING_MS = 3000; // no view for that long: the background is not answering, and the next view is the truth
+let landing = null; // { name, put, until }
+function sendDrop(msgs) {
+  const name = `${performance.now()}-${Math.random()}`;
+  const put = () => { for (const msg of msgs) putWhereItLands(msg); };
+  put();
+  landing = { name, put, until: performance.now() + LANDING_MS };
+  msgs.forEach((msg, i) => send(i === msgs.length - 1 ? { ...msg, landing: name } : msg));
+}
+function putWhereItLands(msg) {
+  const list = document.getElementById("tabs");
+  if (msg.type === "moveTab") {
+    const row = kept.get("tab:" + msg.tabId), before = msg.before === null ? null : kept.get("tab:" + msg.before);
+    if (!row || (msg.before !== null && !before)) return;
+    if (before) before.before(row);
+    else if (msg.folder) kept.get("folder:" + msg.folder)?.lastChild.append(row);
+    else list.append(row);
+    row.dataset.folder = msg.folder ?? "";
+  } else if (msg.type === "moveFolder") {
+    const box = kept.get("folder:" + msg.key), before = msg.before === null ? null : kept.get("folder:" + msg.before);
+    if (!box || (msg.before !== null && !before)) return;
+    if (before) before.before(box);
+    else [...list.querySelectorAll(":scope > .folder")].at(-1)?.after(box);
+  } else if (msg.type === "moveEssential") {
+    const tile = kept.get("tile:" + msg.tabId), before = msg.before === null ? null : kept.get("tile:" + msg.before);
+    if (!tile || (msg.before !== null && !before)) return;
+    if (before) before.before(tile);
+    else document.getElementById("essentials").append(tile);
+  }
+}
+port.onMessage.addListener(next => {
+  if (!landing) return;
+  if (next.landed === landing.name || performance.now() > landing.until) landing = null;
+  else landing.put();
 });

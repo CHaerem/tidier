@@ -180,9 +180,9 @@ const placeholderWithoutPage = entry => tidierAlone && !entry.group;
 
 // Create the representation of `key` in a window: a copy for Sidebery group
 // pages, a ghost (placeholder page, see ghost.js) for everything else, nested
-// under its parent.
-async function createRep(windowId, key, entry, parentId, index) {
-  const props = { windowId, active: false, cookieStoreId: entry.cookieStoreId };
+// under its parent. `more`: what else the tab is made with (muted, reopenIn).
+async function createRep(windowId, key, entry, parentId, index, more = {}) {
+  const props = { windowId, active: false, cookieStoreId: entry.cookieStoreId, ...more };
   if (parentId !== undefined && !tidierAlone) props.openerTabId = parentId;
   if (index !== undefined) props.index = index;
   if (placeholderWithoutPage(entry)) Object.assign(props, { discarded: true, title: entry.title || entry.url });
@@ -390,6 +390,7 @@ browser.runtime.onMessage.addListener((msg, sender) => {
     newsMarks, newsSeen,
     settled,
     littles, newBlanks, // littlewindow.js
+    ownUnpins, unpinPlaces, landedIn, // essentials.js, sidebar-view.js
   };
   // Counted once Tidier is done with what it was doing (the helper page
   // asking this causes a little work), so a list only shows what it keeps.
@@ -572,6 +573,11 @@ async function register(tabId) {
   // ghosts just went by the window it was in.
   const now = await browser.tabs.get(tab.id).catch(() => null);
   if (now && now.windowId !== tab.windowId) await reconcileAll();
+  // An essential you dragged out of the grid, to its place among the tabs (essentials.js).
+  const place = unpinPlaces.get(tab.id);
+  ownUnpins.delete(tab.id);
+  unpinPlaces.delete(tab.id);
+  if (place) await moveTab(place.windowId, tab.id, place.before, place.folder);
   if (tidierAlone) await dropArchived(tab.cookieStoreId, tab.url); // open again (⌘⇧T, by hand): the list holds only what is not
 }
 
@@ -930,8 +936,11 @@ browser.tabs.onUpdated.addListener((tabId, change, tab) => {
   if (!key) {
     // A new tab that has navigated to a page, e.g. "New Tab" -> a URL. Busy or not: it may
     // be a new tab you dragged a moment ago, and no later event would tell. Or a pinned tab
-    // Tidier knew nothing about, unpinned: nothing else will happen to it.
-    if (change.url || change.status === "complete" || change.pinned === false) registerSoon(tabId);
+    // Tidier knew nothing about, unpinned: nothing else will happen to it. An unloaded
+    // essential you took out of the essentials opens its page (onUnpinned, essentials.js),
+    // and has nothing to wait for once that page is there.
+    if (ownUnpins.has(tabId) && isWeb(change.url)) serial(() => register(tabId));
+    else if (change.url || change.status === "complete" || change.pinned === false) registerSoon(tabId);
     return;
   }
   // You pinned it, also if Tidier was just busy with it: Tidier pins no synced tab itself.

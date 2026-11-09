@@ -292,7 +292,11 @@ function folder(f) {
       undoShown();
       if (view.alone && !f.live) rename(f.key);
     };
-    head.oncontextmenu = e => { if (view.alone) openMenu(e, folderMenu(f.key, f.live)); };
+    head.oncontextmenu = e => {
+      if (!view.alone) return;
+      openMenu(e, folderMenu(f.key, f.live));
+      markMenuAbout([`[data-folder-head="${f.key}"]`]); // menu.js: as a row's and a dot's are
+    };
     head.draggable = !!view?.alone;
     head.ondragstart = e => startDrag(e, { kind: "folder", key: f.key });
     b.append(head, el("div", "children"));
@@ -373,7 +377,9 @@ function render(next) {
   place(tabsList, withRooms(tabsList, list));
   keepLingering();
 
-  place(document.getElementById("spaces"), view.spaces.map(s => keep("space:" + s.id, () => {
+  // (What another file put at the end of the bar stays there: the place to drop a tab for a new space, isolation.js.)
+  const bar = document.getElementById("spaces");
+  place(bar, [...view.spaces.map(s => keep("space:" + s.id, () => {
     const b = el("button", "space");
     b.dataset.space = s.id;
     b.onclick = () => send({ type: "space", space: s.id });
@@ -384,7 +390,7 @@ function render(next) {
     b.title = s.name;
     b.style.setProperty("--color", s.color);
     spaceSound(b, s);
-  })));
+  })), ...bar.querySelectorAll(":scope > .new-space")]);
 
   for (const id of kept.keys()) if (!drawn.has(id)) kept.delete(id);
   const keys = new Set(view.folders.map(f => f.key));

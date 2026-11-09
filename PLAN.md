@@ -176,6 +176,8 @@ Changed by saying so. All of them can be reversed.
 - Clear asks nothing: one line offers Undo. Closing several tabs and deleting a folder work
   the same way.
 - Tabs moved to another space go to the end of its tabs, not where new tabs go, so several
-  moved together keep their order.
+  moved together keep their order. Each arrives as it was, under its own record: unloaded if it
+  was, loaded in the window that had its page if it was, muted if it was; a folder's tabs too.
+  One line says where they went, with Undo.
 - Small windows for links from other apps have one on-off on the settings page, to be looked
   at again after the second Mac.
