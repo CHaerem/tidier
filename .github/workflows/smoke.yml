@@ -18,6 +18,8 @@ name: Smoke test
 on:
   push:
     branches: [main]
+    # A change to documents only is no release (tools/release.py), so nothing to test.
+    paths-ignore: ["**.md"]
   pull_request:
   schedule:
     - cron: "17 6 * * 1"
@@ -31,8 +33,29 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # The unit tests once, on a quick Linux runner, before any Firefox starts: a mistake
+  # they catch shows in a few minutes instead of after the smoke test's hour.
+  # They run Tidier on a fake Firefox whose clock runs 100 times fast. A runner can be
+  # slower than a Mac, so that the work between two steps takes longer than a short
+  # wait there (300 ms is 3 ms): seen 2026-11-09. A quarter of that speed leaves room.
+  unit:
+    name: Unit tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+      - run: node --test
+        env:
+          TIDIER_TEST_SCALE: "25"
+
   smoke:
     name: Firefox ${{ matrix.firefox }}, ${{ matrix.part }}
+    needs: unit
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: macos-15
     # The Sidebery groups take about 10 minutes on a Mac, the Tidier-alone chain about 45,
@@ -64,15 +87,6 @@ jobs:
           firefox-version: ${{ matrix.firefox }}
       - name: Download Sidebery
         run: curl -fsSL -o "$RUNNER_TEMP/sidebery.xpi" https://addons.mozilla.org/firefox/downloads/latest/sidebery/latest.xpi
-      # The tests run Tidier on a fake Firefox whose clock runs 100 times fast. On GitHub's
-      # slower runner the work between two steps could take longer than a short wait there
-      # (300 ms is 3 ms), and a few tests missed their moment (seen 2026-11-09), one file
-      # at a time too. A quarter of that speed leaves room; it takes a few minutes.
-      - name: Unit tests
-        working-directory: tidier
-        env:
-          TIDIER_TEST_SCALE: "25"
-        run: node --test
       # One test Firefox per runner (--part, one half of --serial): GitHub's runner
       # is slower than a Mac, and three at once there would test the runner, not Tidier.
       #
