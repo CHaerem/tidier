@@ -791,9 +791,12 @@ test("where the command bar is there, its table has clearing cookies and a copy 
     const table = x.js("BAR_COMMANDS");
     const clear = table.find(c => c.name === "clear-site-cookies"), copy = table.find(c => c.name === "copy-to-space");
     assert.ok(clear && copy);
-    const tab = { id: 1, cookieStoreId: A };
+    const tab = { id: 1, cookieStoreId: A, url: "https://a.example/" };
     assert.equal(clear.when({ picked: [tab], tab }), true);
     assert.equal(clear.when({ picked: [tab, { id: 2, cookieStoreId: A }], tab }), false, "one list: it cannot take many, so it is left out");
+    const blank = { id: 3, cookieStoreId: A, url: "about:newtab" };
+    assert.equal(clear.when({ picked: [blank], tab: blank }), false, "a page with no site has no cookies to clear");
+    assert.equal(clear.careful, true, "it signs you out: never what a plain Enter takes for a word in its name");
     assert.deepEqual([...copy.list({ picked: [tab], spaces: [{ id: A, name: "A" }, { id: B, name: "B" }] })].map(i => i.value), [B]);
   }
   x.kill();

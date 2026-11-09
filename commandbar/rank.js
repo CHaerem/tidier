@@ -17,12 +17,19 @@ const ADDRESS_SCORE = [0, 200, 500, 600];
 // The gaps above are larger than these together, so a better kind of match always wins
 // and these only order results that matched about as well.
 const HERE_BONUS = 120, RECENT_BONUS = 60, RECENT_HALF_LIFE_MS = 24 * 3600e3;
+// A title that is exactly what you typed is what you meant, wherever it is: more than this
+// space and recent use together.
+const EXACT_BONUS = HERE_BONUS + RECENT_BONUS + 30;
 // What is not open comes after what is, but can pass a weak match among the open tabs.
 const NOT_OPEN = new Set(["history", "bookmark", "archived", "closed"]);
 const NOT_OPEN_PENALTY = 150;
 const KIND_BONUS = { tab: 30, essential: 30, folder: 25, command: 20, bookmark: 10, history: 5, archived: 5, closed: 5 };
 
-const plain = text => String(text ?? "").toLowerCase().normalize("NFKD").replace(/\p{M}/gu, "");
+// Accents and case do not matter. NFKD takes the accent off å and é, but ø, æ and their
+// like are letters of their own to Unicode, and Norwegian titles are full of them:
+// "sorlandet" must find "Sørlandet", as "pa" finds "på".
+const OWN_LETTERS = { ø: "o", æ: "ae", œ: "oe", ß: "ss", đ: "d", ł: "l", ı: "i", þ: "th", ð: "d" };
+const plain = text => String(text ?? "").toLowerCase().normalize("NFKD").replace(/\p{M}/gu, "").replace(/[øæœßđłıþð]/g, c => OWN_LETTERS[c]);
 const isWordChar = char => /[\p{L}\p{N}]/u.test(char);
 const bareAddress = url => String(url ?? "").replace(/^[a-z][a-z0-9+.-]*:\/\/(www\.)?/i, "");
 const siteOf = url => bareAddress(url).split(/[/?#]/)[0];
@@ -48,8 +55,18 @@ function matchScore(words, phrase, item) {
   }
   let score = total / words.length;
   if (words.length > 1 && matchIn(phrase, title) >= AT_WORD) score += 100; // the words as you typed them
-  if (title === phrase) score += 100;
+  if (title === phrase) score += EXACT_BONUS;
   return score;
+}
+
+// A command that closes tabs (`careful`, from commandbar.js) is never the row a plain
+// Enter takes because of a short word that happens to be in its name: "tab" + Enter must
+// not clear six tabs. It counts as found as soon as its first word is typed in full
+// ("clear", "close"); before that it comes after everything else.
+function heldBack(item, phrase) {
+  if (!item.careful) return false;
+  const title = plain(item.title), first = title.split(/\s+/)[0];
+  return !(title.startsWith(phrase) && phrase.length >= first.length);
 }
 
 // The address without what makes no difference to which page it is, to tell doubles.
@@ -76,9 +93,11 @@ function rankResults(query, items, now = Date.now()) {
       score += (open ? RECENT_BONUS : RECENT_BONUS / 2) * 2 ** (-age / RECENT_HALF_LIFE_MS);
     }
     if (!open) score -= NOT_OPEN_PENALTY;
-    results.push({ ...item, match, score });
+    results.push({ ...item, match, score, held: heldBack(item, phrase) });
   }
-  results.sort((a, b) => b.score - a.score || (b.lastUsed ?? 0) - (a.lastUsed ?? 0) || String(a.title).localeCompare(String(b.title)));
+  // On an equal score, the commands in the order commandbar.js gives them (going and making
+  // before closing), not by their names: alphabetically "Clear" came before "New tab".
+  results.sort((a, b) => a.held - b.held || b.score - a.score || (b.lastUsed ?? 0) - (a.lastUsed ?? 0) || (a.order ?? 1e9) - (b.order ?? 1e9) || String(a.title).localeCompare(String(b.title)));
   // An address that is open is not shown again from history, bookmarks or what was closed.
   const seen = new Set(results.filter(r => !NOT_OPEN.has(r.kind) && r.url).map(r => sameAddressKey(r.url)));
   return results.filter(r => {
@@ -107,10 +126,12 @@ function addressFrom(text) {
 }
 
 // With nothing typed: the tabs you used last in this space, and the commands you use most.
+// A command that closes tabs is never the first of them, so a plain Enter in an empty space
+// cannot clear it, however often you cleared before.
 function emptyResults(items) {
   const recent = items.filter(i => (i.kind === "tab" || i.kind === "essential") && i.here && !i.current)
     .sort((a, b) => (b.lastUsed ?? 0) - (a.lastUsed ?? 0));
-  const commands = items.filter(i => i.kind === "command"); // the background gives them most used first
+  const commands = items.filter(i => i.kind === "command").sort((a, b) => !!a.careful - !!b.careful); // the background gives them most used first
   const room = Math.min(3, commands.length);
   const tabs = recent.slice(0, BAR_ROWS - room);
   return [...tabs, ...commands.slice(0, BAR_ROWS - tabs.length)];
@@ -118,19 +139,20 @@ function emptyResults(items) {
 
 // All the rows for what is typed: an address first, unless that very page is the best
 // match; a search first when nothing matches well, and always there at the end.
-function resultsFor(query, items, { tail = [], now = Date.now() } = {}) {
+// `engine` is the name of Firefox's search engine, when the bar may know it.
+function resultsFor(query, items, { tail = [], now = Date.now(), engine = null } = {}) {
   const text = String(query ?? "").trim();
   if (!text) return emptyResults(items);
   const ranked = rankResults(text, items, now);
   const url = addressFrom(text);
-  const search = { kind: "search", id: "search", title: `Search for “${text}”`, query: text };
+  const search = { kind: "search", id: "search", title: engine ? `Search ${engine} for “${text}”` : `Search for “${text}”`, query: text };
   const top = ranked[0];
   const go = url && { kind: "address", id: "address", title: `Go to ${text}`, url };
   if (go && top?.url && sameAddressKey(top.url) === sameAddressKey(url) && !NOT_OPEN.has(top.kind)) {
     return [...ranked.slice(0, BAR_ROWS - 2 - tail.length), go, search, ...tail].slice(0, BAR_ROWS);
   }
   if (go) return [go, ...ranked.slice(0, BAR_ROWS - 2 - tail.length), search, ...tail];
-  if (!top || top.match < GOOD_MATCH) return [search, ...ranked.slice(0, BAR_ROWS - 1 - tail.length), ...tail];
+  if (!top || top.match < GOOD_MATCH || top.held) return [search, ...ranked.slice(0, BAR_ROWS - 1 - tail.length), ...tail];
   return [...ranked.slice(0, BAR_ROWS - 1 - tail.length), search, ...tail];
 }
 
@@ -141,15 +163,4 @@ function completionFor(row, text) {
   if (!row.url) return row.title;
   const typed = plain(text).trim(), site = siteOf(row.url);
   return typed && plain(site).startsWith(typed) ? site : bareAddress(row.url);
-}
-
-// A key as Firefox writes it ("Ctrl+Shift+C"), as you know it. On a Mac Firefox's Ctrl
-// is ⌘ and MacCtrl is ⌃.
-function prettyKey(shortcut, mac) {
-  if (!shortcut) return "";
-  if (!mac) return shortcut.replace("MacCtrl", "Ctrl");
-  const glyphs = { Ctrl: "⌘", Command: "⌘", MacCtrl: "⌃", Alt: "⌥", Shift: "⇧" };
-  const parts = shortcut.split("+"), key = parts.pop();
-  const words = { Up: "↑", Down: "↓", Left: "←", Right: "→", Comma: ",", Period: "." };
-  return parts.map(p => glyphs[p] ?? p).join("") + (words[key] ?? key);
 }

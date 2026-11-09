@@ -381,7 +381,7 @@ test("⌥-click: a script in every page only while the access is given", async (
   given = true;
   x.b.permissions.onAdded.fire({ origins: ["<all_urls>"] }); // spaces.js starts again on the same event
   await wait(300);
-  assert.equal(scripts.length, 1, "once");
+  assert.deepEqual(scripts.map(s => s.js.at(-1).file), ["peek.js", "barkeys.js"], "once each, and the command bar's with it");
   x.send({ type: "little:peek", url: LINK }, { url: "https://here.example/", tab: ff.snap(on) });
   await wait(300);
   assert.equal(ff.tabs.get(tabOf(popups(ff)[0])).cookieStoreId, C1);

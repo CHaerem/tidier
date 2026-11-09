@@ -3,10 +3,16 @@
 <head>
   <meta charset="utf-8">
   <title>Command bar</title>
+  <link rel="stylesheet" href="../sidebar/tokens.css">
   <link rel="stylesheet" href="commandbar.css">
+  <script src="first.js"></script>
 </head>
 <body>
-  <input id="field" autofocus autocomplete="off" spellcheck="false" role="combobox" aria-expanded="true" aria-controls="rows" aria-label="Search">
+  <div id="top">
+    <span id="what" class="icon" data-icon="search"></span>
+    <input id="field" autofocus autocomplete="off" spellcheck="false" role="combobox" aria-expanded="true" aria-controls="rows" aria-label="Search">
+  </div>
+  <div id="step" hidden></div>
   <div id="rows" role="listbox"></div>
   <script src="rank.js"></script>
   <script src="commandbar.js"></script>

@@ -188,8 +188,19 @@ addEventListener("dragover", e => {
   if (drop) { e.preventDefault(); e.dataTransfer.dropEffect = "move"; }
 });
 addEventListener("drop", e => {
-  const drop = dropAt(e);
+  const drop = dropAt(e), own = drop && draggedNow();
   settleDrag();
   dragging = null;
-  if (drop) { e.preventDefault(); send(drop.msg); }
+  if (drop) { e.preventDefault(); send(drop.msg); placeAtOnce(drop.msg, own); }
 });
+
+// A row put somewhere else among the rows of its own list or folder is there at once, as in
+// Arc, rather than in its old place for a view (0.25 to 0.45 s with Tidier busy) and then
+// jumping. The view decides all the same: place() (sidebar.js) puts every row where it says,
+// so a move that did not happen puts it back. Into another folder or out of one, the row
+// changes too much to guess, and waits for the view.
+function placeAtOnce(msg, own) {
+  if (msg.type !== "moveTab" || msg.before === null || !own?.classList.contains("tab")) return;
+  const before = kept.get("tab:" + msg.before);
+  if (before && before !== own && before.parentElement === own.parentElement && (own.dataset.folder || null) === msg.folder) own.parentElement.insertBefore(own, before);
+}

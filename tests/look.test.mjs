@@ -6,8 +6,8 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 const read = path => readFileSync(new URL("../" + path, import.meta.url), "utf8");
-const PAGES = ["sidebar/sidebar.html", "settings/settings.html"];
-const STYLES = ["sidebar/tokens.css", "sidebar/sidebar.css", "settings/settings.css"];
+const PAGES = ["sidebar/sidebar.html", "settings/settings.html", "commandbar/commandbar.html"];
+const STYLES = ["sidebar/tokens.css", "sidebar/sidebar.css", "settings/settings.css", "commandbar/commandbar.css"];
 
 test("every page links the design's names before its own styles", () => {
   for (const page of PAGES) {
@@ -39,4 +39,15 @@ test("what moves stops for those who ask for no motion", () => {
 test("the surface stays a plain :root name, which the owner's tidier.css overrides per space", () => {
   assert.match(read("sidebar/tokens.css"), /:root \{[^}]*--frame: light-dark\(#ececf0, #1f1f23\);/s);
   assert.match(read("sidebar/sidebar.css"), /html \{ background: var\(--frame\);/);
+});
+
+test("the command bar is drawn from the same names: no colours of its own, and drawn icons", () => {
+  const css = read("commandbar/commandbar.css");
+  // Its colours are the design's (a tint mixed from the space's colour, as the sidebar's). A
+  // mask's black is no colour, and an icon's halo is the sidebar's.
+  const own = css.replace(/color-mix\([^;]*\)|mask-image:[^;]*;|filter: drop-shadow[^;]*;/g, "").match(/#[0-9a-f]{3,8}\b|rgba?\(/gi) ?? [];
+  assert.deepEqual(own, [], "colours of its own");
+  for (const name of ["var(--row)", "var(--radius)", "var(--selected)", "var(--shadow-card)", "var(--muted)", "var(--icon)"]) assert.ok(css.includes(name), name);
+  // No text characters standing in for icons, which come in other sizes and weights.
+  assert.doesNotMatch(read("commandbar/commandbar.js"), /["'][›⌕＋▾→]["']/);
 });

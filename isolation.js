@@ -931,10 +931,11 @@ async function leaveTabsOf(keys) {
 function addToCommandBar() {
   if (BAR_COMMANDS.some(c => c.name === "clear-site-cookies")) return;
   BAR_COMMANDS.push(
-    { name: "clear-site-cookies", label: "Clear this site's cookies in this space",
-      when: ctx => hostsGiven && ctx.picked.length === 1 && !!ctx.tab,
+    // Careful, as what closes tabs is: it signs you out (commandbar.js). A page with no site has nothing to clear or copy.
+    { name: "clear-site-cookies", label: "Clear this site's cookies in this space", careful: true,
+      when: ctx => hostsGiven && ctx.picked.length === 1 && !!ctx.tab && isWeb(ctx.tab.url),
       run: ctx => clearSiteCookies(ctx.tab.id, ctx.windowId) },
-    { name: "copy-to-space", label: "Open a copy in another space", when: ctx => ctx.picked.length > 0,
+    { name: "copy-to-space", label: "Open a copy in another space", when: ctx => ctx.picked.length > 0 && ctx.addresses.length === ctx.picked.length,
       list: ctx => ctx.spaces.filter(s => !ctx.picked.every(t => t.cookieStoreId === s.id)).map(s => ({ label: s.name, value: s.id, space: s.id })),
       placeholder: "Which space?",
       run: (ctx, space) => copyToSpace(ctx.picked.map(t => t.id), space, ctx.windowId) },

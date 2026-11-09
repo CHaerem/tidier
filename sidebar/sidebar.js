@@ -45,6 +45,12 @@ function place(parent, nodes) {
   while (at) { const next = at.nextSibling; at.remove(); at = next; }
 }
 
+// An attribute set only when it changes. Setting one to the value it has still counts as a
+// change for Firefox, with an observer about, and a page whose title ticks makes every row's
+// and every tile's be set again on each view.
+const setIf = (e, name, value) => { if (e.getAttribute(name) !== value) e.setAttribute(name, value); };
+const textIf = (e, text) => { if (e.textContent !== text) e.textContent = text; };
+
 // The kept element for `id`, its content drawn again only if `state` changed.
 // Not while it is being pressed: drawing replaces what is under the pointer, and
 // Firefox then sends no click at all, so a page whose title ticks could not be muted
@@ -101,13 +107,29 @@ function icon(item) {
   return el("span", "letter", (item.title || "?").trim()[0] || "?");
 }
 
+// What you click shows as selected at once, as in Firefox's own tab strip, rather than a
+// view later (0.1 to 0.45 s with Tidier busy). Both are drawn again from the next view
+// whatever it says, so a click that selected nothing shows that too. A row that is only
+// shown because it was selected, in a closed folder, stays until then (.was-active): going
+// now, it would pull the rows below it up under the pointer.
+function showSelected(e) {
+  for (const was of document.querySelectorAll("#essentials .active, #tabs .active")) {
+    if (was === e) continue;
+    was.classList.remove("active");
+    was.classList.add("was-active");
+    delete was.dataset.state;
+  }
+  e.classList.add("active");
+  delete e.dataset.state;
+}
+
 // --- Essentials ----------------------------------------------------------------
 function tile(item) {
   const e = keep("tile:" + item.id, () => {
     const t = el("div");
     t.dataset.tab = item.id;
     t.draggable = !!view?.alone;
-    t.onclick = () => send({ type: "select", tabId: item.id });
+    t.onclick = () => { showSelected(t); send({ type: "select", tabId: item.id }); };
     t.onauxclick = e => { if (e.button === 1) send({ type: "close", tabId: item.id }); };
     t.oncontextmenu = e => { if (view?.alone) openTabMenu(e, item.id); else browser.menus.overrideContext({ context: "tab", tabId: item.id }); };
     t.ondragstart = e => startDrag(e, { kind: "essential", tabId: item.id });
@@ -116,7 +138,7 @@ function tile(item) {
     t.className = "tile" + (item.active ? " active" : "") + (item.loaded ? "" : " unloaded");
     t.replaceChildren(icon(item), ...(view.alone ? soundMark(item) : []));
   });
-  e.title = item.tip || item.title;
+  setIf(e, "title", item.tip || item.title);
   return e;
 }
 
@@ -126,7 +148,7 @@ function row(item, folderKey) {
     const e = el("div");
     e.dataset.tab = item.id;
     e.draggable = !!view?.alone;
-    e.onclick = () => send({ type: "select", tabId: item.id });
+    e.onclick = () => { showSelected(e); send({ type: "select", tabId: item.id }); };
     e.onauxclick = ev => { if (ev.button === 1) send({ type: "close", tabId: item.id }); };
     e.oncontextmenu = ev => { if (view?.alone) openTabMenu(ev, item.id); else browser.menus.overrideContext({ context: "tab", tabId: item.id }); };
     e.ondragstart = ev => startDrag(ev, { kind: "tab", tabId: item.id });
@@ -141,8 +163,8 @@ function row(item, folderKey) {
     parts.push(close);
     e.replaceChildren(...parts);
   });
-  r.title = item.tip || item.title;
-  r.dataset.folder = folderKey ?? "";
+  setIf(r, "title", item.tip || item.title);
+  setIf(r, "data-folder", folderKey ?? "");
   return r;
 }
 
@@ -236,18 +258,23 @@ let folderKeys = new Set();
 function render(next) {
   view = next;
   drawn = new Set();
-  const space = view.spaces.find(s => s.id === view.space);
-  document.documentElement.style.setProperty("--accent", space?.color || "#7a7a80");
-  document.documentElement.dataset.space = view.space || "";
-  document.documentElement.classList.toggle("alone", !!view.alone);
+  const space = view.spaces.find(s => s.id === view.space), root = document.documentElement;
+  // A space comes in as one piece: a folder drawn for it now does not fade in on its own,
+  // after everything else (sidebar.css, html.new-space), as a folder that appears does.
+  const fresh = root.getAttribute("data-space") !== (view.space || "");
+  if (fresh) root.classList.add("new-space");
+  if (root.style.getPropertyValue("--accent") !== (space?.color || "#7a7a80")) root.style.setProperty("--accent", space?.color || "#7a7a80");
+  setIf(root, "data-space", view.space || "");
+  root.classList.toggle("alone", !!view.alone);
 
-  document.getElementById("hiding").hidden = !view.needsHiding;
+  const hiding = document.getElementById("hiding");
+  if (hiding.hidden !== !view.needsHiding) hiding.hidden = !view.needsHiding;
   const problem = document.getElementById("problem");
-  problem.hidden = !view.problem;
-  problem.textContent = view.problem || "";
+  if (problem.hidden !== !view.problem) problem.hidden = !view.problem;
+  textIf(problem, view.problem || "");
 
   place(document.getElementById("essentials"), view.essentials.map(tile));
-  document.getElementById("space-name").textContent = view.alone ? space?.name || "" : "";
+  textIf(document.getElementById("space-name"), view.alone ? space?.name || "" : "");
 
   const list = view.folders.map(folder);
   if (view.folders.length && view.tabs.length) list.push(keep("divider", () => el("div", "divider"), 0, () => {}));
@@ -267,6 +294,7 @@ function render(next) {
     spaceSound(b, s);
   })));
 
+  if (fresh) { root.getBoundingClientRect(); root.classList.remove("new-space"); } // once what is new has its style, without the fade
   for (const id of kept.keys()) if (!drawn.has(id)) kept.delete(id);
   const keys = new Set(view.folders.map(f => f.key));
   if (renameNext) for (const k of keys) if (!folderKeys.has(k)) { renameNext = false; rename(k); }

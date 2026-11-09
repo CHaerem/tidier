@@ -239,9 +239,10 @@ agent <-stdio-> native/tidier-mcp.py <-Unix socket-> native/tidier-bridge.py <-n
   Tidier may start it; it lives exactly as long as the port, so off means no process and no
   socket. The socket is `~/.config/tidier/bridge.sock`, mode 0600, in a folder only you can
   write to, and each connection's user is checked. There is no network port. Web pages
-  cannot reach any of it: they cannot use native messaging, the only script Tidier puts in
-  pages (for ⌥-click, below) only sends the address of a link you ⌥-clicked, and no page of
-  Tidier's can be framed or loaded by them.
+  cannot reach any of it: they cannot use native messaging, the only scripts Tidier puts in
+  pages only send the address of a link you ⌥-clicked (below) and the keys you typed in the
+  moment after the command bar's key (below), and no page of Tidier's can be framed or
+  loaded by them.
 - **Pages can try to steer an agent.** Everything read from a page (text, titles,
   addresses, what `find` returns, a screenshot) goes back marked as untrusted, between markers
   with a random number the page cannot know, so it cannot write its own end to them.
@@ -284,9 +285,20 @@ page. ⌘⌥ and an arrow stay Firefox's, in window order: no extension can have
 The command bar (`commandbar.js`, `commandbar/`) opens with ⌘⇧K in a small window over the
 one you are in, and with ⌘T too once Firefox's new tab key is cleared. One field finds
 every tab of every space, essentials, folders, closed and archived tabs and commands, and
-history and bookmarks once you allow them. Commands act on the tabs selected in the
-sidebar, else on this one. Enter goes to a tab, or opens an address or a search in the
-active space; ⌘↵ opens a new tab instead.
+history and bookmarks once you allow them. A row of another space says which, and the
+selected one what Enter does there ("Switch to Work"). Commands act on the tabs selected in
+the sidebar, else on this one; a command that asks something says what for, ⌫ in its empty
+field goes back, and one that closes tabs is never what a plain Enter takes for a word that
+is only somewhere in its name, nor moved up by use. Enter goes to a tab, or opens an
+address or a search in the active space; ⌘↵ opens a new tab instead.
+
+Firefox takes a moment to make the bar's window and give it the keyboard. What you type
+before that is caught where it went and handed to the bar (`barkeys.js`, in pages while
+Tidier has the access to all websites, and in its sidebar), so nothing lands in the page.
+Without that access, the first letters typed at once after the key still go to the page.
+A window made in advance and only shown would be quicker, but cannot be hidden: Firefox
+keeps every window an extension moves on the screen, and a minimised one comes back out of
+the Dock slowly.
 
 ## The same on every machine, and spaces hidden on one
 
@@ -486,9 +498,10 @@ that). Everything works without them, as it says here:
   tab's next page and the container it is in. Clearing a site's cookies is offered once
   this is given, since the cookies API shows nothing without it. The same access, which
   is one permission, is what ⌥-click on a link uses (`peek.js`, a small script in every
-  page that does nothing but send the address of a link you ⌥-click), and what Copy for
-  Claude and the bridge use to read a page, only when you ask or an agent works in a space
-  you opened to it.
+  page that does nothing but send the address of a link you ⌥-click), what the command bar
+  uses to keep the keys you type right after its key (`barkeys.js`, which does nothing until
+  that key), and what Copy for Claude and the bridge use to read a page, only when you ask
+  or an agent works in a space you opened to it.
 - `proxy` (with `webRequest`, `webRequestBlocking` and access to all websites, since at a
   start a page must be stopped before it goes past the proxy: below, Isolation), when a
   space is first given a proxy, and `browsingData`, when you first sign out of everything
@@ -607,8 +620,9 @@ Not guaranteed:
   copies the address. `keys-commands.js`, `settings/keys.js`, `sidebar/keys.js` and
   `sidebar/keyrename.js` – what the keys do with Tidier alone, the settings page's Keys
   section, and keys in the sidebar.
-- `commandbar.js`, `commandbar/` (the bar's page, and `rank.js`, what it shows for what you
-  type), `sidebar/commandbar-link.js` – the command bar.
+- `commandbar.js`, `commandbar/` (the bar's page, `first.js` for its first frame, and
+  `rank.js`, what it shows for what you type), `barkeys.js` (the keys typed before its window
+  has the keyboard), `sidebar/commandbar-link.js` – the command bar.
 - `spaces.js` – spaces: hiding, switching, new tabs and links, rules.
 - `spaceactions.js`, `sidebar/spacemenu.js` – a space's menu and what it does (rename,
   unload, clear).

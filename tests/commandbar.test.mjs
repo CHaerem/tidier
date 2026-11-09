@@ -9,7 +9,7 @@ import { FakeFirefox, wait, GHOST } from "./fake_firefox.mjs";
 
 const ctx = vm.createContext({ URL });
 vm.runInContext(readFileSync(new URL("../commandbar/rank.js", import.meta.url), "utf8"), ctx);
-const { rankResults, resultsFor, emptyResults, addressFrom, completionFor, prettyKey } = ctx;
+const { rankResults, resultsFor, emptyResults, addressFrom, completionFor } = ctx;
 const NOW = 1_800_000_000_000;
 const titles = rows => [...rows].map(r => r.title);
 const tab = (title, more = {}) => ({ kind: "tab", id: title, title, url: `https://site.example/${title.replace(/\W/g, "-")}`, lastUsed: NOW - 3600e3, ...more });
@@ -115,6 +115,8 @@ test("an address comes first and a search last; a search comes first when nothin
   assert.deepEqual([...resultsFor("plan", items, { now: NOW })].map(r => r.kind), ["search", "tab"]); // only inside "Airplane"
   assert.deepEqual([...resultsFor("zzzz", items, { now: NOW })].map(r => r.kind), ["search"]);
   assert.equal(resultsFor("zzzz", items, { now: NOW })[0].query, "zzzz");
+  assert.equal(resultsFor("zzzz", items, { now: NOW })[0].title, "Search for “zzzz”");
+  assert.equal(resultsFor("zzzz", items, { now: NOW, engine: "Google" })[0].title, "Search Google for “zzzz”", "the engine by name, once the bar may know it");
 });
 
 test("typing the address of an open tab goes to that tab", () => {
@@ -158,13 +160,46 @@ test("⇥ completes: a site you are typing, else the address, else the title", (
   assert.equal(completionFor({ kind: "search", title: "Search for “x”", query: "x" }, "x"), "x");
 });
 
-test("a key is shown as you know it", () => {
-  assert.equal(prettyKey("Ctrl+Shift+C", true), "⌘⇧C");
-  assert.equal(prettyKey("MacCtrl+1", true), "⌃1");
-  assert.equal(prettyKey("Ctrl+Alt+Down", true), "⌘⌥↓");
-  assert.equal(prettyKey("Ctrl+Shift+C", false), "Ctrl+Shift+C");
-  assert.equal(prettyKey("MacCtrl+1", false), "Ctrl+1");
-  assert.equal(prettyKey(null, true), "");
+test("a plain Enter never closes tabs for a word that is only somewhere in a command's name", () => {
+  // As commandbar.js gives them: in the table's order, Clear and Close marked careful.
+  const command = (title, order, more = {}) => ({ kind: "command", id: title, title, here: true, order, ...more });
+  const commands = [
+    command("New tab", 0), command("Reopen closed tab", 2), command("Clear today's tabs", 4, { careful: true }),
+    command("Unload this tab", 8), command("Make this tab an essential", 9), command("Close this tab", 12, { careful: true }),
+    command("Next tab", 14), command("Previous tab", 15),
+  ];
+  const rows = resultsFor("tab", commands, { now: NOW });
+  assert.equal(rows[0].title, "New tab", "on an equal score the table's order, not the alphabet");
+  assert.deepEqual(titles(rankResults("tab", commands, NOW)).slice(-2), ["Clear today's tabs", "Close this tab"], "what closes comes last");
+  // Typed out, the first word of its name is what you meant.
+  assert.equal(resultsFor("clear", commands, { now: NOW })[0].title, "Clear today's tabs");
+  assert.equal(resultsFor("close", commands, { now: NOW })[0].title, "Close this tab");
+  assert.notEqual(resultsFor("cle", commands, { now: NOW })[0].title, "Clear today's tabs");
+  // The only match is never the row Enter takes: the search comes first.
+  assert.equal(resultsFor("today", commands, { now: NOW })[0].kind, "search");
+  assert.equal(resultsFor("today", commands, { now: NOW })[1].title, "Clear today's tabs");
+  // The empty bar of an empty space: whatever was used most, never what closes.
+  const used = [command("Clear today's tabs", 4, { careful: true }), command("New tab", 0), command("Go to Work", 3)];
+  assert.equal(emptyResults(used)[0].title, "New tab");
+});
+
+test("Copy page for Claude comes before Ask Claude, as in the table", () => {
+  const items = [{ kind: "command", id: "a", title: "Ask Claude about this page", order: 20, here: true }, { kind: "command", id: "c", title: "Copy page for Claude", order: 18, here: true }];
+  assert.equal(rankResults("claude", items, NOW)[0].title, "Copy page for Claude");
+});
+
+test("a title that is exactly what you typed comes first, also from another space", () => {
+  const items = [tab("busy 141", { here: true, lastUsed: NOW }), tab("busy 144", { here: true, lastUsed: NOW }), tab("busy 14", { here: false, lastUsed: NOW - 30 * 24 * 3600e3 })];
+  assert.equal(rankResults("busy 14", items, NOW)[0].title, "busy 14");
+});
+
+test("ø and æ are found as o and ae, as å is as a", () => {
+  const items = [tab("Sommerferie på Sørlandet: reiseplan"), tab("Kjøkkenbenk i bjørk"), tab("Lærebok")];
+  assert.deepEqual(titles(rankResults("sorlandet", items, NOW)), ["Sommerferie på Sørlandet: reiseplan"]);
+  assert.deepEqual(titles(rankResults("sommerferie pa", items, NOW)), ["Sommerferie på Sørlandet: reiseplan"]);
+  assert.deepEqual(titles(rankResults("bjork", items, NOW)), ["Kjøkkenbenk i bjørk"]);
+  assert.deepEqual(titles(rankResults("laerebok", items, NOW)), ["Lærebok"]);
+  assert.deepEqual(titles(rankResults("Sørlandet", items, NOW)), ["Sommerferie på Sørlandet: reiseplan"]);
 });
 
 test("the manifest asks for nothing new: no key that could reach Sidebery's machines, and only optional permissions", () => {
@@ -296,7 +331,9 @@ test("the window opens centred over the one you are in, and the key closes it", 
   const [bar] = barWindows(ff);
   assert.ok(bar);
   assert.equal(bar.left, 100 + (1200 - 640) / 2);
-  assert.match(ff.tabs.get(bar.order[0]).url, /^commandbar\/commandbar\.html#\d+$/);
+  const url = ff.tabs.get(bar.order[0]).url;
+  assert.match(url, /^commandbar\/commandbar\.html(\?[^#]*)?#\d+$/);
+  assert.equal(new URLSearchParams(url.split("?")[1]?.split("#")[0]).get("space"), C1, "so its first frame is in the space's colours");
   await pressKey(ff, x, w.id);
   assert.equal(barWindows(ff).length, 0);
   assert.equal(ff.focused, w.id);
@@ -358,6 +395,72 @@ test("a closed bar is not left under Recently Closed Windows, but a real window 
   x.b.sessions.onChanged.fire();
   await wait(100);
   assert.equal(ff.recentlyClosed.length, 2);
+  x.kill();
+});
+
+test("the keys typed before the bar has the keyboard are caught where they go, and handed to it", async () => {
+  const ff = new FakeFirefox();
+  const { w, a } = world(ff);
+  const x = await started(ff);
+  const asked = [], told = [];
+  x.b.tabs.sendMessage = async (tabId, msg) => { asked.push([tabId, msg]); };
+  const send = x.b.runtime.sendMessage;
+  x.b.runtime.sendMessage = async msg => { if (msg.type === "bar:catch") told.push(msg); return send(msg); };
+  const page = await openBar(ff, x, w.id);
+  const pressedAt = asked[0]?.[1].pressedAt;
+  assert.deepEqual(asked.map(([id, m]) => [id, m.type]), [[a.id, "bar:catch"], [a.id, "bar:stop"]], "the page you were in, until the bar's page is there");
+  assert.deepEqual(told.map(m => [m.windowId, m.pressedAt]), [[w.id, pressedAt]], "and this window's sidebar");
+  assert.ok(asked.every(([, m]) => m.pressedAt === pressedAt));
+  assert.ok(page.port.sender.url.endsWith(`#${pressedAt}`));
+  // Another press's keys, or a page's own message, are not this bar's.
+  x.send({ type: "bar:early", pressedAt: pressedAt - 1, text: "old" });
+  x.send({ type: "bar:early", pressedAt, text: "from a page" }, { id: "someone-else" });
+  x.send({ type: "bar:early", pressedAt, text: "ferry", enter: { inNewTab: false }, escape: false });
+  await wait(50);
+  const early = page.sent.filter(m => m.type === "early");
+  assert.deepEqual(early.map(m => [m.text, m.enter?.inNewTab, m.escape]), [["ferry", false, false]]);
+  assert.ok(page.sent.indexOf(early[0]) > 0, "after the rows, so an Enter has something to choose");
+  x.kill();
+});
+
+test("caught before the page is there, they wait for it", async () => {
+  const ff = new FakeFirefox();
+  const { w } = world(ff);
+  const x = await started(ff);
+  let pressedAt;
+  x.b.tabs.sendMessage = async (tabId, msg) => { pressedAt = msg.pressedAt; };
+  await pressKey(ff, x, w.id);
+  x.send({ type: "bar:early", pressedAt, text: "w" });
+  const page = connectPage(ff, x);
+  for (let i = 0; i < 100 && page.sent.length < 2; i++) await wait(50);
+  assert.deepEqual(page.sent.map(m => m.type ?? "rows"), ["rows", "early"]);
+  assert.equal(page.sent[1].text, "w");
+  x.kill();
+});
+
+test("over a narrow window the bar is narrower, and stays centred over it", async () => {
+  const ff = new FakeFirefox();
+  world(ff);
+  const narrow = ff.addWindow({ focused: true, left: 900, width: 500, height: 600 });
+  ff.addTab(narrow.id, { url: "https://narrow.example/", active: true, cookieStoreId: C1 });
+  const x = await started(ff);
+  await pressKey(ff, x, narrow.id);
+  const [bar] = barWindows(ff);
+  assert.equal(bar.width, 500 - 48);
+  assert.equal(bar.left + bar.width / 2, 900 + 500 / 2);
+  x.kill();
+});
+
+test("a command's question says what it is for, and a move names what moves", async () => {
+  const ff = new FakeFirefox();
+  const { w } = world(ff);
+  const x = await started(ff);
+  const page = await openBar(ff, x, w.id);
+  const items = page.sent[0].items, byName = name => items.find(i => i.name === name);
+  assert.match(byName("new-folder").ask.heading, /^New folder in /);
+  assert.equal(byName("new-folder").ask.confirm, "Create “#”");
+  assert.equal(byName("new-folder").ask.empty, "Create “New folder”");
+  assert.equal(byName("move-to-space").heading, "Move “Here” to");
   x.kill();
 });
 
@@ -486,7 +589,7 @@ test("a search opens a tab in the active space first, as Firefox's search cannot
 
 test("the commands table: only what applies, each with a name and a label, the most used first", async () => {
   const ff = new FakeFirefox();
-  ff.commands = [{ name: "copy-url", shortcut: "Ctrl+Shift+C" }];
+  ff.commands = [{ name: "copy-url", shortcut: "Ctrl+Shift+C" }, { name: "next-tab", shortcut: "Ctrl+MacCtrl+Down" }];
   const { w } = world(ff);
   const x = await started(ff);
   let page = await openBar(ff, x, w.id);
@@ -498,15 +601,25 @@ test("the commands table: only what applies, each with a name and a label, the m
   assert.ok(!names.includes("rename-folder"), "this tab is in no folder");
   assert.ok(commands.every(c => c.title && c.id), "every command has a label");
   assert.deepEqual(Array.from(commands.filter(c => c.name === "go-to-space"), c => c.value).sort(), ["firefox-container-2", "firefox-container-3"]);
-  assert.equal(commands.find(c => c.name === "copy-url").shortcut, "Ctrl+Shift+C");
+  assert.equal(commands.find(c => c.name === "copy-url").shortcut, "⇧⌘C", "as a Mac writes it, the same as on the settings page");
+  assert.equal(commands.find(c => c.name === "next-tab").shortcut, "⌃⌘↓");
   assert.equal(new Set(commands.map(c => c.id)).size, commands.length);
   assert.ok(!names.includes("move-to-folder"), "no folder in this space, and the tab in none: nothing to choose from");
   assert.deepEqual(Array.from(commands.find(c => c.name === "move-to-space").list, c => c.value).sort(), ["firefox-container-2", "firefox-container-3"]);
-  // Used once, a later command comes first next time.
+  assert.deepEqual(Array.from(commands.filter(c => c.careful), c => c.name).sort(), ["clear-today", "close-tab"]);
+  assert.equal(commands[0].name, "new-tab", "with nothing used yet, in the table's order");
+  // Used once, a later command comes first next time; what closes tabs never moves up.
   await page.tell({ type: "choose", row: { kind: "command", name: "settings" } }).catch(() => {});
   await wait(300);
   page = await openBar(ff, x, w.id);
   assert.equal(page.sent[0].items.filter(i => i.kind === "command")[0].name, "settings");
+  x.js(`barUses.set({ "clear-today": 50, "close-tab": 40, settings: 1 })`);
+  await page.tell({ type: "close", refocus: true });
+  await wait(200);
+  page = await openBar(ff, x, w.id);
+  const after = page.sent[0].items.filter(i => i.kind === "command").map(c => c.name);
+  assert.equal(after[0], "settings");
+  assert.ok(after.indexOf("clear-today") > after.indexOf("new-tab"), String(after));
   x.kill();
 });
 
@@ -575,10 +688,31 @@ test("a closed folder chosen in the bar opens, in its space", async () => {
   const { w } = world(ff);
   const x = await started(ff);
   const page = await openBar(ff, x, w.id);
+  const told = [];
+  x.b.runtime.sendMessage = async msg => { told.push(msg); };
   await page.tell({ type: "choose", row: { kind: "folder", key: "folder" } });
   await wait(500);
   assert.equal(ff.synced.folder.collapsed, false);
   assert.equal(x.js("activeSpace").get(w.id), C2);
+  assert.ok(told.some(m => m.type === "commandBarMark" && m.windowId === w.id && m.folder === "folder"), "and this window's sidebar marks it for a moment");
+  x.kill();
+});
+
+test("an empty new tab is not offered to be unloaded", async () => {
+  const ff = new FakeFirefox();
+  const { w, a } = world(ff);
+  const x = await started(ff);
+  const blank = await ff.ext.b.tabs.create({ windowId: w.id, url: "about:newtab", active: true });
+  await wait(300);
+  let page = await openBar(ff, x, w.id);
+  assert.ok(!page.sent[0].items.some(i => i.name === "unload"), "nothing in it to unload");
+  await page.tell({ type: "close", refocus: true });
+  await wait(100);
+  await ff.ext.b.tabs.update(a.id, { active: true });
+  await wait(300);
+  page = await openBar(ff, x, w.id);
+  assert.ok(page.sent[0].items.some(i => i.name === "unload"), "a page is");
+  assert.ok(blank);
   x.kill();
 });
 
@@ -676,6 +810,8 @@ test("what archiving closed and what was closed can be found, and come back", as
   assert.equal(items.filter(i => i.url === "https://closed.example/").length, 1, "a tab in both lists is shown once, as Firefox's");
   const archived = items.find(i => i.kind === "archived");
   assert.equal(archived.space, C2);
+  const closed = items.find(i => i.kind === "closed");
+  assert.equal(closed.space, C2, "Firefox's entry has no container: Tidier's list knows the space");
   assert.ok(items.some(i => i.name === "reopen-closed"));
   await page.tell({ type: "choose", row: { kind: "closed", sessionId: "s1", url: "https://closed.example/" } });
   await wait(200);
@@ -941,17 +1077,33 @@ test("making a tab Tidier has just moved an essential is not missed", async () =
 });
 
 // The sidebar's side, with the selection package's own rule for selectedTabs.
-function sidebarLink({ selection, picked = [] }) {
+function sidebarLink({ selection, picked = [], heads = [] }) {
   const messages = [];
   const sandbox = {
     browser: { windows: { getCurrent: async () => ({ id: 7 }) }, runtime: { onMessage: { addListener: f => messages.push(f) } } },
-    document: { querySelector: selector => (selector === ".picked[data-tab]" && picked.length ? { dataset: { tab: String(picked[0]) } } : null) },
+    document: {
+      querySelector: selector => (selector === ".picked[data-tab]" && picked.length ? { dataset: { tab: String(picked[0]) } } : null),
+      querySelectorAll: selector => (selector === "[data-folder-head]" ? heads : []),
+    },
     window: selection ? { selectedTabs: id => (picked.includes(Number(id)) ? picked : [id]) } : {},
-    Promise,
+    Promise, Date, setTimeout,
   };
   vm.runInNewContext(readFileSync(new URL("../sidebar/commandbar-link.js", import.meta.url), "utf8"), sandbox);
-  return msg => messages[0](msg);
+  return msg => { for (const f of messages) { const r = f(msg); if (r !== undefined) return r; } };
 }
+
+test("a folder chosen in the bar is scrolled to and marked a moment, in its own window only", async () => {
+  const head = key => { const classes = new Set(); return { dataset: { folderHead: key }, scrolled: 0, classList: { add: c => classes.add(c), remove: c => classes.delete(c) }, classes, scrollIntoView() { this.scrolled++; } }; };
+  const heads = [head("a"), head("b")];
+  const link = sidebarLink({ heads });
+  await new Promise(r => setTimeout(r, 5));
+  link({ type: "commandBarMark", windowId: 8, folder: "b" });
+  link({ type: "commandBarMark", windowId: 7, folder: "b" });
+  assert.deepEqual([heads[0].scrolled, heads[1].scrolled], [0, 1]);
+  assert.ok(heads[1].classes.has("marked"));
+  await new Promise(r => setTimeout(r, 1300));
+  assert.ok(!heads[1].classes.has("marked"), "only for a moment");
+});
 
 test("the sidebar answers with the selection, also when the tab you are on is not in it", async () => {
   await new Promise(r => setTimeout(r, 5));
