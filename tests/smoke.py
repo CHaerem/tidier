@@ -3609,7 +3609,7 @@ def alone_touches(m):
         await until(async () => record.querySelector(".title")?.textContent === "No icon" && await status(id) === "complete");
         await wait(500);
         out.record = {own: (await page.browser.tabs.get(id)).favIconUrl ?? null, image: !!record.querySelector(icon), letter: !!record.querySelector(".letter")};
-        out.recordEntry = Object.values((await page.browser.storage.local.get("syncedTabs")).syncedTabs).filter(e => e.url.includes("/no-icon")).map(e => String(e.icon).slice(0, 60)); // (for the detail, when this fails)
+        out.recordEntry = Object.values((await page.browser.storage.local.get("syncedTabs")).syncedTabs).filter(e => e.url?.includes("/no-icon")).map(e => String(e.icon).slice(0, 60)); // (for the detail, when this fails)
       }
 
       // A page changing its address and nothing else, as some do as you scroll: the tooltip
