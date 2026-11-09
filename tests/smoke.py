@@ -8515,15 +8515,18 @@ def alone_space_menu(m):
     ROWS = """() => [...doc.querySelectorAll("#tabs .tab")].filter(r => !r.classList.contains("unloaded") && r.querySelector(".title").textContent !== "Tidier" && !r.title.includes("moz-extension:")).map(r => r.classList.contains("active") ? "selected" : "loaded")"""
     before = in_sidebar(m, ROWS)
     essentials = m.js(STATE, here)["essentials"]
+    # (A tab of this space selected in another window stays loaded too, as Clear leaves it: spaceactions.js.)
+    elsewhere = m.js(H + """const a = main(), on = a.gBrowser.selectedTab;
+      return new Set(wins().filter(w => w !== a && w.toolbar.visible).map(w => [w, w.gBrowser.selectedTab]).filter(([w, t]) => !t.pinned && t.userContextId === on.userContextId && key(w, t) && key(w, t) !== key(a, on)).map(([w, t]) => key(w, t))).size;""")
     menu_on(m, f"dot({json.dumps(here)})")
     choose(m, "Unload this space")
     for _ in range(100):
         rows = in_sidebar(m, ROWS)
-        if rows.count("loaded") <= 1:
+        if rows.count("loaded") <= 1 + elsewhere:
             break
         time.sleep(0.1)
     state = m.js(STATE, here)
-    check("unloading the space you are in dims its rows", before.count("loaded") >= 2 and rows.count("loaded") == 1 and "selected" in rows, f"{before} -> {rows}")
+    check("unloading the space you are in dims its rows", before.count("loaded") >= 2 and rows.count("loaded") == 1 + elsewhere and "selected" in rows, f"{before} -> {rows}, {elsewhere} selected elsewhere")
     check("and leaves the selected tab, its essentials and a page with unsaved input, without asking", "smoke-menu-here-1" in state["selected"] and any("smoke-menu-here-1" in u for u in state["loaded"]) and any("smoke-menu-here-2" in u for u in state["loaded"]) and state["essentials"] == essentials, str(state))
     # (Closed here, or the page would ask later.) A dim row's page comes back when selected.
     m.js(H + """const w = main(), t = w.gBrowser.tabs.find(t => url(t).includes("smoke-menu-here-2")); w.gBrowser.removeTab(t, {skipPermitUnload: true}); await wait(1000); return 1;""")
@@ -10308,7 +10311,9 @@ def alone_folds_rest(m):
     # Renaming by a double click must not cost the pages: its first click closes the folder.
     # With the mouse, so with the page in front, which is put back afterwards.
     m.js(H + """const w = main(); w.__beforeRename = w.gBrowser.selectedTab; w.gBrowser.selectedTab = w.gBrowser.tabs.find(t => url(t).includes("/sidebar/sidebar.html")); await wait(500); return 1;""")
-    head_at = sidebar_page(m, """const b = doc.querySelector(`[data-folder-head="${args[0]}"]`).getBoundingClientRect(); return {x: Math.round(b.left + b.width / 2), y: Math.round(b.top + b.height / 2)};""", s["key"])
+    # (In view first: in a list grown long it can be below the window, and the clicks would land elsewhere.)
+    head_at = sidebar_page(m, """const h = doc.querySelector(`[data-folder-head="${args[0]}"]`); h.scrollIntoView({block: "center"}); await wait(300);
+      const b = h.getBoundingClientRect(); return {x: Math.round(b.left + b.width / 2), y: Math.round(b.top + b.height / 2)};""", s["key"])
     real_clicks(m, head_at["x"], head_at["y"], 2)
     r = sidebar_page(m, """await wait(1200);  // longer than a click waits for a second one
       const box = doc.querySelector(`[data-folder-head="${args[0]}"]`).parentElement, input = box.querySelector("input.rename");
