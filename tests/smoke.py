@@ -3503,7 +3503,7 @@ def alone_sound(m):
       await until(() => head("Sound folder").parentElement.classList.contains("collapsed"));
       return {tile: !!tile("sound tile"), row: !!row("sound row"), unloaded: row("sound row").classList.contains("unloaded") && tile("sound tile").classList.contains("unloaded"),
               marks: doc.querySelectorAll(".sound").length, boxes: places(args[1]),
-              on: [...doc.querySelectorAll(".sound")].map(e => (e.closest("[data-tab], [data-folder-head], .space")?.title ?? "?").split("\n")[0] + (e.classList.contains("muted") ? " (muted)" : ""))};""", here, away)
+              on: [...doc.querySelectorAll(".sound")].map(e => (e.closest("[data-tab], [data-folder-head], .space")?.title ?? "?").split("\\n")[0] + (e.classList.contains("muted") ? " (muted)" : ""))};""", here, away)
     loud = m.js(H + """return wins().flatMap(w => w.gBrowser.tabs.filter(t => t.muted || t.soundPlaying).map(t => (t.muted ? "muted " : "playing ") + t.label));""")
     check("with nothing playing there is no mark anywhere", r["marks"] == 0, f"{r} {loud}")
     check("this window has only placeholders of those tabs", r["tile"] and r["row"] and r["unloaded"], str(r))
@@ -6174,7 +6174,14 @@ def alone_sync_hide(m):
     r = until(m, """const n = args[1], left = main().gBrowser.tabs.filter(t => t.userContextId === n).length; return {ok: left > 0, left};""", other)
     check("the declaration taken away, it can be shown again on the settings page", r["ok"], str(r))
     # With sync on and nothing happening: nothing at all, and nothing written.
-    ext_page(m, settings, """await wait(7000); page.__smokeWrites = []; page.browser.storage.onChanged.addListener((changes, area) => { page.__smokeWrites.push(area + ": " + Object.keys(changes).join(" ")); }); return 1;""")
+    # (Once the space shown again has settled, however long this machine takes over it. What was
+    # picked last in a space and a page's title are written up to half a minute later, which is
+    # not idle work: written now, until nothing more is.)
+    ext_page(m, settings, """await wait(4000); page.__smokeWrites = []; page.browser.storage.onChanged.addListener((changes, area) => { page.__smokeWrites.push(area + ": " + Object.keys(changes).join(" ")); }); return 1;""")
+    for _ in range(10):
+        extension_message(m, {"type": "flush"})
+        if not ext_page(m, settings, "await wait(3000); return page.__smokeWrites.splice(0).length;"):
+            break
     idle = extension_message(m, {"type": "idle", "ms": 12000})
     written = ext_page(m, settings, "return [...page.__smokeWrites];")  # (what, should anything be)
     writes = len(written)
@@ -6661,6 +6668,8 @@ def alone_restart(m):
         print("SKIP  alone_restart (needs Tidier installed for real: Developer Edition, or --xpi)", flush=True)
         return
     no_problems(m, "before a restart with Tidier alone")
+    # Two windows, as after alone_second_window: a placeholder is another window's copy of a page.
+    m.js(H + """if (!other()) { const w = main().OpenBrowserWindow(); w.__smoke = true; await wait(4000); } return 1;""")
     # Names, as the record and the list keep them: an essential's, and a saved tab's.
     more_tabs_here(m, "restart")
     named = sidebar_page(m, """
@@ -6674,7 +6683,7 @@ def alone_restart(m):
       send({type: "renameTab", tabId: Number(tile.dataset.tab), name: "Named essential"});
       send({type: "renameTab", tabId: tab, name: "Named tab"});
       await until(() => tile.title.startsWith("Named essential") && rows().includes("Named tab"));
-      return {tile: tile.title, rows: rows()};""")
+      return {tile: tile.title, rows: rows(), space};""")
     check("names: an essential and a saved tab named before the restart", named.get("tile", "").startswith("Named essential") and "Named tab" in named.get("rows", []), str(named))
     # Which tab each window is on says why a page has moved between them.
     on_now = H + """return wins().map(w => { const t = w.gBrowser.selectedTab; return [url(t).slice(0, 60), role(w, t) ?? null, !!t.pinned]; });"""
@@ -6717,10 +6726,18 @@ def alone_restart(m):
     check("after a restart the rows of the window's own sidebar can be dragged", r["fixed"] == 0, str(r))
     # The page from before the restart is not loaded again by itself: a new one.
     m.js(H + """for (const t of [...main().gBrowser.tabs]) if (url(t).includes("/sidebar/sidebar.html")) main().gBrowser.removeTab(t); await wait(300); return 1;""")
-    r = sidebar_page(m, """for (const end = Date.now() + 8000; Date.now() < end && !tiles().length; await wait(50)); return {tiles: tiles().map(t => t.split("\\n")[0]), rows: rows()};""")
+    # (In the space they were named in: which window comes first after a restart is not given, and
+    # the other one may show another space, with its own essentials.)
+    r = sidebar_page(m, """const there = () => spaces().find(s => s.active)?.id === args[0];
+      for (const end = Date.now() + 8000; Date.now() < end && !spaces().length; await wait(50));
+      if (!there()) doc.querySelector(`#spaces .space[data-space="${args[0]}"]`)?.click();
+      for (const end = Date.now() + 8000; Date.now() < end && !(there() && tiles().length); await wait(50));
+      await wait(500);
+      return {tiles: tiles().map(t => t.split("\\n")[0]), rows: rows(), space: spaces().find(s => s.active)?.id};""", named.get("space"))
     check("after a restart, an essential and a saved tab keep their names", "Named essential" in r.get("tiles", []) and "Named tab" in r.get("rows", []), str(r))
     r = m.js(H + """const labels = w => w.gBrowser.tabs.filter(t => !t.selected && !t.linkedPanel).map(t => t.label); return wins().map(labels).flat();""")
-    check("after a restart, their placeholders still show them", "Named essential" in r and "Named tab" in r, str(r))
+    every = m.js(H + """return wins().map(w => w.gBrowser.tabs.map(t => [t.label, role(w, t) ?? null, t.selected ? "selected" : t.linkedPanel ? "loaded" : "unloaded"]));""")
+    check("after a restart, their placeholders still show them", "Named essential" in r and "Named tab" in r, str(every))
 
 
 def alone_little_restart(m):
@@ -10199,8 +10216,11 @@ def alone_many(m):
     m.js(H + """other().gBrowser.addTrustedTab(args[0] + "/icon?elsewhere", {userContextId: args[1], inBackground: true}); await wait(3500); return 1;""", m.pages, space)
     press(m, str(space), CTRL)
     time.sleep(2)
-    r = m.js(H + """const w = main(), s = w.gBrowser.selectedTab, r = {selected: url(s), elsewhere: other().gBrowser.tabs.some(t => url(t).endsWith("/icon?elsewhere"))};
-      await removeWhere((x, t) => url(t).includes("/icon?")); return r;""")
+    extension_message(m, {"type": "flush"})
+    r = m.js(H + """const w = main(), s = w.gBrowser.selectedTab, used = w.gBrowser.tabs.find(t => url(t).endsWith("/icon?used"));
+      const r = {selected: url(s), elsewhere: other().gBrowser.tabs.some(t => url(t).endsWith("/icon?elsewhere")), in: s.userContextId, used: used && key(w, used),
+        picks: ((await storage("%s", ["spacePicks"])).spacePicks ?? {})["firefox-container-" + args[0]], inFront: wins().map(x => Services.focus.activeWindow === x)};
+      await removeWhere((x, t) => url(t).includes("/icon?")); return r;""" % EXT_ID, space)
     check("back in a space, the tab you used is selected, and a tab opened elsewhere stays there", r["selected"].endswith("/icon?used") and r["elsewhere"], str(r))
 
     # A new window, on top of the two.
@@ -10536,8 +10556,13 @@ def alone_isolation_start(m):
     time.sleep(12)
     r = m.js(ISOLATION_JS + """return containersOf("link-too-soon");""")
     check("in the first start after the permission, a page that got out is moved to a space", r == [space], str(r))
-    r = m.js(ISOLATION_JS + """return wins().flatMap(w => w.gBrowser.tabs.filter(t => url(t).includes("pinned-too-soon")).map(t => [t.userContextId, t.pinned]));""")
-    check("and so is a pinned one, still pinned", r == [[space, True]], str(r))
+    # The page itself, when it was moved before Tidier had it as an essential; else the essential
+    # was moved, and its tab is a placeholder that loads the page in the space when you go to it.
+    # Which of the two comes first at a start is not decided, and either is right.
+    essential = m.js(ISOLATION_JS + """const e = ((await storage("%s", ["essentials"])).essentials ?? []).find(e => e.url?.includes("pinned-too-soon"));
+      return e ? [e.key, e.cookieStoreId] : null;""" % EXT_ID)
+    r = m.js(ISOLATION_JS + """return wins().flatMap(w => w.gBrowser.tabs.filter(t => url(t).includes("pinned-too-soon") || (args[0] && url(t).includes(args[0]))).map(t => [t.userContextId, t.pinned]));""", essential and essential[0])
+    check("and so is a pinned one, still pinned", bool(r) and all(x == [space, True] for x in r) and (not essential or essential[1] == f"firefox-container-{space}"), f"{r}, {essential}")
     m.js(ISOLATION_JS + """await closeAll("link-too-soon"); await closeAll("pinned-too-soon"); return 1;""")
     extension_message(m, {"type": "flush"})
     time.sleep(1)
@@ -10664,6 +10689,23 @@ ALONE_GROUPS = (alone_setup, alone_second_window, alone_spaces, alone_keys, alon
                 alone_many,
                 alone_chaos,
                 alone_idle, alone_update, alone_folds_rest_kept, alone_end, alone_restart, alone_folds_rest_kept, alone_isolation_start, alone_little_restart)
+# The same groups in parts, each in a test Firefox of its own that starts from the same
+# fixture, so that they can run at the same time (here, and on GitHub each on its own
+# runner): the whole chain in one Firefox takes most of an hour, and a group that fails
+# only after forty minutes of other groups is slow to find and slow to check again.
+# Each part ends with nothing happening (alone_idle) and no problems (alone_end); the
+# last one also has the update and the restarts, after the groups those look back at.
+# About equally long: 10 to 14 minutes each on a Mac.
+ALONE_SHARDS = (
+    (alone_setup, alone_second_window, alone_spaces, alone_keys, alone_folders, alone_moves, alone_drag, alone_archive, alone_live_folders,
+     alone_drag_details, alone_settings, alone_copy, alone_copy_and_import, alone_safe_moves, alone_idle, alone_end),
+    (alone_setup, alone_quiet_undo, alone_tab_menu, alone_tab_names, alone_selection, alone_space_menu, alone_look, alone_stay_put, alone_idle, alone_end),
+    (alone_setup, alone_hand, alone_new_tab, alone_sound, alone_news, alone_touches, alone_little_window, alone_isolation, alone_idle, alone_end),
+    (alone_setup, alone_requests, alone_crossing, alone_archived, alone_command_bar, alone_bar_edges, alone_shortcuts, alone_keyboard, alone_idle, alone_end),
+    (alone_setup, alone_folds_rest, alone_sync_hide, alone_bridge, alone_many, alone_chaos,
+     alone_idle, alone_update, alone_folds_rest_kept, alone_end, alone_restart, alone_folds_rest_kept, alone_isolation_start, alone_little_restart),
+)
+assert {g for shard in ALONE_SHARDS for g in shard} == set(ALONE_GROUPS), "every Tidier-alone group is in a part"
 
 
 GROUPS = (external_links, new_window, more_windows, essentials, folders, tab_sync, folder_pull, tab_moves, saved_tabs, quiet_off, ghost_title,
@@ -10688,10 +10730,10 @@ SHARDS = (  # measured: about 120, 145 and 140 s on a Mac, before saved_tabs (ab
     (move_over,),
 )
 
-def run_alone(groups, xpi, port):
-    """Run Tidier-alone groups in a test Firefox of their own, in ALONE_GROUPS order."""
+def run_alone(groups, xpi, port, order=None):
+    """Run Tidier-alone groups in a test Firefox of their own, in ALONE_GROUPS order (or the given one)."""
     with TestFirefox(xpi=xpi, port=port, alone=True) as m:
-        for group in [g for g in ALONE_GROUPS if g in groups]:
+        for group in [g for g in order or ALONE_GROUPS if g in groups]:
             t0 = time.time()
             try:
                 group(m)
@@ -10733,12 +10775,11 @@ def run_groups(groups, xpi, port):
 
 
 def run_parallel(argv, base=PORT):
-    """Run SHARDS at the same time, each as `smoke.py --only ... --port ...`, and add up."""
-    procs = [subprocess.Popen([sys.executable, "-I", os.path.abspath(__file__), "--only", ",".join(g.__name__ for g in shard),
-                               "--port", str(base + 1 + i), *argv], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
-             for i, shard in enumerate(SHARDS)]
-    procs.append(subprocess.Popen([sys.executable, "-I", os.path.abspath(__file__), "--only", ",".join(g.__name__ for g in ALONE_GROUPS),
-                                   "--port", str(base + 1 + len(SHARDS)), *argv], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True))
+    """Run SHARDS and ALONE_SHARDS at the same time, each as `smoke.py --only ...` or `--part alone-N` with a port of its own, and add up."""
+    runs = [["--only", ",".join(g.__name__ for g in shard)] for shard in SHARDS] + [["--part", f"alone-{i + 1}"] for i in range(len(ALONE_SHARDS))]
+    procs = [subprocess.Popen([sys.executable, "-I", os.path.abspath(__file__), *run, "--port", str(base + 1 + i), *argv],
+                              stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+             for i, run in enumerate(runs)]
     passed = total = known_bugs = 0
     for p in procs:
         out = p.communicate()[0]
@@ -10781,19 +10822,24 @@ def main():
         run_alone(set(ALONE_GROUPS), xpi, port)
         passed, total, known_bugs = sum(results), len(results), len(known)
     elif "--part" in args:
-        # One half of --serial, so that GitHub can run the two on runners of their own:
-        # the Tidier-alone chain alone takes longer than a job may for both.
+        # One part of the whole, so that GitHub can run each on a runner of its own: the
+        # Sidebery groups, the Tidier-alone chain in one Firefox (alone), or one of its
+        # parts in a Firefox of its own (alone-1 to alone-5: ALONE_SHARDS).
         part = args[args.index("--part") + 1]
-        if part not in ("sidebery", "alone"):
-            raise SystemExit("--part is sidebery or alone")
+        parts = ["sidebery", "alone"] + [f"alone-{i + 1}" for i in range(len(ALONE_SHARDS))]
+        if part not in parts:
+            raise SystemExit(f"--part is one of {', '.join(parts)}")
         print(f"Testing {xpi or EXT_DIR} in a test Firefox: the {part} part", flush=True)
         if part == "sidebery":
             run_groups(set(GROUPS), xpi, port)
-        else:
+        elif part == "alone":
             run_alone(set(ALONE_GROUPS), xpi, port)
+        else:
+            shard = ALONE_SHARDS[int(part.split("-")[1]) - 1]
+            run_alone(set(shard), xpi, port, order=shard)
         passed, total, known_bugs = sum(results), len(results), len(known)
     else:
-        print(f"Testing {xpi or EXT_DIR} in {len(SHARDS)} test Firefoxes at once", flush=True)
+        print(f"Testing {xpi or EXT_DIR} in {len(SHARDS) + len(ALONE_SHARDS)} test Firefoxes at once", flush=True)
         passed, total, known_bugs = run_parallel(passthrough, port)
     print(f"\n{passed}/{total} passed in {round(time.time() - t0)} s"
           + (f" ({known_bugs} known Sidebery bug)" if known_bugs else ""))

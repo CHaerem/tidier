@@ -5,11 +5,12 @@
 # Only there can Tidier be installed unsigned for real, so only there does the test
 # quit and restart Firefox and update Tidier over a running session, which is where tabs
 # could be lost; and it is the Beta, about four weeks ahead, so a Firefox change that
-# breaks something shows up before it reaches you.
+# breaks something shows up before it reaches you. Its groups run in five parts
+# (ALONE_SHARDS in tests/smoke.py), each on a runner of its own at the same time: a
+# push is judged in about the time of the longest part, not of all of them in a row.
 # Every Monday, and by hand (Actions → Smoke test → Run workflow): also the newest
 # Firefox, and the Sidebery groups, while a browser still runs with Sidebery. They are
-# not run on each push: Sidebery is on its way out (PLAN.md), and each part is a runner
-# of its own for an hour.
+# not run on each push: Sidebery is on its way out (PLAN.md).
 #
 # The Firefox files come from the private dotfiles repository, read with a
 # read-only deploy key (secret DOTFILES_DEPLOY_KEY, set up once with
@@ -60,15 +61,14 @@ jobs:
     needs: unit
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: macos-15
-    # The Sidebery groups take about 10 minutes on a Mac, the Tidier-alone chain about 45,
-    # and GitHub's runner is slower; twice that with the second try, and GitHub cancels
-    # silently. So each part has a runner of its own and a limit of its own.
-    timeout-minutes: ${{ matrix.part == 'alone' && 200 || 45 }}
+    # A part takes 10 to 15 minutes on a Mac, and GitHub's runner is slower; twice that
+    # with the second try, and GitHub cancels silently at the limit.
+    timeout-minutes: 90
     strategy:
       fail-fast: false
       matrix:
         firefox: ${{ fromJSON(github.event_name == 'push' && '["latest-devedition"]' || '["latest-devedition", "latest"]') }}
-        part: ${{ fromJSON(github.event_name == 'push' && '["alone"]' || '["alone", "sidebery"]') }}
+        part: ${{ fromJSON(github.event_name == 'push' && '["alone-1", "alone-2", "alone-3", "alone-4", "alone-5"]' || '["alone-1", "alone-2", "alone-3", "alone-4", "alone-5", "sidebery"]') }}
     steps:
       - name: Check out Tidier
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -89,8 +89,8 @@ jobs:
           firefox-version: ${{ matrix.firefox }}
       - name: Download Sidebery
         run: curl -fsSL -o "$RUNNER_TEMP/sidebery.xpi" https://addons.mozilla.org/firefox/downloads/latest/sidebery/latest.xpi
-      # One test Firefox per runner (--part, one half of --serial): GitHub's runner
-      # is slower than a Mac, and three at once there would test the runner, not Tidier.
+      # One test Firefox per runner (--part): GitHub's runner is slower than a Mac, and
+      # several at once there would test the runner, not Tidier.
       #
       # A failure gets one more try, in the same job: on GitHub's slower machines
       # a new window's essentials can land in the wrong space (a Sidebery bug, with

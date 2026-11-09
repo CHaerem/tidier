@@ -841,11 +841,12 @@ From fastest to most complete:
 node --test                          # unit tests, about half a minute
 TIDIER_TEST_SCALE=25 node --test     # as on GitHub: the fake clock at a quarter of its speed
 tests/smoke.py --only trees,folders  # some smoke test groups, about a minute
-tests/smoke.py                       # the whole smoke test, about 45 minutes
+tests/smoke.py                       # the whole smoke test, about 15 minutes
 tests/smoke.py --installed           # the signed version installed in your Firefox
 tests/smoke.py --xpi FILE            # a given signed .xpi
 tests/smoke.py --serial              # in one test Firefox
-tests/smoke.py --part alone          # one half of that (or --part sidebery), as on GitHub
+tests/smoke.py --part alone-3        # one part of it (alone-1 to alone-5, or sidebery), as on GitHub
+tests/smoke.py --part alone          # every Tidier-alone group in one test Firefox, in a row
 ```
 
 Runs to do on purpose, not after every change:
@@ -887,11 +888,14 @@ call during a start, an essential in a removed container.
 The group names for `--only` are the check functions in `tests/smoke.py`
 (`new_window`, `essentials`, `folders`, `trees`, …); a group that needs the
 second window gets it first. Without `--only`, the groups run in several test
-Firefoxes at once (`SHARDS`), one of them without Sidebery, for Tidier alone
-(`ALONE_GROUPS`, in `alone_*`). That one is the longest, about 45 minutes while the
-others are done in about seven, since its groups build on each other and run in order:
-judge a failure there by the whole chain, as a subset leaves out what earlier groups
-leave behind. `TIDIER_ALONE_ALL_PERMISSIONS=1` runs it with every optional permission
+Firefoxes at once: those with Sidebery (`SHARDS`), and those for Tidier alone
+(`ALONE_GROUPS`, in `alone_*`) in five parts (`ALONE_SHARDS`), each from the same
+fixture and each ending with nothing happening and no errors. A group must not lean on
+what a group before it left behind: it makes what it needs (a second window, a tab), so
+that it also runs by itself (`--only alone_setup,alone_many`), which is the quick way to
+look at a failure. `--part alone` still runs them all in a row in one test Firefox,
+about 50 minutes: hours of use in one session, which finds what a fresh one does not.
+`TIDIER_ALONE_ALL_PERMISSIONS=1` runs them with every optional permission
 given, as in real use. Two smoke tests at once need their own ports (`--port`), and a
 second one on the same ports says so.
 
@@ -934,11 +938,11 @@ container).
 
 `.github/workflows/smoke.yml` runs the unit tests first, on a quick Linux runner,
 and then the same smoke test on GitHub, in a headless Firefox on a macOS runner. On each
-push that is the Tidier-alone chain in Firefox Developer Edition (the Beta, about four
+push that is the Tidier-alone groups in Firefox Developer Edition (the Beta, about four
 weeks ahead, so a Firefox change that would break something shows up before it reaches
-you). Every Monday and when started by hand it is also the newest Firefox and the
-Sidebery groups, each part on a runner of its own: Sidebery is on its way out, and a
-part takes up to an hour there.
+you), in their five parts, each on a runner of its own at the same time. Every Monday
+and when started by hand it is also the newest Firefox and the Sidebery groups:
+Sidebery is on its way out.
 Developer Edition allows unsigned add-ons, so there Tidier is installed for
 real and the test also quits and restarts Firefox to check the restored
 session; on your Mac that part runs with `--installed` or `--xpi`. It
