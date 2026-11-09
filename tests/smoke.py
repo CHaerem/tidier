@@ -1290,6 +1290,10 @@ def move_over(m):
     tabs_here = H + """return wins().map(w => w.gBrowser.tabs.filter(t => !t.pinned && role(w, t) && role(w, t) !== "copy").map(t => key(w, t)).sort()).sort();"""
     sidebery_enabled = lambda on: m.js(H + """const {AddonManager} = ChromeUtils.importESModule("resource://gre/modules/AddonManager.sys.mjs");
       await (await AddonManager.getAddonByID("%s"))[args[0] ? "enable" : "disable"](); await wait(args[0] ? 4000 : 1500); return 1;""" % SIDEBERY_ID, on)
+    # Two windows, whatever the groups before left: the checks below count folder pages per
+    # window, and a placeholder made meanwhile is only a placeholder in another window.
+    # (On GitHub the group before it can end with one window: seen 2026-11-09.)
+    m.js(H + """if (wins().length < 2) { const w = main().OpenBrowserWindow(); for (let i = 0; i < 100 && !w.gBrowser; i++) await wait(100); await wait(9000); } return 1;""")
     before, tabs0 = m.js(record), m.js(tabs_here)
     keys_now = """return Object.fromEntries((await WebExtensionPolicy.getByID(args[0]).extension.shortcuts.allCommands()).map(c => [c.name, c.shortcut]));"""
     keys0 = m.js(keys_now, EXT_ID)

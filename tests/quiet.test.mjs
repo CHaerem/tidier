@@ -773,7 +773,7 @@ test("deleting a live folder does not make a page with unsaved input ask: it sta
   const t0 = Date.now();
   port.send({ type: "deleteFolder", key: "F" });
   await until(() => noteIn(x, w.id), "the line");
-  assert.ok(!ff.synced.F);
+  await until(() => !ff.synced.F, "the record written"); // it is written a moment after (WRITE_DELAY_MS)
   assert.ok(!ff.synced.pr2, "the search decides the others");
   assert.ok(tabOf(ff, w.id, "pr"), "this one stays, without Firefox asking");
   assert.equal(ff.synced.pr.parentKey, null);

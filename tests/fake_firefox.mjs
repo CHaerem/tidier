@@ -7,7 +7,9 @@ import { readFileSync } from "node:fs";
 import vm from "node:vm";
 
 const REPO = new URL("../", import.meta.url);
-export const SCALE = 100; // timers run this much faster
+// Timers run this much faster. A slower machine (GitHub's) needs less: a wait of 300 ms
+// is 3 ms here, and there the work in between can take longer than that.
+export const SCALE = Number(process.env.TIDIER_TEST_SCALE) || 100;
 export const realSleep = ms => new Promise(r => setTimeout(r, ms));
 export const wait = ms => realSleep(ms / SCALE); // wait in the scripts' time
 
