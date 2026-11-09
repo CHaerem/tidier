@@ -1330,6 +1330,9 @@ def move_over(m):
     steps = ext_page(m, "/settings/settings.html", MOVE_STEPS)
     check("with Sidebery off, every step is ticked, and Move can be clicked", steps["export"] and steps["allow"] and steps["off"] and steps["canMove"], str(steps))
     m.js(H + """for (const w of wins()) for (const t of [...w.gBrowser.tabs]) if (url(t).includes("/settings/settings.html")) w.gBrowser.removeTab(t); await wait(300); return 1;""")
+    # The click on Move opens Tidier's sidebar in its window (settings.js), and Firefox brings it
+    # back there as Tidier starts again; a click cannot be made here, so it is opened like this.
+    m.js(H + """await main().SidebarController.show("_6844a953-9931-4334-9ff6-257c246485cb_-sidebar-action"); await wait(500); return 1;""")
     fire_message(m, {"type": "settings:moveOver"})
     # Firefox's note about hidden tabs hangs over the top of the sidebar, with Disable Extension
     # where New tab is: it must come while the settings page is in front to say what to choose.
@@ -1341,6 +1344,16 @@ def move_over(m):
         await wait(250);
       }
       return {page: page(main())};""")
+    def windows_shot(when):  # the windows as you find them, to look at (Firefox's note itself is not drawn)
+        if not os.environ.get("TIDIER_SHOTS"):
+            return
+        m.chrome()
+        for n, handle in enumerate(m.cmd("WebDriver:GetWindowHandles")):
+            m.cmd("WebDriver:SwitchToWindow", {"handle": handle, "focus": True})
+            time.sleep(1.5)  # a window behind is drawn only once it is in front
+            open(os.path.join(os.environ["TIDIER_SHOTS"], f"moved-{when}-window-{n + 1}.png"), "wb").write(base64.b64decode(m.cmd("WebDriver:TakeScreenshot", {})))
+        m.chrome()
+    windows_shot("asked")
     ask = ext_page(m, "/settings/settings.html", """return {ask: !doc.getElementById("moved-ask").hidden && doc.getElementById("moved-ask").textContent, without: doc.getElementById("windows-without").hidden ? "" : doc.getElementById("windows-without-text").textContent};""")
     check("after moving over, Firefox asks about hidden tabs while the settings page is in front, saying what to choose",
           note["page"] == "settings/settings.html" and note.get("front") and "Keep Tabs Hidden" in str(ask["ask"]), f"{note}, {ask}")
@@ -1349,7 +1362,7 @@ def move_over(m):
     other_page = m.js(H + """for (let i = 0; i < 40 && !url(other().gBrowser.selectedTab).includes("/settings/settings.html"); i++) await wait(250);
       return url(other().gBrowser.selectedTab).split("/").slice(3).join("/");""")
     check("after moving over, a window without Tidier's sidebar shows the page too, and the page in front says so",
-          other_page == "settings/settings.html" and "Another window has no sidebar yet" in ask["without"], f"{other_page}, {ask}")
+          other_page == "settings/settings.html" and ask["without"].startswith("Another window has no sidebar yet: it shows this page too, with a button for it"), f"{other_page}, {ask}")
     handle = m.js(H + """const {NavigableManager} = ChromeUtils.importESModule("chrome://remote/content/shared/NavigableManager.sys.mjs");
       main().document.getElementById("extension-notification-panel")?.hidePopup?.(); other().focus(); await wait(500);
       return NavigableManager.getIdForBrowser(other().gBrowser.selectedTab.linkedBrowser);""")
@@ -1364,6 +1377,7 @@ def move_over(m):
       const ids = wins().map(w => w.SidebarController.isOpen && w.SidebarController.currentID); main().focus();
       for (const t of [...other().gBrowser.tabs]) if (url(t).includes("/settings/settings.html")) other().gBrowser.removeTab(t);
       await wait(300); return ids;""")
+    windows_shot("later")
     check("its button gives the second window Tidier's sidebar", "This window has no sidebar yet" in str(said) and "6844a953" in str(r[1]), f"{said}, {r}")
     m.js(AFTER_MOVE_OVER, EXT_ID)
     after = m.js(record)

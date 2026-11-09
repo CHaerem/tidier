@@ -140,7 +140,7 @@ async function sidebarsToOpen() {
   $("windows-without").hidden = !without.length;
   $("windows-without-text").textContent = [
     here && "This window has no sidebar yet, so no list of tabs.",
-    others && `${others === 1 ? "Another window has" : `${others} other windows have`} no sidebar yet: ${others === 1 ? "it shows" : "each shows"} this page too, with a button for it, or press ${key} there.`,
+    others && `${others === 1 ? "Another window has" : `${others} other windows have`} ${here ? "none either" : "no sidebar yet"}: ${others === 1 ? "it shows" : "each shows"} this page too, with a button for it, or press ${key} there.`,
   ].filter(Boolean).join(" ");
   $("show-sidebar").hidden = !here;
 }

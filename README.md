@@ -733,7 +733,11 @@ tools/shoot.py                                                       # pictures 
 For what went wrong once and could not be made to happen again, Tidier keeps the last
 forty things you did and what came of them (an Undo and what it brought back, a menu item
 pressed and clicked, a key that reached it), in its console and in the smoke test's
-`stats` message (`trace` in `common.js`), beside the errors.
+`stats` message (`trace` in `common.js`), beside the errors. Quick ⌃⌘↓ presses over
+unloaded tabs, about one in eight lost in a slowed-down test Firefox, never reached Tidier
+at all: Firefox hands an extension's key over only once the page's process has seen it,
+and the page just selected is then still starting to load. Its own ⌃PageDown does not
+wait for that. The `key` lines show whether this happens on a real machine too.
 
 `tests/chaos.test.mjs` plays random sequences of browser use on the real background
 scripts, on a fake Firefox (`tests/chaos_firefox.mjs`) that refuses what Firefox refuses,

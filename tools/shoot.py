@@ -620,6 +620,10 @@ SETTINGS_IN_FULL = """
   const $ = id => document.getElementById(id), add = (parent, tag, cls, text) => { const e = document.createElement(tag); e.className = cls; e.textContent = text; parent.append(e); return e; };
   add($("notices"), "p", "notice", "Tidier could not read the record of its folders, and is working from the copy made this morning.");
   $("allow-hiding").hidden = $("move").hidden = $("move-back").hidden = $("merge").hidden = false;
+  // Right after moving over (aftermove.js), in a window that came over without the sidebar.
+  $("moved").hidden = $("moved-ask").hidden = $("windows-without").hidden = $("show-sidebar").hidden = false;
+  $("moved").textContent = "Moved: 5 folders and 23 tabs are Tidier's own now, 2 of the folders closed, as in Sidebery. To go back, see below.";
+  $("windows-without-text").textContent = "This window has no sidebar yet, so no list of tabs.";
   $("alone-state").textContent = "This browser uses Sidebery for its tab list, spaces and folders.";
   $("sidebery-result").textContent = "Imported 2 rules and the order of 3 spaces.";
   for (const [name, on] of [["Personal: 7 essentials, 3 folders, 12 saved tabs", true], ["Work: 12 essentials, 2 folders, 30 saved tabs", false]]) {
