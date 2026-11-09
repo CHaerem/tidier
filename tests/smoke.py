@@ -2864,7 +2864,7 @@ def alone_hand(m):
       doc.documentElement.dataset.folds = ""; new content.MutationObserver(() => { doc.documentElement.dataset.folds += f.classList.contains("collapsed") ? "c" : "o"; }).observe(f, {attributes: true, attributeFilter: ["class"]});
       return f.classList.contains("collapsed"); }""")
     head = hand_spot(m, """return box([...doc.querySelectorAll("#tabs .folder .head")].find(h => h.title === "Hand"));""")
-    hand(m, hand_to(head), hand_pause(100), *hand_click(), hand_pause(80), *hand_click())
+    hand(m, hand_to(head), hand_pause(100), *hand_click(), *hand_click())  # (no pause: a busy machine adds its own)
     r = sidebar_until(m, """() => doc.querySelector("#tabs .folder.renaming input") && {folds: doc.documentElement.dataset.folds, collapsed: doc.querySelector("#tabs .folder.renaming").classList.contains("collapsed")}""")
     sidebar_key(m, ESC)
     check("a double click on a closed folder's head renames it, and nothing folds or unfolds first", r and r["collapsed"] and "o" not in r["folds"], str(r))
@@ -2914,6 +2914,8 @@ def alone_hand(m):
 
     # The sidebar made narrower: the lines above the list wrap and the list shows less, and the
     # selected tab, the last row and wholly in view, stays wholly in view (clear of the fade at the end).
+    # (Once the quiet line has gone: its room makes the list shorter for a while.)
+    sidebar_until(m, """() => !doc.getElementById("note").classList.contains("in-room")""", timeout=25)
     r = m.js(H + IN_SIDEBAR + """const w = main(), box = w.document.getElementById("sidebar-box"), before = box.style.width;
       box.style.width = "420px"; await wait(500);
       const name = await inSidebar(() => [...doc.querySelectorAll("#tabs .tab")].at(-1).title.split("\\n")[0]);
@@ -2930,6 +2932,9 @@ def alone_hand(m):
 
     sidebar_page(m, """send({type: "deleteFolder", key: args[0]}); await wait(800); return 1;""", folder)
     m.js(H + """Services.prefs.clearUserPref("general.autoScroll"); await removeWhere((w, t) => /^(hand|fill)-/.test(t.label) || url(t).includes("/sidebar/sidebar.html")); return 1;""")
+    # The pointer left where it reaches nothing: at rest over the page it would be over the rows
+    # of a sidebar page the next groups open in a tab, and Firefox tells a row that comes under it.
+    hand(m, {"type": "pointerMove", "x": 1, "y": 1, "duration": 0, "origin": "viewport"})
 
 
 def alone_new_tab(m):
@@ -3604,6 +3609,7 @@ def alone_touches(m):
         await until(async () => record.querySelector(".title")?.textContent === "No icon" && await status(id) === "complete");
         await wait(500);
         out.record = {own: (await page.browser.tabs.get(id)).favIconUrl ?? null, image: !!record.querySelector(icon), letter: !!record.querySelector(".letter")};
+        out.recordEntry = Object.values((await page.browser.storage.local.get("syncedTabs")).syncedTabs).filter(e => e.url.includes("/no-icon")).map(e => String(e.icon).slice(0, 60)); // (for the detail, when this fails)
       }
 
       // A page changing its address and nothing else, as some do as you scroll: the tooltip
@@ -7365,7 +7371,8 @@ def alone_drag_details(m):
         pointer(to(at["x"] + 1, at["bottom"] - 200), pause)
         r2 = here("""await wait(100); const a = list.scrollTop; await wait(500); return [a, list.scrollTop];""")
         pointer(to(at["x"], at["bottom"] - 2), pause)
-        r3 = here("""const a = list.scrollTop; await until(() => list.scrollTop > a + 40, 3000); const moving = list.scrollTop > a + 40;
+        # (From where it rested: on a busy machine it has scrolled a good way before this is asked.)
+        r3 = here("""const a = %d; await until(() => list.scrollTop > a + 40, 3000); const moving = list.scrollTop > a + 40;""" % r2[1] + """
           window.windowUtils.dragSession.endDragSession(true); await wait(300);
           const b = list.scrollTop; await wait(500); return {moving, session: !!window.windowUtils.dragSession, top: [b, list.scrollTop], marks: document.querySelectorAll(".drop-before, .drop-after").length};""")
         check("away from the edge it does not, and after the drag nothing moves or stays marked", r2[0] == r2[1] and r3["moving"] and not r3["session"] and r3["top"][0] == r3["top"][1] and r3["marks"] == 0, f"{r2} {r3}")
