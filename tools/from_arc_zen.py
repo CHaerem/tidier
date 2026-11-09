@@ -27,7 +27,11 @@ How Arc and Zen map onto Tidier:
   outside a folder go into a folder called "Pinned", first in the space.
 - Folders are folders. Tidier's are not nested, so a folder inside another becomes
   "Outer / Inner".
-- Ordinary tabs are left out: Tidier would archive them anyway.
+- An essential or pinned tab comes in at the address it was pinned at, which Zen and
+  Arc go back to, not at wherever you have since gone in it. A name you gave it stays.
+- Ordinary tabs are left out: Tidier would archive them anyway. So are the tabs of
+  Zen's live folders: Zen fills them from a search, and Tidier's own live folders are
+  set up in their helper's config (livefolders.js), not taken in from a copy.
 """
 import argparse
 import glob
@@ -105,11 +109,14 @@ class Copy:
                             "icon": icon if icon in ICONS else "circle"})
         self.order.append(sid)
 
-    def essential(self, sid, url, title):
+    def essential(self, sid, url, title, name=None):
         if not is_web(url) or (sid, url, "e") in self.urls:
             return
         self.urls.add((sid, url, "e"))
-        self.essentials.append({"key": self.key("essential"), "url": url, "cookieStoreId": sid, "title": title or url})
+        entry = {"key": self.key("essential"), "url": url, "cookieStoreId": sid, "title": title or url}
+        if name and name != title:
+            entry["name"] = name  # an essential's short name (essentials.js)
+        self.essentials.append(entry)
 
     def folder(self, sid, name):
         key = self.key("folder")
@@ -152,7 +159,13 @@ class Copy:
 # --- Zen ------------------------------------------------------------------------------
 
 def tab_url(tab):
-    """A session tab's address and title: its current history entry."""
+    """A session tab's address and title. For a pinned tab or essential, the one it was
+    pinned at (_zenPinnedInitialState), which Zen goes back to; you may have gone
+    elsewhere in it since, and two essentials can then be on one page. Otherwise its
+    current history entry."""
+    pinned = ((tab.get("_zenPinnedInitialState") or {}).get("entry")) or {}
+    if is_web(pinned.get("url")):
+        return pinned["url"], pinned.get("title")
     entries = tab.get("entries") or []
     if not entries:
         return None, None
@@ -194,8 +207,13 @@ def zen_copy(profile):
             by_container.setdefault(s["containerTabId"], []).append(space_of[s["uuid"]])
 
     tabs = [t for w in windows for t in w.get("tabs") or []]
-    folders = [f for w in windows for f in (w.get("folders") or []) + (w.get("groups") or [])]
-    folder_by_id = {f.get("id"): f for f in folders if f.get("id")}
+    # Zen keeps each folder twice: in "folders" (with parentId, workspaceId, isLiveFolder)
+    # and as Firefox's tab group in "groups" (without them). Both are read, "folders" last,
+    # so a group never wipes out what only the folder knows.
+    folder_by_id = {}
+    for f in [g for w in windows for g in w.get("groups") or []] + [f for w in windows for f in w.get("folders") or []]:
+        if f.get("id"):
+            folder_by_id[f["id"]] = {**folder_by_id.get(f["id"], {}), **f}
 
     def folder_name(f):
         names, seen = [], set()
@@ -219,12 +237,14 @@ def zen_copy(profile):
         url, title = tab_url(t)
         if not is_web(url):
             continue
+        if t.get("zenLiveFolderItemId") or (folder_by_id.get(t.get("groupId")) or {}).get("isLiveFolder"):
+            continue  # filled by Zen from a search; see the top of this file
         name = t.get("zenStaticLabel") or (t.get("attributes") or {}).get("zen-static-label")
         if t.get("zenEssential"):
             ctx = t.get("userContextId") or 0
             owners = by_container.get(ctx) or ([space_of[t["zenWorkspace"]]] if t.get("zenWorkspace") in space_of else copy.order)
             for sid in owners:
-                copy.essential(sid, url, title)
+                copy.essential(sid, url, title, name)
         elif t.get("pinned") and t.get("zenWorkspace") in space_of:
             sid = space_of[t["zenWorkspace"]]
             fid = t.get("groupId") if t.get("groupId") in folder_by_id else PINNED
