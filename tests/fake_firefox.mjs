@@ -113,7 +113,7 @@ export class FakeFirefox {
         if (p.discarded && p.pinned) throw new Error("Pinned tabs cannot be created and discarded.");
         if (p.discarded && p.active) throw new Error("Active tabs cannot be created and discarded.");
         if (p.title && !p.discarded) throw new Error("Title may only be set for discarded tabs.");
-        const t = ff.addTab(p.windowId, { url: p.url ?? "about:newtab", pinned: !!p.pinned, active: !!p.active, cookieStoreId: p.cookieStoreId || "firefox-default", openerTabId: p.openerTabId, index: p.index, title: p.title ?? p.url, discarded: !!p.discarded });
+        const t = ff.addTab(p.windowId, { url: p.url ?? "about:newtab", pinned: !!p.pinned, active: !!p.active, cookieStoreId: p.cookieStoreId || "firefox-default", openerTabId: p.openerTabId, index: p.index, title: p.title ?? p.url, discarded: !!p.discarded, ...(p.muted ? { mutedInfo: { muted: true } } : {}) });
         ff.log.push(["create", t.id, p.windowId, p.url]);
         // ff.blankFirst: as Firefox really does, a tab with an address is announced on
         // about:blank and its address follows, either before the answer to this call

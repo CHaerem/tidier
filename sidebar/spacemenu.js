@@ -2,14 +2,22 @@
 // A right click on a dot, or on the name above the list, opens Tidier's small menu.
 // Only with Tidier alone: without it, the daily browser keeps Firefox's menu here.
 // A listener of its own that comes first, so the bar's drawing need not know of it.
-
+//
+// It starts with the space's dot and name, as a quiet line: on the bar a space is only an
+// 8 px dot, and the menu of another space must say which one it is. Then in groups, as
+// the tab menu is: what concerns the space, then the spaces as a whole, then Clear on its
+// own, at the end, since it closes tabs (as Close does in the tab menu). Other files add
+// items by the one they go before: Copy for Claude (agent.js), New space (isolation.js).
 function spaceMenu(space) {
+  const s = view.spaces.find(x => x.id === space);
   return [
+    { heading: s?.name ?? "", color: s?.color },
     ["Rename", () => openSpaceBox(space)],
     ["Unload this space", () => send({ type: "unloadSpace", space })],
-    ...(space === view.space && clearableHere() ? [clearItem()] : []),
     ["Archived tabs", () => openArchived(space)], // archived.js
+    null,
     ["Settings", () => browser.runtime.openOptionsPage()],
+    ...(space === view.space && clearableHere() ? [null, clearItem()] : []),
   ];
 }
 
@@ -26,18 +34,13 @@ addEventListener("contextmenu", e => {
   if (!view?.alone) return;
   const dot = e.target.closest?.("#spaces .space");
   if (!dot && e.target.id !== "space-name") return;
-  openMenu(e, spaceMenu(dot ? dot.dataset.space : view.space));
+  // A menu at the pointer would cover the bar and with it the dot it belongs to. Above the
+  // bar (menu.js: it stays clear of what it is about), the dot stays in sight, marked as long
+  // as the menu or its box is open.
+  openMenu(e, spaceMenu(dot ? dot.dataset.space : view.space), dot ? document.getElementById("spaces") : e.target);
   markSpaceDot(dot);
-  if (dot) aboveTheBar();
 }, true);
 
-// A menu at the pointer would cover the bar and with it the dot it belongs to. Above
-// the bar, the dot stays in sight, marked as long as the menu or its box is open.
-const spaceMenuBox = document.getElementById("menu");
-function aboveTheBar() {
-  const bar = document.getElementById("spaces").getBoundingClientRect();
-  spaceMenuBox.style.top = Math.max(4, bar.top - spaceMenuBox.offsetHeight - 4) + "px";
-}
 function markSpaceDot(dot) {
   for (const d of document.querySelectorAll("#spaces .menu-for")) d.classList.remove("menu-for");
   dot?.classList.add("menu-for");
@@ -61,7 +64,10 @@ function openSpaceBox(space) {
   if (spaceBox || !s) return;
   const input = el("input", "space-box");
   input.value = s.name;
+  // In the colour of the space it names, which need not be the one you are in. (--accent-line
+  // is worked out where it is defined, from the page's --accent, so it is given here too.)
   input.style.setProperty("--accent", s.color);
+  input.style.setProperty("--accent-line", `color-mix(in srgb, ${s.color} 62%, transparent)`);
   input.setAttribute("aria-label", "Name of this space");
   const room = line.getBoundingClientRect().height;
   line.hidden = true;

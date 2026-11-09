@@ -72,6 +72,9 @@ function recordIcon(entry) {
 const folderName = url => decodeURIComponent((url.split("#")[1] || "").replace(/~!.*!~$/, "")) || "Folder";
 
 async function viewFor(windowId) {
+  // Read first: a view that has it was built entirely after that drop was carried out, so the
+  // sidebar can stop putting the row where it was dropped itself (sidebar/drag.js).
+  const landed = landedIn.get(windowId) ?? null;
   await aloneRead;
   const list = await getList();
   // Firefox builds a full description of every tab it is asked for, so a view asks only
@@ -117,8 +120,9 @@ async function viewFor(windowId) {
   // Tabs still loading go apart from their rows: a row is drawn again when anything in it
   // changes, and a load starting and ending must not replace its icon (sidebar/touches.js).
   const loading = tidierAlone ? tabs.filter(tabIsLoading).map(t => t.id) : [];
-  return { alone: tidierAlone, needsHiding: tidierAlone && !browser.tabs.hide, problem: [...notices.values()][0] ?? null, note: noteFor(windowId), spaces, space, essentials, folders, tabs: loose, loading, little: await littleRows(spaces) };
+  return { alone: tidierAlone, needsHiding: tidierAlone && !browser.tabs.hide, problem: [...notices.values()][0] ?? null, note: noteFor(windowId), spaces, space, essentials, folders, tabs: loose, loading, little: await littleRows(spaces), landed };
 }
+const landedIn = new Map(); // windowId -> the name of the last drop carried out there
 
 // Which entry of the record each row is. Until Tidier has started (the first seconds after
 // Firefox starts, or after the background part starts again behind an open sidebar) the
@@ -209,12 +213,21 @@ browser.runtime.onConnect.addListener(port => {
     const set = sidebarPorts.get(windowId);
     if (!set) return;
     set.delete(port);
-    if (!set.size) { sidebarPorts.delete(windowId); clearTimeout(viewTimers.get(windowId)?.timer); viewTimers.delete(windowId); viewRest.delete(windowId); viewsBuilding.delete(windowId); }
+    if (!set.size) { sidebarPorts.delete(windowId); clearTimeout(viewTimers.get(windowId)?.timer); viewTimers.delete(windowId); viewRest.delete(windowId); viewsBuilding.delete(windowId); landedIn.delete(windowId); }
   });
 });
 
-// What you do in the sidebar with Tidier alone (ownfolders.js).
+// What you do in the sidebar with Tidier alone (ownfolders.js). A drop the sidebar shows in
+// its new place before it is done has a name (`landing`), given back with the views built after it.
 async function sidebarAction(windowId, msg) {
+  try {
+    await sidebarActionNow(windowId, msg);
+  } finally {
+    if (msg.landing) landedIn.set(windowId, String(msg.landing));
+    viewSoon(windowId); // also after a refusal: the sidebar must see where things really are
+  }
+}
+async function sidebarActionNow(windowId, msg) {
   if (msg.type === "newFolder") await createFolder(msg.name || "New folder", msg.space);
   else if (msg.type === "renameFolder") await renameFolder(msg.key, msg.name);
   else if (msg.type === "foldFolder") await foldFolder(msg.key, msg.collapsed);
@@ -222,15 +235,14 @@ async function sidebarAction(windowId, msg) {
   else if (msg.type === "clearSpace") await clearSpace(windowId, msg.space); // quiet.js
   else if (msg.type === "moveFolder") await moveFolder(msg.key, msg.before ?? null);
   else if (msg.type === "moveTab") await moveTab(windowId, msg.tabId, msg.before ?? null, msg.folder);
-  else if (msg.type === "moveToSpace") await moveToSpace(msg.tabId, msg.space, msg.leaving);
-  else if (msg.type === "pin") await pinFromSidebar(msg.tabId, msg.pinned, msg.before);
+  else if (msg.type === "moveToSpace") await tabAction(windowId, { action: "space", tabIds: [msg.tabId], space: msg.space }); // tabactions.js: with its line
+  else if (msg.type === "pin") await pinFromSidebar(windowId, msg.tabId, msg.pinned, msg.before, msg.folder);
   else if (msg.type === "moveEssential") await moveEssential(windowId, msg.tabId, msg.before ?? null);
   else if (msg.type === "tabAction") await tabAction(windowId, msg); // tabactions.js
   else if (msg.type === "renameTab") await renameTab(msg.tabId, msg.name);
-  else if (msg.type === "unloadSpace") await unloadSpace(msg.space);
+  else if (msg.type === "unloadSpace") await unloadSpace(msg.space, windowId);
   else if (msg.type === "renameSpace") await renameSpace(msg.space, msg.name);
   else if (msg.type.startsWith("little:")) await littleAction(windowId, msg); // littlewindow.js
-  viewSoon(windowId);
 }
 
 // A tab dropped on a tile is an essential at that place: Firefox pins it after the
@@ -243,14 +255,22 @@ async function sidebarAction(windowId, msg) {
 //
 // A new tab has no page to keep as an essential: pinned, it would only be a stray tile in
 // one window, and an essential is in every window. (A placeholder stands for its page.)
-async function pinFromSidebar(tabId, pinned, before) {
+//
+// Unpinned, it goes where it was dropped among the tabs (`before`, `folder`: as for a tab
+// moved, moveTab), once it is in the record (unpinPlaces, essentials.js). Dropped on the list
+// with no place, it goes where Firefox puts it: first among the tabs.
+async function pinFromSidebar(windowId, tabId, pinned, before, folder) {
   const tab = await browser.tabs.get(tabId).catch(() => null);
   if (!tab || tab.pinned === pinned) return; // closed or pinned meanwhile: no event will use a place
   if (pinned && !isWeb(tab.url) && !isGhostUrl(tab.url)) return;
   busy.delete(tabId);
   syncBusy.delete(tabId);
   if (pinned && before) pinPlaces.set(tabId, before);
-  await browser.tabs.update(tabId, { pinned }).catch(() => pinPlaces.delete(tabId));
+  if (!pinned) {
+    unpinYourself(tabId);
+    if (before !== undefined || folder !== undefined) unpinPlaces.set(tabId, { windowId, before: before ?? null, folder: folder ?? null });
+  }
+  await browser.tabs.update(tabId, { pinned }).catch(() => { pinPlaces.delete(tabId); unpinPlaces.delete(tabId); });
 }
 
 // An essential's tile moved: moving its tab is what the rest of Tidier listens to.

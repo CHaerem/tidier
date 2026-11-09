@@ -17,12 +17,20 @@
 // One call per tab, since Firefox refuses a whole list for one tab closed meanwhile.
 //
 // No space, nothing to do: a query without a container is every space's tabs.
-async function unloadSpace(space) {
+//
+// The line says what it did (`windowId`: the sidebar it was asked from): unloading a space
+// you are not looking at changes nothing you can see.
+async function unloadSpace(space, windowId) {
   if (!space) return;
   const tabs = await browser.tabs.query({ cookieStoreId: space, pinned: false });
   const selected = new Set(tabs.filter(t => t.active && syncKeyByTab.has(t.id)).map(t => syncKeyByTab.get(t.id)));
   const inUse = t => t.active || t.audible || selected.has(syncKeyByTab.get(t.id)) || Object.values(t.sharingState ?? {}).some(Boolean);
-  await Promise.all(tabs.filter(t => !t.discarded && !isGhostUrl(t.url) && !inUse(t)).map(t => browser.tabs.discard(t.id).catch(() => {})));
+  const pages = tabs.filter(t => !t.discarded && !isGhostUrl(t.url) && !inUse(t));
+  await Promise.all(pages.map(t => browser.tabs.discard(t.id).catch(() => {})));
+  if (windowId === undefined) return;
+  const unloaded = (await Promise.all(pages.map(t => browser.tabs.get(t.id).catch(() => null)))).filter(t => t?.discarded).length;
+  const name = (await containerSpaces()).find(s => s.id === space)?.name ?? "this space";
+  say(windowId, unloaded ? `${unloaded === 1 ? "1 tab" : `${unloaded} tabs`} unloaded in ${name}` : `Nothing to unload in ${name}`);
 }
 
 // A space's name is its container's, so Firefox's own settings show it too. Firefox

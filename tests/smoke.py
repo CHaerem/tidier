@@ -2285,8 +2285,28 @@ def alone_tab_menu(m):
         check("the arrow keys go through the menu, and into a list and back", k["inMenu"] and k["first"] == "Reload" and k["last"] == "Close" and k["sub"]["top"] == "Move to space"
               and not k["sub"]["focus"] and k["sub"]["at"] and k["back"] == 0, str(k))
         check("a click outside the menu only closes it", r["outside"] == {"closed": True, "selected": True}, str(r["outside"]))
+        # (No Close on a tile: an essential closed comes back unloaded, which Unload does.)
+        # Where it stands: clear of the row or tile it is about, so you see which one; and a
+        # list in its place keeps its corner and width, so nothing jumps.
+        at = sidebar_page(m, MENU_PAGE + """const clear = (el, box = menu.getBoundingClientRect(), r = el.getBoundingClientRect()) => box.top >= r.bottom || box.bottom <= r.top || box.left >= r.right || box.right <= r.left;
+          const row = rowOf(args[0]); await rightClick(row);
+          const out = {row: clear(row), marked: row.classList.contains("menu-for")}, was = menu.getBoundingClientRect();
+          choose("Move to space"); const now = menu.getBoundingClientRect();
+          out.list = {left: now.left === was.left, top: now.top === was.top, width: now.width >= was.width - 0.5};
+          menu.hidden = true;
+          const tile = doc.querySelector("#essentials .tile"); await rightClick(tile);
+          out.tile = clear(tile); out.tileMarked = tile.classList.contains("menu-for");
+          menu.hidden = true;
+          const head = doc.querySelector("#tabs .folder .head");
+          if (head) { head.dispatchEvent(new page.MouseEvent("contextmenu", {bubbles: true, cancelable: true, button: 2, clientX: head.getBoundingClientRect().left + 8, clientY: head.getBoundingClientRect().top + 8}));
+            await until(() => !menu.hidden); out.head = clear(head) && head.classList.contains("menu-for"); }
+          page.dispatchEvent(new page.KeyboardEvent("keydown", {key: "Escape", bubbles: true, cancelable: true}));
+          return out;""", a)
+        check("a menu opens clear of the row it is about, which is marked, and a list in its place keeps its corner and width",
+              at["row"] and at["marked"] and at["list"] == {"left": True, "top": True, "width": True}, str(at))
+        check("on a tile and a folder's head it stands clear of them too, and marks them", at["tile"] and at["tileMarked"] and at.get("head", True), str(at))
         tile_rest = ["Duplicate", "Copy address", "|", "Remove from essentials", "Open a copy in space"]
-        check("a right click on a tile offers no folder, move to a space or rule", no_cookies_item(r["tileLabels"]) in (tile_rest, ["Reload", "Mute", "Unload", "|", *tile_rest, "|", "Close"]), str(r))
+        check("a right click on a tile offers no folder, move to a space, rule or close", no_cookies_item(r["tileLabels"]) in (tile_rest, ["Reload", "Mute", "Unload", "|", *tile_rest]), str(r))
         r = sidebar_page(m, MENU_PAGE + """const row = rowOf(args[0]), opts = o => page.JSON.parse(JSON.stringify(o));
           // A redraw of its row (here: the sound mark) resets the row's classes.
           await rightClick(row);
@@ -2505,12 +2525,11 @@ def alone_tab_menu(m):
         r = m.js(MENU_TABS + """const t = byId(args[0]); await until(() => !t.linkedPanel); const s = main().gBrowser.selectedTab;
           return {unloaded: !t.linkedPanel, pinned: t.pinned, selected: idOf(s) !== args[0], container: s.userContextId};""", tile)
         check("Unload on the selected tile goes to another tab of the space, and unloads it", r == {"unloaded": True, "pinned": True, "selected": True, "container": ctx}, str(r))
+        # No Close on a tile: on an essential it only did what Unload does, and read as if it went.
         sidebar_page(m, MENU_PAGE + "rowOf(args[0]).click(); return 1;", tile)
-        m.js(MENU_TABS + "await until(() => idOf(main().gBrowser.selectedTab) === args[0]); await wait(800); return 1;", tile)
-        act(tile, "Close")
-        r = sidebar_page(m, """for (let i = 0; i < 100 && !(tiles().length === args[1] && !doc.querySelector(`[data-tab="${args[0]}"]`)); i++) await wait(100); await wait(500);
-          return {tiles: tiles().length, active: !!doc.querySelector("#essentials .tile.active")};""", tile, n)
-        check("Close on the selected tile brings it back unloaded, and selects something else", r == {"tiles": n, "active": False}, str(r))
+        m.js(MENU_TABS + "await until(() => idOf(main().gBrowser.selectedTab) === args[0] && byId(args[0]).linkedPanel); await wait(800); return 1;", tile)
+        r = sidebar_page(m, MENU_PAGE + "const l = await rightClick(rowOf(args[0])); menu.hidden = true; return l;", tile)
+        check("a loaded tile offers Unload, and no Close", "Unload" in r and "Close" not in r, str(r))
 
         # Make essential, and back.
         r = sidebar_page(m, MENU_PAGE + """const n = tiles().length; await rightClick(rowOf(args[0])); choose("Make essential");
@@ -2547,12 +2566,72 @@ def alone_tab_menu(m):
           const list = shown(), dots = menu.querySelectorAll(".dot").length;
           menu.querySelector(".back").click(); const again = plain(shown());
           choose("Move to space"); choose(list[2]);
-          await until(() => !rowOf(args[0]));
-          return {list, dots, again, gone: !rowOf(args[0]), active: spaces().find(s => s.active).id};""", d)
+          await until(() => !rowOf(args[0]) && doc.getElementById("note").classList.contains("shown"));
+          return {list, dots, again, gone: !rowOf(args[0]), active: spaces().find(s => s.active).id, note: doc.querySelector("#note .text")?.textContent};""", d)
         check("Move to space lists the other spaces with their colours, and the row back goes back", r["dots"] == len(r["list"]) - 3 and r["list"][-1] == "New space" and r["dots"] >= 2 and no_cookies_item(r["again"]) == ROW_MENU, str(r))
         moved = m.js(MENU_TABS + """await until(() => tabs().some(x => url(x.t).includes("smoke-menu-a") && x.t.userContextId !== args[0]));
           return {there: tabs().filter(x => url(x.t).includes("smoke-menu-a") && x.t.userContextId !== args[0]).length, selected: idOf(main().gBrowser.selectedTab)};""", ctx)
         check("Move to space moves the tab, and you stay where you are", r["gone"] and r["active"] == space and moved["there"] >= 1 and moved["selected"] == selected, f"{r}, {moved}")
+        check("and the line says where it went", r["note"] == "Moved to " + r["list"][2], str(r))
+
+        # A move loses nothing: an unloaded tab arrives unloaded, with no request sent for
+        # it, and a muted one muted; one line says where they went, and Undo brings them back
+        # as they were. Pages of the test server, which records every request.
+        u, mu = open_tab("u", address=m.pages + "/r/smoke-move-unloaded"), open_tab("mu", address=m.pages + "/r/smoke-move-muted")
+        m.js(MENU_TABS + """const [a, b] = [byId(args[0]), byId(args[1])]; main().gBrowser.discardBrowser(a); b.toggleMuteAudio();
+          await until(() => !a.linkedPanel && b.muted); await wait(500); return 1;""", u, mu)
+        asked = len(seen(m, "smoke-move-unloaded"))
+        r = sidebar_page(m, MENU_PAGE + """const before = page.selectedTabs, picked = args.slice(0, 2);
+          page.selectedTabs = page.Array.prototype.slice.bind(page.JSON.parse(JSON.stringify(picked)), 0, 2);
+          try {
+            await rightClick(rowOf(picked[0])); choose("Move 2 tabs to space");
+            const to = [...menu.querySelectorAll(".item:not(.back)")].find(b => b.querySelector(".dot")).textContent;
+            choose(to);
+            await until(() => picked.every(id => !rowOf(id)) && doc.getElementById("note").classList.contains("shown"));
+            return {to, note: doc.querySelector("#note .text")?.textContent, undo: !doc.querySelector("#note .act")?.hidden};
+          } finally { page.selectedTabs = before; }""", u, mu)
+        MOVED = MENU_TABS + """const all = await record(), want = args[0];
+          const entry = text => Object.entries(all).find(([, e]) => e.url?.includes(text));
+          const state = text => { const [k, e] = entry(text) ?? []; const reps = tabs().filter(x => key(x.w, x.t) === JSON.stringify(k));
+            return {space: e?.cookieStoreId, loaded: reps.filter(x => x.t.linkedPanel && !url(x.t).includes("ghost.html")).length, muted: reps.length > 0 && reps.every(x => x.t.muted), tabs: reps.length}; };
+          await until(() => { const s = state("smoke-move-muted"); return s.space === want && s.loaded === 1; });
+          return {unloaded: state("smoke-move-unloaded"), muted: state("smoke-move-muted")};"""
+        names = sidebar_page(m, "return Object.fromEntries([...doc.querySelectorAll('#spaces .space')].map(b => [b.dataset.space, b.title]));")
+        there = next(s for s, n in names.items() if n == r["to"])
+        s = m.js(MOVED, there)
+        check("an unloaded tab moved to another space arrives unloaded, in every window, and nothing is asked of its site",
+              s["unloaded"]["space"] == there and s["unloaded"]["loaded"] == 0 and s["unloaded"]["tabs"] >= 2 and len(seen(m, "smoke-move-unloaded")) == asked, f"{s}, requests {asked} -> {len(seen(m, 'smoke-move-unloaded'))}")
+        check("a muted tab moved to another space stays muted, in every window", s["muted"]["space"] == there and s["muted"]["muted"], str(s))
+        check("the line says where they went, with Undo", r["note"] == f"2 tabs moved to {r['to']}" and r["undo"], str(r))
+        sidebar_page(m, """doc.querySelector("#note .act").click(); await wait(100); return 1;""")
+        s = m.js(MOVED, space)
+        check("Undo brings them back as they were: unloaded, and muted", s["unloaded"]["space"] == space and s["unloaded"]["loaded"] == 0 and s["muted"]["muted"]
+              and len(seen(m, "smoke-move-unloaded")) == asked, str(s))
+        r = sidebar_page(m, MENU_PAGE + "await until(() => rowOf(args[0]) && rowOf(args[1])); return [!!rowOf(args[0]), !!rowOf(args[1])];", u, mu)
+        check("and in this space's list again", r == [True, True], str(r))
+
+        # The second click of a double click must not act on what came under the pointer after
+        # the first: the list that replaced the menu, or the row under a menu that closed. Real
+        # clicks, which Firefox counts as a double click, in the sidebar's page in front.
+        m.js(H + """const w = main(); w.__beforeDouble = w.gBrowser.selectedTab; w.gBrowser.selectedTab = w.gBrowser.tabs.find(t => url(t).includes("/sidebar/sidebar.html")); await wait(500); return 1;""")
+        try:
+            at = sidebar_page(m, MENU_PAGE + """await rightClick(rowOf(args[0]));
+              const b = [...menu.querySelectorAll(".item")].find(x => x.textContent === "Move to space").getBoundingClientRect();
+              return {x: Math.round(b.left + 30), y: Math.round(b.top + b.height / 2)};""", u)
+            real_clicks(m, at["x"], at["y"], 2)
+            r = sidebar_page(m, MENU_PAGE + """await wait(600); return {open: !menu.hidden, back: !!menu.querySelector(".back"), here: !!rowOf(args[0])};""", u)
+            check("a double click on Move to space opens its list and chooses nothing", r == {"open": True, "back": True, "here": True}, str(r))
+            r = sidebar_page(m, MENU_PAGE + """menu.hidden = true; await rightClick(doc.querySelector("#tabs > .tab:not(.active)")); // the first of today's tabs: rows lie under its menu
+              const b = [...menu.querySelectorAll(".item")].find(x => x.textContent === "Copy address").getBoundingClientRect();
+              const x = Math.round(b.left + 30), y = Math.round(b.top + b.height / 2);
+              menu.style.visibility = "hidden"; const under = doc.elementFromPoint(x, y)?.closest("[data-tab]")?.dataset.tab ?? null; menu.style.visibility = "";
+              return {x, y, under};""")
+            selected = m.js(H + "return url(main().gBrowser.selectedTab);")
+            real_clicks(m, r["x"], r["y"], 2)
+            after = m.js(H + "await wait(800); return url(main().gBrowser.selectedTab);")
+            check("a double click on a menu item acts once, and leaves the row under the menu alone", r["under"] and after == selected, f"{r}, {selected} -> {after}")
+        finally:
+            m.js(H + "const w = main(); w.gBrowser.selectedTab = w.__beforeDouble; delete w.__beforeDouble; await wait(300); return 1;")
 
         # Several tabs, as window.selectedTabs says (a function of the page's own: this is how
         # to make one where no script can be added). What the selection itself does has its own checks.
@@ -6772,6 +6851,21 @@ def alone_drag_details(m):
     check("the empty end of the list is a line after the last tab, and nothing for the last tab itself",
           r["end"] == [True, "drop-after"] and r["endFromLast"] == [False], str(r))
 
+    # A drop shows where it lands at once, and the row never jumps back while the move is
+    # carried out and every window follows (drag.js, sendDrop).
+    r = sidebar_page(m, DRAG_TOOLS + """
+      const rows = plainTabs(), [a, b, c] = rows.slice(-3), want = ids(rows).filter(id => id !== Number(b.dataset.tab));
+      want.splice(want.indexOf(Number(c.dataset.tab)) + 1, 0, Number(b.dataset.tab));
+      const same = () => JSON.stringify(ids(plainTabs())) === JSON.stringify(want);
+      start(b); const placed = drop(c, .5, .8); end(b);
+      const atOnce = same();
+      let back = 0;
+      for (const t0 = Date.now(); Date.now() - t0 < 2500; await wait(20)) if (!same()) back++;
+      start(b); drop(a, .5, .8); end(b); // and back where it was
+      await until(() => ids(plainTabs()).indexOf(Number(b.dataset.tab)) === ids(plainTabs()).indexOf(Number(a.dataset.tab)) + 1);
+      return {placed, atOnce, back, after: same()};""")
+    check("a dropped row stands in its new place at once, and stays there", r["placed"] and r["atOnce"] and r["back"] == 0, str(r))
+
     r = sidebar_page(m, DRAG_TOOLS + """
       const out = {}, space = spaces().find(s => s.active).id;
       const head = name => [...doc.querySelectorAll("#tabs .folder .head")].find(h => h.querySelector(".title").textContent === name);
@@ -6874,7 +6968,13 @@ def alone_drag_details(m):
       out.nameWithTiles = over(doc.getElementById("space-name"));
       end(row);
       return out;""")
-    keys1 = essentials_here()
+    # (The sidebar shows a drop at once, before every window has it: so this waits for the windows.)
+    want_keys = keys0[0][1:] + keys0[0][:1]
+    for _ in range(50):
+        keys1 = essentials_here()
+        if len(keys1) > 1 and all(k == want_keys for k in keys1):
+            break
+        time.sleep(0.1)
     check("no mark on a tile itself or at the place right after it", r["itselfLeft"] == [False] and r["itselfRight"] == [False] and r["nextLeft"] == [False], str(r))
     check("a tile's left or right half decides the side of the line", r["nextRight"] == [True, "drop-right"] and r["tabLeft"] == [True, "drop-left"] and r["tabRight"] == [True, "drop-right"], str(r))
     check("the empty end of the essentials' last line is the last place", r["emptyEnd"] == [True, "drop-right"], str(r))
@@ -6909,6 +7009,20 @@ def alone_drag_details(m):
       await wait(1000);
       return {placed, order, want};""", r["id"])
     check("a tab dropped on the right half of the last tile is the last essential", r["placed"] is True and r["order"] == r["want"], str(r))
+
+    # As in Arc, an essential dragged out lands where it is dropped, with the line a row shows.
+    r = sidebar_page(m, DRAG_TOOLS + """
+      const rows = plainTabs(), target = rows[1], tile = tileEls().at(-1), id = Number(tile.dataset.tab);
+      start(tile); const mark = over(target, .5, .2); const placed = drop(target, .5, .2); end(tile);
+      const landed = await until(() => { const now = ids(plainTabs()); return now.includes(id) && now[now.indexOf(Number(target.dataset.tab)) - 1] === id; });
+      const out = {mark, placed, landed};
+      // Back among the essentials, as it was.
+      await wait(1000);
+      const row = plainTabs().find(r => Number(r.dataset.tab) === id);
+      if (row) { start(row); drop(tileEls().at(-1), .75); end(row); await until(() => tileEls().some(t => Number(t.dataset.tab) === id)); }
+      await wait(1500);
+      return out;""")
+    check("an essential dragged out shows the line where it will land, and lands there", r["mark"] == [True, "drop-before"] and r["placed"] and r["landed"], str(r))
 
     # A move, and at once a drop on a tile: tab sync still counts the tab as moved by itself.
     row = sidebar_page(m, "return Number(plainTabs()[0].dataset.tab);")
@@ -6962,7 +7076,10 @@ def alone_drag_details(m):
       send({type: "space", space: "firefox-container-4"});
       await until(() => spaces().find(s => s.active).id === "firefox-container-4" && !tileEls().length && plainTabs().length);
       const row = plainTabs()[0], id = Number(row.dataset.tab);
+      const hint = () => page.getComputedStyle(name, "::after").content;
+      out.hintAtRest = hint();
       start(row);
+      out.hintInDrag = hint();
       out.over = over(name);
       out.placed = drop(name);
       end(row);
@@ -6972,6 +7089,7 @@ def alone_drag_details(m):
       await until(() => spaces().find(s => s.active).id === here);
       return out;""")
     check("a space's first essential is dropped on the space's name, where the grid would be", r["over"] == [True, "drop-into"] and r["placed"] is True and r["tiles"] == r["want"], str(r))
+    check("which says so while a tab is dragged", r["hintInDrag"] == '"Make essential"' and r["hintAtRest"] in ("none", "normal"), str(r))
     r = m.js(H + """for (let i = 0; i < 100 && wins().some(w => !w.gBrowser.tabs.some(t => t.pinned && t.userContextId === 4)); i++) await wait(50);
       const copies = wins().map(w => w.gBrowser.tabs.filter(t => t.pinned && t.userContextId === 4).map(t => !!ek(w, t)));
       const tile = main().gBrowser.tabs.find(t => t.pinned && t.userContextId === 4);
@@ -6980,6 +7098,38 @@ def alone_drag_details(m):
       await removeWhere((w, t) => t.userContextId === 4);
       return copies;""")
     check("and every window has it", len(r) > 1 and r == [[True]] * len(r), str(r))
+
+    # The place for a new space: after the last dot on the bar's line, never over one; lit
+    # when a tab is over it; and the space made there opens its name box, as from the menu.
+    r = sidebar_page(m, DRAG_TOOLS + """
+      const out = {}, row = plainTabs().at(-1), id = Number(row.dataset.tab), plus = doc.querySelector(".new-space");
+      const box = e => e.getBoundingClientRect(), bg = () => page.getComputedStyle(plus).backgroundColor;
+      const known = new Set(spaces().map(s => s.id));
+      out.atRest = plus.hidden;
+      start(row);
+      const dots = [...doc.querySelectorAll("#spaces .space")].map(d => box(d.querySelector(".dot"))), p = box(plus);
+      out.inBar = plus.parentElement.id === "spaces";
+      out.afterLast = p.left >= dots.at(-1).right;
+      out.onLine = Math.abs((p.top + p.bottom) / 2 - (dots[0].top + dots[0].bottom) / 2) < 1;
+      const rest = bg();
+      plus.dispatchEvent(ev("dragover", plus));
+      out.lit = plus.classList.contains("drop-into") && bg() !== rest;
+      out.placed = drop(plus);
+      end(row);
+      const made = await until(() => doc.querySelector(".space-box") && spaces().some(s => !known.has(s.id)));
+      const input = doc.querySelector(".space-box");
+      out.box = made && {value: input.value, focus: doc.activeElement === input};
+      out.space = spaces().find(s => !known.has(s.id))?.id;
+      input?.dispatchEvent(new page.KeyboardEvent("keydown", {key: "Escape", bubbles: true}));
+      out.note = await until(() => doc.getElementById("note").classList.contains("shown")) && doc.querySelector("#note .text").textContent;
+      if (out.space) await page.browser.contextualIdentities.remove(out.space);
+      await until(() => !spaces().some(s => s.id === out.space));
+      return out;""")
+    check("the place for a new space shows only during a drag, on the bar's line after the last dot",
+          r["atRest"] is True and r["inBar"] and r["afterLast"] and r["onLine"], str(r))
+    check("it lights up when a tab is over it", r["lit"], str(r))
+    check("a tab dropped there makes a space whose name box opens, ready to type, and the line says where the tab went",
+          r["placed"] and r["box"] == {"value": "New space", "focus": True} and r["note"] == "Moved to a new space", str(r))
 
     # × inside a draggable row. A drag from it is refused, and the next drag is not.
     r = sidebar_page(m, DRAG_TOOLS + """
@@ -7104,7 +7254,7 @@ def alone_drag_details(m):
           return out;""")
         check("it stops when the drag leaves the sidebar, goes on when it is back, and stops over the bar and after a drop",
               r["scrolls"] is True and r["afterLeaving"] is False and r["back"] is True and r["overTheBar"] is False and r["afterDrop"] is False, str(r))
-        check("an essential dragged over the list does not scroll it: anywhere there unpins it", r["essential"] is False, str(r))
+        check("an essential dragged over the list's edge scrolls it too: it lands where it is dropped there", r["essential"] is True, str(r))
     finally:
         here("""window.windowUtils.dragSession?.endDragSession(true); return 1;""")
         pointer(up)
@@ -7392,10 +7542,13 @@ def alone_space_menu(m):
       await wait(1000); return 1;""", [[here, "here"], [there, "there"]])
 
     # What it offers.
-    ELSEWHERE, IN_SPACE = ["Rename", "Unload this space", "Archived tabs", "New space", "Settings"], ["Rename", "Unload this space", "Clear today's tabs", "Archived tabs", "New space", "Settings"]
+    # Clear, which closes tabs, comes last, on its own (spacemenu.js).
+    ELSEWHERE, IN_SPACE = ["Rename", "Unload this space", "Archived tabs", "New space", "Settings"], ["Rename", "Unload this space", "Archived tabs", "New space", "Settings", "Clear today's tabs"]
     r = menu_on(m, f"dot({json.dumps(there)})", ELSEWHERE)
-    place = in_sidebar(m, """(id) => ({menuBottom: doc.getElementById("menu").getBoundingClientRect().bottom, bar: doc.getElementById("spaces").getBoundingClientRect().top, marked: dot(id).classList.contains("menu-for"), active: doc.querySelector("#spaces .space.active").dataset.space})""", there)
+    place = in_sidebar(m, """(id) => ({menuBottom: doc.getElementById("menu").getBoundingClientRect().bottom, bar: doc.getElementById("spaces").getBoundingClientRect().top, marked: dot(id).classList.contains("menu-for"), active: doc.querySelector("#spaces .space.active").dataset.space,
+      heading: doc.querySelector("#menu .heading")?.textContent, name: dot(id).title, lines: doc.querySelectorAll("#menu .line").length})""", there)
     check("a right click on another space's dot opens its menu", r == ELSEWHERE, str(r))
+    check("which starts with that space's name, and has its groups", place["heading"] == place["name"] and place["lines"] == 1, str(place))
     check("the menu opens above the bar, and its dot is marked", place["menuBottom"] <= place["bar"] and place["marked"] and place["active"] == here, str(place))
     sidebar_key(m, ESC)
     closed = sidebar_until(m, """(id) => !labels().length && !dot(id).classList.contains("menu-for")""", there)
@@ -7430,6 +7583,8 @@ def alone_space_menu(m):
             break
         time.sleep(0.1)
     check("unloading another space unloads its tabs", len(before["loaded"]) >= 3 and not after["loaded"], f"{before} -> {after}")
+    note = sidebar_until(m, """(id) => doc.getElementById("note").classList.contains("shown") ? {text: doc.querySelector("#note .text").textContent, name: dot(id).title} : null""", there)
+    check("and says so, since nothing you see changes", bool(note) and re.fullmatch(rf"\d+ tabs? unloaded in {re.escape(note['name'])}", note["text"]) is not None, str(note))
     check("and leaves its essentials, and you where you are", after["essentials"] == before["essentials"] > 0 and after["selected"] == before["selected"], f"{before} -> {after}")
 
     # Unloading this one: the rows dim, except the selected tab, and a page with unsaved input stays.

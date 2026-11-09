@@ -2906,7 +2906,7 @@ test("a tab closed at the last moment stops nothing: unpinned, pinned or moved i
 
   const { update, move } = x.b.tabs;
   x.b.tabs.update = async id => refused(id);
-  await x.js(`serial(() => pinFromSidebar(${a.id}, true))`);
+  await x.js(`serial(() => pinFromSidebar(${w.id}, ${a.id}, true))`);
   x.b.tabs.update = update;
   x.b.tabs.move = async id => refused(id);
   await x.js(`serial(() => moveEssential(${w.id}, ${e.id}, null))`);

@@ -60,8 +60,8 @@ test("a page of Firefox's own can be reloaded and closed, not unloaded or moved"
 });
 
 test("a tile has no folder, space or rule, and can be taken out of the essentials", () => {
-  assert.deepEqual(menu().labels([tile()]), ["Reload", "Mute", "Unload", "|", "Duplicate", "Copy address", "|", "Rename", "|", "Remove from essentials", "|", "Close"]);
-  // Closing a tile that is not loaded would only draw the same placeholder again.
+  // No Close: on an essential it would only do what Unload does, and sound as if it went.
+  assert.deepEqual(menu().labels([tile()]), ["Reload", "Mute", "Unload", "|", "Duplicate", "Copy address", "|", "Rename", "|", "Remove from essentials"]);
   assert.deepEqual(menu().labels([tile({ loaded: false })]), ["Duplicate", "Copy address", "|", "Rename", "|", "Remove from essentials"]);
 });
 
@@ -76,7 +76,7 @@ test("with several tabs, labels count them, and what takes one tab is left out",
   assert.deepEqual(menu().labels([row({ id: 1 }), row({ id: 2, kept: true, folder: "F" }), row({ id: 3 })]),
     ["Reload 3 tabs", "Mute 3 tabs", "Unload 3 tabs", "|", "Copy 3 addresses", "|", "Make 3 tabs essential", "Move 3 tabs to folder", "Move 3 tabs to space", "|", "Close 3 tabs"]);
   assert.deepEqual(menu().labels([tile({ id: 1 }), tile({ id: 2 })]),
-    ["Reload 2 tabs", "Mute 2 tabs", "Unload 2 tabs", "|", "Copy 2 addresses", "|", "Remove 2 from essentials", "|", "Close 2 tabs"]);
+    ["Reload 2 tabs", "Mute 2 tabs", "Unload 2 tabs", "|", "Copy 2 addresses", "|", "Remove 2 from essentials"]);
 });
 
 test("an item acts on the whole list or is left out, never greyed", () => {
@@ -662,6 +662,70 @@ test("Move to space of every tab of the space: you land on a new tab there, and 
   const on = ff.list(w.id).find(t => t.active);
   assert.equal(on.cookieStoreId, C1, "you stay in your space");
   assert.ok(![a.id, b.id].includes(on.id) && !/^https/.test(on.url), "on a new tab");
+  x.kill();
+});
+
+// A move loses nothing (README): what was unloaded stays unloaded, so nothing loads in a space
+// you are not looking at, and what was muted stays muted, so a podcast does not start playing
+// out of sight. The tab is the same one there, under the same key.
+test("Move to space: an unloaded tab arrives unloaded, a muted one muted, each in every window", async () => {
+  const ff = new FakeFirefox();
+  ff.store.syncedTabs = { a: entry("https://a.example/", { title: "A" }), b: entry("https://b.example/", { title: "B" }), c: entry("https://c.example/") };
+  const w = ff.addWindow({ focused: true }), other = ff.addWindow();
+  ff.addTab(w.id, { url: "https://c.example/", active: true, cookieStoreId: C1 }, { syncKey: "c", syncRole: "live" });
+  // a: unloaded by Firefox, and muted; b: loaded, and muted.
+  const a = ff.addTab(w.id, { url: "https://a.example/", title: "A", discarded: true, cookieStoreId: C1, mutedInfo: { muted: true } }, { syncKey: "a", syncRole: "live" });
+  const b = ff.addTab(w.id, { url: "https://b.example/", title: "B", cookieStoreId: C1, mutedInfo: { muted: true } }, { syncKey: "b", syncRole: "live" });
+  for (const k of ["a", "b", "c"]) ff.addTab(other.id, { url: GHOST("ghost", k), discarded: true, cookieStoreId: C1 }, { syncKey: k, syncRole: "ghost" });
+  const x = await alone(ff);
+  ff.log.length = 0;
+  await act(x, w.id, "space", [a.id, b.id], { space: C2 });
+  await wait(500);
+  const there = id => ff.list(id).filter(t => t.cookieStoreId === C2).map(t => [t.url, t.discarded, !!t.mutedInfo?.muted]);
+  assert.deepEqual(there(w.id), [[GHOST("ghost", "a"), true, true], ["https://b.example/", false, true]], "b loaded where its page was");
+  assert.deepEqual(there(other.id), [[GHOST("ghost", "a"), true, true], [GHOST("ghost", "b"), true, true]]);
+  assert.ok(!ff.log.some(l => l[0] === "create" && l[3] === "https://a.example/"), "a's page did not load");
+  assert.deepEqual([ff.synced.a.cookieStoreId, ff.synced.a.title, ff.synced.b.cookieStoreId], [C2, "A", C2], "the same records, there");
+  assert.deepEqual(x.said.map(s => s.text), ["2 tabs moved to firefox-container-2"]);
+  assert.equal(typeof x.said[0].undo, "function");
+  x.kill();
+});
+
+test("Move to space says where it went, and Undo puts it back in its folder and place, with its saved address and name", async () => {
+  const ff = new FakeFirefox();
+  ff.store.syncedTabs = {
+    F: FOLDER,
+    s: entry("https://s.example/", { title: "S", parentKey: "F", saved: { url: "https://s.example/", title: "S" }, name: "Mine" }),
+    a: entry("https://a.example/"), z: entry("https://z.example/"),
+  };
+  const w = ff.addWindow({ focused: true });
+  const s = ff.addTab(w.id, { url: "https://s.example/", title: "S", cookieStoreId: C1 }, { syncKey: "s", syncRole: "live" });
+  ff.addTab(w.id, { url: "https://a.example/", cookieStoreId: C1 }, { syncKey: "a", syncRole: "live" });
+  ff.addTab(w.id, { url: "https://z.example/", active: true, cookieStoreId: C1 }, { syncKey: "z", syncRole: "live" });
+  const x = await alone(ff);
+  await act(x, w.id, "space", [s.id], { space: C2 });
+  await wait(300);
+  assert.deepEqual(x.said.map(n => n.text), ["Moved to firefox-container-2"]);
+  assert.deepEqual([ff.synced.s.cookieStoreId, ff.synced.s.parentKey, !!ff.synced.s.saved, !!ff.synced.s.name], [C2, null, false, false], "there an ordinary tab");
+  await x.js("serial")(() => x.said[0].undo());
+  await wait(500);
+  const back = ff.synced.s;
+  assert.deepEqual([back.cookieStoreId, back.parentKey, back.saved?.url, back.name], [C1, "F", "https://s.example/", "Mine"]);
+  assert.deepEqual(ff.list(w.id).map(t => ff.values.get(t.id)?.syncKey), ["s", "a", "z"], "in its place again");
+  assert.equal(ff.list(w.id).find(t => ff.values.get(t.id)?.syncKey === "s").discarded, false, "loaded, as it was there");
+  x.kill();
+});
+
+test("Move to space of a tab that stays (unsaved input) says only that, with nothing to undo", async () => {
+  const ff = new FakeFirefox();
+  ff.store.syncedTabs = { a: entry("https://a.example/"), z: entry("https://z.example/") };
+  const w = ff.addWindow({ focused: true });
+  const a = ff.addTab(w.id, { url: "https://a.example/", cookieStoreId: C1 }, { syncKey: "a", syncRole: "live" });
+  ff.addTab(w.id, { url: "https://z.example/", active: true, cookieStoreId: C1 }, { syncKey: "z", syncRole: "live" });
+  ff.refuseDiscard = new Set([a.id]);
+  const x = await alone(ff);
+  await act(x, w.id, "space", [a.id], { space: C2 });
+  assert.deepEqual(x.said.map(n => [n.text, !!n.undo]), [["One tab holds unsaved input and stayed here", false]]);
   x.kill();
 });
 

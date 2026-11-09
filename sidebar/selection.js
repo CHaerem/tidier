@@ -51,19 +51,22 @@
   }
 
   // A first pick starts over, of its own kind. You are on a tab and pick another: you
-  // mean both, so the selected tab is in it, if it is shown and of that kind.
-  function startOver(k) {
+  // mean both, so the selected tab is in it, if it is shown and of that kind. With a ⌘-click
+  // (`near`: the tab picked) only if it is in the same part of the list too, today's tabs or
+  // the same folder: a saved tab far up in a folder, taken along unseen, would leave its
+  // folder with the next drag. A ⇧-click is from where you are, wherever that is.
+  function startOver(k, near = null) {
     clear();
     kind = k;
     startedOn = selectedTab();
     const current = shown(k).find(e => e.classList.contains("active"));
-    return current ? idOf(current) : null;
+    return current && (!near || current.dataset.folder === near.dataset.folder) ? idOf(current) : null;
   }
 
   function addOrRemove(item) {
     const id = idOf(item);
     if (kindOf(item) !== kind || !picked.size) {
-      const current = startOver(kindOf(item));
+      const current = startOver(kindOf(item), item);
       if (current !== null) picked.add(current);
       picked.add(id);
     } else if (!picked.delete(id)) picked.add(id);
@@ -108,21 +111,22 @@
 
   // What drag.js would send for the one row, once per tab in order. With the same place
   // for each, each lands behind the one before it. (Firefox puts an essential it unpins
-  // first among the tabs, so those go in reverse.)
+  // first among the tabs, so those go in reverse when they have no place of their own.)
   function carry(msg) {
     const ids = inOrder();
-    if (msg.pinned === false) ids.reverse();
+    // To another space: one move of them all, which says one line for them (tabactions.js).
+    if (msg.type === "tabAction") { send({ ...msg, tabIds: ids }); return; }
+    if (msg.pinned === false && msg.before === undefined) ids.reverse();
     // Dropped on one of the tabs that are moving: the place is in front of the next that is not.
     let before = msg.before;
     while (picked.has(before)) {
       const next = nextTab(element(before));
       before = next ? idOf(next) : null;
     }
-    if (before !== undefined && alreadyThere(ids, before, msg.folder)) return;
-    // In order, or they would not arrive in order. So the selected tab can go first, and
-    // must know what not to step onto while the others are still here (leavesQuietly).
-    const leaving = msg.type === "moveToSpace" ? { leaving: ids } : {};
-    for (const tabId of ids) send({ ...msg, tabId, before, ...leaving });
+    // (Not a pin, which goes from one part to the other: never there already.)
+    if (before !== undefined && msg.type !== "pin" && alreadyThere(ids, before, msg.folder)) return;
+    // In order, or they would not arrive in order; shown there at once (drag.js).
+    sendDrop(ids.map(tabId => ({ ...msg, tabId, before })));
   }
 
   // A plain click clears, except on what you use on the way to acting on a selection:
@@ -189,8 +193,8 @@
   addEventListener("drop", e => {
     if (!picked.has(dragging?.tabId)) return;
     const drop = dropAt(e);
-    marks();
     dragging = null;
+    settleDrag();
     root.classList.remove("carrying");
     e.stopPropagation();
     if (!drop) return;

@@ -209,7 +209,9 @@ test("a row can be a placeholder: what counts is the real page, loaded in anothe
   ff.refuseDiscard.clear();
   await move(x, ghost.id, B);
   assert.ok(!ff.tabs.has(tab.id) && !ff.tabs.has(ghost.id), "closed in every window");
-  assert.deepEqual([...ff.tabs.values()].filter(t => t.url === SITE).map(t => [t.windowId, t.cookieStoreId]), [[second.id, B]]);
+  // Loaded where its page was, and a placeholder in the window of the row you moved.
+  assert.deepEqual([...ff.tabs.values()].filter(t => t.url === SITE).map(t => [t.windowId, t.cookieStoreId]), [[w.id, B]]);
+  assert.deepEqual(ff.list(second.id).filter(t => t.url === GHOST("ghost", "moved")).map(t => t.cookieStoreId), [B]);
   assert.equal(ff.tabs.get(ff.list(w.id)[0].id).url, "https://home.example/");
   x.kill();
 });
@@ -256,7 +258,10 @@ test("a tab in a folder leaves the folder behind, and a pull request stays gone 
   await move(x, pr.id, B);
   await x.js("flushWrites")();
   assert.ok(ff.synced.F, "the folder stays");
-  assert.ok(!ff.synced.moved && !ff.synced.pr);
+  for (const k of ["moved", "pr"]) {
+    const e = ff.synced[k];
+    assert.deepEqual([e.cookieStoreId, e.parentKey, !!e.saved, !!e.liveFolder], [B, null, false, false], `${k}: an ordinary tab there`);
+  }
   assert.deepEqual(ff.list(w.id).filter(t => t.url === SITE).map(t => t.cookieStoreId), [B]);
   assert.deepEqual(ff.store.liveFolders.prs.dismissed, ["https://github.example/pr/1"], "remembered, or the next search brings it back");
   x.kill();
@@ -437,7 +442,8 @@ test("moved from its placeholder, a page still loading in the other window takes
   const x = await alone(ff);
   stillLoading(ff, tab.id, SITE + "/deeper");
   await move(x, ghost.id, B);
-  assert.deepEqual(ff.list(second.id).filter(t => t.cookieStoreId === B).map(t => t.url), [SITE + "/deeper"]);
+  assert.deepEqual(ff.list(tab.windowId).filter(t => t.cookieStoreId === B).map(t => t.url), [SITE + "/deeper"], "loaded where its page was");
+  assert.equal(ff.synced.moved.url, SITE + "/deeper", "and the record has it, for the placeholder in the other window");
   x.kill();
 });
 
@@ -451,8 +457,11 @@ test("a tab that is only a placeholder everywhere moves by the record's address"
     moved: { url: SITE, title: "Moved", cookieStoreId: A, parentKey: null, group: false, added: 1 },
   };
   const x = await alone(ff);
+  ff.log.length = 0;
   await move(x, ghost.id, B);
-  assert.deepEqual(ff.list(w.id).filter(t => t.cookieStoreId === B).map(t => t.url), [SITE]);
+  assert.deepEqual(ff.list(w.id).filter(t => t.cookieStoreId === B).map(t => [t.url, t.discarded]), [[GHOST("ghost", "moved"), true]], "still only a placeholder: nothing loads");
+  assert.equal(ff.synced.moved.url, SITE);
+  assert.ok(!ff.log.some(l => l[0] === "create" && /^https/.test(l[3] || "")), "no page was opened");
   x.kill();
 });
 
@@ -757,7 +766,7 @@ test("a move made before Tidier has started waits for it, and then moves the tab
   assert.ok(!ff.tabs.has(ghost.id), "in every window");
   await x.js("serial")(() => {});
   await x.js("flushWrites")();
-  assert.ok(!ff.synced.moved);
+  assert.deepEqual([ff.synced.moved.cookieStoreId, ff.synced.moved.parentKey], [B, null], "its record went along, out of its folder");
   assert.deepEqual(ff.list(w.id).filter(t => t.url === SITE).map(t => t.cookieStoreId), [B]);
   x.kill();
 });

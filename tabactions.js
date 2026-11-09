@@ -103,6 +103,7 @@ const TAB_ACTIONS = {
     for (const r of reals) {
       if (!r.own.pinned) continue;
       busy.delete(r.tab.id);
+      unpinYourself(r.tab.id); // essentials.js: the other windows follow at once
       await browser.tabs.update(r.tab.id, { pinned: false }).catch(() => {});
     }
   },
@@ -114,17 +115,75 @@ const TAB_ACTIONS = {
   newFolder: async (windowId, reals, { space }) => {
     await moveRealsTo(windowId, reals, await createFolder(folderNameFor(reals), space));
   },
-  // In order, so that they arrive in order; the selected tab must then not step onto one
-  // still to come (leavesQuietly, safemoves.js). A row can be a placeholder, so both ids count.
-  space: async (windowId, reals, { space }) => {
-    const leaving = reals.flatMap(r => [r.own.id, r.tab.id]);
-    for (const r of reals) await moveToSpace(r.own.id, space, leaving);
-  },
+  space: (windowId, reals, { space, newSpace }) => moveRealsToSpace(windowId, reals, space, { newSpace }),
   rule: (windowId, reals) => alwaysOpenHere(windowId, reals[0]),
 };
 
 async function setRealsMuted(reals, muted) {
   for (const r of reals) if (r.loaded) await browser.tabs.update(r.tab.id, { muted }).catch(() => {});
+}
+
+// Tabs to another space, from the menu, a drop on a dot or the command bar alike, with one
+// line for all of them that says where they went, and Undo. Without it a tab would just
+// vanish from the list, and a move made by mistake would have to be looked for.
+//
+// In order, so that they arrive in order; the selected tab must then not step onto one
+// still to come (leavesQuietly, safemoves.js). A row can be a placeholder, so both ids count.
+//
+// Undo moves each back as it is by then (reopenIn, safemoves.js), into the folder it was in
+// and to its place there, with its saved address and its name, as if it had never left.
+const MOVE_FIELDS = ["parentKey", "saved", "name", "added", "liveFolder", "liveUrl"];
+const copyOf = value => (value && typeof value === "object" ? { ...value } : value); // a saved address is the one object among them
+async function moveRealsToSpace(windowId, reals, space, { newSpace = false } = {}) {
+  const leaving = reals.flatMap(r => [r.own.id, r.tab.id]);
+  const order = await tabsNow(windowId); // quiet.js: where each was, to put it back
+  const moved = [];
+  let stayed = 0, gone = 0;
+  for (const r of reals) {
+    await register(r.own.id); // opened a moment ago, it has no record yet
+    const key = syncKeyByTab.get(r.own.id), entry = key ? (await getSynced())[key] : undefined;
+    const was = entry ? { key, from: entry.cookieStoreId, fields: Object.fromEntries(MOVE_FIELDS.map(f => [f, copyOf(entry[f])])) } : null;
+    const result = await moveToSpace(r.own.id, space, leaving, { quiet: true });
+    if (result === "moved" && was) moved.push(was);
+    else if (result === "stayed") stayed++;
+    else if (result === "gone") gone++;
+  }
+  if (gone && !moved.length) return say(windowId, "That space could not be opened, so the tab stayed here");
+  if (!moved.length) return stayed && sayStayed(windowId);
+  const name = newSpace ? "a new space" : (await containerSpaces()).find(s => s.id === space)?.name ?? "that space";
+  const tabs = n => (n === 1 ? "1 tab" : `${n} tabs`);
+  const text = stayed ? `${tabs(moved.length)} moved to ${name}, ${stayed} stayed` : moved.length === 1 ? `Moved to ${name}` : `${tabs(moved.length)} moved to ${name}`;
+  say(windowId, text, { undo: () => moveBackFromSpace(windowId, moved, space, order) });
+}
+
+async function moveBackFromSpace(windowId, moved, space, order) {
+  const all = await getSynced();
+  const back = [];
+  for (const { key, from, fields } of moved) {
+    const entry = all[key];
+    if (entry?.cookieStoreId !== space) continue; // closed or moved on since
+    const reps = await repsNow(key);
+    const live = reps.find(t => syncRoleByTab.get(t.id) === "live") ?? null;
+    const was = pageState(live, reps[0]);
+    if (!(await leavesQuietly(live, key, moved.flatMap(m => syncKeyByTab.tabsOf(m.key))))) continue;
+    if (!(await reopenIn(key, from, was, all))) continue;
+    for (const f of MOVE_FIELDS) { if (fields[f] === undefined) delete entry[f]; else entry[f] = copyOf(fields[f]); }
+    // Its folder gone, or gone to another space, meanwhile: an ordinary tab, as when a folder is deleted.
+    const folder = all[entry.parentKey];
+    if (entry.parentKey && !(isOwnFolder(folder) && folder.cookieStoreId === from)) { entry.parentKey = null; entry.added = Date.now(); }
+    noteSaved(all, [key]);
+    if (entry.liveFolder) await forgetDismissed(entry); // quiet.js
+    back.push(key);
+  }
+  saveSynced(all);
+  // Each in its place, from the last to the first, so that the one it goes before is there already (as bringBack, quiet.js).
+  const here = repMap(await browser.tabs.query({ windowId }));
+  const wanted = new Set(back);
+  for (let n = order.length - 1; n >= 0; n--) {
+    if (!wanted.has(order[n].key) || !here.has(order[n].key)) continue;
+    const next = order.slice(n + 1).find(t => t.space === order[n].space && here.has(t.key));
+    await moveTab(windowId, here.get(order[n].key), next ? here.get(next.key) : null);
+  }
 }
 
 // A tab opened a moment ago has no record yet, and a move would only change its place.

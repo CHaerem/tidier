@@ -23,9 +23,9 @@ on the second Mac (PLAN.md, part C).
 | Unloaded tabs shown dimmed | Z A S | Done | in Tidier's sidebar; seen in the pictures of tools/shoot.py |
 | Close button, middle click to close | Z A S | Done | in Tidier's sidebar |
 | New tab button at the top of the list | A Z | Done | Tidier alone |
-| Drag tabs to reorder, into and out of folders | Z A S | Done | Tidier alone, checked, every window follows; also to a place among the essentials and to a space; marks only where a drop does something; the list scrolls at its edges |
-| Select several tabs (⇧/⌘ click) and act on them | Z A S | Done | Tidier alone, checked: move, close, drag and the menu; the selection lives in the sidebar only |
-| Context menu on tabs, folders and spaces | Z A S | Done | Tidier alone, checked: Tidier's own short menu on tabs, tiles, folders, spaces and the list |
+| Drag tabs to reorder, into and out of folders | Z A S | Done | Tidier alone, checked, every window follows; also to a place among the essentials and to a space; an essential dragged out lands where it is dropped, in a folder too; marks only where a drop does something; a drop shows in its new place at once; the list scrolls at its edges |
+| Select several tabs (⇧/⌘ click) and act on them | Z A S | Done | Tidier alone, checked: move, close, drag and the menu; the selection lives in the sidebar only; ⌘-click takes the selected tab along only from the same folder, or from today's tabs |
+| Context menu on tabs, folders and spaces | Z A S | Done | Tidier alone, checked: Tidier's own short menu on tabs, tiles, folders, spaces and the list, just below what it is about (which is marked) and never over it; a list opens in its place; a space's menu starts with its name; a double click on an item acts once |
 | Keyboard navigation in the sidebar | S | Done | Tidier alone: ↑↓, Enter, ⌫, ←→ |
 | Search/filter the tabs | S A | Done | Tidier alone, checked, in the command bar (⌘⇧K) |
 | Sound indicator and mute on a tab | Z A S | Done | Tidier alone, checked: a mark and mute on a row, a tile and a closed folder, and on a space's dot, whose mark goes to the tab that plays |
@@ -55,13 +55,13 @@ on the second Mac (PLAN.md, part C).
 | A space's own proxy and user agent | S | Done | Tidier alone, checked; on the settings page, under More. No address bar button, and no IP lookups |
 | Clear a site's cookies in one space, or a whole space's logins | S | Done | Tidier alone, checked; signing out asks first, since it can't be undone |
 | A vanished container comes back | | Done | Tidier alone, checked; with its name, colour and icon, and everything that pointed at it |
-| A folder to another space, and a copy of a tab | S | Done | Tidier alone, checked; unsaved input stays behind and says so |
-| Move a tab to another space without losing anything | S | Done | Tidier alone, checked: from the menu, by dragging to a dot or from the command bar; the page and its unsaved input are kept, and a rule does not send it back |
+| A folder to another space, and a copy of a tab | S | Done | Tidier alone, checked; each tab arrives as it was, unloaded, loaded or muted; unsaved input stays behind and says so; one line, with Undo |
+| Move a tab to another space without losing anything | S | Done | Tidier alone, checked: from the menu, by dragging to a dot or from the command bar; the page and its unsaved input are kept, an unloaded tab stays unloaded and a muted one muted, and a rule does not send it back; one line says where it went, with Undo |
 | New tabs and links from other apps open in the active space | A S | Done | Tidier alone, checked; Sidebery in the daily browser |
 | Rules: an address always opens in a given space ("Air Traffic Control") | A S | Done | Tidier alone, checked, on the settings page, and imported from Sidebery's export, also from its panels; Sidebery's rules in the daily browser. A rule for a space that is gone does nothing and says so |
 | Containers matched by name on another machine | | Done | Tidier alone, checked: copies and Sidebery's export land in the space of the same name, never by Firefox's number for it |
 | Open a link in another space (context menu) | A | Done | Tidier alone, checked: "Open link in" on a link's menu, which needs no access to pages; the tab menu has "Open a copy in space" |
-| Unload a whole space | S | Done | Tidier alone, checked: the space's menu; essentials, the selected tab, sound, calls and unsaved input stay |
+| Unload a whole space | S | Done | Tidier alone, checked: the space's menu; essentials, the selected tab, sound, calls and unsaved input stay; a line says how many were unloaded |
 | The same essentials, folders and spaces on every machine, by sync | A | Done | Tidier alone, checked in a test Firefox, off by default, on the settings page; real Firefox Sync between two machines is not tried yet |
 | Hide a space on a given machine | | Done | Tidier alone, checked: on the settings page, or for a machine in managed storage; hidden, not kept away |
 | Remove a space from every machine | | Later | today removing a container on one machine is local to it |

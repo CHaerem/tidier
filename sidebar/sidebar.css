@@ -319,7 +319,15 @@ img { filter: drop-shadow(0 0 .6px light-dark(rgb(40 30 20 / .3), rgb(255 255 25
 #menu .back::before { content: "‹"; font-size: 15px; line-height: 1; }
 #menu .line { height: 1px; margin: 4px 8px; background: var(--hover); }
 #menu .dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--color); }
+/* What the menu is about, as its first line: quiet, not a button, in the items' column. */
+#menu .heading {
+  display: flex; align-items: center; gap: 8px; height: 24px; padding: 0 9px;
+  color: var(--muted); font-size: var(--size-small); white-space: nowrap;
+}
+/* A new one, in a list of things with dots: a + where their dots are. */
+#menu .plus { flex: none; width: 8px; height: 8px; background: var(--muted); mask: var(--icon-plus) center / 12px no-repeat; }
 .menu-for { background: var(--hover); }
+.tile.menu-for { background: var(--tile-hover); } /* a tile at rest is already a lift: the mark is one step more, as under the mouse */
 /* Where a drop lands among the essentials (drag.js): a line standing up in the gap. */
 .row, .tile, .folder { position: relative; }
 .drop-left::after, .drop-right::after {
@@ -328,7 +336,16 @@ img { filter: drop-shadow(0 0 .6px light-dark(rgb(40 30 20 / .3), rgb(255 255 25
 .drop-left::after, .drop-right::after { top: 4px; bottom: 4px; width: 2px; }
 .drop-left::after { left: -4px; }
 .drop-right::after { right: -4px; }
-#space-name.drop-into { outline-offset: 1px; } /* its text sits close to its top */
+/* With no essentials yet, the space's name stands where they would be, and takes a tab dropped
+ * on it as the first one (drag.js). While a tab is dragged it says so, in the rounded shape of
+ * the other places that take a drop; it does not grow, so nothing in the list moves. */
+html[data-dragging="tab"] #essentials:empty + #space-name {
+  display: flex; justify-content: space-between; gap: 8px;
+  border-radius: var(--radius-sm); outline: 1.25px dashed var(--line); outline-offset: -1.25px; mask-image: none;
+}
+html[data-dragging="tab"] #essentials:empty + #space-name::after { content: "Make essential"; flex: none; color: var(--faint); }
+html[data-dragging="tab"] #essentials:empty + #space-name.drop-into { outline: 1.5px solid var(--accent-line); outline-offset: -1.5px; }
+html[data-dragging="tab"] #essentials:empty + #space-name.drop-into::after { color: var(--muted); }
 
 /* The quiet line (note.js). It lies over the end of the list, so nothing moves when it
  * comes or goes, and it is gone by itself, so what it covers is not covered for long. */
@@ -395,8 +412,21 @@ img { filter: drop-shadow(0 0 .6px light-dark(rgb(40 30 20 / .3), rgb(255 255 25
 .ask-line button:first-child { flex: 1; }
 .notice .ask-no { width: 24px; flex: none; padding: 0; background: none; color: var(--muted); }
 .notice .ask-no:hover { background: var(--hover); }
-.new-space { position: fixed; right: 8px; bottom: 6px; width: 26px; height: 26px; padding: 0; border: 1px dashed var(--muted); border-radius: 50%; background: var(--frame); color: var(--muted); font: inherit; }
-.new-space[hidden] { display: none; }
+/* The place for a new space: on the bar's line after the last dot, in a dot's box, so it
+ * never lies over one (sidebar/isolation.js). A dashed ring with a + drawn in its middle;
+ * with a tab over it, a soft fill and a ring, like every place that takes a drop. */
+.new-space {
+  flex: none; box-sizing: border-box; width: 20px; height: 20px; margin: 4px; padding: 0;
+  display: grid; place-items: center;
+  border: 1.25px dashed var(--faint); border-radius: 50%; background: none; color: var(--muted);
+  font-size: 0; /* the character in the markup has no size; what shows is drawn */
+  transition: background-color var(--quick), border-color var(--quick), color var(--quick);
+}
+.new-space::before { content: ""; width: 12px; height: 12px; background: currentColor; mask: var(--icon-plus) center / contain no-repeat; }
+.new-space.drop-into { border-style: solid; border-color: var(--accent-line); background: var(--accent-soft); color: var(--text); }
+.new-space[hidden], html:not([data-dragging="tab"]) .new-space { display: none; } /* also when a drag ended without a word (drag.js) */
+/* Many spaces in a narrow sidebar: the dots give a little rather than run off the bar's ends. */
+#spaces .space { flex: 0 1 auto; min-width: 18px; }
 /* A small window that is open (sidebar/littlewindow.js): one quiet row above the bar. */
 #little { flex: none; padding-bottom: 4px; max-height: 30vh; overflow-y: auto; container-type: inline-size; }
 #little:empty { display: none; }

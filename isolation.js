@@ -660,11 +660,11 @@ async function newSpace(name) {
   return browser.contextualIdentities.create({ name: name?.trim() || "New space", ...look });
 }
 
-// A new space with these tabs in it: you stay where you are.
+// A new space with these tabs in it: you stay where you are, and the sidebar opens the
+// box for its name (sidebar/isolation.js), so the line need not say what it is called.
 async function newSpaceWith(tabIds, windowId) {
   const space = await newSpace();
-  await tabAction(windowId, { action: "space", tabIds, space: space.cookieStoreId }); // a row may be a placeholder; several go in order
-  say(windowId, `Moved to ${space.name}. Its name can be changed in the space's menu`);
+  await tabAction(windowId, { action: "space", tabIds, space: space.cookieStoreId, newSpace: true }); // a row may be a placeholder; several go in order
   return space.cookieStoreId;
 }
 
@@ -876,40 +876,59 @@ async function copyToSpace(tabIds, space, windowId) {
 }
 
 // A folder to another space: a tab cannot change container, so each of its tabs is
-// opened again there. As a placeholder under the same key, so it stays in its folder,
-// keeps its saved address, and no page loads until you select it. A page with unsaved
+// opened again there, under the same key, so it stays in its folder and keeps its saved
+// address. Each arrives as it left, as a tab moved on its own does (reopenIn,
+// safemoves.js): unloaded if it was, loaded if it was, muted if it was. A page with unsaved
 // input stays behind, as an ordinary tab, and the line says so: closesQuietly finds out.
 // You stay in the space you are in: the selected tab, if it is in the folder, first
 // gives way to one that isn't, since Firefox never unloads a selected tab.
-async function moveFolderToSpace(key, space, windowId) {
+//
+// The line offers Undo, which moves it back to where it was among the folders, with the
+// tabs that stayed behind back in it (`windowId`: the window to say it in; `quiet` when
+// that Undo is what is moving it).
+async function moveFolderToSpace(key, space, windowId, { quiet = false } = {}) {
   const all = await getSynced();
   const folder = all[key];
   if (!isOwnFolder(folder) || folder.cookieStoreId === space) return { moved: 0, stayed: 0 };
+  const from = folder.cookieStoreId, after = foldersOf(all, from).map(f => f.key);
+  const nextFolder = after[after.indexOf(key) + 1] ?? null;
   const inFolder = Object.keys(all).filter(k => folderKeyOf(all, k) === key);
-  await leaveTabsOf(new Set(inFolder));
-  let moved = 0, stayed = 0;
-  const rank = (foldersOf(all, space).at(-1)?.rank ?? 0) + 1;
-  const wins = await normalWindows();
+  const was = new Map(); // read before leaving, which unloads the pages
   for (const k of inFolder) {
-    if (!(await closesQuietly(k))) {
+    const reps = await repsNow(k);
+    was.set(k, pageState(reps.find(t => syncRoleByTab.get(t.id) === "live") ?? null, reps[0]));
+  }
+  await leaveTabsOf(new Set(inFolder));
+  let moved = 0;
+  const stayed = [];
+  const rank = (foldersOf(all, space).at(-1)?.rank ?? 0) + 1;
+  for (const k of inFolder) {
+    // (A tab Firefox would not make there stays too, as one with unsaved input does.)
+    if (!(await closesQuietly(k)) || !(await reopenIn(k, space, was.get(k), all))) {
       all[k].parentKey = null;
-      stayed++;
+      stayed.push(k);
       continue;
     }
-    all[k].cookieStoreId = space;
-    const reps = await repsNow(k); // tabsync.js: only this tab's, not every tab once per tab
-    reps.forEach(t => { syncBusy.add(t.id); forget(t.id); });
-    await removeTabs(reps.map(t => t.id), syncBusy).catch(() => {});
-    await forgetClosedPlaceholders("ghost", [k]);
-    for (const w of wins) await createRep(w.id, k, all[k]).catch(noteError);
     moved++;
   }
   Object.assign(folder, { cookieStoreId: space, rank });
   noteSaved(all);
   saveSynced(all);
   await showSpaceEverywhere(); // foldrest.js: what came with a closed folder rests there, and what stayed behind shows here
-  if (stayed) say(windowId, stayed === 1 ? "One tab holds unsaved input and stayed here" : `${stayed} tabs hold unsaved input and stayed here`);
-  return { moved, stayed };
+  if (quiet || windowId === undefined) return { moved, stayed: stayed.length };
+  const name = (await containerSpaces()).find(s => s.id === space)?.name ?? "that space";
+  const undo = async () => {
+    await moveFolderToSpace(key, from, windowId, { quiet: true });
+    const now = await getSynced();
+    if (!isOwnFolder(now[key])) return;
+    for (const k of stayed) if (now[k]?.cookieStoreId === from && !now[k].parentKey) now[k].parentKey = key;
+    noteSaved(now);
+    saveSynced(now);
+    await moveFolder(key, nextFolder);
+  };
+  const left = stayed.length === 1 ? "one tab with unsaved input stayed" : `${stayed.length} tabs with unsaved input stayed`;
+  say(windowId, stayed.length ? `Folder moved to ${name}, ${left}` : `Folder moved to ${name}`, { undo });
+  return { moved, stayed: stayed.length };
 }
 
 // Any selected tab that is one of these goes to the tab used last that isn't, else a

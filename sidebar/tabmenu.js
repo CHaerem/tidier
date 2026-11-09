@@ -57,11 +57,13 @@ const TAB_MENU = [
   { id: "rule", group: 4, label: () => "Always open this site here",
     when: eachTab(t => !t.tile && !!t.address && !t.ruled && t.space !== "firefox-default"), run: tabs => tabAct("rule", tabs) },
 
-  // Closing a tile that is not loaded would only draw the same placeholder again. The selected
-  // tab goes last: closed first, Firefox would select another, perhaps a placeholder in this
-  // list, whose real tab is then pulled in under another id while its close is on the way.
+  // Not on a tile: an essential closed only comes back unloaded, which is what Unload does,
+  // and keeps the page's history too; and "Close" on an essential reads as if it would go.
+  // The selected tab goes last: closed first, Firefox would select another, perhaps a
+  // placeholder in this list, whose real tab is then pulled in under another id while its
+  // close is on the way.
   { id: "close", group: 5, many: true, label: n => tabsWord(n, "Close", "Close # tabs"),
-    when: eachTab(t => !t.tile || t.loaded), run: tabs => [...tabs].sort((a, b) => a.active - b.active).forEach(t => send({ type: "close", tabId: t.id })) },
+    when: eachTab(t => !t.tile), run: tabs => [...tabs].sort((a, b) => a.active - b.active).forEach(t => send({ type: "close", tabId: t.id })) },
 ];
 
 // The menu for these tabs, as openMenu takes it (null: a line).
@@ -83,12 +85,11 @@ let tabMenuAsked = 0;
 function openTabMenu(e, id) {
   holdMenu(e);
   const ids = selectedTabs(id); // selection.js
-  const asked = ++tabMenuAsked, { clientX: x, clientY: y } = e;
+  const asked = ++tabMenuAsked, { clientX: x, clientY: y } = e, about = e.target?.closest?.("[data-tab]");
   browser.runtime.sendMessage({ type: "tabMenu", tabIds: ids }).then(tabs => {
     if (asked !== tabMenuAsked || !tabs?.length) return; // a newer click, or the tab is gone
-    showMenu(tabMenuItems(tabs), x, y);
+    showMenu(tabMenuItems(tabs), x, y, about);
     // Which tabs it is about, while the pointer is away from them: a tile has no text.
-    menuFor = tabs.map(t => t.id);
-    markMenuFor();
+    markMenuAbout(tabs.map(t => `[data-tab="${t.id}"]`));
   }, err => console.error("Tidier: tab menu", err));
 }
