@@ -7075,10 +7075,19 @@ def alone_drag_details(m):
         check("at the top edge it scrolls back up", back[1] < back[0] - 100, str(back))
         pointer(to(at["x"] + 1, at["bottom"] - 200), pause)
         r2 = here("""await wait(100); const a = list.scrollTop; await wait(500); return [a, list.scrollTop];""")
-        pointer(to(at["x"], at["bottom"] - 2), pause)
-        r3 = here("""const a = list.scrollTop; await until(() => list.scrollTop > a + 40, 3000); const moving = list.scrollTop > a + 40;
+        # Back at the edge. A test Firefox sends a drag event only when the pointer moves, and at
+        # times with a position from earlier on its way (seen: 555 for a pointer at 941), where a
+        # Mac keeps sending them while it rests: a move that starts nothing is made again, as a
+        # hand would.
+        for _ in range(3):
+            pointer(to(at["x"], at["bottom"] - 2), pause)
+            if here("""await until(() => list.scrollTop > WAS + 40, 1500); return list.scrollTop > WAS + 40;""".replace("WAS", str(r2[1]))):
+                break
+            pointer(to(at["x"] + 1, at["bottom"] - 200), pause)
+            time.sleep(0.3)
+        r3 = here("""const a = WAS; await until(() => list.scrollTop > a + 40, 3000); const moving = list.scrollTop > a + 40;
           window.windowUtils.dragSession.endDragSession(true); await wait(300);
-          const b = list.scrollTop; await wait(500); return {moving, session: !!window.windowUtils.dragSession, top: [b, list.scrollTop], marks: document.querySelectorAll(".drop-before, .drop-after").length};""")
+          const b = list.scrollTop; await wait(500); return {moving, session: !!window.windowUtils.dragSession, top: [b, list.scrollTop], marks: document.querySelectorAll(".drop-before, .drop-after").length};""".replace("WAS", str(r2[1])))
         check("away from the edge it does not, and after the drag nothing moves or stays marked", r2[0] == r2[1] and r3["moving"] and not r3["session"] and r3["top"][0] == r3["top"][1] and r3["marks"] == 0, f"{r2} {r3}")
         # Other ways a drag ends or leaves, and an essential: with events alone, so no scrolling of Firefox's own.
         r = here("""const ev = (type, el, y) => new DragEvent(type, {bubbles: true, cancelable: true, clientX: 60, clientY: y, dataTransfer: new DataTransfer()});
