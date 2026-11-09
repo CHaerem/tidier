@@ -707,6 +707,7 @@ From fastest to most complete:
 
 ```bash
 node --test                          # unit tests, about half a minute
+TIDIER_TEST_SCALE=25 node --test     # as on GitHub: the fake clock at a quarter of its speed
 tests/smoke.py --only trees,folders  # some smoke test groups, about a minute
 tests/smoke.py                       # the whole smoke test, about 45 minutes
 tests/smoke.py --installed           # the signed version installed in your Firefox

@@ -64,12 +64,15 @@ jobs:
           firefox-version: ${{ matrix.firefox }}
       - name: Download Sidebery
         run: curl -fsSL -o "$RUNNER_TEMP/sidebery.xpi" https://addons.mozilla.org/firefox/downloads/latest/sidebery/latest.xpi
-      # One file at a time: the tests run Tidier on a fake Firefox whose clock runs fast,
-      # and on GitHub's three slower cores two files at once made a few of them miss
-      # their moment (seen 2026-11-09). On a Mac this takes half a minute, here a few.
+      # The tests run Tidier on a fake Firefox whose clock runs 100 times fast. On GitHub's
+      # slower runner the work between two steps could take longer than a short wait there
+      # (300 ms is 3 ms), and a few tests missed their moment (seen 2026-11-09), one file
+      # at a time too. A quarter of that speed leaves room; it takes a few minutes.
       - name: Unit tests
         working-directory: tidier
-        run: node --test --test-concurrency=1
+        env:
+          TIDIER_TEST_SCALE: "25"
+        run: node --test
       # One test Firefox per runner (--part, one half of --serial): GitHub's runner
       # is slower than a Mac, and three at once there would test the runner, not Tidier.
       #
