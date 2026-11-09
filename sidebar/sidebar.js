@@ -8,7 +8,11 @@
 
 const port = browser.runtime.connect({ name: "sidebar" });
 const hello = () => browser.windows.getCurrent().then(w => port.postMessage({ type: "hello", windowId: w.id })); // answered with a view
-hello();
+// Only once every script of the page is there: Firefox can hand over the answer between two
+// of them, and drawing it then stopped at the first part of another script (a tile's sound
+// mark, sound.js), leaving the list undrawn until the next view, which may not come soon.
+if (document.readyState === "loading") addEventListener("DOMContentLoaded", hello, { once: true });
+else hello();
 port.onMessage.addListener(render);
 
 // Your own look, from managed storage (dotfiles' tidier.css, given to Firefox
@@ -260,9 +264,14 @@ function render(next) {
   drawn = new Set();
   const space = view.spaces.find(s => s.id === view.space), root = document.documentElement;
   // A space comes in as one piece: a folder drawn for it now does not fade in on its own,
-  // after everything else (sidebar.css, html.new-space), as a folder that appears does.
+  // after everything else (sidebar.css, html.space-arriving), as a folder that appears does.
+  // The class goes once what is new has its style, also when drawing stops half way (a
+  // view can come before every script of this page is there), so it can never stay.
   const fresh = root.getAttribute("data-space") !== (view.space || "");
-  if (fresh) root.classList.add("new-space");
+  if (fresh) {
+    root.classList.add("space-arriving");
+    queueMicrotask(() => { root.getBoundingClientRect(); root.classList.remove("space-arriving"); });
+  }
   if (root.style.getPropertyValue("--accent") !== (space?.color || "#7a7a80")) root.style.setProperty("--accent", space?.color || "#7a7a80");
   setIf(root, "data-space", view.space || "");
   root.classList.toggle("alone", !!view.alone);
@@ -294,7 +303,6 @@ function render(next) {
     spaceSound(b, s);
   })));
 
-  if (fresh) { root.getBoundingClientRect(); root.classList.remove("new-space"); } // once what is new has its style, without the fade
   for (const id of kept.keys()) if (!drawn.has(id)) kept.delete(id);
   const keys = new Set(view.folders.map(f => f.key));
   if (renameNext) for (const k of keys) if (!folderKeys.has(k)) { renameNext = false; rename(k); }

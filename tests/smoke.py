@@ -1420,8 +1420,8 @@ def alone_spaces(m):
       o.disconnect();
       const folders = list.querySelectorAll(".folder").length;
       if (made) { send({type: "deleteFolder", key: made}); await wait(800); }
-      return {seen, folders, made: !!made};""")
-    check("a space comes in at once, its folders too", r["folders"] and r["seen"] and min(r["seen"]) == 1, str(r))
+      return {seen, folders, made: !!made, marked: [...doc.documentElement.classList].filter(c => c !== "alone")};""")
+    check("a space comes in at once, its folders too, and nothing stays marked", r["folders"] and r["seen"] and min(r["seen"]) == 1 and r["marked"] == [], str(r))
     # What you click shows as selected at once, and the view then agrees.
     r = sidebar_page(m, """
       const rows = [...doc.querySelectorAll("#tabs .tab")].filter(e => e.offsetParent && e.querySelector(".title").textContent !== "Tidier");
@@ -3038,6 +3038,7 @@ def alone_sound(m):
     # A redraw touches only what changed (sidebar.js): a clock or a chat badge in the space
     # shown rewrote every row's and tile's tooltip and folder on each view, some 230 at a time.
     r = sidebar_page(m, FIND + f"""const ticking = () => {TICKING}; await until(ticking);
+      await until(() => !doc.getElementById("note").classList.contains("shown"), 15000); // the line about the folder deleted above goes by itself, which is a change
       const touched = new Set(); let records = 0;
       const where = n => {{ const e = n.nodeType === 1 ? n : n.parentElement; const at = e?.closest?.("[data-tab], [data-folder-head], .space"); return at ? (at.dataset.tab ?? at.dataset.folderHead ?? at.dataset.space) : (e?.id || e?.tagName); }};
       const o = new page.MutationObserver(list => {{ for (const x of list) {{ records++; touched.add(where(x.target)); }} }});

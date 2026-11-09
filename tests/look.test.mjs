@@ -51,3 +51,21 @@ test("the command bar is drawn from the same names: no colours of its own, and d
   // No text characters standing in for icons, which come in other sizes and weights.
   assert.doesNotMatch(read("commandbar/commandbar.js"), /["'][›⌕＋▾→]["']/);
 });
+
+test("a class the sidebar puts on the whole page is no element's own class", () => {
+  // A space switch once marked html with "new-space", which is also the round button for a
+  // new space: until the mark went, the whole sidebar was laid out as that button.
+  const files = ["sidebar/sidebar.html", ...[...read("sidebar/sidebar.html").matchAll(/<script src="([^"]+)"/g)].map(m => "sidebar/" + m[1])];
+  const code = files.map(read).join("\n");
+  const onPage = new Set([...code.matchAll(/(?:root|documentElement)\.classList\.(?:add|toggle|remove)\("([\w-]+)"/g)].map(m => m[1]));
+  assert.ok(onPage.has("alone") && onPage.has("space-arriving"), [...onPage].join());
+  // Classes given to elements: el("tag", "a b"), class="a b", className = "a b", classList.add("a") on anything else.
+  const given = [
+    ...[...code.matchAll(/\bel\("\w+", "([\w -]+)"/g)].map(m => m[1]),
+    ...[...code.matchAll(/class="([\w -]+)"/g)].map(m => m[1]),
+    ...[...code.matchAll(/className = "([\w -]+)"/g)].map(m => m[1]),
+    ...[...code.matchAll(/(?<!root|documentElement)\.classList\.(?:add|toggle)\("([\w-]+)"/g)].map(m => m[1]),
+  ].flatMap(c => c.split(/\s+/));
+  assert.ok(given.includes("new-space"), "the button for a new space is found");
+  for (const name of onPage) assert.ok(!given.includes(name), `.${name} is the page's and an element's`);
+});

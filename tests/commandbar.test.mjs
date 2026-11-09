@@ -418,12 +418,13 @@ test("the keys typed before the bar has the keyboard are caught where they go, a
   x.send({ type: "bar:early", pressedAt, text: "ferry", enter: { inNewTab: false }, escape: false });
   await wait(50);
   const early = page.sent.filter(m => m.type === "early");
-  assert.deepEqual(early.map(m => [m.text, m.enter?.inNewTab, m.escape]), [["ferry", false, false]]);
-  assert.ok(page.sent.indexOf(early[0]) > 0, "after the rows, so an Enter has something to choose");
+  assert.deepEqual(early.map(m => [m.text, m.enter?.inNewTab, m.escape]), [["ferry", false, false]], "once, and only this press's");
   x.kill();
 });
 
-test("caught before the page is there, they wait for it", async () => {
+test("caught before the page is there, they wait for it, and go before the rows", async () => {
+  // The page keeps an Enter until the rows are there (commandbar/commandbar.js), so the
+  // letters typed first must be there before them: "ferry" + Enter is not a search for "rry".
   const ff = new FakeFirefox();
   const { w } = world(ff);
   const x = await started(ff);
@@ -433,8 +434,8 @@ test("caught before the page is there, they wait for it", async () => {
   x.send({ type: "bar:early", pressedAt, text: "w" });
   const page = connectPage(ff, x);
   for (let i = 0; i < 100 && page.sent.length < 2; i++) await wait(50);
-  assert.deepEqual(page.sent.map(m => m.type ?? "rows"), ["rows", "early"]);
-  assert.equal(page.sent[1].text, "w");
+  assert.deepEqual(page.sent.map(m => m.type ?? "rows"), ["early", "rows"]);
+  assert.equal(page.sent[0].text, "w");
   x.kill();
 });
 

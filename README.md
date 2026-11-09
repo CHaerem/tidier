@@ -296,9 +296,11 @@ Firefox takes a moment to make the bar's window and give it the keyboard. What y
 before that is caught where it went and handed to the bar (`barkeys.js`, in pages while
 Tidier has the access to all websites, and in its sidebar), so nothing lands in the page.
 Without that access, the first letters typed at once after the key still go to the page.
-A window made in advance and only shown would be quicker, but cannot be hidden: Firefox
-keeps every window an extension moves on the screen, and a minimised one comes back out of
-the Dock slowly.
+Keys typed in the instant between the new window taking the keyboard and its page being
+there (some tens of milliseconds, several hundred on a busy machine) reach neither, and no
+extension can see them. A window made in advance and only shown would close that gap, but
+cannot be hidden: Firefox keeps every window an extension places or moves on a screen, and a
+minimised one goes into the Dock and comes back out of it slowly.
 
 ## The same on every machine, and spaces hidden on one
 

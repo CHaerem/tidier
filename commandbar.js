@@ -537,13 +537,13 @@ browser.runtime.onConnect.addListener(port => {
   }
   bar.id = windowId; // the page can be here before windows.create has answered
   barCatchKeys(bar.caughtIn, bar, "bar:stop"); // its field has the keyboard (commandbar/commandbar.js focuses it first)
-  // (The port can be gone by then: the key pressed again, say.) What was typed before the
-  // page had the keyboard goes after the rows, so an Enter in it has rows to choose from.
-  bar.snapshot.then(snapshot => {
-    port.postMessage(snapshot ?? { pressedAt: bar.pressedAt, items: [], spaces: [] });
-    bar.port = port;
-    if (bar.early) port.postMessage(bar.early);
-  }).catch(() => {});
+  // What was typed before the page had the keyboard goes to it as soon as it is known, also
+  // before the rows: the page keeps an Enter until it has rows to choose from, and it must
+  // have the first letters before it chooses. (The port can be gone by then: the key pressed
+  // again, say.)
+  bar.port = port;
+  if (bar.early) port.postMessage(bar.early);
+  bar.snapshot.then(snapshot => port.postMessage(snapshot ?? { pressedAt: bar.pressedAt, items: [], spaces: [] })).catch(() => {});
   port.onMessage.addListener(async msg => {
     if (msg.type === "close") await barClose(bar, msg.refocus);
     else if (msg.type === "asked") await browser.storage.local.set({ [BAR_ASKED]: true });
