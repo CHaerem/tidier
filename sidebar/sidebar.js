@@ -502,7 +502,9 @@ function render(next) {
   // box would get it back only later, with its name still all selected, and the letters typed
   // meanwhile went elsewhere, so the last few would silently become the name (once "re").
   // The folder keeps its name, and you rename it, which shows that nothing was taken.
-  if (renameNext) for (const k of keys) if (!folderKeys.has(k)) { renameNext = false; if (document.hasFocus?.() ?? true) rename(k); }
+  // (A page not on show has no keyboard to lose and nothing over it: Tidier's sidebar page
+  // in a background tab, as the smoke test has it, which is never focused.)
+  if (renameNext) for (const k of keys) if (!folderKeys.has(k)) { renameNext = false; if ((document.hasFocus?.() ?? true) || document.hidden) rename(k); }
   folderKeys = keys;
 }
 

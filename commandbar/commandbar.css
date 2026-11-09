@@ -45,10 +45,10 @@ body { display: flex; flex-direction: column; overflow: hidden; color: var(--tex
 .row img, .row .letter, .icon { flex: none; width: var(--icon); height: var(--icon); }
 .row img { filter: drop-shadow(0 0 .6px light-dark(rgb(40 30 20 / .3), rgb(255 255 255 / .5))); }
 .row .letter {
-  display: grid; place-items: center; border-radius: 5px;
+  display: grid; place-items: center; border-radius: var(--radius-sm);
   background: color-mix(in srgb, var(--accent) 20%, var(--tile));
   color: color-mix(in srgb, var(--accent) 45%, var(--text));
-  font-size: 10px; line-height: 1; font-weight: 600; text-transform: uppercase;
+  font-size: calc(var(--icon) * .625); line-height: 1; font-weight: 600; text-transform: uppercase;
 }
 .icon { background: currentColor; mask: var(--mask) center / contain no-repeat; color: var(--muted); }
 .row.selected .icon { color: var(--text); }
