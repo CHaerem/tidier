@@ -189,7 +189,9 @@ export class FakeFirefox {
       getTabValue: async (id, k) => { if (ff.hooks.getTabValue) await ff.hooks.getTabValue(id, k); need(id); return ff.values.get(id)?.[k]; },
       setTabValue: async (id, k, v) => { need(id); const o = ff.values.get(id) || {}; o[k] = v; ff.values.set(id, o); },
       removeTabValue: async (id, k) => { need(id); const o = ff.values.get(id); if (o) delete o[k]; },
-      getWindowValue: async (id, k) => ff.windowValues?.[`${id} ${k}`], setWindowValue: async (id, k, v) => { (ff.windowValues ??= {})[`${id} ${k}`] = v; },
+      // As Firefox: a window that is gone has no values, and asking for one is refused.
+      getWindowValue: async (id, k) => { if (!ff.wins.has(id)) throw new Error(`Invalid window ID: ${id}`); return ff.windowValues?.[`${id} ${k}`]; },
+      setWindowValue: async (id, k, v) => { if (!ff.wins.has(id)) throw new Error(`Invalid window ID: ${id}`); (ff.windowValues ??= {})[`${id} ${k}`] = v; },
       getRecentlyClosed: async () => ff.recentlyClosed || [],
       forgetClosedTab: async (windowId, sessionId) => { ff.recentlyClosed = (ff.recentlyClosed || []).filter(c => c.tab?.sessionId !== sessionId); },
       forgetClosedWindow: async sessionId => { ff.recentlyClosed = (ff.recentlyClosed || []).filter(c => c.window?.sessionId !== sessionId); },
