@@ -21,7 +21,7 @@ on the second Mac (PLAN.md, part C).
 |---|---|---|---|
 | Vertical tab list in a sidebar | Z A S | Done | Tidier alone, checked; Sidebery in the daily browser |
 | Unloaded tabs shown dimmed | Z A S | Done | in Tidier's sidebar; seen in the pictures of tools/shoot.py |
-| Close button, middle click to close | Z A S | Done | in Tidier's sidebar |
+| Close button, middle click to close | Z A S | Done | in Tidier's sidebar; checked with real clicks: a middle click closes also with Firefox's autoscroll on, a double click on × closes one tab, and the rows stay where they are until the pointer leaves the list |
 | New tab button at the top of the list | A Z | Done | Tidier alone |
 | Drag tabs to reorder, into and out of folders | Z A S | Done | Tidier alone, checked, every window follows; also to a place among the essentials and to a space; marks only where a drop does something; the list scrolls at its edges |
 | Select several tabs (⇧/⌘ click) and act on them | Z A S | Done | Tidier alone, checked: move, close, drag and the menu; the selection lives in the sidebar only |
@@ -78,7 +78,7 @@ on the second Mac (PLAN.md, part C).
 | Kept tabs (Arc's pinned section, Zen's pinned tabs): ⌘W unloads, back to the saved address | Z A | Done | tabs in folders ("saved tabs") |
 | A divider between kept tabs and today's tabs | A Z | Done | in Tidier's sidebar |
 | Clear today's tabs in one go | A | Done | Tidier alone, checked: from the list's menu, the space's menu and the line between folders and tabs; one line to undo it, no question |
-| Undo after closing several tabs or deleting a folder | S | Done | Tidier alone, checked: one quiet line |
+| Undo after closing several tabs or deleting a folder | S | Done | Tidier alone, checked: one quiet line, in a room of its own above the bar, that waits while the pointer or the keyboard is on it; ⌘Z in the sidebar and Undo in the command bar while it shows |
 
 ## Folders
 

@@ -51,12 +51,15 @@ function drawMenu(items, back = null, byKey = false) {
       dot.style.setProperty("--color", color);
       b.prepend(dot);
     }
+    // Every item takes away what is under the pointer: the menu goes, or another list is
+    // drawn in its place, so a double click's second click would choose from that list, or
+    // reach the row under the menu (secondclick.js).
     if (Array.isArray(act)) {
       b.classList.add("more");
       b.setAttribute("aria-haspopup", "menu");
-      b.onclick = ev => drawMenu(act, { label, items }, !ev.detail);
+      b.onclick = secondClick.acts(ev => drawMenu(act, { label, items }, !ev.detail));
     } else {
-      b.onclick = () => { closeMenu(); act(); };
+      b.onclick = secondClick.acts(() => { closeMenu(); act(); });
     }
     return b;
   });
@@ -64,7 +67,7 @@ function drawMenu(items, back = null, byKey = false) {
     const b = el("button", "item back");
     b.setAttribute("role", "menuitem");
     b.append(el("span", "label", back.label));
-    b.onclick = ev => drawMenu(back.items, null, !ev.detail);
+    b.onclick = secondClick.acts(ev => drawMenu(back.items, null, !ev.detail));
     rows.unshift(b, el("div", "line"));
   }
   menu.replaceChildren(...rows);
@@ -107,6 +110,7 @@ function clickOutsideMenu(e) {
   if (!outsideMenu(e)) return;
   e.stopImmediatePropagation();
   e.preventDefault();
+  secondClick.acted(e); // and a double click there is still that one click
   closeMenu();
 }
 addEventListener("click", clickOutsideMenu, true);

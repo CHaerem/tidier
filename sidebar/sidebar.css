@@ -77,7 +77,7 @@ img { filter: drop-shadow(0 0 .6px light-dark(rgb(40 30 20 / .3), rgb(255 255 25
 #tabs:focus-visible { outline: none; } /* a scrolling list takes the keyboard's focus; the keys have .cursor */
 #tabs {
   flex: 1; min-height: 0; overflow: hidden auto;
-  margin: -2px calc(-1 * var(--pad)) 0; padding: 14px var(--pad) 20px;
+  margin: -2px calc(-1 * var(--pad)) 0; padding: 14px var(--pad) calc(20px + var(--held, 0px)); /* --held: note.js */
   scroll-padding: 14px 0 22px; /* so the keys' place, scrolled to, stays clear of the fades */
   scrollbar-width: thin; scrollbar-color: var(--line) transparent;
   mask-image: linear-gradient(to bottom, transparent, #000 14px, #000 calc(100% - 20px), transparent);
@@ -108,17 +108,21 @@ img { filter: drop-shadow(0 0 .6px light-dark(rgb(40 30 20 / .3), rgb(255 255 25
 }
 
 /* A long title fades out, as in Arc, rather than ending in dots; and under the mouse
- * it fades sooner, so the close button has room without anything in the row moving. */
+ * it fades sooner, so the close button has room without anything in the row moving. A row
+ * with a speaker has its title end before it, so there the close button has its room already. */
 .row .title {
   flex: 1; min-width: 0; white-space: nowrap; overflow: hidden;
   mask-image: linear-gradient(to right, #000 calc(100% - 20px), transparent);
 }
-.row.tab:hover .title { mask-image: linear-gradient(to right, #000 calc(100% - 42px), transparent calc(100% - 20px)); }
+.row.tab:hover:not(:has(> .sound)) .title { mask-image: linear-gradient(to right, #000 calc(100% - 42px), transparent calc(100% - 20px)); }
 .row.unloaded .title { color: var(--muted); transition: color var(--quick); }
 .row.unloaded:hover .title { color: var(--text); }
+/* Just unloaded with its × under the mouse (a saved tab, sidebar.js): it stays as quiet as it
+ * now is until the mouse leaves, so you can see that the click did something. */
+.row.unloaded.still-dim:hover :is(img, .letter) { opacity: .66; }
+.row.unloaded.still-dim:hover .title { color: var(--muted); }
 
-/* The close button lies over the row's end, so a mark for sound can be at the end when
- * the mouse is not there. */
+/* The close button lies over the row's end, where it shows under the mouse. */
 .row .close, .row .sound, #new-folder {
   width: var(--button); height: var(--button); flex: none; padding: 0; border: 0;
   border-radius: var(--radius-sm); background: none; color: var(--muted);
@@ -137,10 +141,12 @@ img { filter: drop-shadow(0 0 .6px light-dark(rgb(40 30 20 / .3), rgb(255 255 25
 .row:hover .close { visibility: visible; opacity: 1; }
 .row .close:hover, .row .sound:hover, #new-folder:hover { background: var(--press); color: var(--text); }
 
-/* Sound: where the close button is, and one place in when that comes (its speaker is
- * drawn by sound.js, see below). */
+/* Sound: one place in from the end, where it always is, so the close button has the end to
+ * itself, under the mouse and at rest. It never moves: a click on the speaker you see mutes,
+ * and never lands on a close button that came in its place (its speaker is drawn by sound.js,
+ * see below). The space it leaves at the end is the close button's, as in every row. */
 .row .sound { margin-right: -3px; }
-.row.tab:hover .sound { transform: translateX(-24px); }
+.row.tab .sound { margin-right: calc(var(--button) - 1px); }
 
 /* --- Folders: an icon in the icons' column, its tabs indented only in their content,
  * so every card in the list has the same two edges. ------------------------------- */
@@ -159,7 +165,10 @@ img { filter: drop-shadow(0 0 .6px light-dark(rgb(40 30 20 / .3), rgb(255 255 25
 /* A closed folder still shows the selected tab under its head, and only that, so you
  * can always see where you are. Nothing unfolds and nothing is stored: it goes when you
  * leave the tab. (With Sidebery the whole box stays hidden, as ever.) */
-.folder.collapsed > .children > .tab:not(.active), html:not(.alone) .folder.collapsed > .children { display: none; }
+.folder.collapsed > .children > .tab:not(.active, .lingers), html:not(.alone) .folder.collapsed > .children { display: none; }
+/* Where a row was, while the pointer is still in the list (sidebar.js): the rows around it
+ * stay where they were. Events go through it to the list, as on its empty part. */
+#tabs .room { height: var(--row); margin-bottom: var(--row-gap); pointer-events: none; }
 .folder.collapsed > .children > .tab { scroll-margin-top: calc(var(--row) + var(--row-gap)); } /* scrolled into view, it brings its head along */
 .folder > .children { transition: opacity var(--soft); @starting-style { opacity: 0; } }
 .row .count { flex: none; min-width: var(--icon); text-align: center; color: var(--muted); font-size: var(--size-small); font-variant-numeric: tabular-nums; }
@@ -244,6 +253,8 @@ img { filter: drop-shadow(0 0 .6px light-dark(rgb(40 30 20 / .3), rgb(255 255 25
 }
 }
 .notice[hidden], #menu[hidden] { display: none; }
+/* A notice you dismissed (sidebar/isolation.js): it fades, and its room goes once the pointer has. */
+.notice.going { opacity: 0; pointer-events: none; transition: opacity var(--soft); }
 /* Only a question that takes your click: the button is the whole notice. */
 #hiding { padding: 0; background: none; margin-top: 4px; }
 .notice button {
@@ -330,9 +341,10 @@ img { filter: drop-shadow(0 0 .6px light-dark(rgb(40 30 20 / .3), rgb(255 255 25
 .drop-right::after { right: -4px; }
 #space-name.drop-into { outline-offset: 1px; } /* its text sits close to its top */
 
-/* The quiet line (note.js). It lies over the end of the list, so nothing moves when it
- * comes or goes, and it is gone by itself, so what it covers is not covered for long. */
-#note { position: relative; height: 0; }
+/* The quiet line (note.js), in a room of its own between the list and the bar, so it
+ * covers no row: the list ends above it, and no row moves when it comes or goes. */
+#note { position: relative; flex: none; height: 0; }
+#note.in-room { height: 32px; }
 #note .line {
   position: absolute; left: 0; right: 0; bottom: 4px; z-index: 5;
   display: flex; align-items: center; gap: 6px; height: 28px; padding: 0 3px 0 10px;
@@ -342,6 +354,7 @@ img { filter: drop-shadow(0 0 .6px light-dark(rgb(40 30 20 / .3), rgb(255 255 25
   opacity: 0; visibility: hidden; transition: opacity .2s ease, visibility 0s .2s; /* out of reach of a key once faded */
 }
 #note.shown .line { opacity: 1; visibility: visible; transition: opacity .2s ease; }
+#note.faded .line { visibility: hidden; } /* note.js: out of reach once faded, also where Firefox is not drawing */
 #note .text { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 #note .act {
   flex: none; border: 0; background: none; color: var(--text); font: inherit; font-weight: 500;
@@ -383,7 +396,7 @@ img { filter: drop-shadow(0 0 .6px light-dark(rgb(40 30 20 / .3), rgb(255 255 25
 .sound.muted { color: var(--muted); }
 .sound:hover { background: var(--hover); }
 .row .sound { flex: none; width: 20px; height: 20px; }
-.head .sound + .count { min-width: 20px; text-align: right; } /* in line with the rows' speakers */
+.head .sound + .count { min-width: 13px; text-align: right; } /* so that its speaker is in line with the rows' */
 .tile, .space { position: relative; }
 .tile .sound { position: absolute; bottom: 1px; right: 1px; width: 16px; height: 16px; }
 .tile .speaker { width: 11px; height: 11px; }

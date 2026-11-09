@@ -57,13 +57,14 @@ function sessionsRestore(ff, x) {
 
 // The sidebar's end of it: what a window's sidebar sends, and every view it is sent.
 function sidebar(x, windowId) {
-  const listeners = [];
+  const listeners = [], gone = [];
   const port = {
     name: "sidebar", sender: { id: "tidier" }, views: [],
     onMessage: { addListener: f => listeners.push(f) },
-    onDisconnect: { addListener() {} },
+    onDisconnect: { addListener: f => gone.push(f) },
     postMessage(v) { this.views.push(v); },
     send(msg) { for (const f of listeners) f(msg); },
+    close() { for (const f of gone) f(); },
   };
   for (const { f } of x.b.runtime.onConnect.ls) f(port);
   port.send({ type: "hello", windowId });
@@ -340,6 +341,73 @@ test("the line goes by itself, and at the next say", async () => {
   x.kill();
 });
 
+test("the line waits while the pointer or the keyboard is on it, and a while after", async () => {
+  const ff = new FakeFirefox();
+  const { w } = twoWindows(ff, ["a", "b", "c", "d"]);
+  const x = await alone(ff);
+  const port = sidebar(x, w.id);
+  await closed(x, port, ff, w, ["b", "c"]);
+  const { id } = noteIn(x, w.id);
+  await wait(4000);
+  port.send({ type: "holdNote", note: id, held: true });
+  await wait(15000);
+  assert.equal(noteIn(x, w.id)?.id, id, "held: it does not go");
+  port.send({ type: "holdNote", note: id, held: false });
+  await wait(1000);
+  assert.equal(noteIn(x, w.id)?.id, id, "left: what was left of its time");
+  await wait(6000);
+  assert.equal(noteIn(x, w.id), null, "and then it goes");
+  // Left with less than NOTE_AFTER_MS to go, it still has that much.
+  await closed(x, port, ff, w, ["d", "a"]);
+  const next = noteIn(x, w.id).id;
+  await wait(9500);
+  port.send({ type: "holdNote", note: next, held: true });
+  port.send({ type: "holdNote", note: next, held: true }); // told twice: still one hold
+  port.send({ type: "holdNote", note: next, held: false });
+  await wait(1500);
+  assert.equal(noteIn(x, w.id)?.id, next);
+  await wait(1000);
+  assert.equal(noteIn(x, w.id), null);
+  port.send({ type: "holdNote", note: next, held: true }); // gone: nothing to hold, and no timer left
+  assert.equal(x.js("quietNotes").size, 0);
+  // The sidebar closed with the pointer on the line: it goes on by itself.
+  x.js(`say(${w.id}, "Folder deleted", { undo: async () => {} })`);
+  const last = noteIn(x, w.id).id;
+  port.send({ type: "holdNote", note: last, held: true });
+  port.close();
+  await wait(1000);
+  assert.equal(noteIn(x, w.id)?.id, last);
+  await wait(10000);
+  assert.equal(noteIn(x, w.id), null, "not held for good by a sidebar that is gone");
+  x.kill();
+});
+
+test("Undo clicked as the line fades still brings them back, once", async () => {
+  const ff = new FakeFirefox();
+  const { w } = twoWindows(ff, ["a", "b", "c"]);
+  const x = await alone(ff);
+  const port = sidebar(x, w.id);
+  await closed(x, port, ff, w, ["b", "c"]);
+  const { id } = noteIn(x, w.id);
+  await until(() => !noteIn(x, w.id), "the line to go by itself");
+  port.send({ type: "undo", note: id }); // on its way as the line went
+  port.send({ type: "undo", note: id });
+  await until(() => keysOf(ff, w.id).length === 3, "the tabs back");
+  await wait(1000);
+  assert.deepEqual(keysOf(ff, w.id), ["a", "b", "c"]);
+  assert.equal(x.js("goneNotes").size, 0, "nothing kept once used");
+  // Long after it went, a click finds nothing.
+  await closed(x, port, ff, w, ["b", "c"]);
+  const late = noteIn(x, w.id).id;
+  await until(() => !noteIn(x, w.id), "the line to go by itself");
+  await wait(2000);
+  assert.equal(x.js("goneNotes").size, 0, "its moment is over, and nothing is kept");
+  port.send({ type: "undo", note: late });
+  await wait(1000);
+  assert.deepEqual(keysOf(ff, w.id), ["a"]);
+  x.kill();
+});
+
 test("a closed window's line is forgotten", async () => {
   const ff = new FakeFirefox();
   const w = ff.addWindow({ focused: true });
@@ -495,6 +563,23 @@ test("undo of a deleted live folder brings its tabs back too", async () => {
   assert.equal(ff.synced.pr.parentKey, "F");
   assert.deepEqual(keysOf(ff, w.id), ["a", "pr"]);
   assert.deepEqual(keysOf(ff, other.id), ["a", "pr"]);
+  x.kill();
+});
+
+test("a deleted folder's tabs stay where it was, first among today's tabs, in every window", async () => {
+  const ff = new FakeFirefox();
+  ff.store.syncedTabs = { F: folder("Work", 1), s: entry(addr("s"), { parentKey: "F" }), t: entry(addr("t"), { parentKey: "F" }) };
+  // A tab moved into a folder lies last in the window.
+  const { w, other } = twoWindows(ff, ["a", "b", "s", "t"], { active: "a" });
+  const x = await alone(ff);
+  const port = sidebar(x, w.id);
+  port.send({ type: "deleteFolder", key: "F" });
+  await until(() => keysOf(ff, w.id).join() === "s,t,a,b" && keysOf(ff, other.id).join() === "s,t,a,b", "its tabs at the top of today's");
+  assert.equal(port.views.at(-1).tabs.map(t => t.title).join(), "s,t,a,b", "and drawn there");
+  await undoOf(x, w.id);
+  await wait(500);
+  assert.equal(ff.synced.s.parentKey, "F");
+  assert.deepEqual(keysOf(ff, w.id), ["a", "b", "s", "t"], "and Undo puts them back where they were");
   x.kill();
 });
 

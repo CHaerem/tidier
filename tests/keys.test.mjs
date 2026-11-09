@@ -223,6 +223,26 @@ test("in a small window the keys do nothing, and copying the address still does"
   x.kill();
 });
 
+test("copying the address says so on the quiet line, and a page with no address to copy says nothing", async () => {
+  const { x, ff, w, press } = await aWindow();
+  const copied = [];
+  x.ctx.navigator.clipboard = { writeText: async t => { copied.push(t); } };
+  await press("copy-url");
+  assert.equal(copied.length, 1);
+  assert.equal(x.js("noteFor")(w.id)?.text, "Address copied");
+  await wait(3000);
+  assert.equal(x.js("noteFor")(w.id)?.text, "Address copied");
+  await wait(1500);
+  assert.equal(x.js("noteFor")(w.id), null, "a word only, gone sooner than a line with Undo");
+  const blank = ff.addTab(w.id, { url: "about:newtab", active: true });
+  ff.select(blank.id);
+  await wait(100);
+  await press("copy-url");
+  assert.equal(copied.length, 1);
+  assert.equal(x.js("noteFor")(w.id), null);
+  x.kill();
+});
+
 test("a private window's tab cannot be made an essential by a key", async () => {
   const { x, ff, press, selected } = await aWindow();
   const hidden = ff.addWindow();

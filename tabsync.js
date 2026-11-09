@@ -383,7 +383,8 @@ browser.runtime.onMessage.addListener((msg, sender) => {
     activeSpace, newTabs, firstPage, showTimers, closedIn, sidebarPorts, viewTimers, viewRest, viewsBuilding, requestOfTab,
     unruled,
     earlyKeys,
-    quietNotes, closeGroups,
+    quietNotes, goneNotes, closeGroups,
+    removedTabs, restoredKeys, // sidebar-view.js
     closingOrder,
     successorDue,
     newsMarks, newsSeen,
@@ -540,6 +541,9 @@ async function register(tabId) {
   if (!win || win.type !== "normal" || win.incognito) return;
   const all = await getSynced();
   if (await reopenedSaved(tab, all)) return;
+  // A saved tab removed for good and brought back with ⌘⇧T goes back into its folder
+  // (archivelist.js). Asked here, before the tab is asked again below.
+  const backInto = tidierAlone ? await folderToGoBackTo(all, tab) : null;
   // Asked again, with nothing to wait for from here until its key is set: pinned just
   // now, its event has found no key, so nothing would take it out of tab sync again. It
   // would stay an essential with a ghost in every other window.
@@ -547,7 +551,7 @@ async function register(tabId) {
   if (!tab || syncKeyByTab.has(tab.id) || !syncable(tab)) return;
   const key = crypto.randomUUID();
   // Sidebery keeps a tab's opener equal to its parent; the opener alone says nothing.
-  const parentKey = tab.openerTabId && !tidierAlone ? syncKeyByTab.get(tab.openerTabId) || null : null;
+  const parentKey = tab.openerTabId && !tidierAlone ? syncKeyByTab.get(tab.openerTabId) || null : backInto;
   const entry = { url: tab.url, title: tab.title, icon: tab.favIconUrl, cookieStoreId: tab.cookieStoreId, parentKey, group: isSideberyGroup(tab.url), added: Date.now() };
   all[key] = entry;
   noteSaved(all, [key]); // nothing else has changed, and this is once per new tab

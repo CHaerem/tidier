@@ -48,7 +48,7 @@ function ruleLine(rule, save) {
   const line = el("div", { className: "line" }, text, space, remove, why);
   text.oninput = showWhy;
   text.onchange = space.onchange = () => { showWhy(); save(); };
-  remove.onclick = () => { line.remove(); save(); };
+  remove.onclick = secondClick.acts(() => { line.remove(); save(); }); // the next rule comes up under the pointer: a double click removes one (sidebar/secondclick.js)
   return line;
 }
 $("add-rule").onclick = () => {

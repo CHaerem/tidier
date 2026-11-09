@@ -101,6 +101,12 @@ function icon(item) {
   return el("span", "letter", (item.title || "?").trim()[0] || "?");
 }
 
+// A middle press in a list that can scroll starts Firefox's autoscroll (general.autoScroll,
+// on by default on a Mac), and then no middle click comes at all, and the next click only
+// ends the autoscroll. Firefox's own tab strip keeps it off its tabs the same way. (Not in
+// a row's rename box, which starts no autoscroll, and which that would take the focus from.)
+const noAutoscroll = e => { if (e.button === 1 && !e.target.closest?.("input")) e.preventDefault(); };
+
 // --- Essentials ----------------------------------------------------------------
 function tile(item) {
   const e = keep("tile:" + item.id, () => {
@@ -108,6 +114,7 @@ function tile(item) {
     t.dataset.tab = item.id;
     t.draggable = !!view?.alone;
     t.onclick = () => send({ type: "select", tabId: item.id });
+    t.onmousedown = noAutoscroll;
     t.onauxclick = e => { if (e.button === 1) send({ type: "close", tabId: item.id }); };
     t.oncontextmenu = e => { if (view?.alone) openTabMenu(e, item.id); else browser.menus.overrideContext({ context: "tab", tabId: item.id }); };
     t.ondragstart = e => startDrag(e, { kind: "essential", tabId: item.id });
@@ -126,18 +133,27 @@ function row(item, folderKey) {
     const e = el("div");
     e.dataset.tab = item.id;
     e.draggable = !!view?.alone;
-    e.onclick = () => send({ type: "select", tabId: item.id });
-    e.onauxclick = ev => { if (ev.button === 1) send({ type: "close", tabId: item.id }); };
+    e.onclick = ev => { if (byHand(ev)) pickedByHand = true; send({ type: "select", tabId: item.id }); };
+    e.onmousedown = noAutoscroll;
+    e.onmouseleave = () => { if (stillDim.delete(e.dataset.tab)) e.classList.remove("still-dim"); };
+    e.onauxclick = secondClick.acts(ev => { if (ev.button === 1) closeByPointer(item.id, ev); });
     e.oncontextmenu = ev => { if (view?.alone) openTabMenu(ev, item.id); else browser.menus.overrideContext({ context: "tab", tabId: item.id }); };
     e.ondragstart = ev => startDrag(ev, { kind: "tab", tabId: item.id });
     return e;
-  }, { ...item, tip: undefined }, e => { // a tooltip is not drawn: some pages change their address as you scroll, and a row drawn again can lose a click or a drag
+  }, { ...item, tip: undefined, folderKey: folderKey ?? null }, e => { // a tooltip is not drawn: some pages change their address as you scroll, and a row drawn again can lose a click or a drag
     e.className = "row tab" + (item.active ? " active" : "") + (item.loaded ? "" : " unloaded");
     const parts = [icon(item), el("span", "title", item.title)];
     parts.push(...soundMark(item));
     const close = el("button", "close", "×");
-    close.title = "Close";
-    close.onclick = ev => { ev.stopPropagation(); send({ type: "close", tabId: item.id }); };
+    close.title = closeTitle(item, folderKey);
+    close.onclick = secondClick.acts(ev => {
+      ev.stopPropagation();
+      // A loaded saved tab only unloads, in its place. An unloaded row lights up under the
+      // mouse, so it would look as if nothing happened, and a second click would remove it:
+      // it stays as quiet as it now is until the mouse leaves it.
+      if (item.loaded && savedIn(folderKey) && byHand(ev)) stillDim.add(String(item.id));
+      closeByPointer(item.id, ev);
+    });
     parts.push(close);
     e.replaceChildren(...parts);
   });
@@ -146,8 +162,81 @@ function row(item, folderKey) {
   return r;
 }
 
+// What × does says itself, as it is not the same on every row (closeAction, common.js): a
+// saved tab that is loaded only unloads, in its place, and a second click would remove it.
+// (A live folder's pull requests are not saved: the search decides what is in them.)
+const savedIn = folderKey => !!folderKey && !!view?.alone && !view.folders.find(f => f.key === folderKey)?.live;
+const closeTitle = (item, folderKey) => (!savedIn(folderKey) ? "Close" : item.loaded ? "Unload (it stays in the folder)" : "Remove from the folder");
+
+// --- A row you close keeps its room -----------------------------------------------
+// A row closed with the mouse (its ×, a middle click) leaves an empty room of its own
+// height while the pointer is in the list, so the row below does not slide up under the
+// pointer, and at the end of a scrolled list the rows above do not slide down; it closes
+// once the pointer has left the list. So does a row that a closed folder shows because its
+// tab was selected (sidebar.css): you selected another, and it stays until you leave.
+// Nothing else is held: what you did not point at goes at once. (Only for the real mouse:
+// a key has no place in the list, and a script's click is no pointer.)
+const byHand = e => e.isTrusted && e.detail > 0;
+let pickedByHand = false; // the last row selected was clicked with the mouse
+const tabsList = document.getElementById("tabs");
+const keepsRoom = new Set(); // tab ids closed with the pointer, as strings like dataset.tab
+const lingering = new Set(); // tab ids of rows a closed folder keeps showing for now
+const stillDim = new Set(); // tab ids of saved tabs just unloaded with their ×, until the mouse leaves them
+let roomsInSpace = null;
+const holding = () => tabsList.matches(":hover");
+function closeByPointer(id, e) {
+  if (byHand(e) && holding()) keepsRoom.add(String(id));
+  send({ type: "close", tabId: id });
+}
+// `nodes` for `parent`, with a room where a row has gone that is to keep one, after
+// whatever came before it. A row that comes in just there takes the room instead: a saved
+// tab closed while loaded becomes a new placeholder in its place (unloadSaved, tabsync.js),
+// and stays dim if it was to.
+function withRooms(parent, nodes) {
+  if (!holding() || !view?.alone) return nodes;
+  const wanted = new Set(nodes), out = [...nodes];
+  let at = 0;
+  for (const child of [...parent.children]) {
+    if (wanted.has(child)) { at = out.indexOf(child) + 1; continue; }
+    let room = child.classList.contains("room") ? child : null;
+    if (!room && keepsRoom.delete(child.dataset.tab)) {
+      room = el("div", "room");
+      if (stillDim.delete(child.dataset.tab)) room.dataset.dim = "1";
+    }
+    if (!room) continue;
+    const comes = out[at];
+    if (comes?.classList.contains("tab") && comes.parentNode !== parent) {
+      if (room.dataset.dim) stillDim.add(comes.dataset.tab);
+      continue;
+    }
+    out.splice(at++, 0, room);
+  }
+  return out;
+}
+function letRoomsGo() {
+  for (const room of tabsList.querySelectorAll(".room")) room.remove();
+  for (const row of tabsList.querySelectorAll(".lingers, .still-dim")) row.classList.remove("lingers", "still-dim");
+  keepsRoom.clear();
+  lingering.clear();
+  stillDim.clear();
+  tabsList.style.removeProperty("--held"); // the end the quiet line's room left (note.js)
+}
+tabsList.addEventListener("mouseleave", letRoomsGo);
+// After a view: the row a closed folder showed for the selected tab, which is no longer
+// selected, stays while the pointer is in the list. (Its draw resets its classes.)
+let selectedRow = null;
+function keepLingering() {
+  const was = selectedRow;
+  selectedRow = tabsList.querySelector(".tab.active")?.dataset.tab ?? null;
+  if (was && was !== selectedRow && pickedByHand && holding() && kept.get("tab:" + was)?.closest(".folder.collapsed")) lingering.add(was);
+  if (was !== selectedRow) pickedByHand = false;
+  for (const id of lingering) kept.get("tab:" + id)?.classList.add("lingers");
+  for (const id of stillDim) kept.get("tab:" + id)?.classList.add("still-dim");
+}
+
 // --- Folders -------------------------------------------------------------------
 const DOUBLE_CLICK_MS = 500; // the longest a second click usually takes (a Mac's default)
+const FOLD_SHOWS_MS = 250; // most double clicks have their second click by then
 const foldsWaiting = new Map(); // folder key -> whether a click closed it, while it waits for a second click
 function folder(f) {
   const closed = view.alone ? foldsWaiting.get(f.key) ?? f.collapsed : collapsed.has(f.key);
@@ -155,33 +244,40 @@ function folder(f) {
     const b = el("div", "folder");
     const head = el("div", "row head");
     head.dataset.folderHead = f.key;
-    // A double click renames, but its first click has closed the folder by then, and that
-    // unloads the tabs in it (foldrest.js): a new name must not cost you your pages. So a
-    // click with the mouse closes the row at once and tells the background only once no
-    // second click has come. The two clicks of a double click cancel out, and nothing is
-    // sent. A click from the keys (detail 0) has no second one.
+    // A double click renames. Its first click would fold the folder, and that unloads the
+    // tabs in it (foldrest.js): a new name must not cost you your pages. So the background
+    // is told of a click with the mouse only once no second click has come, and the fold
+    // shows only after FOLD_SHOWS_MS: a double click mostly renames with nothing folding and
+    // unfolding first, and the list below stays where it is. A slower one undoes what showed,
+    // and nothing is sent. A click from the keys (detail 0) has no second one: it folds at once.
     // (Only the class and the count change here: Firefox sends no dblclick if the click
     // before it took the element under the pointer away, as drawing the head again would.)
-    let foldSoon = null;
+    let foldSoon = null, showSoon = null;
+    const show = closing => {
+      b.classList.toggle("collapsed", closing);
+      head.querySelector(".count").textContent = closing && b.lastChild.querySelectorAll(".tab").length || "";
+      if (closing) for (const room of b.querySelectorAll(".room")) room.remove(); // a closed folder shows no tab, nor where one was
+    };
+    const wait = () => { clearTimeout(foldSoon); clearTimeout(showSoon); };
+    const undoShown = () => { if (foldsWaiting.has(f.key)) show(!foldsWaiting.get(f.key)); foldsWaiting.delete(f.key); };
     head.onclick = e => {
       if (b.classList.contains("renaming")) return;
       if (view.alone) {
-        const closing = !b.classList.contains("collapsed");
+        wait();
+        const closing = !(foldsWaiting.get(f.key) ?? b.classList.contains("collapsed"));
         const fold = () => { foldsWaiting.delete(f.key); send({ type: "foldFolder", key: f.key, collapsed: closing }); };
-        clearTimeout(foldSoon);
-        if (!e.detail) return fold();
-        foldsWaiting.set(f.key, closing);
+        if (!e.detail) { show(closing); return fold(); }
+        if (e.detail > 1) return undoShown(); // the second of a double click, which renames
         foldSoon = setTimeout(fold, DOUBLE_CLICK_MS);
-        b.classList.toggle("collapsed", closing);
-        head.querySelector(".count").textContent = closing && b.lastChild.children.length || "";
+        showSoon = setTimeout(() => { foldsWaiting.set(f.key, closing); show(closing); }, FOLD_SHOWS_MS);
       } else {
         if (collapsed.has(f.key)) collapsed.delete(f.key); else collapsed.add(f.key);
         b.classList.toggle("collapsed");
       }
     };
     head.ondblclick = () => {
-      clearTimeout(foldSoon);
-      foldsWaiting.delete(f.key);
+      wait();
+      undoShown();
       if (view.alone && !f.live) rename(f.key);
     };
     head.oncontextmenu = e => { if (view.alone) openMenu(e, folderMenu(f.key, f.live)); };
@@ -196,7 +292,7 @@ function folder(f) {
     b.firstChild.title = f.name;
     b.firstChild.replaceChildren(el("span", "chevron", "▾"), el("span", "title", f.name), ...soundMark(f), el("span", "count", closed && f.tabs.length ? String(f.tabs.length) : ""));
   });
-  place(box.lastChild, f.tabs.map(t => row(t, f.key)));
+  place(box.lastChild, withRooms(box.lastChild, f.tabs.map(t => row(t, f.key))));
   return box;
 }
 
@@ -236,15 +332,22 @@ let folderKeys = new Set();
 function render(next) {
   view = next;
   drawn = new Set();
+  if (view.space !== roomsInSpace) { roomsInSpace = view.space; letRoomsGo(); } // another list: nothing in it was where you pointed
   const space = view.spaces.find(s => s.id === view.space);
   document.documentElement.style.setProperty("--accent", space?.color || "#7a7a80");
   document.documentElement.dataset.space = view.space || "";
   document.documentElement.classList.toggle("alone", !!view.alone);
 
   document.getElementById("hiding").hidden = !view.needsHiding;
+  // The lasting notice goes once you have clicked it (isolation.js): under the pointer it
+  // fades in place first, so the list does not come into its room at the moment of the click.
   const problem = document.getElementById("problem");
-  problem.hidden = !view.problem;
-  problem.textContent = view.problem || "";
+  if (view.problem) {
+    problem.classList.remove("going");
+    problem.hidden = false;
+    problem.textContent = view.problem;
+  } else if (!problem.hidden && problem.matches(":hover")) goQuietly(problem);
+  else if (!problem.classList.contains("going")) problem.hidden = true;
 
   place(document.getElementById("essentials"), view.essentials.map(tile));
   document.getElementById("space-name").textContent = view.alone ? space?.name || "" : "";
@@ -252,7 +355,8 @@ function render(next) {
   const list = view.folders.map(folder);
   if (view.folders.length && view.tabs.length) list.push(keep("divider", () => el("div", "divider"), 0, () => {}));
   list.push(...view.tabs.map(t => row(t, null)));
-  place(document.getElementById("tabs"), list);
+  place(tabsList, withRooms(tabsList, list));
+  keepLingering();
 
   place(document.getElementById("spaces"), view.spaces.map(s => keep("space:" + s.id, () => {
     const b = el("button", "space");

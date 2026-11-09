@@ -146,19 +146,12 @@ archivedBack.onclick = closeArchived;
 archivedBox.oncontextmenu = e => e.preventDefault(); // Firefox's menu for a page has nothing to offer here
 // A double click in the view is one click. The first closes the view or removes a row, and
 // the second would land on what has come under the pointer: another tab selected, "New tab"
-// pressed, the next row forgotten or opened, a folder renamed by the double click itself.
-let archivedClickIn = false; // the last single click was in the view
-const archivedSecondClick = e => {
-  if (!archivedClickIn || e.detail < 2) return false;
-  e.stopPropagation();
-  e.preventDefault();
-  return true;
-};
-addEventListener("dblclick", archivedSecondClick, true);
+// pressed, the next row forgotten or opened, a folder renamed by the double click itself
+// (secondclick.js holds it back).
 addEventListener("click", e => {
-  if (archivedSecondClick(e)) return;
-  archivedClickIn = archivedBox.contains(e.target);
-  if (archivedSpace && !archivedClickIn && !e.target.closest?.("#menu")) closeArchived();
+  const inView = archivedBox.contains(e.target);
+  if (inView) secondClick.acted(e);
+  if (archivedSpace && !inView && !e.target.closest?.("#menu")) closeArchived();
 }, true);
 
 // The list's keys work here too, and must not reach the list under it (keys.js): ↑ and ↓

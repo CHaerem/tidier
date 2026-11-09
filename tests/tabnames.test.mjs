@@ -169,6 +169,8 @@ test("an essential's name goes in its list entry, is shown everywhere, and its p
   await wait(200);
   assert.equal(a.last().essentials[0].title, "Jira");
   assert.equal(b.last().essentials[0].title, "Jira", "told every window, not only the one that asked");
+  assert.equal(a.last().note?.text, "Named “Jira”", "a tile shows no name: the line in the window it was named in says it");
+  assert.equal(b.last().note, null);
   assert.ok(ff.log.some(l => l[0] === "update-url" && l[1] === copy.id), "the placeholder takes the name as its own title");
   assert.equal((await x.send({ type: "ghostInfo", kind: "essential", key: "e" }, { tab: copy })).title, "Jira");
 
@@ -182,6 +184,7 @@ test("an essential's name goes in its list entry, is shown everywhere, and its p
   await wait(200);
   assert.ok(!("name" in (await x.js("getList()"))[0]));
   assert.equal(a.last().essentials[0].title, "Board - Jira", "named from the other window's copy, cleared the same way");
+  assert.equal(b.last().note?.text, "Named “Board - Jira”", "the name it has again");
   x.kill();
 });
 

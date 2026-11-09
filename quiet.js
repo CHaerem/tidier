@@ -3,9 +3,11 @@
 // which closes today's tabs of a space in one go.
 //
 // say() is the only way to the line: one note per window, shown for NOTE_MS or until
-// the next say, with at most one action. It is not the lasting notice (setNotice,
-// common.js), and nothing is kept of it afterwards. Its timer starts only from
-// something you did, so with nothing happening there is no work here.
+// the next say, with at most one action. It waits for you: while the pointer or the
+// keyboard is on it, its time stands still, and once you leave it it has NOTE_AFTER_MS
+// more at least (holdNote). It is not the lasting notice (setNotice, common.js), and
+// nothing is kept of it afterwards. Its timer starts only from something you did, so
+// with nothing happening there is no work here.
 //
 // What undo needs is kept in memory, by the note that offers it, and goes with it.
 // Firefox's own Recently Closed cannot be what decides what comes back: it says nothing
@@ -14,29 +16,60 @@
 // (forgetClosedPlaceholders, common.js).
 
 const NOTE_MS = 10000;
+const NOTE_BRIEF_MS = 4000; // a line that only says something was done, with nothing to undo (`brief`)
+const NOTE_AFTER_MS = 2000; // left by the pointer or the keyboard, it stays at least this long
+const NOTE_GRACE_MS = 1500; // an Undo clicked as the line fades still counts (it fades for .2 s, and a message takes its time)
 const CLOSE_GROUP_MS = 300; // closes this close together are one thing you did
-const quietNotes = new Map(); // windowId -> { id, text, undo, timer }
+const quietNotes = new Map(); // windowId -> { id, text, undo, timer, until, left }
+const goneNotes = new Map(); // windowId -> the note that has just gone, for NOTE_GRACE_MS
 const closeGroups = new Map(); // windowId -> the closes being taken together
 let noteCount = 0;
 let bringingBack = 0; // undos in progress, see the rules below
 
 // `undo` is run in the queue when you click it: it must not wait for serial() itself,
-// which would wait for it in turn.
-function say(windowId, text, { undo } = {}) {
+// which would wait for it in turn. `brief`: only a word that something was done, which
+// need not take the line's room for long.
+function say(windowId, text, { undo, brief } = {}) {
   if (!tidierAlone) return;
   clearTimeout(quietNotes.get(windowId)?.timer);
-  quietNotes.set(windowId, { id: ++noteCount, text, undo, timer: setTimeout(() => dropNote(windowId), NOTE_MS) });
+  goneNotes.delete(windowId);
+  const ms = brief && !undo ? NOTE_BRIEF_MS : NOTE_MS;
+  quietNotes.set(windowId, { id: ++noteCount, text, undo, until: performance.now() + ms, timer: setTimeout(() => dropNote(windowId), ms) });
   viewSoon(windowId);
 }
 
+// The note went by itself. One with an undo is kept for a moment more, for a click on
+// Undo that was on its way as the line faded: the line was there, so the click counts.
 function dropNote(windowId) {
-  clearTimeout(quietNotes.get(windowId)?.timer);
-  if (quietNotes.delete(windowId)) viewSoon(windowId);
+  const note = quietNotes.get(windowId);
+  clearTimeout(note?.timer);
+  if (!quietNotes.delete(windowId)) return;
+  viewSoon(windowId);
+  if (!note.undo) return;
+  goneNotes.set(windowId, note);
+  setTimeout(() => { if (goneNotes.get(windowId) === note) goneNotes.delete(windowId); }, NOTE_GRACE_MS);
 }
 browser.windows.onRemoved.addListener(windowId => {
   clearTimeout(quietNotes.get(windowId)?.timer);
   quietNotes.delete(windowId);
+  goneNotes.delete(windowId);
 });
+
+// The sidebar says the pointer or the keyboard is on the line (`held`), or has left it.
+// Its time stands still meanwhile, and goes on from there, with at least NOTE_AFTER_MS.
+function holdNote(windowId, id, held) {
+  const note = quietNotes.get(windowId);
+  if (note?.id !== id || !!held === (note.timer === null)) return;
+  clearTimeout(note.timer);
+  if (held) {
+    note.left = Math.max(note.until - performance.now(), 0);
+    note.timer = null;
+    return;
+  }
+  const ms = Math.max(note.left, NOTE_AFTER_MS);
+  note.until = performance.now() + ms;
+  note.timer = setTimeout(() => dropNote(windowId), ms);
+}
 
 // The part of a note a sidebar sees (viewFor, sidebar-view.js).
 function noteFor(windowId) {
@@ -46,12 +79,17 @@ function noteFor(windowId) {
 
 // You clicked Undo. The note is taken now, not when the queue gets to this: a click made
 // in time counts however long the queue then keeps it waiting (the note's own time would
-// run out meanwhile), and the line goes at once. A click that comes just after the note
-// went, or a second click, finds nothing to do.
+// run out meanwhile), and the line goes at once. A click as it faded counts too
+// (goneNotes). A second click, or one long after, finds nothing to do.
 async function undoNote(windowId, id) {
-  const note = quietNotes.get(windowId);
-  if (note?.id !== id) return;
-  dropNote(windowId);
+  const note = [quietNotes.get(windowId), goneNotes.get(windowId)].find(n => n?.id === id);
+  if (!note) return;
+  goneNotes.delete(windowId);
+  if (quietNotes.get(windowId) === note) {
+    clearTimeout(note.timer);
+    quietNotes.delete(windowId);
+    viewSoon(windowId);
+  }
   if (note.undo) await serial(note.undo).catch(() => {}); // logged by serial()
 }
 
@@ -193,8 +231,13 @@ async function bringBack(windowId, items, tabs) {
     const reps = repMap(await browser.tabs.query({ windowId: w.id }));
     for (const { key } of back) if (!reps.has(key)) await createRep(w.id, key, all[key]).catch(noteError);
   }
+  await putBackInOrder(windowId, back.map(i => i.key), tabs);
+}
+
+// `keys` each in its place in `tabs` (tabsNow, of before), in every window (moveTab).
+async function putBackInOrder(windowId, keys, tabs) {
   const here = repMap(await browser.tabs.query({ windowId }));
-  const wanted = new Set(back.map(i => i.key));
+  const wanted = new Set(keys);
   for (let n = tabs.length - 1; n >= 0; n--) {
     if (!wanted.has(tabs[n].key) || !here.has(tabs[n].key)) continue;
     const next = tabs.slice(n + 1).find(t => t.space === tabs[n].space && here.has(t.key));
@@ -265,6 +308,7 @@ async function rememberFolder(all, key, windowId) {
     noteSaved(now, inside);
     saveSynced(now);
     if (items.length) await bringBack(windowId, items, tabs);
+    await putBackInOrder(windowId, inside.filter(k => now[k]), tabs); // deleting took them to the top of today's (ownfolders.js)
     await foldChanged(key); // foldrest.js: a closed folder back again rests, or its tabs stay in ⌃Tab
   };
 }

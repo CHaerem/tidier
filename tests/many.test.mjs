@@ -280,7 +280,7 @@ test("an address in the record that cannot be read does not stop the sidebar, an
 
 // The sidebar's own script, with just enough of a page around it.
 function sidebarPage() {
-  const element = () => ({ dataset: {}, style: { setProperty() {} }, classList: { toggle() {}, add() {}, remove() {}, contains: () => false }, append() {}, replaceWith() {}, replaceChildren() {} });
+  const element = () => ({ dataset: {}, style: { setProperty() {} }, classList: { toggle() {}, add() {}, remove() {}, contains: () => false }, append() {}, replaceWith() {}, replaceChildren() {}, addEventListener() {} });
   const ctx = vm.createContext({
     browser: { runtime: { connect: () => ({ onMessage: { addListener() {} }, postMessage() {} }) }, windows: { getCurrent: async () => ({ id: 1 }) }, storage: { managed: { get: async () => ({}) } } },
     document: { createElement: element, getElementById: element, documentElement: element(), head: element(), addEventListener() {} },
@@ -356,6 +356,74 @@ test("a page in another space builds no view, a page in this one does", async ()
   x.b.tabs.onUpdated.fire(here.id, { title: "changes" }, ff.snap(ff.tabs.get(here.id)));
   await until(() => views() > before);
   assert.ok(views() > before, "drawn");
+  x.kill();
+});
+
+test("a tab Firefox still lists while it plays its closing animation is not drawn", async () => {
+  // ⌘W: Firefox says the tab is removed and goes on listing it for half a second or so, and
+  // no event comes when it has really gone. Drawn then, its row would stay, dead.
+  const ff = new FakeFirefox();
+  const w = manyTabs(ff, 6);
+  const x = await alone(ff);
+  const bar = await sidebar(x, w.id);
+  await wait(300);
+  const animating = new Set();
+  ff.rm = id => {
+    const t = ff.tabs.get(id);
+    if (!t || animating.has(id)) return;
+    animating.add(id);
+    x.b.tabs.onRemoved.fire(id, { windowId: t.windowId, isWindowClosing: false });
+    setTimeout(() => { const order = ff.wins.get(t.windowId).order; order.splice(order.indexOf(id), 1); ff.tabs.delete(id); ff.values.delete(id); }, 400);
+  };
+  const closing = ff.list(w.id).find(t => t.cookieStoreId === C1 && !t.active);
+  const before = bar.views.length;
+  await x.b.tabs.remove(closing.id);
+  await until(() => bar.views.length > before);
+  assert.ok(ff.tabs.has(closing.id), "Firefox still lists it");
+  assert.ok(bar.views.length > before, "a view came");
+  for (const view of bar.views.slice(before)) assert.ok(!view.tabs.some(t => t.id === closing.id), JSON.stringify(view.tabs));
+  await until(() => !ff.tabs.has(closing.id), 3000);
+  await wait(6000);
+  assert.equal(x.js("removedTabs").size, 0, "nothing is kept of it");
+  x.kill();
+});
+
+test("a saved tab given back by ⌘⇧T is drawn in its placeholder's place at once, not as a new tab at the end", async () => {
+  // Firefox gives it back with its values, next to the placeholder its ⌘W left, and Tidier
+  // takes it in only once it has settled. Drawn as a new tab meanwhile, it would be the last
+  // of today's tabs (a tab in a folder lies last in the window), and the list would scroll there.
+  const ff = new FakeFirefox();
+  const w = ff.addWindow({ focused: true });
+  const saved = n => entry(`https://s.example/${n}`, { title: "s" + n, parentKey: "F", saved: { url: `https://s.example/${n}`, title: "s" + n } });
+  ff.store.syncedTabs = { F: { group: true, own: true, name: "Folder", cookieStoreId: C1, parentKey: null, rank: 1, added: 1 }, t1: entry("https://t.example/1"), t2: entry("https://t.example/2"), s1: saved(1), s2: saved(2) };
+  ff.addTab(w.id, { url: "https://t.example/1", title: "t1", active: true, cookieStoreId: C1 }, { syncKey: "t1", syncRole: "live" });
+  ff.addTab(w.id, { url: "https://t.example/2", title: "t2", cookieStoreId: C1 }, { syncKey: "t2", syncRole: "live" });
+  ff.addTab(w.id, { url: GHOST("ghost", "s1"), title: "s1", discarded: true, cookieStoreId: C1 }, { syncKey: "s1", syncRole: "live" });
+  ff.addTab(w.id, { url: GHOST("ghost", "s2"), title: "s2", discarded: true, cookieStoreId: C1 }, { syncKey: "s2", syncRole: "live" });
+  const x = await alone(ff);
+  const bar = await sidebar(x, w.id);
+  await wait(300);
+  const drawn = view => ({ folder: view.folders[0].tabs.map(t => `${t.title}${t.loaded ? "+" : ""}${t.active ? "*" : ""}`).join(), today: view.tabs.map(t => t.title).join() });
+  assert.deepEqual(drawn(bar.views.at(-1)), { folder: "s1,s2", today: "t1,t2" });
+  // ⌘⇧T: the page, with its values, just after its placeholder, selected.
+  const before = bar.views.length;
+  const back = ff.addTab(w.id, { url: "https://s.example/1", title: "s1", cookieStoreId: C1, index: 3 }, { syncKey: "s1", syncRole: "live" });
+  ff.select(back.id);
+  x.b.tabs.onCreated.fire(ff.snap(back));
+  await until(() => bar.views.length > before);
+  assert.deepEqual(drawn(bar.views[before]), { folder: "s1+*,s2", today: "t1,t2" }, "in its placeholder's place, from the first view");
+  await until(() => !ff.list(w.id).some(t => t.url === GHOST("ghost", "s1")), 8000);
+  await wait(1000);
+  assert.ok(!ff.list(w.id).some(t => t.url === GHOST("ghost", "s1")), "taken in: its placeholder is gone");
+  for (const view of bar.views.slice(before)) assert.deepEqual(drawn(view).today, "t1,t2", "never among today's tabs");
+  assert.deepEqual(drawn(bar.views.at(-1)), { folder: "s1+*,s2", today: "t1,t2" }, "and there once it is taken in");
+  assert.equal(x.js("restoredKeys").size, 0, "nothing kept of it then");
+  // A duplicate of an open saved tab has its values too, and becomes a tab of its own: not drawn in the folder.
+  const n = bar.views.length;
+  const dup = ff.addTab(w.id, { url: "https://s.example/1", title: "s1", cookieStoreId: C1 }, { syncKey: "s1", syncRole: "live" });
+  x.b.tabs.onCreated.fire(ff.snap(dup));
+  await until(() => bar.views.length > n);
+  assert.equal(drawn(bar.views[n]).folder, "s1+*,s2");
   x.kill();
 });
 
