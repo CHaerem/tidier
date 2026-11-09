@@ -3,9 +3,23 @@
 <head>
 <meta charset="utf-8">
 <title></title>
+<link rel="stylesheet" href="sidebar/tokens.css">
 <style>
   :root { color-scheme: light dark; }
   body { margin: 0; background: light-dark(#fff, #1c1b22); }
+  /* Which page this stands for, quietly, in the middle (ghost.js, face). It comes after a
+   * moment, so that a page moving in, which takes a fraction of a second, shows nothing. */
+  main {
+    position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px;
+    padding: 0 16px; font: 15px/1.4 system-ui, sans-serif; color: var(--muted); text-align: center;
+    opacity: 0; animation: face .4s ease .8s forwards;
+  }
+  main img { width: 32px; height: 32px; margin-bottom: 6px; border-radius: 7px; }
+  main .title { max-width: 32em; color: var(--text); font-size: 17px; overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+  main .site, main .when { color: var(--faint); font-size: 13px; }
+  @keyframes face { to { opacity: 1; } }
+  /* Without motion it still waits its moment, and then is simply there. */
+  @media (prefers-reduced-motion: reduce) { main { animation: face 0s step-end .8s forwards !important; } }
 </style>
 </head>
 <body>
