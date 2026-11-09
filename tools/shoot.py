@@ -11,7 +11,8 @@ and writes PNGs at twice the size, as on a Retina screen:
 
     sidebar-SPACE-WIDTH-SCHEME   the sidebar per space, at 220, 300 and 480 px, light and dark
     window-SPACE-SCHEME          the whole window around it, with userChrome.css
-    hover-*, menu-*, state-*     one thing at a time, at 300 px, light and dark
+    hover-*, menu-*, state-*     one thing at a time, at 300 px, light and dark (state-closed-row-room and
+                                 state-saved-tab-unloaded with the mouse where it clicked)
     state-essentials-N-WIDTH     one, two and three essentials, at each width
     settings-SCHEME              the settings page
     settings-in-full-SCHEME      with everything it can show, made up; -narrow- as narrow as it can be
@@ -561,6 +562,40 @@ def scrolled(cam):
     in_sidebar(cam.m, """doc.getElementById("tabs").scrollTop = 0;""")
 
 
+def under_the_hand(cam):
+    """What a hand leaves for a moment: the quiet line in its room, the room a row closed with the
+    mouse keeps while the mouse is in the list, and a saved tab just unloaded under the mouse.
+    The row closed is closed for good."""
+    m = cam.m
+    select(m, on_tab(WORK), WORK["ctx"])
+    if cam.wanted("state-quiet-line"):
+        in_sidebar(m, """const port = await connect(), ids = port.view().tabs.filter(t => !t.active).slice(0, 2).map(t => t.id);
+          for (const tabId of ids) port.send({type: "close", tabId});
+          await until(() => port.view().note, "the quiet line");
+          port.close();""")
+        cam.shoot("state-quiet-line")
+        in_sidebar(m, """const port = await connect(), n = port.view().tabs.length;
+          port.send({type: "undo", note: port.view().note.id});
+          await until(() => port.view().tabs.length === n + 2, "the tabs back");
+          port.close();""")
+    at = cam.wanted("state-saved-tab-unloaded") and cam.point_at("#tabs .folder .row.tab:not(.active):not(.unloaded) .close")
+    if at:
+        cam.mouse(*at, {"type": "pointerDown", "button": 0}, {"type": "pointerUp", "button": 0})
+        cam.m.cmd("WebDriver:ReleaseActions")
+        in_sidebar(m, """await until(() => doc.querySelector("#tabs .still-dim"), "the row unloaded");""")
+        cam.mouse(*at)
+        cam.shoot("state-saved-tab-unloaded")
+    cam.mouse_away()
+    at = cam.wanted("state-closed-row-room") and cam.point_at("#tabs > .row.tab:not(.active):not(.unloaded) .close")  # today's: a saved tab unloads in its place
+    if at:
+        cam.mouse(*at, {"type": "pointerDown", "button": 0}, {"type": "pointerUp", "button": 0})
+        cam.m.cmd("WebDriver:ReleaseActions")
+        in_sidebar(m, """await until(() => doc.querySelector("#tabs .room"), "the room");""")
+        cam.mouse(*at)
+        cam.shoot("state-closed-row-room")
+    cam.mouse_away()
+
+
 def empty_spaces(cam):
     """A space is without tabs for a moment only: going there opens a new tab, as does closing
     its last one. So this is what an empty space looks like in use."""
@@ -669,7 +704,7 @@ def settings(cam):
     pictures("settings-narrow")
 
 
-STEPS = (space_by_space, hover, hover_more, menus, folders_closed, live_closed, folder_rename, marks, notices, scrolled, empty_spaces, few_essentials, icons_that_vanish, settings)
+STEPS = (space_by_space, hover, hover_more, menus, folders_closed, live_closed, folder_rename, marks, notices, scrolled, under_the_hand, empty_spaces, few_essentials, icons_that_vanish, settings)
 
 
 def take_pictures(cam):

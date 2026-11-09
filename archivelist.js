@@ -37,8 +37,10 @@ async function noteArchived(entry, why) {
   try {
     const list = await archivedNow(), now = Date.now();
     const icon = entry.icon?.length <= ARCHIVED_ICON_MAX ? entry.icon : null;
+    // A saved tab removed for good remembers its folder, to go back into it (folderToGoBackTo).
+    const folder = entry.saved && entry.parentKey ? { folder: entry.parentKey } : {};
     list[entry.cookieStoreId] = [
-      { url: entry.url, title: entry.title || entry.url, icon, when: now, why },
+      { url: entry.url, title: entry.title || entry.url, icon, when: now, why, ...folder },
       ...(list[entry.cookieStoreId] || []).filter(r => r.url !== entry.url),
     ];
     for (const [space, rows] of Object.entries(list)) {
@@ -67,6 +69,18 @@ async function archivedTabs(space) {
     // (The view is an extension's page, past every proxy: iconForView, isolation.js.)
     .flatMap(s => (list[s] || []).filter(r => now - r.when < ARCHIVED_KEEP_MS).map(r => ({ ...r, icon: iconForView({ cookieStoreId: s, favIconUrl: r.icon }), space: s })))
     .sort((a, b) => b.when - a.when);
+}
+
+// The folder a saved tab removed for good was in, for a tab that opens its address again
+// in its space, if that folder is still there there: it goes back into it rather than among
+// today's tabs. Only for a tab from Recently Closed (⌘⇧T: Firefox gives back its values) or
+// from the list itself (`fromList`): the same address typed anew is a tab of its own.
+async function folderToGoBackTo(all, tab, fromList = false) {
+  if (!tidierAlone) return null;
+  if (!fromList && !(await browser.sessions.getTabValue(tab.id, SYNC_KEY).catch(() => undefined))) return null;
+  const row = (await archivedNow())[tab.cookieStoreId]?.find(r => r.url === tab.url);
+  const folder = row?.folder && all[row.folder];
+  return isOwnFolder(folder) && !folder.live && folder.cookieStoreId === tab.cookieStoreId ? row.folder : null;
 }
 
 async function dropArchived(space, url) {
@@ -103,10 +117,13 @@ function reopenArchived(item, windowId) {
       say(win.id, "That tab could not be opened again");
       throw err;
     }
+    const folder = await folderToGoBackTo(await getSynced(), { cookieStoreId: space, url: row.url }, true);
     await dropArchived(item.space, item.url);
     await register(tab.id).catch(noteError); // now, not when it has settled: the other windows get it at once
-    const all = await getSynced(), entry = all[syncKeyByTab.get(tab.id)];
-    if (entry && row.icon) { entry.icon = row.icon; saveSynced(all); } // Firefox has no way to give an unloaded tab one
+    const all = await getSynced(), key = syncKeyByTab.get(tab.id), entry = all[key];
+    if (entry && row.icon) entry.icon = row.icon; // Firefox has no way to give an unloaded tab one
+    if (entry && folder && all[folder]) { entry.parentKey = folder; noteSaved(all, [key]); }
+    if (entry && (row.icon || folder)) saveSynced(all);
     await browser.tabs.update(tab.id, { active: true });
     return true;
   });
