@@ -36,7 +36,8 @@
     "browsingData",
     "search",
     "history",
-    "bookmarks"
+    "bookmarks",
+    "management"
   ],
   "options_ui": {
     "page": "settings/settings.html",

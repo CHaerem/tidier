@@ -111,6 +111,10 @@ links from real apps, real sound and calls, and real Firefox Sync between two ma
 - [x] One explicit click, never an update: a report of what will happen, then the
       record is written, and only then are folder pages closed. It can be undone.
       Checked with a real Sidebery in the test Firefox, there and back.
+- [x] Steps the settings page checks itself (the export, the permissions, Sidebery off), both
+      ways refused while Sidebery runs, and the page opens again after a move to say what
+      happened. Going back gives Sidebery its folders back, each tab under its folder's page in
+      Sidebery's own tree in every window, also folders made or renamed on Tidier alone.
 - [ ] Sidebery disabled but installed for a few weeks.
 
 ## E. Without Sidebery, everywhere

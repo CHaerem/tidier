@@ -228,9 +228,13 @@ function ruleLine(rule) {
     ...state.spaces.map(s => el("option", { value: s.id, textContent: s.name, selected: s.id === rule.space })));
   const remove = el("button", { textContent: "×", title: "Remove this rule" });
   const why = el("p", { className: "hint rule-problem" });
-  // Why a rule does nothing, as it is typed: otherwise a rule would just never work.
+  // Why a rule does nothing, as it is typed: otherwise a rule would just never work. A rule made
+  // from a tab's menu is a regular expression for its site: said in plain words under it.
   const showWhy = () => {
-    why.textContent = ruleProblem(text.value.trim()) ?? (gone && space.value === rule.space ? "Its space is gone, so the rule does nothing." : "");
+    const problem = ruleProblem(text.value.trim()) ?? (gone && space.value === rule.space ? "Its space is gone, so the rule does nothing." : "");
+    const site = !problem && text.value.trim().match(SITE_RULE)?.[1].replace(/\\(.)/g, "$1");
+    why.textContent = problem || (site ? `Every page on ${site}.` : "");
+    why.classList.toggle("wrong", !!problem);
     why.hidden = !why.textContent;
   };
   showWhy();
@@ -241,11 +245,31 @@ function ruleLine(rule) {
   remove.onclick = e => {
     if (e.detail > 1) return;
     const next = line.nextElementSibling?.querySelector("button") ?? $("add-rule");
+    const at = [...$("rules").children].indexOf(line), was = { url: text.value.trim(), space: space.value };
     line.remove();
     saveRules();
     next.focus();
+    if (was.url) ruleRemoved(was, at);
   };
   return line;
+}
+// The rule made from a tab's menu (siteRuleText, tabactions.js).
+const SITE_RULE = /^\/\^https\?:\\\/\\\/\(www\\\.\)\?(.+)\\\/\/$/;
+// A removed rule can be had back, as everything else in Tidier: one quiet line, for a while.
+let undoTimer = null;
+function ruleRemoved(rule, at) {
+  const line = $("rule-undo"), undo = el("button", { className: "quiet", textContent: "Undo" });
+  undo.onclick = () => {
+    const lines = [...$("rules").children], back = ruleLine(rule);
+    $("rules").insertBefore(back, lines[at] ?? null);
+    saveRules();
+    line.hidden = true;
+    back.querySelector("input").focus();
+  };
+  line.replaceChildren(el("span", { textContent: `Removed the rule for ${rule.url}.` }), undo);
+  line.hidden = false;
+  clearTimeout(undoTimer);
+  undoTimer = setTimeout(() => { line.hidden = true; }, 15000);
 }
 $("add-rule").onclick = () => {
   const line = ruleLine({ url: "", space: state.spaces[0]?.id });

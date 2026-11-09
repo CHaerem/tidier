@@ -5867,6 +5867,10 @@ def alone_restart(m):
     # only pointed at its managed storage once it has started (USE_TEST_MANAGED_STORAGE), too
     # late for the first view of a sidebar that is open, which a real file is not.
     sidebar_page(m, """await page.browser.storage.local.set(page.JSON.parse(JSON.stringify({tidierAlone: true}))); return 1;""")
+    # A settings page selected in a window when Firefox quits is loaded again as it starts, maybe
+    # before Tidier has: it must not then say this browser is on Sidebery.
+    m.js(H + """const w = wins().find(w => w !== main()) ?? main();
+      w.gBrowser.selectedTab = w.gBrowser.addTrustedTab("moz-extension://" + JSON.parse(Services.prefs.getStringPref("extensions.webextensions.uuids"))[args[0]] + "/settings/settings.html?restart", {}); await wait(1500); return 1;""", EXT_ID)
     bar_open(m)  # quit with the command bar open: Firefox brings popups back with the session
     m.restart()
     m.js(H + """for (let i = 0; i < 100 && wins().length < 2; i++) await wait(200); await wait(12000); return 1;""")
@@ -5880,6 +5884,12 @@ def alone_restart(m):
     r = m.js(H + """return {left: wins().filter(w => !w.toolbar.visible && url(w.gBrowser.selectedTab).includes("/commandbar/commandbar.html")).length,
       closed: main().SessionStore.getClosedWindowData().filter(w => w.tabs[0]?.entries?.[0]?.url?.includes("/commandbar/commandbar.html")).length};""")
     check("a command bar left open at a restart does not come back, and is not kept as a closed window", r == {"left": 0, "closed": 0}, str(r))
+    into_page(m, "settings.html?restart")
+    r = m.cmd("WebDriver:ExecuteScript", {"script": """const d = (window.wrappedJSObject || window).document;
+      return {state: d.getElementById("alone-state").textContent, agents: !d.getElementById("claude-section").hidden, keys: !d.getElementById("keys-section").hidden};"""})
+    m.chrome()
+    m.js(H + """await removeWhere((w, t) => url(t).includes("settings.html?restart")); return 1;""")
+    check("a settings page Firefox brings back at a start shows Tidier alone, with its agents and keys", "on its own" in r["state"] and r["agents"] and r["keys"], str(r))
     check("after a restart, the list of archived tabs is still there", extension_message(m, {"type": "archivedTabs"}) == archived, str(archived))
     # Its rows, not only the tabs: in a sidebar page opened now, and in the window's own sidebar.
     r = ext_page(m, "/sidebar/sidebar.html?after-restart", """for (let i = 0; i < 40 && !rows().length; i++) await wait(250);
@@ -7189,6 +7199,32 @@ def alone_settings(m):
       return got;""" % EXT_ID)
     check("a rule opens an address in its space", r[0] == [2], str(r))
     r = extension_message(m, {"type": "settings:rules", "rules": []})
+    # What you type stays: a rule added right after another keeps its line and has the keyboard,
+    # the second click of a double click on × removes no second rule, and an hour count that is
+    # no answer (-5, or nothing) leaves the one stored, which the field shows again.
+    r = ext_page(m, "/settings/settings.html?typing", """await wait(800);
+      const inputs = () => [...doc.querySelectorAll("#rules .line input")], click = (e, detail) => e.dispatchEvent(new page.MouseEvent("click", page.JSON.parse(JSON.stringify({detail, bubbles: true}))));
+      const type = (input, text) => { input.value = text; input.dispatchEvent(new page.Event("change")); };
+      doc.getElementById("add-rule").click();
+      const focused = doc.activeElement === inputs().at(-1);
+      type(inputs().at(-1), "smoke-a.example");
+      doc.getElementById("add-rule").click();
+      await wait(1500); // the first one's save comes back as a change of the stored rules
+      const kept = inputs().length, focused2 = doc.activeElement === inputs().at(-1);
+      type(inputs().at(-1), "smoke-b.example");
+      await wait(800);
+      click(doc.querySelector("#rules .line button"), 1);
+      click(doc.querySelector("#rules .line button"), 2); // the rule below has moved up under the pointer
+      await wait(800);
+      const left = inputs().map(i => i.value), hours = doc.getElementById("archive-hours"), seen = [];
+      for (const typed of ["-5", "", "3", "12"]) { type(hours, typed); await wait(600); seen.push(hours.value); }
+      const stored = await page.browser.runtime.sendMessage(page.JSON.parse(JSON.stringify({type: "settings:get"})));
+      return {focused, kept, focused2, left, seen, rules: stored.rules.map(r => r.url), hours: stored.archiveHours};""")
+    extension_message(m, {"type": "settings:rules", "rules": []})
+    m.js(H + """await removeWhere((w, t) => url(t).includes("settings.html?typing")); return 1;""")
+    check("on the settings page a new rule has the keyboard, and keeps its line when the one before is saved", r.get("focused") and r.get("focused2") and r.get("kept") == 2, str(r))
+    check("on the settings page a double click on a rule's × removes one rule", r.get("left") == ["smoke-b.example"] and r.get("rules") == ["smoke-b.example"], str(r))
+    check("on the settings page the hours for archiving refuse -5 and nothing, and show what is stored", r.get("seen") == ["12", "12", "3", "12"] and r.get("hours") == 12, str(r))
     # The sidebar's key: without a sidebar a window has no list of tabs.
     r = m.js(H + """const w = main(); w.focus(); w.SidebarController.hide(); await wait(600); return w.SidebarController.isOpen;""")
     press(m, "s", CTRL, SHIFT)
@@ -7213,7 +7249,7 @@ def alone_copy(m):
 def choose_file(m, input_id, contents):
     """Give a file input on the settings page a file, the way the file picker does: it fires `change`. Returns once the page has answered."""
     ext_page(m, "/settings/settings.html", "return 1;")
-    result = {"copy-file": "merge-result", "sidebery-file": "sidebery-result"}[input_id]
+    result = {"copy-file": "merge-result", "sidebery-file": "sidebery-result", "sidebery-file-alone": "sidebery-result-alone"}[input_id]
     with tempfile.TemporaryDirectory() as folder:
         path = os.path.join(folder, "chosen.json")
         with open(path, "w") as out:
@@ -7266,7 +7302,7 @@ def alone_copy_and_import(m):
     choose_file(m, "copy-file", copy)
     lines = ext_page(m, "/settings/settings.html", """return {lines: [...doc.querySelectorAll("#merge-spaces .line")].map(l => l.textContent.trim()), shown: !doc.getElementById("merge").hidden};""")
     check("a copy shows, per space, its name here and what would come, and which is new",
-          lines["shown"] and lines["lines"] == ["●Space 2: 1 essential, 1 rule", "●Space 1: 1 folder, 1 saved tab", "●Brought along: 1 essential, a new space"], str(lines))
+          lines["shown"] and lines["lines"] == ["Space 2: 1 essential, 1 rule", "Space 1: 1 folder, 1 saved tab", "Brought along: 1 essential, a new space"], str(lines))
     check("nothing is written before you say so", m.js(named) == before, str(m.js(named)))
     done = ext_page(m, "/settings/settings.html", """doc.getElementById("merge-go").click();
       const goneAtOnce = doc.getElementById("merge").hidden; // a second click would find it all here, and say only that
@@ -7296,7 +7332,7 @@ def alone_copy_and_import(m):
                                  "data": {"essentials": [None, 3, {"key": "smoke-odd", "url": "https://example.org/?odd", "cookieStoreId": "firefox-container-50"}, {"key": "smoke-no-address", "cookieStoreId": "firefox-container-50"}]}})
     r = ext_page(m, "/settings/settings.html", """const dot = doc.querySelector("#merge-spaces .line span");
       return {lines: [...doc.querySelectorAll("#merge-spaces .line")].map(l => l.textContent.trim()), background: dot?.style.backgroundImage, line: doc.getElementById("merge-result").textContent};""")
-    check("a damaged copy shows what can be used, and no address gets into the page's style", r == {"lines": ["●Odd: 1 essential, a new space"], "background": "", "line": ""}, str(r))
+    check("a damaged copy shows what can be used, and no address gets into the page's style", r == {"lines": ["Odd: 1 essential, a new space"], "background": "", "line": ""}, str(r))
     # A wrong file says so, in one line, and offers nothing to take in.
     choose_file(m, "copy-file", {"hello": 1})
     r = ext_page(m, "/settings/settings.html", """return {line: doc.getElementById("merge-result").textContent, offered: !doc.getElementById("merge").hidden};""")
@@ -7304,14 +7340,14 @@ def alone_copy_and_import(m):
     choose_file(m, "copy-file", "not json at all")
     r = ext_page(m, "/settings/settings.html", """return doc.getElementById("merge-result").textContent;""")
     check("a file that is not even JSON says so", r == "This is not a Tidier copy.", str(r))
-    choose_file(m, "sidebery-file", copy)
-    r = ext_page(m, "/settings/settings.html", """return doc.getElementById("sidebery-result").textContent;""")
+    choose_file(m, "sidebery-file-alone", copy)
+    r = ext_page(m, "/settings/settings.html", """return doc.getElementById("sidebery-result-alone").textContent;""")
     check("a Tidier copy is not taken for Sidebery's export", r == "This is not Sidebery's export.", str(r))
     # Sidebery's export: address rules from panels, and the folder it had closed closes at once.
     with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "fixtures", "sidebery_export.json")) as f:
-        choose_file(m, "sidebery-file", f.read())
-    r = ext_page(m, "/settings/settings.html", """return doc.getElementById("sidebery-result").textContent;""")
-    check("Sidebery's export says what came, and what it left out", r == "Imported 3 rules, the order of 2 spaces and 1 closed folder. Left out the rules of 1 panel with no container.", str(r))
+        choose_file(m, "sidebery-file-alone", f.read())
+    r = ext_page(m, "/settings/settings.html", """return doc.getElementById("sidebery-result-alone").textContent;""")
+    check("Sidebery's export says what came, and what it left out", r == "Took in 3 rules, the order of 2 spaces and 1 closed folder. Left out the rules of 1 panel with no container.", str(r))
     s = m.js(named)
     check("its address rules go to their panel's space", ["two.example.org", "Space 2"] in s["rules"] and ["reopen.example.org", "Space 1"] in s["rules"] and not [x for x in s["rules"] if "nowhere" in x[0] or "excluded" in x[0]], str(s))
     shown = sidebar_page(m, """doc.querySelector('#spaces .space[data-space="firefox-container-1"]').click();
@@ -7319,8 +7355,8 @@ def alone_copy_and_import(m):
       return folders().filter(f => f.name === "Reading");""")
     check("the folder Sidebery had closed is closed in the sidebar", [f["collapsed"] for f in shown] == [True], str(shown))
     with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "fixtures", "sidebery_export.json")) as f:
-        choose_file(m, "sidebery-file", {k: v for k, v in json.load(f).items() if k != "snapshots"})
-    r = ext_page(m, "/settings/settings.html", """return doc.getElementById("sidebery-result").textContent;""")
+        choose_file(m, "sidebery-file-alone", {k: v for k, v in json.load(f).items() if k != "snapshots"})
+    r = ext_page(m, "/settings/settings.html", """return doc.getElementById("sidebery-result-alone").textContent;""")
     check("an export with no snapshot says folders start open", "no snapshot in this export, so folders start open" in r, str(r))
     no_problems(m, "taking in a copy and an export")
     # Leave no trace for the groups after this one.

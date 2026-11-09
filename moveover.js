@@ -123,8 +123,9 @@ async function spacesSideberyHadNot(all) {
   const { sideberyPanels } = await browser.storage.local.get("sideberyPanels");
   if (!Array.isArray(sideberyPanels) || !sideberyPanels.length) return [];
   const used = new Set([...Object.values(all), ...await getList(), ...await browser.tabs.query({})].map(x => x.cookieStoreId));
+  const hiddenAlready = listIn((await browser.storage.local.get(HIDDEN_KEY))[HIDDEN_KEY]);
   const spaces = await containerSpaces();
-  const extra = spaces.filter(s => !sideberyPanels.includes(s.id) && !used.has(s.id));
+  const extra = spaces.filter(s => !sideberyPanels.includes(s.id) && !used.has(s.id) && !hiddenAlready.includes(s.id));
   return extra.length < spaces.length ? extra : [];
 }
 

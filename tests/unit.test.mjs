@@ -227,6 +227,17 @@ test("the manifest asks for no new permission that would hold updates", () => {
   assert.deepEqual(manifest.permissions.filter(p => !allowed.includes(p)), []);
 });
 
+test("what moving over asks for is all in the manifest's optional permissions, the same on the page and in the background", () => {
+  // Firefox refuses to ask for a permission the manifest does not list, and the step would never be done.
+  const manifest = JSON.parse(readFileSync(new URL("../manifest.json", import.meta.url), "utf8"));
+  const asked = file => JSON.parse(readFileSync(new URL(file, import.meta.url), "utf8").match(/const MOVE_PERMISSIONS = (\{[^\n]*\});/)[1]
+    .replace(/(\w+):/g, '"$1":'));
+  const page = asked("../settings/settings.js"), background = asked("../moveover.js");
+  assert.deepEqual(page, background);
+  for (const p of [...page.permissions, ...page.origins]) assert.ok(manifest.optional_permissions.includes(p), p);
+  assert.ok(page.permissions.includes("management"), "seeing whether Sidebery is on");
+});
+
 
 // Packages built side by side each add helpers to the smoke test, and in Python the later
 // `def` silently replaces the first: the first package's checks then call the wrong one.
