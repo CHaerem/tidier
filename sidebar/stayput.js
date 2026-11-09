@@ -43,6 +43,30 @@
     }
   });
 
+  // A sidebar made narrower wraps the lines above the list onto more lines, and the list
+  // shows less: a selected tab that was wholly in view would end up half under the fade at
+  // its end. So when the width changes, a selected row that was in view is kept in view, by
+  // the least distance. (Only the width: the quiet line's room makes the list shorter for a
+  // while, and that must move nothing. Whether it was in view is read when you scroll and
+  // when a view comes, which is when it can change otherwise.)
+  const FADES = [14, 20]; // the list's fades at its top and end (sidebar.css #tabs), which hide what is under them
+  const wholly = row => {
+    const r = row.getBoundingClientRect(), box = list.getBoundingClientRect();
+    return r.top >= box.top + FADES[0] - 2 && r.bottom <= box.bottom - FADES[1] + 2;
+  };
+  let width = null, selectedInView = false;
+  const notice = () => { const row = list.querySelector(".tab.active"); selectedInView = !!row && wholly(row); };
+  list.addEventListener("scroll", notice, { passive: true });
+  port.onMessage.addListener(next => { if (next.alone) notice(); });
+  new ResizeObserver(() => {
+    const was = width;
+    width = list.clientWidth;
+    if (was === null || was === width) return;
+    const row = list.querySelector(".tab.active");
+    if (row && selectedInView && !wholly(row)) row.scrollIntoView({ block: "nearest" });
+    notice();
+  }).observe(list);
+
   // You went back to the page: the cursor's mark is no longer true, and the next key
   // starts at the tab you are on then, not where you once left the cursor.
   addEventListener("blur", () => { if (view?.alone) moveCursor(null); });

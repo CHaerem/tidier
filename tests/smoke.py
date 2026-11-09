@@ -2910,6 +2910,22 @@ def alone_hand(m):
     back = m.js(ctrl_shift_t, "hand-11")
     check("a saved tab removed for good and brought back with ⌘⇧T is in its folder again", gone and back["last"]["rows"] == 1 and back["last"]["inFolder"] and back["selected"] == "hand-11", f"{gone} {back}")
 
+    # The sidebar made narrower: the lines above the list wrap and the list shows less, and the
+    # selected tab, the last row and wholly in view, stays wholly in view (clear of the fade at the end).
+    r = m.js(H + IN_SIDEBAR + """const w = main(), box = w.document.getElementById("sidebar-box"), before = box.style.width;
+      box.style.width = "420px"; await wait(500);
+      const name = await inSidebar(() => [...doc.querySelectorAll("#tabs .tab")].at(-1).title.split("\\n")[0]);
+      w.gBrowser.selectedTab = w.gBrowser.tabs.find(t => t.label === name); await wait(1500);
+      await inSidebar(() => { const l = doc.getElementById("tabs"); l.scrollTop = l.scrollHeight; return 1; }); await wait(300);
+      const where = () => inSidebar(() => { const l = doc.getElementById("tabs").getBoundingClientRect(), r = doc.querySelector("#tabs .tab.active")?.getBoundingClientRect();
+        return {bottom: Math.round(r?.bottom), end: Math.round(l.bottom), height: Math.round(l.height)}; });
+      const wide = await where();
+      box.style.width = "220px"; await wait(800);
+      const narrow = await where();
+      box.style.width = before; await wait(500);
+      return {name, wide, narrow};""")
+    check("a narrower sidebar keeps the selected tab wholly in view", r["narrow"]["height"] < r["wide"]["height"] and r["narrow"]["bottom"] <= r["narrow"]["end"] - 18, str(r))
+
     sidebar_page(m, """send({type: "deleteFolder", key: args[0]}); await wait(800); return 1;""", folder)
     m.js(H + """Services.prefs.clearUserPref("general.autoScroll"); await removeWhere((w, t) => /^(hand|fill)-/.test(t.label) || url(t).includes("/sidebar/sidebar.html")); return 1;""")
 
