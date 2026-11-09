@@ -117,6 +117,7 @@ function icon(item) {
 // shown because it was selected, in a closed folder, stays until then (.was-active): going
 // now, it would pull the rows below it up under the pointer.
 function showSelected(e) {
+  if (e.classList.contains("active")) return; // already so: no view will come to draw it again
   for (const was of document.querySelectorAll("#essentials .active, #tabs .active")) {
     if (was === e) continue;
     was.classList.remove("active");

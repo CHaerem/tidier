@@ -22,7 +22,11 @@ const BAR_PAGE = "commandbar/commandbar.html";
 const BAR_WIDTH = 640, BAR_MIN_WIDTH = 360, BAR_SIDES = 48, BAR_HEIGHT = 380;
 const BAR_OPEN_LIMIT_MS = 10000; // a window that never came must not take the key for good
 const BAR_FORGET_MS = 10000; // Firefox lists a closed window a moment after it has closed, once it has its last state
-const BAR_ASK_SIDEBAR_MS = 100; // a sidebar answers at once; none must not hold up the bar
+// A sidebar answers in a few milliseconds, and with none open Firefox says so at once; only a
+// sidebar that is there but slow (a busy machine: 100 ms was too short there) waits this long,
+// meanwhile the bar's window is still being made. Acting on one tab when you had selected two
+// would be the wrong tabs.
+const BAR_ASK_SIDEBAR_MS = 300;
 const CLOSED_LOOKED_AT = 25; // Firefox's list of closed tabs holds about this many anyway
 const BAR_ASKED = "commandBarAsked"; // storage: history and bookmarks have been asked for, so the row does not come back
 

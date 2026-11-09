@@ -6340,7 +6340,9 @@ PICKING = """
       const until = async (test, ms = 15000) => { const t0 = Date.now(); while (Date.now() - t0 < ms) { if (test()) return true; await wait(50); } return !!test(); };
       const key = k => doc.body.dispatchEvent(new page.KeyboardEvent("keydown", {key: k, bubbles: true, cancelable: true}));
       const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
-      const select = async e => { const id = idOf(e); press(e); await until(() => (row(id) || tile(id))?.classList.contains("active")); };
+      // A click shows as selected at once (sidebar.js, showSelected); selected it is once a view agrees, which draws it with its state.
+      const shownSelected = id => { const e = row(id) || tile(id); return !!e?.classList.contains("active") && e.dataset.state !== undefined; };
+      const select = async e => { const id = idOf(e); press(e); await until(() => shownSelected(id)); };
       const keysOf = list => Promise.all(list.map(id => page.browser.sessions.getTabValue(id, "syncKey")));
       const drag = (from, to, below = false, right = false) => {
         const data = new page.DataTransfer(), box = to.getBoundingClientRect();
@@ -6421,7 +6423,7 @@ def alone_selection(m):
       row(r3).dispatchEvent(new page.MouseEvent("mouseup", {bubbles: true, cancelable: true, button: 0}));
       row(r3).dispatchEvent(new page.MouseEvent("click", {bubbles: true, cancelable: true, button: 0}));
       out.released = picks().length === 0;
-      await until(() => row(r3).classList.contains("active"));
+      await until(() => shownSelected(r3));
       out.plainSelects = (await activeId()) === r3;
 
       // A range: from the selected tab, again from there, over a folder as drawn.
