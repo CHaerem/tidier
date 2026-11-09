@@ -33,8 +33,8 @@
     if (!shown) return;
     send({ type: "undo", note: shown.id });
     drawNote(null); // the tabs take a moment to come back; the line goes at once
-    // From the keys, the keyboard stays in the sidebar, on the list (keys.js shows where).
-    if (!e.detail) document.getElementById("tabs").focus();
+    // From the keys, the keyboard stays in the sidebar, on the tab you are on (keys.js).
+    if (!e.detail) moveCursor(startOfKeys());
   };
 
   const clear = e => {

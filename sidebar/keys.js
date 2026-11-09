@@ -7,20 +7,34 @@
 // that could put it there, and moves it to the page whenever the selected tab changes.
 //
 // The keyboard has one place. The row or tile under the cursor has the focus itself (a
-// roving focus, tabindex -1), so there is one ring, a screen reader says where it is, and
-// Enter and Space act on the same thing. A button you Tab to keeps its own Enter and Space,
-// and the cursor goes when the focus does.
+// roving focus: it is the one Tab comes to, the rows it has been on can only be clicked),
+// so there is one ring, a screen reader says where it is, and Enter and Space act on the
+// same thing. A button you Tab to keeps its own Enter and Space, and the cursor goes when
+// the focus does.
 let cursor = null;
 const reachable = () => [...document.querySelectorAll(".tile, #tabs .head, #tabs .tab")].filter(e => e.offsetParent !== null);
 function moveCursor(to) {
   cursor?.classList.remove("cursor");
   cursor = to || null;
+  keepEntry();
   if (!cursor) return;
   cursor.classList.add("cursor");
-  cursor.tabIndex = -1;
   if (document.activeElement !== cursor) cursor.focus({ preventScroll: true });
   cursor.scrollIntoView({ block: "nearest" });
 }
+
+// One row is where Tab comes into the list: the cursor's, else the selected tab's. Not the
+// list itself (sidebar.html gives it tabindex -1): from a row inside it ⇧Tab would land on
+// the list, which would hand it straight back, and the keyboard could not get out.
+let keysEntry = null;
+function keepEntry() {
+  const next = cursor ?? document.querySelector("#tabs .tab.active, #essentials .tile.active") ?? document.querySelector("#tabs .head, #tabs .tab");
+  if (next === keysEntry) return;
+  if (keysEntry) keysEntry.tabIndex = -1;
+  keysEntry = next;
+  if (keysEntry) keysEntry.tabIndex = 0;
+}
+port.onMessage.addListener(() => { if (view?.alone) keepEntry(); }); // after render: the selected tab may be another
 
 // Tabbed to a button, or clicked elsewhere: the keyboard is there now. (Not the menu, which
 // is about the cursor's row, and gives the focus back when it closes: menu.js.) A click on
@@ -30,8 +44,9 @@ addEventListener("focusout", e => {
 });
 addEventListener("focusin", e => {
   if (cursor && e.target !== cursor && !e.target.closest?.("#menu")) moveCursor(null);
-  // Tabbed into the list itself: the cursor shows where you are at once.
-  if (view?.alone && e.target.id === "tabs" && e.target.matches(":focus-visible")) moveCursor(startOfKeys());
+  // Tabbed into the list, onto its entry: the cursor shows where you are at once. (Not for a
+  // click, which focuses what it lands on too.)
+  if (view?.alone && e.target !== cursor && e.target.matches?.(".tile:focus-visible, #tabs .head:focus-visible, #tabs .tab:focus-visible")) moveCursor(e.target);
 });
 
 // The first key starts at the tab you are on, not at the top of the sidebar. (Also after

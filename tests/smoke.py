@@ -5138,6 +5138,22 @@ def alone_keyboard(m):
     press(m, DOWN)
     r = panel("await wait(200); return at();")
     check("with a button focused, ↓ takes the keyboard to the list: one place and one ring", r["cursor"] and r["rings"] == 1 and r["id"] != "new-tab", str(r))
+    # Tab comes into the list on the selected tab, with the cursor, and ⇧Tab gets out again: no trap.
+    # (A tab of the list selected: an essential's tile comes before New tab.)
+    m.js(H + """const w = main(), t = w.gBrowser.visibleTabs.find(t => !t.pinned && !url(t).includes("/sidebar/sidebar.html"));
+      if (t) w.gBrowser.selectedTab = t; await wait(1000); return 1;""")
+    m.js(into_panel)
+    panel("""d.getElementById("new-tab").focus(); await wait(100); return 1;""")
+    landed = None
+    for _ in range(8):
+        press(m, "\ue004")
+        landed = panel("await wait(150); return {...at(), selected: d.activeElement?.classList.contains('active') ?? false};")
+        if landed["tab"] or landed["head"] or landed["tile"]:
+            break
+    check("Tab from New tab comes into the list on the selected tab, with the cursor on it", landed["cursor"] and landed["selected"] and landed["rings"] == 1, str(landed))
+    press(m, "\ue004", SHIFT)
+    out = panel("await wait(150); return {...at(), inList: !!d.activeElement?.closest('#tabs')};")
+    check("and ⇧Tab takes the keyboard out of the list again", not out["inList"] and not out["cursor"] and out["focus"], str(out))
     panel("""d.getElementById("new-tab").focus(); await wait(100); return 1;""")
     press(m, ENTER)
     after = m.js(H + "for (let i = 0; i < 30 && main().gBrowser.tabs.length === args[0]; i++) await wait(100); return main().gBrowser.tabs.length;", before)
