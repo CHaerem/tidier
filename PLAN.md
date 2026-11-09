@@ -94,6 +94,33 @@ All of part B is checked in the test Firefox, in release Firefox and in Develope
 What a test Firefox cannot show is left for the second Mac: a real trackpad and drag and drop,
 links from real apps, real sound and calls, and real Firefox Sync between two machines.
 
+## Where things live
+
+Tidier is generic: this repository holds no one's setup, and nothing in it should.
+
+- **Your setup** (spaces, essentials, folders, saved tabs, names, rules) is in Tidier in the
+  browser, in your Firefox account through Firefox Sync, and in a daily copy on each machine.
+  It gets there once, by taking in a file: from Zen or Arc (`tools/from_arc_zen.py`), or a
+  Tidier copy. Such a file holds your addresses and stays on the machine.
+- **Each machine's own choices** (Tidier alone on, which spaces are hidden there) and
+  Firefox's settings are in dotfiles, given to Tidier as managed storage.
+- To do: Tidier's own tests run with Tidier's defaults, not with the private dotfiles; a
+  check of the dotfiles' Firefox files belongs with the dotfiles.
+
+## The order from here
+
+1. Everything so far to main (off by default: the daily browser goes on as today), and a
+   day of watching it.
+2. A short check on the second Mac of what only a real screen can show.
+3. The daily Mac moves over: Tidier alone on, the move from Sidebery by its click, then the
+   Zen file taken in on the settings page. Sidebery disabled, still installed.
+4. Sync turned on there, with Add-ons ticked in Firefox Sync (or
+   `services.sync.engine.extension-storage.force`). The setup is about 12 kB of the
+   100 kB Firefox gives an add-on.
+5. The second Mac signs in to the same Firefox account, turns on Tidier alone and sync, and
+   gets the same setup, with the daily Mac's work space hidden there: the first real sync between two machines.
+6. A week or two of daily use; then Sidebery is removed (part E), and there is no way back.
+
 ## C. Trying it on the second Mac
 
 - [ ] It gets Firefox as default, and the Firefox files from dotfiles, declared in its
@@ -104,7 +131,8 @@ links from real apps, real sound and calls, and real Firefox Sync between two ma
 
 ## D. Moving the daily browser
 
-- [ ] A copy taken first, by hand, of the whole Firefox profile and Sidebery's export.
+- [ ] Sidebery's export taken first, for its rules and order (the Firefox profile itself
+      need not be kept: Zen holds the setup the owner wants).
 - [x] Rules and order of spaces imported from Sidebery's export, which is the only
       place they can be read from, also the address rules of its panels and which folders
       were closed.
@@ -113,7 +141,8 @@ links from real apps, real sound and calls, and real Firefox Sync between two ma
       Checked with a real Sidebery in the test Firefox, there and back.
 - [x] Spaces, essentials, pinned tabs and folders from Arc or Zen, which is the setup the
       owner wants (`tools/from_arc_zen.py`), taken in on the settings page like a copy.
-      Checked with made-up Arc and Zen files; not yet run on the real ones.
+      Checked with made-up files and with the owner's real Zen setup (31 essentials,
+      8 folders, 43 saved tabs in three spaces), in a test Firefox.
 - [ ] Sidebery disabled but installed for a few weeks.
 
 ## E. Without Sidebery, everywhere
