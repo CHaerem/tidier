@@ -7755,9 +7755,10 @@ def alone_more(m):
         # every window; ⇧↓ takes the next row too; ⌘A every row.
         sidebar_page(m, MENU_PAGE + "await until(() => rowOf(args[0])); rowOf(args[0]).click(); return 1;", t1)
         m.js(MENU_TABS + "await until(() => idOf(main().gBrowser.selectedTab) === args[0]); await wait(500); return 1;", t1)
-        ORDER = MENU_TABS + """const keys = names => wins().map(w => names.map(n => w.gBrowser.tabs.findIndex(t => url(t).includes("smoke-more-" + n) && !t.pinned)));
-          return keys([...args]);"""
-        before = m.js(ORDER, "t1", "t2")
+        # By the record's key: an unloaded placeholder in the other window has no address to go by.
+        ORDER = MENU_TABS + """return wins().map(w => [...args].map(k => w.gBrowser.tabs.findIndex(t => !t.pinned && key(w, t) === JSON.stringify(k))));"""
+        pair = [record_of("t1")["key"], record_of("t2")["key"]]
+        before = m.js(ORDER, *pair)
         r = sidebar_page(m, MENU_PAGE + """
           const key = (k, more = {}) => page.dispatchEvent(new page.KeyboardEvent("keydown", page.JSON.parse(JSON.stringify({key: k, bubbles: true, cancelable: true, ...more}))));
           const today = () => [...doc.querySelectorAll("#tabs > .tab")].map(t => Number(t.dataset.tab));
@@ -7773,8 +7774,8 @@ def alone_more(m):
           const all = doc.querySelectorAll("#tabs .tab.picked").length, drawn = [...doc.querySelectorAll("#tabs .tab")].filter(t => t.offsetParent).length;
           key("Escape");
           return {moved, two, all, drawn, left: doc.querySelectorAll(".picked").length};""", t1)
-        after = m.js(ORDER, "t1", "t2")
-        check("⌥↓ in the sidebar moves the tab one place down, in every window", r.get("moved") == 1 and all(b[0] < b[1] for b in before) and all(a[0] > a[1] for a in after), f"{r} {before} -> {after}")
+        after = m.js(ORDER, *pair)
+        check("⌥↓ in the sidebar moves the tab one place down, in every window", r.get("moved") == 1 and all(0 <= b[0] < b[1] for b in before) and all(a[0] > a[1] >= 0 for a in after), f"{r} {before} -> {after}")
         check("⇧↓ takes the next row too, and ⌘A every row shown", r.get("two") == 2 and r.get("all") == r.get("drawn") > 2 and r.get("left") == 0, str(r))
 
         # Held over a closed folder, a dragged tab opens it; over another space's dot, goes there,
