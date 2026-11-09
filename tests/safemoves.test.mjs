@@ -137,7 +137,7 @@ test("a selected tab can move: you go to the tab used last in its space, and sta
   assert.deepEqual(ff.list(w.id).filter(t => t.url === SITE).map(t => t.cookieStoreId), [B]);
   assert.equal(ff.tabs.get(other.id).active, true);
   assert.equal(x.js("activeSpace").get(w.id), A);
-  assert.deepEqual(said(x), []);
+  assert.deepEqual(said(x), [], "the line is the menu's, for all the tabs it moves (tabAction, tabmenu.test.mjs)");
   x.kill();
 });
 

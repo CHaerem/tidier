@@ -410,9 +410,15 @@ Links opened from outside Firefox (Slack, Mail, …) open in the active space's
 container; Sidebery does that (its setting "reopen externally opened tabs").
 It cannot for addons.mozilla.org, which Firefox shields from extensions. Firefox
 itself gives such a link no container, unless a visible tab is on the same host, and
-then that tab's container. With Tidier alone the link opens in a small window of its
+then that tab's container, counting every window and every space's essentials (they are
+pinned, so always visible to it): the space with the most essentials on a site wins. With
+Tidier alone that guess counts for nothing, and its login never goes out (Isolation,
+below); the dotfiles' `browser.link.force_default_user_context_id_for_external_opens`
+turns it off in Firefox itself. The link opens in a small window of its
 own (`littlewindow.js`), in the rule's space or else the one you are in, to read and
-close, or to keep with one click; it can be turned off on the settings page.
+close, or to keep with one click; it can be turned off on the settings page, and then the
+link is an ordinary tab in the same space. The same link twice (a double click in the
+other app) brings its small window to the front.
 
 Sidebery's container rules ("reopen tabs with this URL in this container")
 match a rule's text anywhere in every address a tab loads, including sign-in
@@ -578,6 +584,12 @@ Guaranteed, with the permission for it (`isolation.js`, `whereItBelongs`):
   second after giving the permission later. Until then such a page goes out with no
   login, and is moved to its space as soon as Tidier has started.) An essential with no
   container becomes one of the active space.
+- **A link from another app goes out only in the space you are in, or a rule's,** also
+  when Firefox has put it in another space's container itself: a new tab on about:blank,
+  with no opener and no page asking, selected in a container that is not the space you
+  were in, is taken for that guess, and goes where a link with no container goes, before
+  anything is sent. (Firefox's own "Open in New Container Tab" on a bookmark looks the
+  same, and opens in the space you are in.)
 - **A rule's address opens in its space, from the first request on,** on a tab's first
   page and for an address you type or choose. A cookie set in one space is not sent in
   another. If the tab there cannot be opened, the page is not loaded and the line says its
@@ -605,7 +617,10 @@ Not guaranteed:
 
 - **Without the permission,** a link's first request goes out with no container, and
   the tab is then opened again in its space. It carries no login, since those are all
-  in spaces, but the site does see it.
+  in spaces, but the site does see it. A link Firefox has put in another space's
+  container goes out with that space's login, and is then opened again in yours, unless
+  the dotfiles' setting above has turned that guess off. So is one opened in the
+  background (`browser.tabs.loadDivertedInBackground`), which Firefox does not do by default.
 - **Addresses Firefox hides from every extension** (addons.mozilla.org, accounts.firefox.com
   and a few more) cannot be stopped: no extension sees those requests. One opened with no
   container goes out with no login, and is moved to a space as soon as it shows, so it
@@ -626,7 +641,8 @@ Not guaranteed:
   rule's space: which addresses a tab passed through is not kept over a restart.
 - **A space's logins are separate; Firefox's other data is not.** History, bookmarks,
   saved passwords and downloads are per Firefox. Private windows are left alone, and
-  `about:` pages, extensions' pages and files have no space. Firefox's own requests
+  `about:` pages, extensions' pages and files have no container: such a page is listed in
+  the one space it was first seen or last selected in. Firefox's own requests
   (its updates, say) are in no space.
 - **A proxy is not anonymity.** It carries a space's requests, with the names looked up
   there too for SOCKS; a proxy that does not answer means no page rather than going

@@ -196,6 +196,32 @@ test("no mark on a placeholder, an unloaded tab, a page playing sound or a tab T
   x.kill();
 });
 
+// An unloaded page brought back (Firefox restores it before it goes anywhere else, as when
+// Tidier sends an unloaded essential's copy to its placeholder) passes through about:blank
+// and its own address on the way. After the long quiet it had while unloaded, that read as
+// news: a window reopened beside unloaded essentials put dots on every one of them.
+test("a page waking up from unloaded starts over: what it says on the way is no news", async () => {
+  const ff = new FakeFirefox();
+  const { chat } = oneWindow(ff);
+  const x = await start(ff);
+  x.quiet();
+  const t = ff.tabs.get(chat.id);
+  Object.assign(t, { discarded: true });
+  x.b.tabs.onUpdated.fire(chat.id, { discarded: true }, ff.snap(t));
+  x.quiet();
+  Object.assign(t, { discarded: false, url: "about:blank" });
+  x.b.tabs.onUpdated.fire(chat.id, { discarded: false }, ff.snap(t));
+  x.title(chat.id, "about:blank");
+  Object.assign(t, { url: "https://chat.example/" });
+  x.title(chat.id, "chat.example/");
+  x.title(chat.id, "Chat");
+  assert.deepEqual(x.marked(), [], "waking is no news");
+  x.quiet();
+  x.title(chat.id, "Anna wrote - Chat");
+  assert.deepEqual(x.marked(), ["chat"], "what comes after its quiet is");
+  x.kill();
+});
+
 test("the same tab in another window has the mark, on a closed folder and beside another space's dot, and selecting it there clears it", async () => {
   const ff = new FakeFirefox();
   ff.store.syncedTabs = {

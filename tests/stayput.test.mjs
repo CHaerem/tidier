@@ -226,15 +226,86 @@ test("with the setting off, Firefox is told nothing and nothing waits", async ()
   x.kill();
 });
 
-test("switching space goes back to the tab used last, loaded or not", async () => {
+// Going to a space (lastUsedIn, switchSpace in spaces.js): back to the tab you selected
+// last there, in any window. Firefox's lastAccessed says when a tab was made for a tab
+// opened in the background, moved or copied, and when Tidier made it for a placeholder.
+const c2 = (ff, w, key, props = {}, url = `https://${key}.example/`) => {
+  ff.store.syncedTabs[key] = entry(url, { cookieStoreId: C2 });
+  return ff.addTab(w.id, { url, cookieStoreId: C2, ...props }, { syncKey: key, syncRole: "live" });
+};
+const onNow = (ff, w) => ff.list(w.id).find(t => t.active);
+
+test("switching space goes back to the tab you selected last there, loaded or not", async () => {
   const ff = new FakeFirefox();
   const { w, selected } = fill(ff, []);
-  const loaded = ff.addTab(w.id, { url: "https://c2a.example/", cookieStoreId: C2, lastAccessed: 1000 });
-  const unloaded = ff.addTab(w.id, { url: "https://c2b.example/", cookieStoreId: C2, lastAccessed: 5000, discarded: true });
+  const loaded = c2(ff, w, "c2a", { lastAccessed: 1000 });
+  const unloaded = c2(ff, w, "c2b", { lastAccessed: 500, discarded: true });
   const x = await start(ff);
+  ff.select(unloaded.id); await wait(200);
+  ff.tabs.get(unloaded.id).discarded = true; // unloaded again since
+  ff.select(selected.id); await wait(200);
+  // Opened in the background since, and so stamped as accessed later: not one you used.
+  const background = c2(ff, w, "c2c", { lastAccessed: Date.now() + 5000 });
+  x.b.tabs.onCreated.fire(ff.snap(background));
+  await wait(200);
   await x.js("switchSpace")(w.id, C2);
   await wait(300);
-  assert.equal(ff.list(w.id).find(t => t.active).id, unloaded.id);
-  assert.notEqual(loaded.id, selected.id);
+  assert.equal(onNow(ff, w).id, unloaded.id);
+  assert.notEqual(onNow(ff, w).id, loaded.id);
+  assert.notEqual(onNow(ff, w).id, background.id);
+  x.kill();
+});
+
+test("a space with nothing you used that can be shown opens a new tab: one resting in a closed folder, or moved there, is passed over", async () => {
+  const ff = new FakeFirefox();
+  const { w, selected } = fill(ff, []);
+  ff.store.syncedTabs.shut2 = { ...folder(true), cookieStoreId: C2 };
+  const resting = c2(ff, w, "rest", { discarded: true });
+  ff.store.syncedTabs.rest.parentKey = "shut2";
+  const moved = c2(ff, w, "moved", { discarded: true, lastAccessed: Date.now() + 5000 }); // moved or copied there
+  const x = await start(ff);
+  await x.js("spacePicks").set({ [C2]: ["rest"] });
+  await x.js("switchSpace")(w.id, C2);
+  await wait(300);
+  const now = onNow(ff, w);
+  assert.ok(![resting.id, moved.id, selected.id].includes(now.id), "a new tab");
+  assert.equal(now.cookieStoreId, C2);
+  assert.equal(now.url, "about:newtab");
+  x.kill();
+});
+
+test("in another window, going to a space takes the tab you used there, but not one another window is showing", async () => {
+  const ff = new FakeFirefox();
+  const { w, selected } = fill(ff, []);
+  const docs = c2(ff, w, "docs"), chat = c2(ff, w, "chat");
+  const v = ff.addWindow();
+  ff.addTab(v.id, { url: "https://v.example/", active: true, cookieStoreId: C1 });
+  const ghostOf = key => ff.addTab(v.id, { url: GHOST("ghost", key), discarded: true, cookieStoreId: C2, lastAccessed: Date.now() + 9000 }, { syncKey: key, syncRole: "ghost" });
+  const docsThere = ghostOf("docs"), chatThere = ghostOf("chat");
+  const x = await start(ff);
+  ff.select(docs.id); await wait(200);
+  ff.select(chat.id); await wait(200);
+  await x.js("switchSpace")(v.id, C2);
+  await wait(300);
+  assert.equal(ff.list(v.id).find(t => t.active)?.id, docsThere.id, "chat is on show in the first window: the one before it");
+  assert.notEqual(chatThere.id, selected.id);
+  ff.select(selected.id); await wait(200);
+  assert.equal((await x.js("lastUsedIn")(v.id, C2, docsThere.id))?.id, chatThere.id, "once that window has left it, it is the one");
+  x.kill();
+});
+
+test("a tab selected in a window you are not using does not count as used", async () => {
+  const ff = new FakeFirefox();
+  const { w, selected } = fill(ff, []);
+  const a = c2(ff, w, "a"), b = c2(ff, w, "b");
+  const x = await start(ff);
+  ff.select(a.id); await wait(200);
+  ff.select(selected.id); await wait(200);
+  const v = ff.addWindow();
+  ff.addTab(v.id, { url: "https://v.example/", cookieStoreId: C1 });
+  const bThere = ff.addTab(v.id, { url: GHOST("ghost", "b"), cookieStoreId: C2 }, { syncKey: "b", syncRole: "ghost" });
+  ff.select(bThere.id); await wait(200); // ff.focused is still the first window
+  assert.equal((await x.js("lastUsedIn")(w.id, C2))?.id, a.id);
+  assert.notEqual(b.id, a.id);
   x.kill();
 });

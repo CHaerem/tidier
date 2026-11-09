@@ -148,8 +148,8 @@ async function refreshLiveFolder(folder, res) {
 }
 
 // A pull request renamed on GitHub: its tabs take the new title while none of
-// them has been opened. (An opened one shows GitHub's own title, which tab
-// sync keeps.)
+// them has been opened. (An opened one keeps the name it has, also over a restart:
+// ownTitle, tabsync.js.)
 async function renameLiveItem(key, item) {
   const all = await getSynced();
   const entry = all[key], title = liveTitle(item);

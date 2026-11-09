@@ -74,6 +74,21 @@ test("whereItBelongs: what does not count: a link in a page, a redirect, a reloa
   x.kill();
 });
 
+test("whereItBelongs: a link from another app in a container Firefox guessed goes where one with no container goes", async () => {
+  const x = (new FakeFirefox()).boot(); const at = decide(x);
+  assert.equal(at({ here: B, url: "https://plain.example/", guessed: true, firstPage: true }), C, "to the space you are in");
+  assert.equal(at({ here: A, url: "https://work.example/x", guessed: true, firstPage: true }), B, "or to a rule's");
+  assert.equal(at({ here: B, url: "https://work.example/x", guessed: true, firstPage: true }), null, "and a guess that is the rule's space stays");
+  assert.equal(at({ here: C, url: "https://plain.example/", guessed: true, firstPage: true }), null, "a guess that is your space stays");
+  // Only a new tab's first request that nobody's page asked for.
+  assert.equal(at({ here: B, url: "https://plain.example/", guessed: true, firstPage: true, originUrl: "https://page.example/" }), null);
+  for (const more of [{ redirect: true }, { exempt: true }, { popup: true }, { firstPage: false }]) {
+    assert.equal(at({ here: B, url: "https://plain.example/", guessed: true, firstPage: true, ...more }), null, JSON.stringify(more));
+  }
+  assert.equal(at({ here: B, url: "https://plain.example/", firstPage: true }), null, "not guessed: a tab of yours in another space");
+  x.kill();
+});
+
 test("whereItBelongs: never a page that cannot have a container, and private windows are left alone", async () => {
   const x = (new FakeFirefox()).boot(); const at = decide(x);
   for (const url of ["about:blank", "about:newtab", "moz-extension://x/y.html", "file:///a", "data:text/plain,x", "view-source:https://a.example/"]) {
@@ -90,12 +105,12 @@ test("whereItBelongs: never a loop: where it sends a page, that page stays, what
   // (A rule cannot send a page out of the spaces, and one that doesn't parse matches nothing.)
   const rules = [{ url: "work.example", space: B }, { url: "/work/", space: C }, { url: "bad", space: NONE }, { url: "/(/", space: B }];
   for (const url of ["https://work.example/x", "https://plain.example/", "https://bad.example/"]) for (const here of [NONE, A, B, C]) for (const originUrl of [undefined, "https://p.example/"]) {
-    for (const firstPage of flags) for (const redirect of flags) for (const exempt of flags) for (const popup of flags) {
-      const to = f({ url, tab: { cookieStoreId: here, url: "about:blank" }, originUrl, firstPage, redirect, exempt, popup, rules, activeSpace: A });
+    for (const firstPage of flags) for (const redirect of flags) for (const exempt of flags) for (const popup of flags) for (const guessed of flags) {
+      const to = f({ url, tab: { cookieStoreId: here, url: "about:blank" }, originUrl, firstPage, redirect, exempt, popup, rules, activeSpace: A, guessed });
       assert.notEqual(to, here, "it is never sent where it already is");
       assert.notEqual(to, NONE, "nothing is ever sent out of the spaces");
       if (!to) continue;
-      for (const f2 of flags) for (const o2 of [undefined, "moz-extension://t/"]) assert.equal(f({ url, tab: { cookieStoreId: to, url: "about:blank" }, originUrl: o2, firstPage: f2, rules, activeSpace: A }), null, `${url}: from ${here} to ${to} and on`);
+      for (const f2 of flags) for (const o2 of [undefined, "moz-extension://t/"]) for (const g2 of flags) assert.equal(f({ url, tab: { cookieStoreId: to, url: "about:blank" }, originUrl: o2, firstPage: f2, rules, activeSpace: A, guessed: g2 }), null, `${url}: from ${here} to ${to} and on`);
     }
   }
   x.kill();
@@ -131,7 +146,8 @@ test("opening fails: a page with no container stays unloaded and the tab is kept
   assert.equal((await ff.request({ tabId: t.id, url: "https://link.example/" })).cancel, true);
   assert.ok(ff.tabs.has(t.id), "kept");
   x.b.tabs.create = create;
-  const inSpace = newTab(ff, x, w, { cookieStoreId: B });
+  // (A new tab page you opened there: a bare about:blank in another space is Firefox's guess for a link.)
+  const inSpace = newTab(ff, x, w, { cookieStoreId: B, url: "about:newtab" });
   const answer = await ff.request({ tabId: inSpace.id, url: "https://work.example/" });
   assert.equal(answer.cancel, undefined, "the rule's container is gone, so it loads here");
   assert.ok(ff.tabs.has(inSpace.id));
@@ -498,6 +514,17 @@ test("a new space takes a colour and icon no space has", async () => {
   x.kill();
 });
 
+test("the settings page lists the spaces in the order of the bar", async () => {
+  const ff = new FakeFirefox();
+  ff.store.spaceOrder = [C, A, B];
+  const w = ff.addWindow({ focused: true });
+  ff.addTab(w.id, { url: "https://o.example/", cookieStoreId: A, active: true });
+  const x = await run(ff);
+  const { spaces } = await x.send({ type: "isolation:get" }, { url: "moz-extension://tidier/settings/settings.html" });
+  assert.deepEqual(Array.from(spaces, s => s.id), [C, A, B]);
+  x.kill();
+});
+
 test("deleting a space: copy first, then all it holds goes, you are taken out, and nothing comes back", async () => {
   const ff = new FakeFirefox();
   ff.store.essentials = [{ key: "e", url: "https://e.example/", cookieStoreId: B, title: "E", icon: "x" }, { key: "keep", url: "https://k.example/", cookieStoreId: A, title: "K", icon: "x" }];
@@ -527,6 +554,31 @@ test("deleting a space: copy first, then all it holds goes, you are taken out, a
   assert.ok(!ff.tabs.has(s.id));
   assert.ok(ff.list(w.id).every(t => t.cookieStoreId !== B), "no tab of it is left, or came back");
   assert.equal(ff.list(w.id).find(t => t.active).cookieStoreId, A, "you are in a space that exists");
+  assert.deepEqual(x.errors, []);
+  x.kill();
+});
+
+test("deleting the space you are in from the settings page: you stay on the page, which is then in the next space", async () => {
+  const ff = new FakeFirefox();
+  ff.store.syncedTabs = {
+    o: { url: "https://o.example/", title: "O", cookieStoreId: A, parentKey: null, group: false, added: 1 },
+    b: { url: "https://b.example/", title: "B", cookieStoreId: B, parentKey: null, group: false, added: 1 },
+  };
+  ff.store.spaceOrder = [B, A];
+  const w = ff.addWindow({ focused: true });
+  ff.addTab(w.id, { url: "https://o.example/", cookieStoreId: A }, { syncKey: "o", syncRole: "live" });
+  const b = ff.addTab(w.id, { url: "https://b.example/", cookieStoreId: B, active: true }, { syncKey: "b", syncRole: "live" });
+  const settings = ff.addTab(w.id, { url: "moz-extension://tidier/settings/settings.html" });
+  const x = await run(ff);
+  ff.select(settings.id);
+  await wait(300);
+  assert.equal(x.js("activeSpace").get(w.id), B);
+  assert.equal((await x.js("deleteSpace")(B)).deleted, true);
+  await wait(800);
+  assert.ok(!ff.tabs.has(b.id));
+  assert.equal(ff.list(w.id).find(t => t.active)?.id, settings.id, "still on the settings page");
+  assert.equal(x.js("activeSpace").get(w.id), A);
+  assert.ok((await x.js("viewFor")(w.id)).tabs.some(t => t.id === settings.id), "and it is listed where you are now");
   assert.deepEqual(x.errors, []);
   x.kill();
 });

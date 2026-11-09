@@ -1515,6 +1515,51 @@ def alone_second_window(m):
     check("a new window's placeholders unload", not r["loaded"], str(r))
     check("a new window shows one space", r["hidden"] > 0, str(r))
 
+    # Going to a space in the new window takes you to the tab you used last there, in the
+    # first window: not the placeholder made last, nor a tab opened there in the background.
+    r = m.js(H + """const a = main(), b = other(); a.focus(); await wait(300);
+      const {ExtensionParent} = ChromeUtils.importESModule("resource://gre/modules/ExtensionParent.sys.mjs");
+      const used = a.gBrowser.tabs.find(t => url(t).includes("fixture-tab-2-1"));
+      a.gBrowser.selectedTab = used; await wait(1200);
+      a.gBrowser.selectedTab = a.gBrowser.tabs.find(t => url(t).includes("fixture-tab-1-1")); await wait(1200);
+      a.gBrowser.addTrustedTab(args[0], {userContextId: 2, inBackground: true}); await wait(2500);
+      b.focus(); await wait(300);
+      return {key: key(a, used), window: ExtensionParent.apiManager.global.windowTracker.getId(b)};""", m.pages + "/r/opened-behind")
+    sidebar_page(m, """const p = page.browser.runtime.connect({name: "sidebar"}), say = msg => p.postMessage(page.JSON.parse(JSON.stringify(msg)));
+      say({type: "hello", windowId: args[0]}); await wait(100); say({type: "space", space: "firefox-container-2"}); await wait(1500); p.disconnect();""", r["window"])
+    # (The test's own page has taken the focus: the page comes as you go to that window.)
+    got = m.js(H + """const a = main(), b = other(); b.focus(); await wait(1500); const on = b.gBrowser.selectedTab;
+      const got = {key: key(b, on), space: on.userContextId, loaded: !!on.linkedPanel && url(on).includes("fixture-tab-2-1"), firstStays: url(a.gBrowser.selectedTab).includes("fixture-tab-1-1"),
+                   behind: wins().some(w => url(w.gBrowser.selectedTab).includes("opened-behind"))};
+      await removeWhere((w, t) => url(t).includes("opened-behind")); a.focus(); await wait(300); return got;""")
+    check("in a new window, going to a space lands on the tab you used last there, with its page", got.get("key") == r["key"] and got.get("loaded"), f"{r} {got}")
+    check("not on a tab opened there in the background since, and the first window stays where it is", not got.get("behind") and got.get("firstStays"), str(got))
+
+    # Closed and reopened (⌘⇧N): the window comes back in its own space, on its own tab, and
+    # the window you are in keeps its tab. Its pages loading again are no news, and an
+    # essential you had unloaded, with its page, stays unloaded: sent to its placeholder, it
+    # was loaded first, and what its title said on the way was taken for news.
+    r = m.js(H + """const a = main(), b = other(); a.focus(); await wait(300);
+      const was = {key: key(b, b.gBrowser.selectedTab), space: b.gBrowser.selectedTab.userContextId, mine: key(a, a.gBrowser.selectedTab)};
+      const asleep = a.gBrowser.tabs.find(t => t.pinned && !t.selected && t.linkedPanel && /^https?:/.test(url(t)));
+      if (asleep) { a.gBrowser.discardBrowser(asleep); await wait(500); }
+      b.gBrowser.selectedTab.toggleMuteAudio(); await wait(300); // you muted the page there
+      await close(b); a.focus(); await wait(1500);
+      const heir = a.gBrowser.tabs.find(t => key(a, t) === was.key), heirMuted = !!heir?.muted;
+      const w = a.SessionStore.undoCloseWindow(0); w.__smoke = true;
+      for (let i = 0; i < 100 && !(w.gBrowser && w.gBrowser.tabs.length > 2); i++) await wait(100);
+      await wait(7000); // past news's five seconds of quiet
+      return {...was, back: key(w, w.gBrowser.selectedTab), backSpace: w.gBrowser.selectedTab.userContextId, mineNow: key(a, a.gBrowser.selectedTab),
+              asleep: asleep ? {still: !asleep.linkedPanel && /^https?:/.test(url(asleep))} : null, heirMuted,
+              loaded: wins().flatMap(x => x.gBrowser.tabs.filter(t => t.pinned && t.linkedPanel && !url(t).includes("ghost.html")).map(t => key(x, t) ?? ek(x, t))).length};""")
+    marks = extension_message(m, {"type": "stats"})["sizes"].get("newsMarks")
+    check("a muted page whose window closes stays muted in the window that takes it over", r.get("heirMuted"), str(r))
+    check("a window reopened with ⌘⇧N is back in its own space, on its own tab", r.get("back") == r.get("key") and r.get("backSpace") == r.get("space"), str(r))
+    check("and the window you are in keeps its tab", r.get("mineNow") == r.get("mine"), str(r))
+    check("(an essential with its page, unloaded, to see what a reopen does with it)", r.get("asleep") is not None, str(r))
+    check("an unloaded essential stays unloaded when a window is reopened", (r.get("asleep") or {}).get("still"), str(r))
+    check("its pages loading again put no news marks anywhere", marks == 0, f"{marks} {r}")
+
 
 def alone_spaces(m):
     r = sidebar_page(m, """
@@ -1788,6 +1833,32 @@ def alone_safe_moves(m):
     r = m.js(where_script, "smoke-safe-rule")
     check("and it is still there a moment later, once", r["at"] == [there], str(r))
     set_rules([])
+
+    # What a tab was goes with it: an unloaded one arrives unloaded, so nothing is asked of
+    # the site in a space you are not looking at, and a muted one stays muted, so it cannot
+    # play there out of sight. One line says where they went, and Undo brings them back.
+    for part in ("smoke-safe-muted", "smoke-safe-asleep"):
+        open_in(f"https://example.org/?{part}", here)
+        registered_where(part)
+    m.js(H + """const w = main(), byPart = p => w.gBrowser.tabs.find(t => url(t).includes(p));
+      byPart("smoke-safe-muted").toggleMuteAudio(); w.gBrowser.discardBrowser(byPart("smoke-safe-asleep")); await wait(800); return 1;""")
+    state = """const state = async space => Object.fromEntries((await page.browser.tabs.query({cookieStoreId: space})).filter(t => /smoke-safe-(muted|asleep)/.test(t.url))
+      .map(t => [t.url.includes("muted") ? "muted" : "asleep", {muted: !!t.mutedInfo?.muted, unloaded: t.discarded, title: t.title}]));"""
+    r = sidebar_page(m, drop_on_space + state + """const ids = [await tabWith("smoke-safe-muted"), await tabWith("smoke-safe-asleep")];
+      for (const id of ids) send({type: "moveToSpace", tabId: id, space: args[0], leaving: ids});
+      for (let i = 0; i < 50 && Object.keys(await state(args[0])).length < 2; i++) await wait(100);
+      await wait(800);
+      const out = {there: await state(args[0]), line: doc.querySelector("#note .text")?.textContent ?? null, undo: doc.querySelector("#note .act")?.textContent ?? null};
+      doc.querySelector("#note .act")?.click();
+      for (let i = 0; i < 50 && Object.keys(await state(args[1])).length < 2; i++) await wait(100);
+      await wait(800);
+      out.back = await state(args[1]);
+      return out;""", there, here)
+    check("a muted tab moved to another space stays muted, and an unloaded one arrives unloaded, with its title",
+          r.get("there", {}).get("muted", {}).get("muted") and r["there"].get("asleep", {}).get("unloaded") and not (r["there"].get("asleep", {}).get("title") or "http").startswith(("http", "about:")), str(r))
+    check("one line says where they went, with Undo", re.fullmatch(r"2 tabs moved to .+", r.get("line") or "") and r.get("undo") == "Undo", str(r))
+    check("and Undo brings them back as they were", r.get("back", {}).get("muted", {}).get("muted") and r["back"].get("asleep", {}).get("unloaded"), str(r))
+    m.js(H + """for (const w of wins()) for (const t of w.gBrowser.tabs.filter(t => /smoke-safe-(muted|asleep)/.test(url(t)))) w.gBrowser.removeTab(t); await wait(1200); return 1;""")
 
     # The selected tab: it goes, and you stay in the space, on a tab that was there.
     open_in("https://example.org/?smoke-safe-selected", here)
@@ -3785,7 +3856,10 @@ def alone_news(m):
       await removeWhere((x, t) => url(t).includes(args[0]));
       return 1;""", name)
     stats = extension_message(m, {"type": "stats"})
-    check("no mark stays once its pages are gone, and nothing is kept of them", stats["sizes"]["newsMarks"] == 0 and stats["sizes"]["newsSeen"] <= remembered, f"{remembered} -> {stats['sizes']}")
+    # What is remembered is for pages loaded now (news.js forgets one as it is unloaded), which
+    # a tab selected meanwhile can have added to.
+    loaded = m.js(H + """return wins().flatMap(w => w.gBrowser.tabs.filter(t => t.linkedPanel && /^https?:/.test(url(t)))).length;""")
+    check("no mark stays once its pages are gone, and nothing is kept of them", stats["sizes"]["newsMarks"] == 0 and stats["sizes"]["newsSeen"] <= loaded, f"{remembered}, {loaded} loaded -> {stats['sizes']}")
 
 
 def alone_touches(m):
@@ -4024,6 +4098,54 @@ def visit(m, ctx, address, wait_for=None):
     m.js(ISOLATION_JS + """const [ctx, u] = args; const t = inTab(ctx, u); await until(() => url(t) === u, 8000); await wait(300); return 1;""", ctx, address)
 
 
+def guessed_links(m, space, other):
+    """A link from another app that Firefox puts in another space's container: it guesses from
+    the visible tabs on the link's site, in every window, and essentials are always visible. So
+    another space with more essentials there than you have tabs wins. Its login must not go out,
+    with the small window on or off, and the window stays in your space."""
+    lh = m.pages.replace("127.0.0.1", "localhost")  # a site no other tab is on
+    visit(m, space, f"{lh}/set-cookie?v=yours")
+    visit(m, other, f"{lh}/set-cookie?v=guessed")
+    m.js(H + """const [there, u] = args, w = main();
+      const pins = [0, 1].map(i => w.gBrowser.addTrustedTab(u + i, {userContextId: there, inBackground: true}));
+      await wait(1500); for (const p of pins) w.gBrowser.pinTab(p); await wait(2000); return 1;""", other, f"{lh}/r/guess-essential-")
+    # Firefox's own setting for this: the dotfiles may turn the guess off, but Tidier must hold without it.
+    link = LITTLE + """const [u, guess, part] = args, w = main();
+      const PREF = "browser.link.force_default_user_context_id_for_external_opens", was = Services.prefs.getBoolPref(PREF, false);
+      Services.prefs.setBoolPref(PREF, !guess);
+      const on = await onSpaceTab(), c = w.gBrowser.tabContainer, opened = [], onOpen = e => opened.push(e.target.userContextId);
+      c.addEventListener("TabOpen", onOpen);
+      external(u);
+      await until(() => wins().some(x => x.gBrowser.tabs.some(t => url(t).includes(part))));
+      await wait(1500);
+      c.removeEventListener("TabOpen", onOpen);
+      Services.prefs.setBoolPref(PREF, was);
+      const p = popups().find(x => url(x.gBrowser.selectedTab).includes(part));
+      const got = {opened, small: p ? p.gBrowser.selectedTab.userContextId : null, here: w.gBrowser.tabs.filter(t => url(t).includes(part)).map(t => t.userContextId),
+        space: on.userContextId, window: w.gBrowser.selectedTab.userContextId, popups: popups().length};
+      for (const x of popups()) x.close(); await until(() => !popups().length);
+      const t = w.gBrowser.tabs.find(t => url(t).includes(part)); if (t) { w.gBrowser.selectedTab = on; w.gBrowser.removeTab(t); }
+      await wait(500); return got;"""
+    yours, theirs = "login=yours", "login=guessed"
+
+    def sent(part):
+        return [x["cookie"] for x in seen(m, part)]
+    r = m.js(link, f"{lh}/r/guess-small", True, "guess-small")
+    check("(Firefox guesses the space with more essentials on the site for a link from another app)", r.get("opened") == [other], str(r))
+    check("a link Firefox puts in another space's container: none of that space's login goes out, only yours",
+          sent("guess-small") and all(c == yours for c in sent("guess-small")), f"{sent('guess-small')} {r}")
+    check("and it opens in a small window in your space, your window staying there", r.get("small") == space and r.get("window") == space and r.get("here") == [], str(r))
+    extension_message(m, {"type": "little:set", "on": False})
+    r = m.js(link, f"{lh}/r/guess-off", True, "guess-off")
+    check("with small windows off, the same: only your login goes out", sent("guess-off") and all(c == yours for c in sent("guess-off")), f"{sent('guess-off')} {r}")
+    check("and it opens as a tab in your space, which your window stays in", r.get("here") == [space] and r.get("window") == space and not r.get("popups"), str(r))
+    extension_message(m, {"type": "little:set", "on": True})
+    r = m.js(link, f"{lh}/r/guess-none", False, "guess-none")
+    check("with the dotfiles' setting Firefox guesses nothing, and the link opens in your space", r.get("opened") == [0] and r.get("small") == space and theirs not in sent("guess-none"), f"{sent('guess-none')} {r}")
+    m.js(H + """const w = main(); for (const p of w.gBrowser.tabs.filter(t => t.pinned && url(t).includes("guess-essential"))) { w.gBrowser.unpinTab(p); await wait(300); w.gBrowser.removeTab(p); }
+      await wait(1200); await removeWhere((x, t) => url(t).includes("localhost") && url(t).includes("set-cookie")); return 1;""")
+
+
 def alone_isolation(m):
     base = m.pages
     # Tidier alone stays on one space while this runs; the tabs made here are hidden or not, but they load either way.
@@ -4072,6 +4194,7 @@ def alone_isolation(m):
     r = m.js(ISOLATION_JS + """main().gBrowser.addTrustedTab(args[0], {inBackground: true}); await until(() => containersOf("no-rule-link").length, 8000); await wait(500); return containersOf("no-rule-link");""", f"{base}/r/no-rule-link")
     only("no-rule-link", here, "a link with no container: every request carries the active space's cookie, never none")
     check("a link with no container: it is in the active space, once", r == [space], str(r))
+    guessed_links(m, space, other)
 
     # A new tab: ⌘T, then an address.
     r = m.js(ISOLATION_JS + """const w = main(); const t = w.gBrowser.addTrustedTab("about:newtab"); w.gBrowser.selectedTab = t; await wait(1500);
@@ -5180,6 +5303,16 @@ def alone_little_window(m):
           r.get("role") == "live" and r.get("there") == 1 and r.get("thereRole") == "ghost" and r.get("recorded"), str(r))
     check("in the same place in both windows", r.get("firstHere") and r.get("firstThere"), str(r))
     check("the page was not loaded again", page and r.get("page") == page, f"{page} then {r}")
+    r = m.js(LITTLE + """await wait(1500); const data = main().SessionStore.getClosedWindowData(), closed = typeof data === "string" ? JSON.parse(data) : data;
+      return {kept: closed.filter(x => (x.tabs ?? []).some(t => (t.entries ?? []).some(e => (e.url || "").includes("little-one")))).length};""")
+    check("a kept small window is not among the closed windows, so ⌘⇧N cannot bring its page back twice", r.get("kept") == 0, str(r))
+
+    # The same link twice, as a double click in another app sends it: one small window.
+    r = m.js(LITTLE + """await onSpaceTab(); external(args[0]); await wait(100); external(args[0]);
+      await until(() => popups().length); await wait(2500);
+      const got = {popups: popups().length, left: main().gBrowser.tabs.filter(t => url(t).includes("little-twice")).length};
+      for (const p of popups()) p.close(); await until(() => !popups().length); await wait(500); return got;""", base + "twice")
+    check("the same link twice opens one small window, and leaves nothing behind", r.get("popups") == 1 and r.get("left") == 0, str(r))
 
     # Closing it leaves nothing.
     r = m.js(LITTLE + """await onSpaceTab(); const before = (await record()).length;
@@ -6307,9 +6440,27 @@ def alone_update(m):
         print("SKIP  alone_update (needs Tidier installed for real: Developer Edition, or --xpi)", flush=True)
         return
     before = m.js(SNAP_ALONE)
+    look = """() => ({url: doc.URL, born: Math.round(content.performance.timeOrigin), ready: doc.readyState, space: doc.documentElement.dataset.space || null,
+      own: doc.head ? doc.head.querySelectorAll("style").length : 0, rows: doc.querySelectorAll("#tabs .tab").length})"""
+    was = in_sidebar(m, look)
     bar_open(m)  # an update can come at any moment, also with the bar open
     m.cmd("Addon:Install", {"path": m.update_xpi(), "temporary": False})
-    m.js(H + "await wait(9000); return 1;")
+    # The sidebar while Tidier starts again: in the space's look from its first moment, not a
+    # blank, untinted panel until the background part answers.
+    seen, t0 = [], time.time()
+    while time.time() - t0 < 6:
+        try:  # (a page being replaced may never answer, or not be there yet)
+            s = m.js(H + IN_SIDEBAR + "return await Promise.race([inSidebar(...args), wait(800).then(() => null)]);", look)
+        except Exception:
+            m.chrome()
+            s = None
+        if isinstance(s, dict) and s.get("url", "").endswith("/sidebar/sidebar.html") and s.get("ready") != "loading" and s != (seen[-1] if seen else None):
+            seen.append(s)
+        time.sleep(0.05)
+    m.js(H + "await wait(6000); return 1;")
+    again = [s for s in seen if s["born"] != was.get("born")]  # the page as it is loaded again
+    bare = [s for s in again if not s["space"] or (was.get("own") and not s["own"])]
+    check("during an update the sidebar keeps its space's look until it has its view", again and not bare, f"before {was}, then {seen[:6]}")
     after = m.js(SNAP_ALONE)
     check("after an update with Tidier alone, the same tabs, folders and one space shown", before == after, f"{before} -> {after}")
     left = m.js(H + """return wins().filter(w => !w.toolbar.visible).length;""")
@@ -9018,6 +9169,18 @@ def alone_stay_put(m):
       }
       return out;""")
     check("each tab is in a window once and live in one window, after all this", r == {"doubled": [], "loadedTwice": []}, str(r))
+
+    # The sidebar made shorter (a narrower one, where a notice takes two lines): the selected
+    # tab at the end of the view stays in view, and does not slide under the fade.
+    r = sidebar_page(m, STAY_PUT + """let rows = await mine(); await until(() => rows().length >= 8);
+      await scrollTo(0); await select(rows()[3]);
+      for (let i = 0; i < 8 && fromBottom(activeRow()) > 6; i++) { list.style.height = (list.clientHeight - 10) + "px"; await wait(120); }
+      const before = {inView: inView(activeRow()), fromBottom: fromBottom(activeRow())};
+      list.style.height = (list.clientHeight - 40) + "px"; await wait(400);
+      const after = {inView: inView(activeRow()), fromBottom: fromBottom(activeRow())};
+      list.style.cssText = "flex:none;height:160px"; await wait(200);
+      return {before, after};""")
+    check("a shorter sidebar keeps the selected tab in view", r.get("before", {}).get("inView") and r.get("after", {}).get("inView"), str(r))
 
     # Its tabs must be out of the folder before closing them, or they only unload; and one
     # that is only a placeholder by now, having no page, is closed for good from the folder.

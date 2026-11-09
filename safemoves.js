@@ -71,7 +71,7 @@ async function pageTab(tab, key) {
 // its real tab in (pull, tabsync.js), under a new id, while its own move is on the way.
 async function leavesQuietly(live, key, leaving = []) {
   if (!live?.active || live.discarded || isGhostUrl(live.url)) return closesQuietly(key, live?.id);
-  const last = await lastUsedIn(live.windowId, live.cookieStoreId, live.id, ...leaving);
+  const last = await lastUsedIn(live.windowId, live.cookieStoreId, live.id, ...leaving) ?? await nextAfterClosing(live.windowId, live.cookieStoreId, live.id, ...leaving);
   const step = last ?? await browser.tabs.create({ windowId: live.windowId, cookieStoreId: live.cookieStoreId, active: false });
   await browser.tabs.update(step.id, { active: true });
   if (await closesQuietly(key, live.id)) return true;

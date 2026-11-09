@@ -7,7 +7,8 @@
 // is under way.
 
 const port = browser.runtime.connect({ name: "sidebar" });
-const hello = () => browser.windows.getCurrent().then(w => port.postMessage({ type: "hello", windowId: w.id })); // answered with a view
+const sidebarWindow = browser.windows.getCurrent().then(w => w.id); // answered by Firefox itself, not the background part
+const hello = () => sidebarWindow.then(windowId => port.postMessage({ type: "hello", windowId })); // answered with a view
 // Only once every script of the page is there: Firefox can hand over the answer between two
 // of them, and drawing it then stopped at the first part of another script (a tile's sound
 // mark, sound.js), leaving the list undrawn until the next view, which may not come soon.
@@ -19,12 +20,47 @@ port.onMessage.addListener(render);
 // as a file in ~/Library/Application Support/Mozilla/ManagedStorage): the
 // sidebar cannot be transparent, so the window's tint per space (userChrome.css)
 // is repeated there, keyed on html[data-space].
-browser.storage.managed.get("sidebarCSS").then(({ sidebarCSS }) => {
-  if (!sidebarCSS) return;
+const ownLook = css => {
   const style = document.createElement("style");
-  style.textContent = sidebarCSS;
+  style.textContent = css;
   document.head.append(style);
+};
+// The look of each window's sidebar when it was last drawn, put back at once. After an
+// update the background part takes a second or so to answer, and until then the sidebar
+// was a blank, untinted panel beside a tinted window. In localStorage: the page after an
+// update is a new one, whose sessionStorage starts empty. By window, since each has its own
+// space. (Window numbers start over after a restart, so the first moment there can show
+// another window's space, where it showed none.)
+const LAST_LOOK = "lastLook";
+const readLook = () => { try { return JSON.parse(localStorage.getItem(LAST_LOOK) || "null") ?? {}; } catch (err) { return {}; } };
+// Each part only when it changed: every view brings it, and a write is work for Firefox.
+const showLook = look => {
+  const root = document.documentElement;
+  if (root.style.getPropertyValue("--accent") !== look.accent) root.style.setProperty("--accent", look.accent);
+  if (root.getAttribute("data-space") !== look.space) root.setAttribute("data-space", look.space);
+  if (root.classList.contains("alone") !== !!look.alone) root.classList.toggle("alone", !!look.alone);
+};
+const keptLook = readLook();
+let cssShown = null, viewShown = false;
+if (keptLook.css) ownLook(cssShown = keptLook.css);
+sidebarWindow.then(id => { if (!viewShown && keptLook.windows?.[id]) showLook(keptLook.windows[id]); }, () => {});
+const keepLook = change => {
+  try { localStorage.setItem(LAST_LOOK, JSON.stringify({ ...readLook(), ...change })); } catch (err) { /* then it is drawn with the first view */ }
+};
+browser.storage.managed.get("sidebarCSS").then(({ sidebarCSS }) => {
+  if (keptLook.css !== (sidebarCSS || undefined)) keepLook({ css: sidebarCSS || undefined });
+  if (sidebarCSS && sidebarCSS !== cssShown) ownLook(sidebarCSS); // (shown already, from the last view)
 }, () => {});
+// This window's look, kept when it changes. Windows that have closed are left out.
+let lookKept = "";
+async function keepWindowLook(look) {
+  const id = await sidebarWindow, text = JSON.stringify(look);
+  if (text === lookKept) return;
+  lookKept = text;
+  const open = new Set((await browser.windows.getAll().catch(() => [])).map(w => String(w.id)));
+  const windows = Object.fromEntries(Object.entries(readLook().windows ?? {}).filter(([w]) => open.has(w)));
+  keepLook({ windows: { ...windows, [id]: look } });
+}
 
 let view = null;
 const send = msg => port.postMessage(msg);
@@ -380,18 +416,18 @@ function render(next) {
   drawn = new Set();
   const space = view.spaces.find(s => s.id === view.space), root = document.documentElement;
   if (view.space !== roomsInSpace) { roomsInSpace = view.space; letRoomsGo(); } // another list: nothing in it was where you pointed
+  const look = { space: view.space || "", accent: space?.color || "#7a7a80", alone: !!view.alone };
   // A space comes in as one piece: a folder drawn for it now does not fade in on its own,
   // after everything else (sidebar.css, html.space-arriving), as a folder that appears does.
   // The class goes once what is new has its style, also when drawing stops half way (a
   // view can come before every script of this page is there), so it can never stay.
-  const fresh = root.getAttribute("data-space") !== (view.space || "");
-  if (fresh) {
+  if (root.getAttribute("data-space") !== look.space) {
     root.classList.add("space-arriving");
     queueMicrotask(() => { root.getBoundingClientRect(); root.classList.remove("space-arriving"); });
   }
-  if (root.style.getPropertyValue("--accent") !== (space?.color || "#7a7a80")) root.style.setProperty("--accent", space?.color || "#7a7a80");
-  setIf(root, "data-space", view.space || "");
-  root.classList.toggle("alone", !!view.alone);
+  viewShown = true;
+  showLook(look);
+  keepWindowLook(look).catch(() => {}); // (only the first moment after an update depends on it)
 
   const hiding = document.getElementById("hiding");
   if (hiding.hidden !== !view.needsHiding) hiding.hidden = !view.needsHiding;

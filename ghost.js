@@ -21,7 +21,23 @@ function shown(info) {
   // An essential opens its page itself only if no other window has it loaded
   // (essentialShown, essentials.js); a ghost only if there is no live tab.
   const type = kind === "essential" ? "essentialShown" : "ghostShown";
-  browser.runtime.sendMessage({ type }).then(r => { if (r?.load) location.replace(info.url); });
+  browser.runtime.sendMessage({ type }).then(r => { if (r?.load) location.replace(info.url); else face(info); });
+}
+
+// Told to wait: in a window you are not using, the page stays where it is until you come
+// here (or it is on its way). Its name, site and icon say which page this is: a blank page
+// with "Extension (Tidier)" in the address bar, beside the window you use, looked broken.
+function face(info) {
+  if (document.querySelector("main") || !document.body) return;
+  let site = "";
+  try { site = new URL(info.url).host; } catch { /* no address to show */ }
+  const main = document.createElement("main");
+  // Only an icon that needs nothing from the site: the site's own would be asked for outside any space.
+  if (/^data:/.test(info.icon || "")) main.append(Object.assign(document.createElement("img"), { src: info.icon, alt: "" }));
+  main.append(Object.assign(document.createElement("div"), { className: "title", textContent: info.title || site }));
+  if (site && site !== info.title) main.append(Object.assign(document.createElement("div"), { className: "site", textContent: site }));
+  main.append(Object.assign(document.createElement("div"), { className: "when", textContent: "Opens when you come to this window" }));
+  document.body.append(main);
 }
 
 // The first icon that loads: the one saved for the page, else the site's

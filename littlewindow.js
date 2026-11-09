@@ -59,6 +59,21 @@ browser.tabs.onUpdated.addListener((tabId, change) => {
 }, { properties: ["url"] });
 browser.tabs.onRemoved.addListener(tabId => newBlanks.delete(tabId));
 
+// Asked by isolation.js at a new tab's first request: whether its container is one Firefox
+// guessed for a link from another app. Such a tab is new, on about:blank, with no opener,
+// selected (Firefox opens a link from another app in front, unless
+// browser.tabs.loadDivertedInBackground says otherwise), and in a container that is not
+// the space you were in when it was made. Nothing of Tidier's makes one like that without
+// saying so (openUnruled marks its own, byHand), nor does a page (it is the opener). The
+// mark that tells a link apart comes only after this request, so it cannot be waited for:
+// Firefox's own "Open in New Container Tab" on a bookmark looks the same, and opens in
+// the space you are in. That loses nothing, where waiting could let a login out.
+function guessedByFirefox(tab, container) {
+  if (tab.url !== "about:blank" || !tab.active || tab.openerTabId !== undefined || tab.pinned || tab.incognito || syncBusy.has(tab.id)) return false;
+  const was = newBlanks.get(tab.id)?.space ?? activeSpace.get(tab.windowId);
+  return !!was && was !== container;
+}
+
 // Asked by spaces.js for a selected tab: whether it must wait with taking the window to its
 // space, since it may still turn out to be a link on its way to a small window.
 function littleHolds(tab) {
@@ -98,7 +113,9 @@ function littleTakes(tabId, url) {
     });
     // (In newTabs up to here: until then no view draws its row, only for it to go. reopensSoon, newtabs.js.)
     if (opened) { newBlanks.delete(tabId); newTabs.delete(tabId); return; }
-    await byRule(tabId, url); // what any new tab gets: it is off, or there is no window for it
+    // What any new tab gets: it is off, or there is no window for it. A container Firefox
+    // guessed is no more yours here than in a small window: it opens in your space.
+    await byRule(tabId, url, { link: true });
     newTabs.delete(tabId);
     settleBlank(tabId);
   });
@@ -110,9 +127,32 @@ function littleTakes(tabId, url) {
 // just after the request, while the new tab is still being made: asked with both tabs once
 // the new one is there, before the old one is closed. A mark that comes later still means
 // an ordinary tab, which loses nothing.
-async function littleAfterReopen(oldTab, tab) {
-  if (!newBlanks.get(oldTab.id)?.fromOutside || !tab?.id || !await littleSetting.get()) return;
-  await openLittle(oldTab.windowId, { tabId: tab.id }, tab.cookieStoreId, oldTab.width).catch(noteError);
+// One at a time, outside the queue as the request is: a link clicked twice must find the
+// first one's window (littleShowing).
+let littleReopens = Promise.resolve();
+function littleAfterReopen(oldTab, tab, url) {
+  littleReopens = littleReopens.then(async () => {
+    if (!newBlanks.get(oldTab.id)?.fromOutside || !tab?.id || !await littleSetting.get()) return;
+    if (await toLittleShowing(url, tab.cookieStoreId, tab.id)) return;
+    await openLittle(oldTab.windowId, { tabId: tab.id }, tab.cookieStoreId, oldTab.width);
+  }).catch(noteError);
+  return littleReopens;
+}
+
+// The same link again (a double click in the other app): the small window that shows it
+// comes to the front, and the new tab goes. Returns whether there was one.
+async function toLittleShowing(url, space, tabId) {
+  if (!isWeb(url)) return false;
+  for (const windowId of littles.keys()) {
+    const [shown] = await browser.tabs.query({ windowId }).catch(() => []);
+    if (!shown || shown.id === tabId || shown.cookieStoreId !== space || withoutFragment(shown.url) !== withoutFragment(url)) continue;
+    await browser.windows.update(windowId, { focused: true }).catch(() => {});
+    toForget.set(url, Date.now() + FORGET_MS); // closed by Tidier: ⌘⇧T must bring back what you closed (common.js)
+    setTimeout(forgetClosedNow, FORGET_MS + 100);
+    await browser.tabs.remove(tabId).catch(() => {});
+    return true;
+  }
+  return false;
 }
 
 // A rule's space, if it still exists: a window opened in a removed container is refused,
@@ -139,6 +179,7 @@ async function littleForLink(tabId, url) {
   if ((await browser.windows.get(tab.windowId).catch(() => null))?.type !== "normal") return false;
   const space = await littleSpace(url, tab.windowId, tab.cookieStoreId);
   if (!space) return false;
+  if (await toLittleShowing(url, space, tabId)) return true;
   const moves = tab.cookieStoreId === space;
   await openLittle(tab.windowId, moves ? { tabId } : { url, cookieStoreId: space }, space, tab.width);
   if (moves) return true;
@@ -218,6 +259,7 @@ async function firstOfToday(windowId, space) {
 async function keepLittle(tabId, windowId) {
   const tab = await browser.tabs.get(tabId).catch(() => null);
   if (!tab || !littles.has(tab.windowId)) return;
+  forgetKept(tab.windowId, tab.url); // not waited for: it waits for the window to close
   const target = await normalWindowFor(windowId ?? littles.get(tab.windowId));
   let into;
   if (target) {
@@ -233,6 +275,17 @@ async function keepLittle(tabId, windowId) {
   }
   await browser.tabs.update(tabId, { active: true }).catch(() => {});
   await browser.windows.update(into, { focused: true }).catch(() => {});
+}
+
+// Firefox keeps the small window among its closed windows once its last tab has moved
+// out, and ⌘⇧N would bring the page back in one, loaded a second time beside the one you
+// kept. So it is forgotten there once it has closed: the newest closed window with only
+// this page in it.
+async function forgetKept(windowId, url) {
+  for (let i = 0; i < 30 && await browser.windows.get(windowId).catch(() => null); i++) await sleep(100);
+  const closed = await browser.sessions.getRecentlyClosed().catch(() => []);
+  const kept = closed.find(c => c.window?.tabs?.length === 1 && withoutFragment(c.window.tabs[0].url) === withoutFragment(url));
+  if (kept) await browser.sessions.forgetClosedWindow(kept.window.sessionId).catch(() => {});
 }
 
 // --- What the sidebar shows, and what it asks ----------------------------------------
@@ -372,8 +425,10 @@ async function startLittleWindow() {
 }
 
 // One of these, by the mark it keeps through a restart: Keep works again, and the title has its space.
+// (Not one that closed while this waited in the queue: nothing would take it out of the list again.)
 async function adoptLittle(win) {
   if (littles.has(win.id) || !await browser.sessions.getWindowValue(win.id, LITTLE_KEY).catch(() => undefined)) return;
+  if (!await browser.windows.get(win.id).catch(() => null)) return;
   const [tab] = win.tabs ?? await browser.tabs.query({ windowId: win.id }).catch(() => []);
   littles.set(win.id, null);
   await browser.windows.update(win.id, { titlePreface: `${await spaceName(tab?.cookieStoreId) ?? "Tidier"} · ` }).catch(() => {});

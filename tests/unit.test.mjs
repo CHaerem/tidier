@@ -165,6 +165,21 @@ test("no two background scripts define the same top-level name", () => {
   assert.deepEqual(twice, []);
 });
 
+// The sidebar's scripts are plain scripts in one page too (sidebar/sidebar.html), where a
+// name declared twice with const or let stops the second script with a SyntaxError.
+test("no two of the sidebar's scripts define the same top-level name", () => {
+  const page = readFileSync(new URL("../sidebar/sidebar.html", import.meta.url), "utf8");
+  const seen = new Map(), twice = [];
+  for (const [, file] of page.matchAll(/<script src="([^"]+)"/g)) {
+    const src = readFileSync(new URL("../sidebar/" + file, import.meta.url), "utf8");
+    for (const [, name] of src.matchAll(/^(?:async\s+)?(?:function\*?|const|let|var|class)\s+([A-Za-z_$][\w$]*)/gm)) {
+      if (seen.has(name)) twice.push(`${name} (${seen.get(name)}, ${file})`);
+      else seen.set(name, file);
+    }
+  }
+  assert.deepEqual(twice, []);
+});
+
 // --- Saved tabs -----------------------------------------------------------
 test("closing a tab: saved tabs are unloaded, unloaded ones and ordinary tabs closed", () => {
   const { closeAction } = loadCommon(sidebery([]));
