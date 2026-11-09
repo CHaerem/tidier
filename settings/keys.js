@@ -27,7 +27,7 @@ function shortcutOf(e, mac) {
 const keyNotes = new Map(); // command -> text
 
 // Numbered commands share a line: twenty-two lines would be a wall.
-const keyGroup = name => name.startsWith("space-") ? "Go to a space" : name.startsWith("tab-") ? "Go to a tab of this space" : null;
+const keyGroup = name => /^space-\d$/.test(name) ? "Go to a space" : /^tab-\d$/.test(name) ? "Go to a tab of this space" : null;
 
 // The commands that start with no key (sorting, closing around a tab, …) are many and each
 // seldom wanted, so they wait under More until you ask for them.

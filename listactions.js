@@ -188,16 +188,19 @@ async function closeAround(windowId, ids, which) {
 // them all back: also saved tabs, which ⌘W would only unload. A page with unsaved input stays,
 // without asking. A tab selected in another window stays too, since closing it there would
 // make Firefox select another, perhaps a placeholder that would pull its page away from
-// here. If you are on one of them, you are first taken to the tab the command was for, so
-// that Firefox does not pick one on its way out. A page with no record cannot come back with
+// here. If you are on one of them, you are first taken to the tab the command was for, else
+// (a whole folder) to the tab used last of those that stay (stepAwayFrom, tabactions.js), and
+// back if yours stays after all: left to Firefox, the next selected could be one about to
+// close, a placeholder that would load its page just for that. A page with no record cannot come back with
 // Undo: a new tab page has nothing to lose and goes, anything else (Firefox's own settings) is
 // in Firefox's own Recently Closed, and goes too.
 async function closeRows(windowId, ids, stayOn) {
   if (!ids.length) return;
   const [all, tabs, here, selected] = await Promise.all([getSynced(), tabsNow(windowId), browser.tabs.query({ windowId }), browser.tabs.query({ active: true })]);
   const inUse = new Set(selected.filter(t => t.windowId !== windowId).map(t => syncKeyByTab.get(t.id)).filter(Boolean));
-  const on = here.find(t => t.active);
-  if (on && ids.includes(on.id) && stayOn !== undefined) await browser.tabs.update(stayOn, { active: true }).catch(() => {});
+  const on = here.find(t => t.active), away = on && ids.includes(on.id);
+  if (away && stayOn !== undefined) await browser.tabs.update(stayOn, { active: true }).catch(() => {});
+  else if (away) await stepAwayFrom(on, new Set(ids));
   const items = [];
   let stayed = 0;
   for (const id of ids) {
@@ -210,6 +213,7 @@ async function closeRows(windowId, ids, stayOn) {
     await closeEverywhere(key, { dismiss: false }).catch(noteError);
     items.push(item);
   }
+  if (away && stayOn === undefined && await browser.tabs.get(on.id).catch(() => null)) await browser.tabs.update(on.id, { active: true }).catch(() => {});
   const count = n => (n === 1 ? "1 tab" : `${n} tabs`);
   if (items.length) say(windowId, `${count(items.length)} closed${stayed ? `, ${stayed} stayed` : ""}`, { undo: () => bringBack(windowId, items, tabs) });
   else if (stayed) say(windowId, `${count(stayed)} with unsaved input stayed`);
@@ -244,6 +248,24 @@ function reloadAndWait(tabId) {
     browser.tabs.onRemoved.addListener(gone);
     browser.tabs.reload(tabId).catch(done);
   });
+}
+
+// --- A whole folder, from a key or the command bar ------------------------------------
+// What a folder's menu has (sidebar/menu.js, moremenu.js), for the folder the tabs `ids` are
+// all in, as drawn: the selection's, else the tab's. None for tabs in no folder or in several,
+// so that a key never acts on a folder you did not mean.
+function folderOfRows(view, ids) {
+  const [group, ...more] = groupsOf(view, ids);
+  return group?.key && !more.length && group.mine.length === ids.length ? view.folders.find(f => f.key === group.key) : null;
+}
+
+// `action` is the tab menu's (tabactions.js), on all the folder's tabs, or "newTab". A live
+// folder takes no tab, and its tabs are the search's to close.
+async function folderCommand(windowId, ids, action) {
+  const folder = folderOfRows(await viewFor(windowId), ids);
+  if (!folder || (folder.live && (action === "newTab" || action === "closeAll"))) return;
+  if (action === "newTab") await newTabInFolder(windowId, folder.key);
+  else await tabAction(windowId, { action, tabIds: folder.tabs.map(t => t.id) });
 }
 
 // --- A whole space -----------------------------------------------------------------

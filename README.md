@@ -297,8 +297,10 @@ record's address, the one you are on stays) or the tabs above, below or around o
 reloads, mutes or unloads a whole folder or space, a few pages at a time. A folder's menu
 also has New tab here, and Close all its tabs. Whatever closes goes through the quiet line,
 with Undo. Each is a command in the bar, found by its name, and in the Keys section under
-More commands, with no key until you give one; so are Back and Forward through the tabs used
-recently in this space (by each page's real last use, as the list draws them). In the
+More commands, with no key until you give one: what a tab's More does acts on the selection,
+else the tab; a folder's on the folder of the selection, else of the tab; a space's on the
+space you see. So are Back and Forward through the tabs used recently in this space (by each
+page's real last use, as the list draws them). In the
 sidebar ⌘A selects every row, ⇧↑ and ⇧↓ take one more, ⌥↑ and ⌥↓ move the selection (else
 the tab) one place along, in every window. A tab dragged and held over a closed folder opens
 it, and over another space's dot goes to that space, where a drop in the list puts it.

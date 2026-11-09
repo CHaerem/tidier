@@ -259,6 +259,16 @@ test("all of a folder's tabs closed: saved tabs go for good, with one line to br
   s.x.kill();
 });
 
+test("closing a folder's tabs while on one of them goes first to a tab that stays, never one about to close", async () => {
+  const s = await world({ today: ["a", "b"], inF: ["f1", "f2"], active: "f1" });
+  s.tab.b.lastAccessed = 5; // used last of those that stay
+  await s.act("closeAll", ["f1", "f2"]);
+  assert.deepEqual((await s.view()).folders, { F: [] });
+  const on = s.ff.list(s.w.id).find(t => t.active);
+  assert.equal(on?.id, s.tab.b.id);
+  s.x.kill();
+});
+
 // --- Reloading, muting, copying ----------------------------------------------------
 test("reloading many goes a few at a time, each next once one has loaded", async () => {
   const s = await world({ today: ["a", "b", "c", "d", "e"] });
@@ -374,6 +384,29 @@ test("a key acts on the sidebar's selection, else on the tab you are on", async 
   s.x.kill();
 });
 
+test("a folder's and a space's keys act on the folder of the selection, else of the tab, and on this window's space", async () => {
+  const s = await world({ today: ["a", "b"], inF: ["f1", "f2"], active: "f1" });
+  const press = async name => { s.x.b.commands.onCommand.fire(name, s.ff.snap(s.tab.f1)); await wait(800); };
+  await press("folder-copy");
+  assert.deepEqual(s.x.copied, ["https://f1.example/\nhttps://f2.example/"], "the folder's tabs as drawn");
+  await press("folder-mute");
+  assert.equal(s.tab.f2.mutedInfo?.muted, true);
+  assert.equal(s.tab.a.mutedInfo, undefined, "not today's tabs");
+  await press("folder-new-tab");
+  const made = s.ff.list(s.w.id).find(t => t.url === "about:newtab");
+  assert.deepEqual((await s.view()).folders.F.length, 3, "drawn in the folder");
+  assert.ok(made?.active);
+  // A selection among today's tabs is in no folder: a key on it does nothing to F.
+  s.x.b.runtime.sendMessage = async msg => (msg.type === "commandBarSelection" ? [s.tab.a.id, s.tab.b.id] : undefined);
+  await press("folder-close");
+  assert.equal((await s.view()).folders.F.length, 3);
+  assert.deepEqual(s.x.said, []);
+  await press("space-mute");
+  assert.equal(s.tab.a.mutedInfo?.muted, true, "this window's space");
+  assert.equal(s.tab.other.mutedInfo, undefined, "not another space");
+  s.x.kill();
+});
+
 test("the command bar has them by name, where they apply, and acts on what is selected", async () => {
   const s = await world({ today: ["a", "b", "c"], inF: ["f1", "f2"], active: "b", records: { c: entry("https://a.example/", { title: "c" }) } });
   const ctx = await s.x.js("barContext")(s.w.id);
@@ -391,7 +424,8 @@ test("the command bar has them by name, where they apply, and acts on what is se
   const inFolder = await s.x.js("barContext")(s.w.id);
   const there = s.x.js("barCommandRows")(inFolder, {}, new Map());
   assert.equal(there.find(r => r.name === "sort-name")?.title, "Sort this folder by name");
-  for (const name of ["take-out", "folder-new-tab", "folder-reload", "folder-close"]) assert.ok(there.some(r => r.name === name), name);
+  for (const name of ["take-out", "folder-new-tab", "folder-copy", "folder-copy-markdown", "folder-reload", "folder-mute", "folder-unload", "folder-close"]) assert.ok(there.some(r => r.name === name), name);
+  assert.ok(!there.some(r => r.name === "folder-unmute"), "nothing there is muted");
   assert.ok(!there.some(r => r.name === "close-others"), "nothing closes around a folder's tab");
   s.x.kill();
 });

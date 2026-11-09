@@ -7832,6 +7832,25 @@ def alone_more(m):
             time.sleep(0.1)
         check("New tab here makes a tab in the folder, which keeps it once it has a page", r.get("added") == 1 and r.get("active") and (made or {}).get("folder") == folder and (made or {}).get("saved"), f"{r} {made}")
 
+        # Close all its tabs, from the folder's More while on one of them: the selection goes to a
+        # tab that stays, not to one about to close, and one line takes them all back.
+        r = sidebar_page(m, MENU_PAGE + """
+          const head = () => doc.querySelector(`[data-folder-head="${args[0]}"]`);
+          const rows = () => [...head().parentElement.querySelectorAll(".tab")].map(t => Number(t.dataset.tab));
+          const was = rows();
+          await until(() => head().parentElement.querySelector(".tab.active"));
+          await rightClick(head());
+          choose("More");
+          choose("Close all its tabs");
+          await until(() => rows().length === 0);
+          const on = Number(doc.querySelector("#tabs .tab.active, #essentials .tile.active")?.dataset.tab);
+          const line = await until(() => doc.querySelector("#note .text")?.textContent);
+          doc.querySelector("#note .act").click();
+          await until(() => rows().length === was.length, 15000);
+          return {was: was.length, onOther: !!on && !was.includes(on), line, back: rows().length};""", folder)
+        check("Close all its tabs in a folder's More goes to a tab that stays, and Undo brings them back",
+              r.get("was", 0) >= 4 and r.get("onOther") and r.get("line") == f"{r.get('was')} tabs closed" and r.get("back") == r.get("was"), str(r))
+
         # The command bar has them by name, and the settings page lists their keys under More.
         bar_open(m)
         bar_keys(m, "markdown")
@@ -7846,7 +7865,8 @@ def alone_more(m):
           more.click();
           await wait(300);
           return {button: !more.hidden, hiddenFirst, lines: [...doc.querySelectorAll("#keys-extra .key-label")].map(l => l.textContent)};""")
-        check("the settings page keeps the commands with no key under More commands", r.get("button") and r.get("hiddenFirst") and "Sort today's tabs or this folder by name" in r.get("lines", []), str(r))
+        check("the settings page keeps the commands with no key under More commands", r.get("button") and r.get("hiddenFirst") and "Sort today's tabs or this folder by name" in r.get("lines", [])
+              and "Reload this space" in r.get("lines", []) and "Close this folder's tabs" in r.get("lines", []), str(r))
     finally:
         m.chrome()  # a script that failed in a page leaves Marionette there
         sidebar_page(m, """if (args[0]) send({type: "deleteFolder", key: args[0]}); await wait(800); return 1;""", locals().get("folder"))

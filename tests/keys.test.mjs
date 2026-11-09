@@ -519,6 +519,14 @@ test("without Tidier alone the settings page has no Keys section", async () => {
   assert.equal(on.parts["keys-section"].hidden, false);
 });
 
+test("the numbered keys share a line, and a space's or a tab's other commands have their own", () => {
+  const keyGroup = vm.runInContext("keyGroup", settingsKeys(false).ctx);
+  assert.equal(keyGroup("space-3"), "Go to a space");
+  assert.equal(keyGroup("tab-9"), "Go to a tab of this space");
+  assert.equal(keyGroup("space-reload"), null);
+  assert.equal(keyGroup("space-unload"), null);
+});
+
 test("Firefox's lists are written the way keys are compared", async () => {
   const { x } = await aWindow();
   const keyId = x.js("keyId");

@@ -125,10 +125,12 @@ async function barContext(windowId) {
   const picked = await barPickedTabs(windowId, tab, tabs);
   const closed = (await browser.sessions.getRecentlyClosed({ maxResults: CLOSED_LOOKED_AT }).catch(() => []))
     .filter(c => c.tab && isWeb(c.tab.url));
-  // What is drawn where, for the commands that act on a part of the list (listactions.js).
-  const view = await viewFor(windowId);
+  // What is drawn where, for the commands that act on a part of the list (listactions.js),
+  // and what the pages of the selection's folder are doing: loaded or muted in any window.
+  const view = await viewFor(windowId), folder = folderOfRows(view, picked.map(t => t.id));
   return {
-    windowId, spaces, space, tab, picked, closed, all, list, view,
+    windowId, spaces, space, tab, picked, closed, all, list, view, folder,
+    folderReals: folder ? (await Promise.all(folder.tabs.map(t => realOf(t.id)))).filter(Boolean) : [],
     doubles: doublesIn(view, all), pages: await spacePages(space),
     addresses: picked.map(t => barAddressOf(t, all, list)).filter(Boolean),
     key: tab ? syncKeyByTab.get(tab.id) : undefined,
@@ -234,8 +236,9 @@ function barListCommands() {
     const groups = sortGroups(ctx.view, ids(ctx));
     return groups.every(g => !g.key) ? `Sort today's tabs by ${word}` : groups.length === 1 ? `Sort this folder by ${word}` : `Sort by ${word}`;
   };
-  const folderRows = ctx => ctx.view.folders.find(f => f.key === barFolderKey(ctx));
-  const onFolder = (action, more) => ctx => tabAction(ctx.windowId, { action, tabIds: folderRows(ctx).tabs.map(t => t.id), ...more });
+  // The folder of the selection, else of the tab you are on, as a key has it (folderCommand).
+  const onFolder = action => ctx => folderCommand(ctx.windowId, ids(ctx), action);
+  const folderLoaded = ctx => ctx.folderReals.filter(r => r.loaded), folderAddressed = ctx => ctx.folderReals.some(r => r.address);
   const plural = (n, one, many) => (n === 1 ? one : many.replace("#", n));
   return [
     ...Object.entries(SORT_WORDS).map(([by, word]) => ({ name: `sort-${by}`, label: sortLabel(word), when: ctx => sortGroups(ctx.view, ids(ctx)).length > 0, run: act("sort", { by }) })),
@@ -254,11 +257,15 @@ function barListCommands() {
     { name: "close-below", label: "Close tabs below", when: around("below"), run: act("closeBelow") },
     { name: "recent-back", label: "Back to the tab used before", when: ctx => tabsAsDrawn(ctx.view).length > 1, run: ctx => stepRecent(ctx.windowId, 1) },
     { name: "recent-forward", label: "Forward to the tab used after", when: ctx => walkedBack(ctx.windowId), run: ctx => stepRecent(ctx.windowId, -1) },
-    // The folder of the tab you are on, as a whole.
-    { name: "folder-new-tab", label: "New tab in this folder", when: ctx => !!folderRows(ctx) && !folderRows(ctx).live, run: ctx => newTabInFolder(ctx.windowId, barFolderKey(ctx)) },
-    { name: "folder-reload", label: "Reload this folder", when: ctx => folderRows(ctx)?.tabs.length > 0, run: onFolder("reload") },
-    { name: "folder-unload", label: "Unload this folder", when: ctx => folderRows(ctx)?.tabs.length > 0, run: onFolder("unload") },
-    { name: "folder-close", label: "Close this folder's tabs", when: ctx => folderRows(ctx)?.tabs.length > 0 && !folderRows(ctx).live, run: onFolder("closeAll") },
+    // The folder of the selection, else of the tab you are on, as a whole.
+    { name: "folder-new-tab", label: "New tab in this folder", when: ctx => !!ctx.folder && !ctx.folder.live, run: onFolder("newTab") },
+    { name: "folder-copy", label: "Copy this folder's addresses", when: folderAddressed, run: onFolder("copy") },
+    { name: "folder-copy-markdown", label: "Copy this folder as Markdown links", when: folderAddressed, run: onFolder("copyMarkdown") },
+    { name: "folder-reload", label: "Reload this folder", when: ctx => folderLoaded(ctx).length > 0, run: onFolder("reload") },
+    { name: "folder-mute", label: "Mute this folder", when: ctx => folderLoaded(ctx).some(r => !r.tab.mutedInfo?.muted), run: onFolder("mute") },
+    { name: "folder-unmute", label: "Unmute this folder", when: ctx => folderLoaded(ctx).some(r => r.tab.mutedInfo?.muted), run: onFolder("unmute") },
+    { name: "folder-unload", label: "Unload this folder", when: ctx => folderLoaded(ctx).length > 0, run: onFolder("unload") },
+    { name: "folder-close", label: "Close this folder's tabs", when: ctx => ctx.folder?.tabs.length > 0 && !ctx.folder.live, run: onFolder("closeAll") },
     // The space you are in, as a whole: its pages that are loaded, wherever.
     { name: "space-reload", label: "Reload this space", when: ctx => ctx.pages.length > 0, run: ctx => spaceAction(ctx.windowId, { action: "reload", space: ctx.space }) },
     { name: "space-mute", label: "Mute this space", when: ctx => ctx.pages.some(t => !t.mutedInfo?.muted), run: ctx => spaceAction(ctx.windowId, { action: "mute", space: ctx.space }) },
