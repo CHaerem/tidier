@@ -3373,3 +3373,93 @@ test("a placeholder that was selected just as it was ready is unloaded when you 
   assert.equal(x.js("awaitingIcon.size"), 0);
   x.kill();
 });
+
+// tools/from_arc_zen.py: Arc's and Zen's spaces as a copy Tidier takes in.
+test("Arc's and Zen's spaces, essentials, pinned tabs and folders come in as a copy", async () => {
+  const { mkdtempSync, writeFileSync, mkdirSync, readFileSync } = await import("node:fs");
+  const { execFileSync } = await import("node:child_process");
+  const { tmpdir } = await import("node:os");
+  const path = await import("node:path");
+  const dir = mkdtempSync(path.join(tmpdir(), "tidier-arc-zen-"));
+  // A .jsonlz4 holding one LZ4 block of literals only, which is a valid block.
+  const mozlz4 = obj => {
+    const body = Buffer.from(JSON.stringify(obj));
+    const len = [];
+    for (let n = body.length - 15; ; n -= 255) { if (n < 255) { len.push(n); break; } len.push(255); }
+    const size = Buffer.alloc(4); size.writeUInt32LE(body.length);
+    return Buffer.concat([Buffer.from("mozLz40\0", "latin1"), size, Buffer.from([0xf0, ...len]), body]);
+  };
+  const tab = (url, more) => ({ entries: [{ url: "https://old.example/", title: "Old" }, { url, title: url.split("/")[2] }], index: 2, ...more });
+  // A pinned tab or essential as Zen keeps it: the address it was pinned at, and where you went in it since.
+  const pinnedAt = (url, now, more) => tab(now, { _zenPinnedInitialState: { entry: { url, title: url.split("/")[2] } }, ...more });
+  const zen = path.join(dir, "zen");
+  mkdirSync(zen);
+  writeFileSync(path.join(zen, "zen-sessions.jsonlz4"), mozlz4({
+    spaces: [{ uuid: "w", name: "Work", containerTabId: 2 }, { uuid: "h", name: "Home", containerTabId: 0 }],
+    folders: [{ id: "f", name: "Docs", workspaceId: "w" }, { id: "g", name: "Old", parentId: "f", workspaceId: "w" },
+      { id: "l", name: "Reviews", workspaceId: "w", isLiveFolder: true }],
+    // Zen has each folder again as a tab group, without parentId: it must not hide the folder's.
+    groups: [{ id: "f", name: "Docs", tabs: [] }, { id: "g", name: "Old", tabs: [] }, { id: "l", name: "Reviews", tabs: [] }],
+    tabs: [
+      pinnedAt("https://mail.example/", "https://login.example/", { zenEssential: true, pinned: true, userContextId: 2, zenWorkspace: "w", zenStaticLabel: "Mail" }),
+      pinnedAt("https://cal.example/", "https://login.example/", { zenEssential: true, pinned: true, userContextId: 2, zenWorkspace: "w" }),
+      tab("https://music.example/", { zenEssential: true, pinned: true, userContextId: 0 }),
+      tab("https://board.example/", { pinned: true, zenWorkspace: "w", userContextId: 2, zenStaticLabel: "Board" }),
+      tab("https://spec.example/", { pinned: true, zenWorkspace: "w", userContextId: 2, groupId: "g" }),
+      pinnedAt("https://code.example/pull/1", "https://code.example/pull/1", { pinned: true, zenWorkspace: "w", userContextId: 2, groupId: "l", zenLiveFolderItemId: "1" }),
+      tab("https://news.example/", { zenWorkspace: "h" }),
+      tab("about:blank", { pinned: true, zenWorkspace: "h" }),
+    ],
+  }));
+  writeFileSync(path.join(zen, "containers.json"), JSON.stringify({ identities: [{ userContextId: 2, l10nID: "userContextWork.label", color: "orange", icon: "briefcase", public: true }] }));
+  const it = (id, data, more = {}) => [id, { id, data, ...more }];
+  const arc = path.join(dir, "StorableSidebar.json");
+  writeFileSync(arc, JSON.stringify({ sidebar: { containers: [{ global: {} }, {
+    spaces: ["s1", { id: "s1", title: "Private", containerIDs: ["unpinned", "u1", "pinned", "p1"], profile: { default: true } }],
+    items: [
+      ...it("p1", { itemContainer: {} }, { childrenIds: ["t1", "l1"] }),
+      ...it("t1", { tab: { savedURL: "https://cal.example/", savedTitle: "Calendar" } }, { title: "My calendar" }),
+      ...it("l1", { list: {} }, { title: "Trips", childrenIds: ["t2"] }),
+      ...it("t2", { tab: { savedURL: "https://trip.example/", savedTitle: "Trip" } }),
+      ...it("top", { itemContainer: {} }, { childrenIds: ["t3"] }),
+      ...it("t3", { tab: { savedURL: "https://bank.example/", savedTitle: "Bank" } }),
+    ],
+    topAppsContainerIDs: [{ default: true }, "top"],
+  }] } }));
+  const out = execFileSync("python3", ["-I", "tools/from_arc_zen.py", "--zen", zen, "--arc", arc, "--out", dir], { encoding: "utf8" });
+  assert.ok(!out.includes("example"), "what it prints has no addresses");
+  const fromZen = JSON.parse(readFileSync(path.join(dir, "tidier-from-zen.json"), "utf8"));
+  const fromArc = JSON.parse(readFileSync(path.join(dir, "tidier-from-arc.json"), "utf8"));
+
+  const ff = new FakeFirefox({ containers: ["firefox-default"] });
+  const w = ff.addWindow({ focused: true });
+  ff.addTab(w.id, { url: "about:home", active: true });
+  const x = await alone(ff);
+  const z = await x.js("mergeCopy")(fromZen);
+  assert.deepEqual({ ...z }, { essentials: 4, folders: 2, tabs: 2, rules: 0, spaces: 2 });
+  const a = await x.js("mergeCopy")(fromArc);
+  assert.deepEqual({ ...a }, { essentials: 1, folders: 2, tabs: 2, rules: 0, spaces: 1 });
+  await wait(1000);
+  const names = Object.fromEntries(Object.entries(ff.identities).map(([id, i]) => [i.name, id]));
+  assert.deepEqual(Object.keys(names).sort(), ["Home", "Private", "Work"]);
+  assert.equal(ff.identities[names.Work].color, "orange");
+  const essentials = space => ff.store.essentials.filter(e => e.cookieStoreId === names[space]).map(e => e.url).sort();
+  assert.deepEqual(essentials("Work"), ["https://cal.example/", "https://mail.example/", "https://music.example/"],
+    "at the address they were pinned at, so two that went to one page since stay two");
+  assert.equal(ff.store.essentials.find(e => e.url === "https://mail.example/").name, "Mail");
+  assert.deepEqual(essentials("Home"), ["https://music.example/"], "one of no container goes into every space");
+  assert.deepEqual(essentials("Private"), ["https://bank.example/"]);
+  const folders = space => Array.from(x.js("foldersOf")(ff.synced, names[space]), f => f.name); // made in the scripts' own realm
+  assert.deepEqual(folders("Work"), ["Pinned", "Docs / Old"], "a live folder's tabs are Zen's search, not saved tabs");
+  assert.deepEqual(folders("Private"), ["Pinned", "Trips"]);
+  assert.deepEqual(folders("Home"), [], "an empty Pinned folder is left out");
+  const saved = Object.values(ff.synced).filter(e => !e.group);
+  const board = saved.find(e => e.url === "https://board.example/");
+  assert.equal(board.name, "Board");
+  assert.equal(ff.synced[board.parentKey].name, "Pinned");
+  assert.ok(saved.every(e => e.saved?.url === e.url), "every pinned tab is saved");
+  assert.equal(saved.find(e => e.url === "https://cal.example/").name, "My calendar");
+  assert.ok(!saved.some(e => e.url === "https://news.example/"), "ordinary tabs are left out");
+  assert.deepEqual(ff.store.spaceOrder, [names.Work, names.Home]);
+  x.kill();
+});

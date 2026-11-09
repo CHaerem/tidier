@@ -425,12 +425,12 @@ async function startLittleWindow() {
 }
 
 // One of these, by the mark it keeps through a restart: Keep works again, and the title has its space.
-// (Not one that closed while this waited in the queue: nothing would take it out of the list again.)
 async function adoptLittle(win) {
   if (littles.has(win.id) || !await browser.sessions.getWindowValue(win.id, LITTLE_KEY).catch(() => undefined)) return;
-  if (!await browser.windows.get(win.id).catch(() => null)) return;
-  const [tab] = win.tabs ?? await browser.tabs.query({ windowId: win.id }).catch(() => []);
   littles.set(win.id, null);
+  // Closed while it was being asked about: its onRemoved has been and gone, and would leave it here for good.
+  if (!await browser.windows.get(win.id).catch(() => null)) return void littles.delete(win.id);
+  const [tab] = win.tabs ?? await browser.tabs.query({ windowId: win.id }).catch(() => []);
   await browser.windows.update(win.id, { titlePreface: `${await spaceName(tab?.cookieStoreId) ?? "Tidier"} · ` }).catch(() => {});
   viewAllSoon();
 }
