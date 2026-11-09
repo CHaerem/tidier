@@ -467,7 +467,8 @@ turns it off in Firefox itself. The link opens in a small window of its
 own (`littlewindow.js`), in the rule's space or else the one you are in, to read and
 close, or to keep with one click; it can be turned off on the settings page, and then the
 link is an ordinary tab in the same space. The same link twice (a double click in the
-other app) brings its small window to the front.
+other app) brings its small window to the front. Closed, ⇧⌘T gives it back as a small
+window, with its row and Keep.
 
 Sidebery's container rules ("reopen tabs with this URL in this container")
 match a rule's text anywhere in every address a tab loads, including sign-in

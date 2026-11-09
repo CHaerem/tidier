@@ -3885,6 +3885,9 @@ def alone_touches(m):
     # What nobody has to know about: tooltips, kept icons, warming a tab up, the sign of a slow load.
     space = int(sidebar_page(m, """return spaces().find(s => s.active).id;""").split("-")[-1])
     opened = m.js(H + """const a = main();
+      // With motion, whatever the machine's own setting says (a GitHub runner asks for less):
+      // the still sign of less motion is checked on its own below.
+      Services.prefs.setIntPref("ui.prefersReducedMotion", 0);
       let w = other(), opened = !w;
       if (opened) { w = a.OpenBrowserWindow(); w.__smoke = true; for (let i = 0; i < 100 && !w.gBrowser?.tabs.some(t => t.pinned); i++) await wait(100); await wait(1000); }
       // In the other window, so that this window has only its placeholder.
@@ -5631,12 +5634,25 @@ def alone_shortcuts(m):
     # Nothing selected in the folder, so closing it below keeps the list simple.
     check("the test's list has essentials, a folder's tab and today's tabs", len(order) >= 4 and None not in order, str(order))
     start = order.index(m.js(ident + "return selected();"))
-    walked = []
+    # A quick press over an unloaded tab can be lost in Firefox before it reaches any extension
+    # (README, Testing; about one in eight in a slowed-down test Firefox). Such a press, and only
+    # one Tidier never heard of (its "key" line, common.js trace), with the selection where it
+    # was, is pressed again, as a hand would; one Tidier heard and got wrong still fails.
+    heard = H + """return Cc["@mozilla.org/consoleAPI-storage;1"].getService(Ci.nsIConsoleAPIStorage).getEvents()
+      .filter(e => e.arguments?.[0] === "Tidier:" && / key next-tab$/.test(e.arguments?.[1] ?? "")).length;"""
+    walked, lost = [], 0
     for i in range(1, len(order) + 1):
+        want, was, before = order[(start + i) % len(order)], m.js(ident + "return selected();"), m.js(heard)
         go(DOWN, CMD, CTRL)
-        want = order[(start + i) % len(order)]
-        walked.append(selects(want))
-    check("⌃⌘↓ goes to the next tab as shown, and round the end", all(walked), f"{walked} on {order}")
+        ok = selects(want)
+        if not ok and m.js(heard) == before and m.js(ident + "return selected();") == was:
+            lost += 1
+            go(DOWN, CMD, CTRL)
+            ok = selects(want)
+        walked.append(ok)
+    if lost:
+        print(f"INFO  ⌃⌘↓ presses lost before they reached Tidier, and pressed again: {lost} of {len(order)}", flush=True)
+    check("⌃⌘↓ goes to the next tab as shown, and round the end", all(walked), f"{walked} on {order}, {lost} lost")
     go(UP, CMD, CTRL)
     check("⌃⌘↑ goes to the previous tab as shown", selects(order[(start - 1) % len(order)]), str(order))
     # Held down: each press goes on from where the one before it got to, with placeholders being pulled in.
@@ -9754,7 +9770,9 @@ def alone_command_bar(m):
       page.selectedTabs = page.JSON.parse.bind(page.JSON, JSON.stringify(ids)); return ids;""")
     bar_open(m)
     bar_keys(m, "close")
-    rows = bar_rows_until(m, lambda rows: any(x["kind"] == "command" for x in rows))
+    # (The sidebar's selection is asked for as the bar opens, and on a slow machine its answer
+    # can come after the first rows are drawn: so the rows are read until it has come.)
+    rows = bar_rows_until(m, lambda rows: any(x["title"] == "Close 2 tabs" for x in rows))
     check("commands act on what is selected in the sidebar", len(ids) == 2 and any(x["title"] == "Close 2 tabs" for x in rows), f"{ids} {rows}")
     bar_keys(m, [ESC])
     wait_for_bar(m, False)
