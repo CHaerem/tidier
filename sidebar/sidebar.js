@@ -232,6 +232,9 @@ function row(item, folderKey) {
     const parts = [icon(item), el("span", "title", item.title)];
     parts.push(...soundMark(item));
     const close = el("button", "close", "×");
+    // The list is one stop for Tab (keys.js): a row's × is for the pointer, and ⌫ closes by key.
+    // As a stop of its own, ⇧Tab from the cursor's row would land on the × of the row above.
+    close.tabIndex = -1;
     close.title = closeTitle(item, folderKey);
     close.onclick = secondClick.acts(ev => {
       ev.stopPropagation();

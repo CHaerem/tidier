@@ -124,6 +124,7 @@
     if (!divider.firstChild) {
       const reach = el("div", "clear-reach"), button = el("button", "clear", "Clear");
       button.title = "Close today's tabs, except the one you are on";
+      button.tabIndex = -1; // inside the list, which is one stop for Tab (keys.js); by key it is the list's menu's Clear
       button.onclick = secondClick.acts(clear); // the rows below go, and a second click would reach what comes up
       button.onkeydown = ownKeys;
       reach.oncontextmenu = e => openMenu(e, listMenu());

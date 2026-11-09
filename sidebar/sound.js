@@ -32,6 +32,7 @@ function soundMark(of) {
   if (!of.sound) return [];
   const mark = el("button", "sound" + (of.sound === "muted" ? " muted" : ""));
   mark.title = of.sound === "muted" ? "Unmute" : "Mute";
+  mark.tabIndex = -1; // for the pointer: no stop for Tab in the list (keys.js), and Mute is on the menu
   mark.append(speaker(of.sound === "muted"));
   mark.onclick = e => { e.stopPropagation(); send({ type: "mute", tabId: of.soundTabId, muted: of.sound !== "muted" }); };
   mark.ondblclick = e => e.stopPropagation(); // a quick mute and unmute, not a folder's rename

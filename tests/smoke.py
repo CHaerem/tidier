@@ -1528,14 +1528,14 @@ def alone_second_window(m):
       a.gBrowser.selectedTab = a.gBrowser.tabs.find(t => url(t).includes("fixture-tab-1-1")); await wait(1200);
       a.gBrowser.addTrustedTab(args[0], {userContextId: 2, inBackground: true}); await wait(2500);
       b.focus(); await wait(300);
-      return {key: key(a, used), window: ExtensionParent.apiManager.global.windowTracker.getId(b)};""", m.pages + "/r/opened-behind")
+      return {key: key(a, used), window: ExtensionParent.apiManager.global.windowTracker.getId(b)};""", m.pages + "/r/behind-opened")  # (not "/r/opened…": alone_crossing looks for that one's requests)
     sidebar_page(m, """const p = page.browser.runtime.connect({name: "sidebar"}), say = msg => p.postMessage(page.JSON.parse(JSON.stringify(msg)));
       say({type: "hello", windowId: args[0]}); await wait(100); say({type: "space", space: "firefox-container-2"}); await wait(1500); p.disconnect();""", r["window"])
     # (The test's own page has taken the focus: the page comes as you go to that window.)
     got = m.js(H + """const a = main(), b = other(); b.focus(); await wait(1500); const on = b.gBrowser.selectedTab;
       const got = {key: key(b, on), space: on.userContextId, loaded: !!on.linkedPanel && url(on).includes("fixture-tab-2-1"), firstStays: url(a.gBrowser.selectedTab).includes("fixture-tab-1-1"),
-                   behind: wins().some(w => url(w.gBrowser.selectedTab).includes("opened-behind"))};
-      await removeWhere((w, t) => url(t).includes("opened-behind")); a.focus(); await wait(300); return got;""")
+                   behind: wins().some(w => url(w.gBrowser.selectedTab).includes("behind-opened"))};
+      await removeWhere((w, t) => url(t).includes("behind-opened")); a.focus(); await wait(300); return got;""")
     check("in a new window, going to a space lands on the tab you used last there, with its page", got.get("key") == r["key"] and got.get("loaded"), f"{r} {got}")
     check("not on a tab opened there in the background since, and the first window stays where it is", not got.get("behind") and got.get("firstStays"), str(got))
 
@@ -2996,19 +2996,22 @@ def alone_hand(m):
 
     # A double click on × closes one tab: the row below stays where it was while the pointer
     # is in the list, so the second click lands on nothing. Once the pointer leaves, it comes up.
-    p = hand_spot(m, """const r = row("hand-3"); r.scrollIntoView({block: "center"}); const c = box(r.querySelector(".close")), b = r.nextElementSibling;
-      return {x: c.x, y: c.y, below: b.title.split("\\n")[0], top: box(b).top};""")
+    p = hand_spot(m, """const r = row("hand-3"); r.scrollIntoView({block: "center"}); const c = box(r.querySelector(".close")), b = r.nextElementSibling, a = r.previousElementSibling;
+      return {x: c.x, y: c.y, below: b.title.split("\\n")[0], top: box(b).top, above: a.title.split("\\n")[0], aboveTop: box(a).top};""")
     hand(m, hand_to(p), hand_pause(300), *hand_click(), hand_pause(60), *hand_click())
     time.sleep(1.5)
     after = hand_spot(m, """const b = row(args[0]); return {top: b && box(b).top, room: !!doc.querySelector("#tabs .room"), gone: !row("hand-3")};""", p["below"])
     left = hands()
     hand(m, hand_to(away))
     time.sleep(0.5)
-    later = hand_spot(m, """const b = row(args[0]); return {top: b && box(b).top, room: !!doc.querySelector("#tabs .room")};""", p["below"])
+    later = hand_spot(m, """const b = row(args[0]), a = row(args[1]); return {top: b && box(b).top, aboveTop: a && box(a).top, room: !!doc.querySelector("#tabs .room")};""", p["below"], p["above"])
     check("a double click on × closes one tab", "hand-3" not in left and len(left) == 11 and after["gone"], f"{left} {after}")
-    # (Once the pointer has left, the row comes up, or, at the end of a scrolled list, the rows
-    # above it come down, as the list gets shorter.)
-    check("the row below stays under the pointer while it is in the list, and moves when it leaves", after["top"] == p["top"] and after["room"] and abs(later["top"] - p["top"]) == 32 and not later["room"], f"{p} {after} {later}")
+    # (Once the pointer has left, the row comes up by the room it had; or, at the end of a
+    # scrolled list, which gets shorter, the rows above it come down instead, by the room and
+    # by any room the quiet line left at the list's end, which goes then too: note.js.)
+    comes_up = p["top"] - later["top"] == 32 and later["aboveTop"] == p["aboveTop"]
+    come_down = later["aboveTop"] - p["aboveTop"] >= 32 and later["top"] >= p["top"]
+    check("the row below stays under the pointer while it is in the list, and moves when it leaves", after["top"] == p["top"] and after["room"] and (comes_up or come_down) and not later["room"], f"{p} {after} {later}")
 
     # A middle click closes, with Firefox's autoscroll on, and the next click works. (Firefox
     # starts it only in what can scroll, so the list gets room at its end for this.)
@@ -3165,7 +3168,8 @@ def alone_hand(m):
     in_sidebar(m, """() => { const f = [...doc.querySelectorAll("#tabs .folder")].find(f => f.querySelector(".head").title === "Hand");
       doc.documentElement.dataset.folds = ""; new content.MutationObserver(() => { doc.documentElement.dataset.folds += f.classList.contains("collapsed") ? "c" : "o"; }).observe(f, {attributes: true, attributeFilter: ["class"]});
       return f.classList.contains("collapsed"); }""")
-    head = hand_spot(m, """return box([...doc.querySelectorAll("#tabs .folder .head")].find(h => h.title === "Hand"));""")
+    # (In view first: in a list grown long it can be out of view, and the clicks would land elsewhere.)
+    head = hand_spot(m, """const h = [...doc.querySelectorAll("#tabs .folder .head")].find(h => h.title === "Hand"); h.scrollIntoView({block: "nearest"}); return box(h);""")
     hand(m, hand_to(head), hand_pause(100), *hand_click(), *hand_click())  # (no pause: a busy machine adds its own)
     r = sidebar_until(m, """() => doc.querySelector("#tabs .folder.renaming input") && {folds: doc.documentElement.dataset.folds, collapsed: doc.querySelector("#tabs .folder.renaming").classList.contains("collapsed")}""")
     sidebar_key(m, ESC)
@@ -3268,14 +3272,19 @@ def alone_new_tab(m):
     r = sidebar_page(m, rows + """
       send({type: "newFolder", space: spaces().find(s => s.active).id, name: "Above the new tabs"});
       const head = await settled(() => [...doc.querySelectorAll("#tabs .folder .head")].find(h => h.querySelector(".title").textContent === "Above the new tabs"));
-      send({type: "moveTab", tabId: ids()[0], folder: head.dataset.folderHead, before: null});
+      const moved = ids()[0];
+      send({type: "moveTab", tabId: moved, folder: head.dataset.folderHead, before: null});
       await settled(() => head.parentElement.querySelector(".tab"));
       const before = ids();
+      // On a tab of the list first: on an empty new tab of this space the button opens no second
+      // one (newtabs.js), and a group before can leave the window on one.
+      await page.browser.tabs.update(before[0], page.JSON.parse(JSON.stringify({active: true})));
+      await settled(() => plainTabs()[0]?.classList.contains("active"));
       doc.getElementById("new-tab").click();
       await settled(() => ids().length === before.length + 1);
       const top = plainTabs()[0];
-      return {folder: head.dataset.folderHead, before, after: ids(), active: top.classList.contains("active"), above: top.previousElementSibling?.className};""")
-    folder = r["folder"]
+      return {folder: head.dataset.folderHead, moved, before, after: ids(), active: top.classList.contains("active"), above: top.previousElementSibling?.className};""")
+    folder, in_folder = r["folder"], r.get("moved")
     check("the new tab button opens the tab first among today's tabs, under the folders, selected",
           r["after"][1:] == r["before"] and r["active"] and r["above"] == "divider", str(r))
     s = m.js(H + settled + """const t = main().gBrowser.selectedTab, was = key(main(), t);
@@ -3331,8 +3340,10 @@ def alone_new_tab(m):
     # A link from a tab drawn apart has nothing to stay next to. Next to the folder's tab would be the end of
     # the list (moveTab puts it last in the window). A moment from now again, once the views are being kept.
     before = sidebar_page(m, rows + "return ids();")
-    m.js(H + """const w = main(); w.gBrowser.selectedTab = w.gBrowser.tabs.at(-1);
-      sT(() => w.gBrowser.addTrustedTab("https://example.org/?smoke-newtab-from-folder", {relatedToCurrent: true, inBackground: true}), 3000); return 1;""")
+    # (The folder's tab by its id: the last in the window, where moveTab put it, can be a tab another group left.)
+    m.js(H + """const {ExtensionParent} = ChromeUtils.importESModule("resource://gre/modules/ExtensionParent.sys.mjs");
+      const w = main(); w.gBrowser.selectedTab = ExtensionParent.apiManager.global.tabTracker.getTab(args[0]);
+      sT(() => w.gBrowser.addTrustedTab("https://example.org/?smoke-newtab-from-folder", {relatedToCurrent: true, inBackground: true}), 3000); return 1;""", in_folder)
     r = sidebar_page(m, new_first, before)
     check("a link from a tab in a folder opens first among today's tabs", r["after"][1:] == r["before"], str(r))
     s = m.js(H + settled + "const t = main().gBrowser.tabs.find(x => url(x).includes('smoke-newtab-from-folder'));" + both_orders)
@@ -4411,7 +4422,7 @@ def alone_isolation(m):
       await wait(2500);
       const left = (await page.browser.contextualIdentities.query({})).some(c => c.cookieStoreId === id);
       return {question, kept, left, card: !!now()};""", new_id)
-    check("deleting a space asks, naming what goes, and Keep keeps it", "all its logins" in r.get("question", "") and r.get("kept"), str(r))
+    check("deleting a space asks, naming what goes, and Keep keeps it", "all its logins" in r.get("question", "").lower() and r.get("kept"), str(r))
     check("and then it is gone", r.get("left") is False and r.get("card") is False, str(r))
     r = m.js(H + """return Services.cookies.cookies.filter(c => c.originAttributes.userContextId === args[0]).length;""", number)
     check("and its logins with it", r == 0, str(r))
@@ -8501,7 +8512,7 @@ def alone_space_menu(m):
       await wait(300); return 1;""")
     # (Tidier's own pages left out: the test's sidebar page is a row of the space it belongs to,
     # and a page of Tidier's is not the user's to unload.)
-    ROWS = """() => [...doc.querySelectorAll("#tabs .tab")].filter(r => !r.classList.contains("unloaded") && r.querySelector(".title").textContent !== "Tidier" && !/\nmoz-extension:/.test(r.title)).map(r => r.classList.contains("active") ? "selected" : "loaded")"""
+    ROWS = """() => [...doc.querySelectorAll("#tabs .tab")].filter(r => !r.classList.contains("unloaded") && r.querySelector(".title").textContent !== "Tidier" && !r.title.includes("moz-extension:")).map(r => r.classList.contains("active") ? "selected" : "loaded")"""
     before = in_sidebar(m, ROWS)
     essentials = m.js(STATE, here)["essentials"]
     menu_on(m, f"dot({json.dumps(here)})")
