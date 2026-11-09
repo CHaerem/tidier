@@ -548,6 +548,10 @@ def notices(cam):
     in_sidebar(cam.m, """doc.getElementById("hiding").hidden = false;
       doc.getElementById("problem").hidden = false; doc.getElementById("problem").textContent = 'Live folder "Pull requests" is not updating: no answer';""")
     cam.shoot("state-notices")
+    # A browser moved over from Sidebery by itself (moveover.js): the line about it, under the
+    # one asking to hide tabs, which such a browser has not been asked yet.
+    in_sidebar(cam.m, """doc.getElementById("problem").textContent = "Sidebery's folders are now Tidier's own, after a copy of everything. Tidier's sidebar takes Sidebery's place; Sidebery can be removed in about:addons.";""")
+    cam.shoot("state-moved-over")
     in_sidebar(cam.m, """doc.getElementById("hiding").hidden = true; doc.getElementById("problem").hidden = true;""")
 
 

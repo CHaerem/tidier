@@ -5,9 +5,9 @@
 // placeholder's real tab in, and ⌘W then closes all of them.
 //
 // These listeners run in the capture phase, before what row(), tile(), keys.js and
-// drag.js have on the same events, so that those stay as they are for one tab and
-// with the setting off. What goes for many is the same message once per tab: the
-// background has no idea of a selection.
+// drag.js have on the same events, so that those stay as they are for one tab. What
+// goes for many is the same message once per tab: the background has no idea of a
+// selection.
 //
 // A function around it, so that its names cannot meet those of the other scripts here:
 // they share one scope, and a name declared twice stops the second script.
