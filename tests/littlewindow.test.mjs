@@ -584,6 +584,9 @@ test("a new tab in another space that is no link still takes you there, once it 
   await wait(300);
   assert.equal(x.js(`activeSpace.get(${w.id})`), C1);
   assert.equal(x.js(`newBlanks.size`), 0);
+  // Each is the tab you used last in its space: the one you come back to (lastUsedIn, spaces.js).
+  assert.equal((await x.js("lastUsedIn")(w.id, C1))?.id, u.id);
+  assert.equal((await x.js("lastUsedIn")(w.id, C2))?.id, t.id);
   x.kill();
 });
 

@@ -91,6 +91,9 @@ function settleBlank(tabId) {
   serial(async () => {
     const tab = await browser.tabs.get(tabId).catch(() => null);
     if (!tab?.active) return;
+    // As spaces.js does for any selected tab: without the first, coming back to this space
+    // landed on the tab you used before this one.
+    await notePick(tab);
     await setSpace(tab.windowId, tab.cookieStoreId);
     await setSuccessor(tab);
   });
