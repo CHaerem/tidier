@@ -74,13 +74,23 @@ const aloneRead = serial(readAlone).catch(() => {});
 // Something you should know and would otherwise not see, such as a live folder that
 // has stopped: shown on Tidier's button (in the Extensions menu) and in its sidebar.
 const notices = new Map(); // kind -> text
+// What you put away with a notice's × (putNoticeAway): its words, until Firefox starts again.
+// Kept by its words, not by its kind, as a live folder clears its notice at every try and sets
+// it again if the try fails: the same words stay away, and new ones (another problem) show.
+const noticesPutAway = new Set();
 function setNotice(kind, text) {
+  if (text && noticesPutAway.has(text)) text = null;
   if ((notices.get(kind) ?? null) === (text ?? null)) return;
   if (text) notices.set(kind, text); else notices.delete(kind);
   const first = [...notices.values()][0];
   browser.browserAction.setBadgeText({ text: first ? "!" : "" });
   browser.browserAction.setTitle({ title: first ? "Tidier: " + first : "Tidier" });
   viewAllSoon();
+}
+function putNoticeAway(text) {
+  if (typeof text !== "string" || !text) return;
+  noticesPutAway.add(text);
+  for (const [kind, shown] of notices) if (shown === text) setNotice(kind, null);
 }
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));

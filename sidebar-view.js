@@ -53,6 +53,7 @@ const tabItem = (t, title, entry) => ({
   sound: ownSound(t), soundTabId: t.id, // what a row shows; with Tidier alone, the real page's (addSounds)
   news: hasNews(t.id),
   page: isWeb(t.url) || isGhostUrl(t.url), // else a new tab page or the like, which only has a place among the tabs (drag.js)
+  blank: NEW_TAB_PAGES.has(t.url) || undefined, // an empty new tab: no page yet, so no letter of a name that is not one (sidebar.js icon)
   note: forYouNotes.get(syncKeyByTab.get(t.id)), // bridge.js
 });
 
@@ -233,7 +234,7 @@ browser.runtime.onConnect.addListener(port => {
     } else if (msg.type === "space") {
       await serial(() => switchSpace(windowId, msg.space));
     } else if (msg.type === "newTab") {
-      await createTab({ windowId, cookieStoreId: msg.space, index: tidierAlone ? await topOfToday(windowId, msg.space) : undefined }).catch(ifGone); // common.js
+      await newTabInSpace(windowId, msg.space); // newtabs.js
     } else if (msg.type === "mute") {
       await browser.tabs.update(msg.tabId, { muted: msg.muted }).catch(() => {});
     } else if (msg.type === "undo") {

@@ -1,28 +1,20 @@
-/* An agent at work: one quiet line above the bar, only while it is (sidebar/agent.js). */
+/* An agent at work: one quiet line above the bar, only while it is (sidebar/agent.js). A
+ * notice in shape (sidebar.css, Notices): it lies on the surface, under the list, with Stop
+ * where the quiet line has Undo. Its words fade out as a title does (sidebar.css, #note). */
 #agent-line {
-  display: flex; align-items: center; gap: 8px;
-  height: 26px; padding: 0 2px 0 8px; margin-bottom: 2px;
-  color: var(--muted); font-size: 12px;
+  display: flex; align-items: center; gap: 4px; box-sizing: border-box;
+  height: var(--row); padding: 0 var(--button-inset) 0 var(--pad); margin-bottom: 4px;
+  border-radius: var(--radius); background: var(--tile); color: var(--muted);
 }
 #agent-line[hidden] { display: none; }
-.agent-action { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.agent-stop {
-  flex: none; height: 22px; padding: 0 8px; border: 0; border-radius: 5px;
-  background: none; color: var(--text); font: inherit; cursor: default;
-}
-.agent-stop:hover { background: var(--hover); }
 
-/* Its space's dot: a thin ring, still, inside the room the dot already has. */
+/* Its space's dot: a thin ring, still, inside the room the dot already has. What it left
+ * you is said by the dot itself, as news is (sidebar.css, the bar), clear of this ring. */
 .space { position: relative; }
 .space.agent-active .dot { outline: 1.5px solid var(--color); outline-offset: 3px; }
-/* A tab it left you waits there: a small still mark, gone when For you is empty. */
-.space.agent-left::after {
-  content: ""; position: absolute; top: 5px; right: 5px;
-  width: 5px; height: 5px; border-radius: 50%; background: var(--color);
-}
 
-/* The note on a tab it left you. */
+/* The note on a tab it left you: quieter than the title, and fading out as the title does. */
 .row .agent-note {
-  flex: 1 1 0; min-width: 0; color: var(--muted); font-size: 12px;
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  flex: 1 1 0; min-width: 0; color: var(--muted); font-size: var(--size-small);
+  white-space: nowrap; overflow: hidden; mask-image: linear-gradient(to right, #000 calc(100% - 20px), transparent);
 }

@@ -84,6 +84,10 @@ for (const type of ["pointerup", "pointercancel", "dragend"]) {
 const ICON_RETRY_MS = 5 * 60000, ICONS_REMEMBERED = 1000;
 const iconsLoaded = new Set(), iconsFailed = new Map(); // URL -> when it failed
 const roomFor = list => { if (list.size >= ICONS_REMEMBERED) list.clear(); };
+// The first letter of a title, or its first digit if it has no letter: many start with
+// something else, such as "(2) Inbox" while a message waits. A title with neither gets an
+// empty tile, as quiet as can be.
+const letterOf = title => (String(title || "").match(/\p{L}/u) ?? String(title || "").match(/\p{N}/u))?.[0] ?? "";
 function icon(item) {
   const failed = iconsFailed.get(item.icon);
   if (item.icon && /^(https?:|data:|moz-extension:)/.test(item.icon) && !(Date.now() - failed < ICON_RETRY_MS)) {
@@ -94,11 +98,11 @@ function icon(item) {
     img.onload = () => { if (asks) { roomFor(iconsLoaded); iconsLoaded.add(item.icon); iconsFailed.delete(item.icon); } };
     img.onerror = () => {
       if (asks) { roomFor(iconsFailed); iconsFailed.set(item.icon, Date.now()); }
-      img.replaceWith(el("span", "letter", (item.title || "?").trim()[0] || "?"));
+      img.replaceWith(el("span", "letter", letterOf(item.title)));
     };
     return img;
   }
-  return el("span", "letter", (item.title || "?").trim()[0] || "?");
+  return el("span", "letter", item.blank ? "" : letterOf(item.title)); // an empty new tab: "New Tab" is no name to take a letter from
 }
 
 // A middle press in a list that can scroll starts Firefox's autoscroll (general.autoScroll,
@@ -106,6 +110,14 @@ function icon(item) {
 // ends the autoscroll. Firefox's own tab strip keeps it off its tabs the same way. (Not in
 // a row's rename box, which starts no autoscroll, and which that would take the focus from.)
 const noAutoscroll = e => { if (e.button === 1 && !e.target.closest?.("input")) e.preventDefault(); };
+
+// Light to dark (or back) is not a change of tint, so nothing fades then (sidebar.css): only
+// for the frame in which the colours change, and nothing is done until they do.
+globalThis.matchMedia?.("(prefers-color-scheme: dark)").addEventListener("change", () => {
+  const root = document.documentElement;
+  root.classList.add("scheme-change");
+  requestAnimationFrame(() => requestAnimationFrame(() => root.classList.remove("scheme-change")));
+});
 
 // --- Essentials ----------------------------------------------------------------
 function tile(item) {
@@ -327,6 +339,9 @@ function rename(key) {
 }
 
 // --- Everything -------------------------------------------------------------------
+// The notice's words; its × to put it away is sidebar/isolation.js's.
+const problemText = el("span", "text");
+document.getElementById("problem").append(problemText);
 let renameNext = false;
 let folderKeys = new Set();
 function render(next) {
@@ -339,13 +354,13 @@ function render(next) {
   document.documentElement.classList.toggle("alone", !!view.alone);
 
   document.getElementById("hiding").hidden = !view.needsHiding;
-  // The lasting notice goes once you have clicked it (isolation.js): under the pointer it
-  // fades in place first, so the list does not come into its room at the moment of the click.
+  // The lasting notice goes once you put it away with its × (isolation.js): under the pointer
+  // it fades in place first, so the list does not come into its room at the moment of the click.
   const problem = document.getElementById("problem");
   if (view.problem) {
     problem.classList.remove("going");
     problem.hidden = false;
-    problem.textContent = view.problem;
+    problemText.textContent = view.problem;
   } else if (!problem.hidden && problem.matches(":hover")) goQuietly(problem);
   else if (!problem.classList.contains("going")) problem.hidden = true;
 

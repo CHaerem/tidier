@@ -202,7 +202,8 @@ async function alwaysOpenHere(windowId, r) {
   const url = siteRuleText(r.address), before = await rulesList.get();
   rulesList.set([{ url, space: r.space }, ...before.filter(rule => rule.url !== url)]);
   const name = (await containerSpaces()).find(s => s.id === r.space)?.name ?? "this space";
-  say(windowId, `${new URL(r.address).host.replace(/^www\./, "")} now always opens in ${name}`, { undo: () => rulesList.set(before) });
+  // The space first: in a narrow sidebar the end of the line is cut, and that is what was asked.
+  say(windowId, `${name}: ${new URL(r.address).host.replace(/^www\./, "")} always opens here`, { undo: () => rulesList.set(before) });
 }
 
 function siteRuleText(address) {

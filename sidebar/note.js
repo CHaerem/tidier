@@ -5,7 +5,7 @@
 {
   const box = document.getElementById("note");
   const text = el("span", "text"), act = el("button", "act", "Undo");
-  const line = el("div", "line");
+  const line = el("div", "line raised"); // it floats over the list (tokens.css)
   line.append(text, act);
   box.append(line);
 
@@ -23,7 +23,6 @@
   // Once faded it is out of reach by its own class, not by the fade's end: Firefox moves a
   // transition on only as it draws, and a window it is not drawing would keep Undo there.
   const FADE_MS = 200, ROOM_AFTER_MS = 400; // the fade is sidebar.css's
-  const ROOM_PX = 32;
   let roomTimer = null, roomDue = false;
   let going = null; // the note that has just gone, while its line fades
   const faded = () => {
@@ -41,7 +40,8 @@
     if (box.matches(":hover")) { roomDue = true; return; }
     roomDue = false;
     const spare = tabsList.scrollHeight - tabsList.scrollTop - tabsList.clientHeight;
-    if (tabsList.scrollTop > 0 && spare < ROOM_PX && tabsList.matches(":hover")) tabsList.style.setProperty("--held", ROOM_PX - spare + "px");
+    const room = box.offsetHeight; // the room's height is sidebar.css's (#note.in-room)
+    if (tabsList.scrollTop > 0 && spare < room && tabsList.matches(":hover")) tabsList.style.setProperty("--held", room - spare + "px");
     box.classList.remove("in-room");
   };
   box.addEventListener("mouseleave", () => { if (roomDue) closeRoom(); });
