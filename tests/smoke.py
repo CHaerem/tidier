@@ -1282,12 +1282,43 @@ def move_over(m):
     imported = extension_message(m, {"type": "settings:importSidebery", "backup": export})
     check("Sidebery's own export and snapshot are understood, and a closed folder is found by its address", clicked and in_snapshot == len(before["pages"]) and imported["folds"] == 1 and imported["order"] == 3, f"{clicked}, {in_snapshot}, {imported}")
     check("taking its folds in changes nothing until the move", m.js(tabs_here) == tabs0 and m.js(record) == before, str(m.js(record)))
+    # What the click that moves asks for (permissions.request needs a click, which a test has
+    # no way to make): management to see whether Sidebery is on, tabHide for the spaces.
+    m.js(GIVE_PERMISSIONS, EXT_ID, ["management", "tabHide"], [])  # (defined further down, with the isolation groups)
+    r = extension_message(m, {"type": "settings:moveOver"})
+    check("moving over is refused while Sidebery is still on, and changes nothing", "Sidebery is still on" in str((r or {}).get("refused")) and m.js(record) == before and m.js(tabs_here) == tabs0, str(r))
     m.js(H + """const {AddonManager} = ChromeUtils.importESModule("resource://gre/modules/AddonManager.sys.mjs");
       await (await AddonManager.getAddonByID("%s")).disable(); await wait(1500); return 1;""" % SIDEBERY_ID)
     still = m.js(tabs_here)
     check("disabling Sidebery closes no folder page and no tab", m.js(record)["pages"] == before["pages"] and still == tabs0, f"{before['pages']} -> {m.js(record)['pages']}")
     fire_message(m, {"type": "settings:moveOver"})
-    m.js(H + "await wait(10000); return 1;")
+    # Firefox's note about hidden tabs hangs over the top of the sidebar, with Disable Extension
+    # where New tab is: it must come while the settings page is in front to say what to choose.
+    note = m.js(H + """const page = w => url(w.gBrowser.selectedTab).split("/").slice(3).join("/");
+      for (let i = 0; i < 80; i++) {
+        const w = main(), open = w.document.getElementById("extension-notification-panel")?.state === "open";
+        if (open && !w.document.getElementById("extension-tab-hide-notification").hidden)
+          return {page: page(w), front: Services.wm.getMostRecentWindow("navigator:browser") === w, pages: wins().map(page)};
+        await wait(250);
+      }
+      return {page: null, pages: wins().map(page)};""")
+    check("after moving over, Firefox asks about hidden tabs while the settings page is in front, saying what to choose",
+          note["page"] == "settings/settings.html#moved" and note.get("front"), str(note))
+    check("after moving over, a window without Tidier's sidebar shows the page too", note["pages"] == ["settings/settings.html#moved"] * 2, str(note))
+    m.js(H + "await wait(4000); return 1;")
+    # The second window's button gives it the sidebar: a click in a page of Tidier's is what lets it.
+    handle = m.js(H + """const {NavigableManager} = ChromeUtils.importESModule("chrome://remote/content/shared/NavigableManager.sys.mjs");
+      main().document.getElementById("extension-notification-panel")?.hidePopup?.(); other().focus(); await wait(500);
+      return NavigableManager.getIdForBrowser(other().gBrowser.tabs.find(t => url(t).includes("settings.html#moved")).linkedBrowser);""")
+    m.cmd("Marionette:SetContext", {"value": "content"})
+    m.cmd("WebDriver:SwitchToWindow", {"handle": handle, "focus": False})
+    button = m.cmd("WebDriver:FindElement", {"using": "css selector", "value": "#moved button"})
+    m.cmd("WebDriver:ElementClick", {"id": next(iter(button.values()))})
+    m.chrome()
+    r = m.js(H + """for (let i = 0; i < 20 && !other().SidebarController.isOpen; i++) await wait(100);
+      const ids = wins().map(w => w.SidebarController.isOpen && w.SidebarController.currentID); main().focus();
+      await removeWhere((w, t) => url(t).includes("settings.html#moved")); return ids;""")
+    check("its button gives the second window Tidier's sidebar", "6844a953" in str(r[1]), str(r))
     m.js(AFTER_MOVE_OVER, EXT_ID)
     after = m.js(record)
     check("after moving over, every folder has its tabs, and the pages are gone",
@@ -1304,7 +1335,10 @@ def move_over(m):
     # after moving back it has its icon.
     # (/icon-png: Firefox shows an SVG icon through an address of its own, not as data:.)
     icon_key = m.js(H + """const t = main().gBrowser.addTrustedTab(args[0] + "/icon-png", {userContextId: 1, inBackground: true}); await wait(4000); return JSON.parse(key(main(), t));""", m.pages)
-    # And back: Sidebery on first, and its folder pages return.
+    # And back: Sidebery on first, and its folder pages return. With it off, its pages could not
+    # load, and Sidebery would take them for ordinary tabs: every folder would be lost there.
+    r = extension_message(m, {"type": "settings:moveBack"})
+    check("going back is refused while Sidebery is off", "Sidebery is off" in str((r or {}).get("refused")) and m.js(record)["pages"] == [0, 0], str(r))
     m.js(H + """const {AddonManager} = ChromeUtils.importESModule("resource://gre/modules/AddonManager.sys.mjs");
       await (await AddonManager.getAddonByID("%s")).enable(); await wait(4000); return 1;""" % SIDEBERY_ID)
     fire_message(m, {"type": "settings:moveBack"})
@@ -6011,6 +6045,35 @@ def alone_tab_names(m):
           row(args[1]).dispatchEvent(new page.MouseEvent("dblclick", {bubbles: true}));
           return {plain, dbl: !!box()};""", setup["plain"], saved)
         check("an ordinary tab gets no box, and a double click on a saved tab opens none", r == {"plain": False, "dbl": False}, str(r))
+
+        # A folder made while Firefox's note about hidden tabs has the keyboard keeps its name: its
+        # box would get the keyboard back only once the note goes, with the name still all selected,
+        # and the last letters typed meanwhile would become the name (once "re"). With the keyboard
+        # here, New folder opens its box as ever.
+        def new_folder():
+            return in_front("""const heads = () => [...doc.querySelectorAll("#tabs .folder .head")], known = new Set(heads().map(h => h.dataset.folderHead));
+              const focus = doc.hasFocus();
+              doc.getElementById("new-folder").click();
+              const head = await until(() => heads().find(h => !known.has(h.dataset.folderHead)));
+              await wait(500);
+              const out = {focus, open: !!box(), name: head?.querySelector(".title")?.textContent ?? null};
+              box()?.blur(); // which keeps "New folder"
+              await wait(300);
+              page.folderMenu(head.dataset.folderHead, false).find(i => i?.[0]?.startsWith("Delete"))[1]();
+              await until(() => !heads().includes(head));
+              return out;""")
+        with_keys = new_folder()
+        behind("""const {ExtensionSettingsStore} = ChromeUtils.importESModule("resource://gre/modules/ExtensionSettingsStore.sys.mjs");
+          await ExtensionSettingsStore.initialize(); await ExtensionSettingsStore.removeSetting(args[0], "tabHideNotification", args[0]); return 1;""", EXT_ID)
+        in_front("""await page.browser.tabs.hide([args[0]]); await until(() => !doc.hasFocus(), 3000); return 1;""", setup["plain"])
+        away = new_folder()
+        behind("""const {ExtensionSettingsStore} = ChromeUtils.importESModule("resource://gre/modules/ExtensionSettingsStore.sys.mjs");
+          const note = main().document.getElementById("extension-notification-panel"), was = note?.state;
+          note?.hidePopup?.();
+          await ExtensionSettingsStore.addSetting(args[0], "tabHideNotification", args[0], true, () => false); await wait(300); return was;""", EXT_ID)
+        in_front("""await page.browser.tabs.show([args[0]]); return 1;""", setup["plain"])
+        check("New folder opens its box when the sidebar has the keyboard, and not while Firefox's note about hidden tabs has it",
+              with_keys.get("focus") and with_keys.get("open") and away.get("focus") is False and away.get("open") is False and away.get("name") == "New folder", f"{with_keys}, {away}")
 
         # A menu item opens the box from inside a real click, which must not take the focus back.
         # Enter on a box you did not change names nothing, or the title would stop following its page.

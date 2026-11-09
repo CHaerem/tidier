@@ -242,6 +242,7 @@ function render(next) {
   document.documentElement.classList.toggle("alone", !!view.alone);
 
   document.getElementById("hiding").hidden = !view.needsHiding;
+  document.getElementById("ask-hiding").hidden = !view.askHiding;
   const problem = document.getElementById("problem");
   problem.hidden = !view.problem;
   problem.textContent = view.problem || "";
@@ -269,7 +270,11 @@ function render(next) {
 
   for (const id of kept.keys()) if (!drawn.has(id)) kept.delete(id);
   const keys = new Set(view.folders.map(f => f.key));
-  if (renameNext) for (const k of keys) if (!folderKeys.has(k)) { renameNext = false; rename(k); }
+  // Not while something else has the keyboard, such as Firefox's note about hidden tabs: the
+  // box would get it back only later, with its name still all selected, and the letters typed
+  // meanwhile went elsewhere, so the last few would silently become the name (once "re").
+  // The folder keeps its name, and you rename it, which shows that nothing was taken.
+  if (renameNext) for (const k of keys) if (!folderKeys.has(k)) { renameNext = false; if (document.hasFocus?.() ?? true) rename(k); }
   folderKeys = keys;
 }
 
@@ -280,3 +285,9 @@ document.getElementById("tabs").oncontextmenu = e => {
 };
 // Asking needs your click, so it is here and not in the background.
 document.getElementById("allow-hiding").onclick = () => browser.permissions.request({ permissions: ["tabHide"] });
+// Right after moving over, until the first switch of space (moveover.js): Firefox's note
+// about hidden tabs hangs over this part of the sidebar, with Disable Extension where New tab is.
+document.getElementById("ask-hiding-no").onclick = () => {
+  document.getElementById("ask-hiding").hidden = true;
+  send({ type: "askHidingSeen" });
+};

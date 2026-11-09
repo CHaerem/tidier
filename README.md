@@ -58,7 +58,13 @@ folders as Tidier's own data (`ownfolders.js`); rules for addresses; and a setti
 page. It sits behind a setting, off by default, since Sidebery and Tidier would fight
 over the same tabs: `tidierAlone` in the extension's storage, or declared for a
 machine in managed storage. A browser is moved over on the settings page
-(`moveover.js`), never by an update, and can be moved back.
+(`moveover.js`), never by an update, and can be moved back. Each way waits for Sidebery
+to be in the state it needs: off to move over, on to go back. Right after the move the
+settings page comes back in front, and only then are tabs hidden, so that Firefox's
+question about hidden tabs (answer *Keep Tabs Hidden*; *Disable Extension* would turn
+Tidier off) comes while the page says what to choose, and not over the sidebar; Firefox
+forgets the answer whenever Tidier is turned off and on, which starting again alone is.
+A window that came over without Tidier's sidebar shows the page too, with a button for it.
 
 With it come what Sidebery does well, each as one fixed behaviour: Tidier's own short
 menu on tabs, tiles, folders and spaces; selecting several tabs; one quiet line with
@@ -495,6 +501,8 @@ that). Everything works without them, as it says here:
   in a space.
 - `search`, `history` and `bookmarks`, when you choose *Also search history and bookmarks*
   in the command bar.
+- `management`, in the click that moves a browser over or back: only to see whether
+  Sidebery is on, so that neither runs in the wrong order (`moveover.js`).
 
 No required host permissions and no data collection. The only network use is icons: a
 placeholder with no saved icon tries the site's `/favicon.ico`, and Tidier's sidebar
@@ -721,6 +729,11 @@ tests/soak.py [--alone] [--minutes N] [--seed N] [--port P]          # a long ru
 TIDIER_MANY=1000 tests/smoke.py --only alone_setup,alone_many         # measured with a thousand tabs
 tools/shoot.py                                                       # pictures of what Tidier draws
 ```
+
+For what went wrong once and could not be made to happen again, Tidier keeps the last
+forty things you did and what came of them (an Undo and what it brought back, a menu item
+pressed and clicked, a key that reached it), in its console and in the smoke test's
+`stats` message (`trace` in `common.js`), beside the errors.
 
 `tests/chaos.test.mjs` plays random sequences of browser use on the real background
 scripts, on a fake Firefox (`tests/chaos_firefox.mjs`) that refuses what Firefox refuses,

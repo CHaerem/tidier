@@ -394,6 +394,11 @@ img { filter: drop-shadow(0 0 .6px light-dark(rgb(40 30 20 / .3), rgb(255 255 25
 .ask-line { display: flex; gap: 4px; }
 .ask-line button:first-child { flex: 1; }
 .notice .ask-no { width: 24px; flex: none; padding: 0; background: none; color: var(--muted); }
+/* What to answer Firefox's note about hidden tabs, right after moving over: words and a ×. */
+#ask-hiding { display: flex; gap: 4px; align-items: center; margin-top: 4px; }
+#ask-hiding[hidden] { display: none; }
+#ask-hiding p { flex: 1; margin: 0; }
+#ask-hiding .ask-no { display: block; width: 24px; min-height: 24px; height: 24px; }
 .notice .ask-no:hover { background: var(--hover); }
 .new-space { position: fixed; right: 8px; bottom: 6px; width: 26px; height: 26px; padding: 0; border: 1px dashed var(--muted); border-radius: 50%; background: var(--frame); color: var(--muted); font: inherit; }
 .new-space[hidden] { display: none; }

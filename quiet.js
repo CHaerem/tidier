@@ -50,6 +50,7 @@ function noteFor(windowId) {
 // went, or a second click, finds nothing to do.
 async function undoNote(windowId, id) {
   const note = quietNotes.get(windowId);
+  trace(`undo ${id} in ${windowId}: ${!note ? "no line any more" : note.id !== id ? `another line now (${note.id})` : note.undo ? "taken" : "nothing to undo"}`);
   if (note?.id !== id) return;
   dropNote(windowId);
   if (note.undo) await serial(note.undo).catch(() => {}); // logged by serial()
@@ -181,6 +182,7 @@ async function bringBack(windowId, items, tabs) {
   const open = new Set((await browser.tabs.query({})).map(t => `${t.cookieStoreId} ${t.url}`));
   const reopened = i => i.page && !closed.some(t => t.url === i.url) && open.has(`${i.entry.cookieStoreId} ${i.url}`);
   const back = items.filter(i => !all[i.key] && !reopened(i));
+  trace(`bring back ${back.length} of ${items.length}` + (back.length < items.length ? `: ${items.filter(i => all[i.key]).length} still in the record, ${items.filter(i => !all[i.key] && reopened(i)).length} open again` : ""));
   for (const { key, entry } of back) {
     all[key] = { ...entry };
     if (entry.parentKey && !all[entry.parentKey]) { all[key].parentKey = null; delete all[key].saved; }

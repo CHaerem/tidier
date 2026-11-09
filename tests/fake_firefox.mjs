@@ -243,7 +243,8 @@ export class FakeFirefox {
     b.menus = { onShown: ev(), onHidden: ev(), onClicked: ev(), removeAll: async () => {}, create() {}, remove: async () => {}, refresh() {} };
     b.browserAction = { onClicked: ev(), setBadgeText: async o => { ff.badge = o.text; }, setTitle: async () => {} };
     b.permissions = { onAdded: ev(), onRemoved: ev(), contains: async () => false };
-    b.sidebarAction = { toggle: async () => {} };
+    // Which windows have Tidier's sidebar open: all of them unless a test says otherwise.
+    b.sidebarAction = { toggle: async () => {}, open: async () => { ff.log.push(["sidebarOpen"]); }, isOpen: async ({ windowId }) => !ff.noSidebar?.has(windowId) };
     addIsolationApis(ff, b);
     ff.adapt?.(b); // a fake built on this one changes the API here, before the scripts see it
     const errors = [];
@@ -298,6 +299,8 @@ function addIsolationApis(ff, b) {
   const apis = () => {
     if (ff.granted.has("webRequest")) b.webRequest ??= { onBeforeRequest: ev(), onBeforeSendHeaders: ev() };
     if (ff.granted.has("proxy")) b.proxy ??= { onRequest: ev() };
+    // Other add-ons, as ff.addons: { id: { enabled } }.
+    if (ff.granted.has("management")) b.management ??= { get: async id => { const a = ff.addons?.[id]; if (!a) throw new Error(`No such addon ${id}`); return { id, ...a }; }, onEnabled: ev(), onDisabled: ev(), onInstalled: ev(), onUninstalled: ev() };
     if (ff.granted.has("browsingData")) b.browsingData ??= { remove: async (o, kinds) => { ff.log.push(["browsingData", o, kinds]); ff.cookies = ff.cookies.filter(c => c.storeId !== o.cookieStoreId); } };
   };
   apis();

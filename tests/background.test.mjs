@@ -646,6 +646,114 @@ test("moving over keeps every folder and tab, and moving back brings the pages b
   y.kill();
 });
 
+test("moving over waits for Sidebery to be off, and going back for it to be on", async () => {
+  const SB = "{3c078156-979c-498b-8990-85f7987dd929}";
+  const ff = new FakeFirefox();
+  ff.store.syncedTabs = { F: entry("moz-extension://sb/sidebery/group.html#Work", { group: true }), a: entry("https://a.example/", { parentKey: "F" }) };
+  const w = ff.addWindow({ focused: true });
+  ff.addTab(w.id, { url: "moz-extension://sb/sidebery/group.html#Work", cookieStoreId: C1 }, { syncKey: "F", syncRole: "copy" });
+  ff.addTab(w.id, { url: "https://a.example/", active: true, cookieStoreId: C1 }, { syncKey: "a", syncRole: "live" });
+  ff.granted = new Set(["management"]);
+  ff.addons = { [SB]: { enabled: true } };
+  const x = await run(ff);
+  let reloaded = 0;
+  x.b.runtime.reload = () => { reloaded++; };
+  x.b.runtime.sendNativeMessage = async () => ({ saved: "file" });
+  const settings = { url: "moz-extension://tidier/settings/settings.html" };
+  assert.equal((await x.send({ type: "settings:get" }, settings)).sidebery, "on");
+  const refused = await x.send({ type: "settings:moveOver" }, settings);
+  assert.match(refused.refused, /Sidebery is still on/);
+  assert.equal(reloaded, 0);
+  assert.ok(!ff.store.tidierAlone && !ff.store.syncedTabs.F.own, "nothing changed");
+  ff.addons[SB].enabled = false;
+  assert.equal((await x.send({ type: "settings:moveOver" }, settings)).refused, null);
+  assert.equal(reloaded, 1);
+  x.kill();
+  // Back, with Sidebery still off: its folder pages could not load, and would be lost there.
+  const y = await run(ff, "onInstalled");
+  y.b.runtime.reload = () => { reloaded++; };
+  assert.match((await y.send({ type: "settings:moveBack" }, settings)).refused, /Enable it/);
+  delete ff.addons[SB];
+  assert.match((await y.send({ type: "settings:moveBack" }, settings)).refused, /not installed/);
+  assert.equal(reloaded, 1);
+  assert.equal(ff.store.tidierAlone, true);
+  ff.addons[SB] = { enabled: true };
+  assert.equal((await y.send({ type: "settings:moveBack" }, settings)).refused, null);
+  assert.equal(reloaded, 2);
+  assert.equal(ff.store.tidierAlone, false);
+  y.kill();
+});
+
+test("after moving over, the settings page comes back in front before any tab is hidden", async () => {
+  // Firefox asks about hidden tabs at the first one hidden, in a note over the top of the
+  // sidebar: it should come while the settings page is there to say what to choose.
+  const ff = new FakeFirefox();
+  ff.store.syncedTabs = { a: entry("https://a.example/"), b: entry("https://b.example/", { cookieStoreId: "firefox-container-2" }) };
+  const w = ff.addWindow({ focused: true });
+  ff.addTab(w.id, { url: "https://a.example/", active: true, cookieStoreId: C1 }, { syncKey: "a", syncRole: "live" });
+  const b = ff.addTab(w.id, { url: "https://b.example/", cookieStoreId: "firefox-container-2" }, { syncKey: "b", syncRole: "live" });
+  const other = ff.addWindow();
+  ff.addTab(other.id, { url: GHOST("ghost", "a"), active: true, cookieStoreId: C1, discarded: true }, { syncKey: "a", syncRole: "ghost" });
+  ff.noSidebar = new Set([other.id]); // Firefox gave it no sidebar as Tidier started again
+  ff.granted = new Set(["tabHide"]);
+  Object.assign(ff.store, { tidierAlone: true, justMoved: { windowId: w.id, index: 1 } });
+  const x = await run(ff, "onInstalled");
+  const page = ff.list(w.id).find(t => t.url.includes("settings.html"));
+  assert.ok(page?.active && page.url.endsWith("#moved"), "the settings page is back, in front, where it was");
+  assert.equal(ff.focused, w.id);
+  assert.ok(!ff.store.justMoved, "once");
+  assert.ok(!ff.tabs.get(b.id).hidden, "nothing hidden yet");
+  const settings = { url: "moz-extension://tidier/settings/settings.html#moved" };
+  assert.deepEqual([...(await x.send({ type: "settings:get" }, settings)).moved.noSidebar], [other.id]);
+  assert.ok(ff.list(other.id).find(t => t.url.includes("settings.html"))?.active, "with a button for its sidebar");
+  await x.send({ type: "settings:moved" }, settings);
+  await wait(1000);
+  assert.ok(ff.tabs.get(b.id).hidden, "hidden once the page is there");
+  // The sidebar says it once too, until the first switch of space.
+  assert.equal((await x.js("viewFor")(w.id)).askHiding, true);
+  await x.js("serial")(() => x.js("switchSpace")(w.id, "firefox-container-2"));
+  assert.equal((await x.js("viewFor")(w.id)).askHiding, false);
+  // The window without a sidebar gets it at the first key of Tidier's pressed there, and only then.
+  x.b.commands.onCommand.fire("next-tab", ff.snap(ff.list(w.id)[0]));
+  assert.equal(ff.log.filter(e => e[0] === "sidebarOpen").length, 0);
+  x.b.commands.onCommand.fire("next-tab", ff.snap(ff.list(other.id)[0]));
+  x.b.commands.onCommand.fire("next-tab", ff.snap(ff.list(other.id)[0]));
+  assert.equal(ff.log.filter(e => e[0] === "sidebarOpen").length, 1);
+  x.kill();
+});
+
+test("after moving over, tabs are hidden in the end even if the settings page never says it is there", async () => {
+  const ff = new FakeFirefox();
+  ff.store.syncedTabs = { a: entry("https://a.example/"), b: entry("https://b.example/", { cookieStoreId: "firefox-container-2" }) };
+  const w = ff.addWindow({ focused: true });
+  ff.addTab(w.id, { url: "https://a.example/", active: true, cookieStoreId: C1 }, { syncKey: "a", syncRole: "live" });
+  const b = ff.addTab(w.id, { url: "https://b.example/", cookieStoreId: "firefox-container-2" }, { syncKey: "b", syncRole: "live" });
+  ff.granted = new Set(["tabHide"]);
+  Object.assign(ff.store, { tidierAlone: true, justMoved: { windowId: w.id, index: 1 } });
+  const x = await run(ff, "onInstalled");
+  await wait(11000);
+  assert.ok(ff.tabs.get(b.id).hidden);
+  x.kill();
+});
+
+test("after moving over with nothing to hide, one tab is hidden and shown again, so that Firefox asks then", async () => {
+  const ff = new FakeFirefox();
+  ff.store.syncedTabs = { a: entry("https://a.example/"), b: entry("https://b.example/") };
+  const w = ff.addWindow({ focused: true });
+  ff.addTab(w.id, { url: "https://a.example/", active: true, cookieStoreId: C1 }, { syncKey: "a", syncRole: "live" });
+  const b = ff.addTab(w.id, { url: "https://b.example/", cookieStoreId: C1 }, { syncKey: "b", syncRole: "live" });
+  ff.granted = new Set(["tabHide"]);
+  Object.assign(ff.store, { tidierAlone: true, justMoved: { windowId: w.id, index: 1 } });
+  const x = await run(ff, "onInstalled");
+  await x.send({ type: "settings:moved" }, { url: "moz-extension://tidier/settings/settings.html#moved" });
+  await wait(1000);
+  const hides = ff.log.filter(e => e[0] === "hide" || e[0] === "show").map(e => [e[0], [e[1]].flat()]);
+  const [id] = hides[0]?.[1] ?? [];
+  assert.deepEqual(JSON.parse(JSON.stringify(hides)), [["hide", [id]], ["show", [id]]]);
+  assert.ok(ff.tabs.get(id).url.startsWith("https://") && !ff.tabs.get(id).hidden && !ff.tabs.get(b.id).hidden, "a tab of the space, shown again");
+  x.kill();
+});
+
 test("Sidebery's rules and order of spaces come from its export", async () => {
   const ff = new FakeFirefox();
   emptySession(ff);

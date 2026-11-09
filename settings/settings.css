@@ -21,6 +21,9 @@ label { color: var(--muted); }
 #version { margin: 0; font-size: var(--size-small); color: var(--faint); }
 code { padding: 1px 4px; border-radius: 4px; background: var(--tile); font: 12px ui-monospace, Menlo, monospace; color: var(--text); }
 .notice { padding: 8px 10px; margin: 0 0 8px; border-radius: var(--radius); background: var(--tile); color: var(--text); }
+/* Right after moving over: what happened, and what Firefox asks next. */
+#moved { margin-bottom: 36px; }
+#moved > button { margin: 0 2px 8px 0; }
 #notices:has(.notice) { margin-bottom: 28px; }
 
 /* The controls: soft fills, nothing of the browser's default look. */

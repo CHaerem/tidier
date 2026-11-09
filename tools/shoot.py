@@ -545,10 +545,10 @@ def marks(cam):
 def notices(cam):
     """By hand, with made-up words: the real ones take a fault."""
     select(cam.m, on_tab(PERSONAL), PERSONAL["ctx"])
-    in_sidebar(cam.m, """doc.getElementById("hiding").hidden = false;
+    in_sidebar(cam.m, """doc.getElementById("hiding").hidden = false; doc.getElementById("ask-hiding").hidden = false;
       doc.getElementById("problem").hidden = false; doc.getElementById("problem").textContent = 'Live folder "Pull requests" is not updating: no answer';""")
     cam.shoot("state-notices")
-    in_sidebar(cam.m, """doc.getElementById("hiding").hidden = true; doc.getElementById("problem").hidden = true;""")
+    in_sidebar(cam.m, """doc.getElementById("hiding").hidden = true; doc.getElementById("ask-hiding").hidden = true; doc.getElementById("problem").hidden = true;""")
 
 
 def scrolled(cam):

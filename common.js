@@ -44,6 +44,18 @@ function noteError(err, job) {
 }
 globalThis.addEventListener?.("unhandledrejection", event => noteError(event.reason));
 
+// What you did last and what came of it, in a few words, for what went wrong once and could
+// not be made to happen again (an Undo that brought nothing back, a menu item that did
+// nothing): the "stats" message has it, beside the errors, and so does the console. Only for
+// what you do, so with nothing happening nothing is added.
+const traces = [];
+function trace(what) {
+  const line = `${new Date().toISOString().slice(11, 23)} ${what}`;
+  console.info("Tidier:", line);
+  traces.push(line);
+  if (traces.length > 40) traces.shift();
+}
+
 // How much Tidier does, for the smoke test (the "stats" message, tabsync.js):
 // jobs run in the queue and how long they held it (waits for Sidebery
 // included), tab lookups made outside it (noteOrder, tabsync.js), the timed

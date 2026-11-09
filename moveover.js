@@ -3,12 +3,31 @@
 //
 //   1. A report of what will happen, and a copy of everything (copies.js).
 //   2. You disable Sidebery yourself: an extension cannot, and with Sidebery still
-//      running, closing a folded folder's page would close the tabs in it.
+//      running, closing a folded folder's page would close the tabs in it. So moveOver
+//      refuses while Sidebery runs, and moveBack while it does not (sideberyState).
 //   3. moveOver: Sidebery's folder pages become Tidier's folders in the record, which
 //      is written before anything else happens, and Tidier starts again alone. Only
 //      then are the folder pages closed (closeOldFolderPages). A crash at any point
 //      leaves either the old record, or the new one and pages that close at the next start.
+//      The settings page comes back in front, and says what Firefox asks next (afterMovingOver).
 //   4. Sidebery stays installed for a few weeks. moveBack undoes it all.
+
+// Sidebery's id, the same everywhere (it comes from addons.mozilla.org).
+const SIDEBERY_ID = "{3c078156-979c-498b-8990-85f7987dd929}";
+
+// "on", "off", or "none" when it is not installed; null when Tidier may not look, which
+// takes the optional management permission (asked for in the click that moves).
+async function sideberyState() {
+  if (!browser.management?.get) return null;
+  try {
+    return (await browser.management.get(SIDEBERY_ID)).enabled ? "on" : "off";
+  } catch (err) {
+    return "none"; // Firefox's answer for an add-on that is not there
+  }
+}
+const SIDEBERY_STILL_ON = "Sidebery is still on. Disable it in about:addons first (keep it installed), then move.";
+const SIDEBERY_OFF = "Sidebery is off. Enable it in about:addons first: its folders can only come back while it runs.";
+const SIDEBERY_GONE = "Sidebery is not installed here. Install it first, then go back.";
 
 async function moveReport() {
   const all = await getSynced();
@@ -25,8 +44,11 @@ async function moveReport() {
   };
 }
 
-async function moveOver() {
-  if (tidierAlone) return;
+// `from`: the settings page's tab, where the page comes back once Tidier has started again.
+// Nothing, or why not, in words for the page.
+async function moveOver(from) {
+  if (tidierAlone) return null;
+  if (await sideberyState() === "on") return SIDEBERY_STILL_ON;
   const copy = await makeCopy();
   if (!copy?.saved) await browser.storage.local.set({ copyBeforeMove: await theCopy() }); // no helper here: at least inside Firefox's storage
   const all = await getSynced();
@@ -39,10 +61,95 @@ async function moveOver() {
   }
   saveSynced(all);
   await flushWrites();
-  await browser.storage.local.set({ tidierAlone: true, importedFolds: [] });
+  await browser.storage.local.set({ tidierAlone: true, importedFolds: [], justMoved: { windowId: from?.windowId ?? null, index: from?.index ?? null } });
   await guardAfterReload();
   browser.runtime.reload();
+  return null;
 }
+
+// --- Right after moving over -----------------------------------------------------------
+// Firefox asks about hidden tabs at the first tab Tidier hides, and again at every one
+// until it is answered: a note that hangs from the toolbar over the top of the sidebar,
+// with "Disable Extension" just where "New tab" is. One click there turns Tidier off, and
+// with Sidebery off too the window has no list of tabs at all. Firefox forgets the answer
+// whenever the add-on is disabled, and starting again (runtime.reload) is a disable, so
+// the question cannot be had before the move. So, at the first start alone, the settings
+// page comes back in front first, saying what to choose, and only once it is there are
+// tabs hidden (hidingHeld, spaces.js). Until the first switch of space the sidebar says it
+// too, in one line: the note may have been closed without an answer, and then comes back.
+const HOLD_HIDING_MS = 10000; // the page did not come: hidden anyway
+let askHidingLine = false; // the sidebar's line (viewFor, sidebar-view.js)
+let movedOver = false; // for the settings page, until Firefox restarts
+async function afterMovingOver() {
+  const { justMoved } = await browser.storage.local.get("justMoved");
+  if (!justMoved) return;
+  await browser.storage.local.remove("justMoved");
+  if (!tidierAlone) return;
+  hidingHeld = true;
+  askHidingLine = true;
+  setTimeout(() => serial(releaseHiding), HOLD_HIDING_MS);
+  // Firefox opens a sidebar again where it was open before Tidier started again: only the
+  // window you clicked in (settings.js). One without has no list of tabs, so it shows the
+  // page too, with a button for it, and gets it at the first key of Tidier's pressed there.
+  movedOver = true;
+  const wins = await normalWindows();
+  for (const w of wins) if (!(await browser.sidebarAction.isOpen({ windowId: w.id }).catch(() => true))) wantsSidebar.add(w.id);
+  const win = wins.find(w => w.id === justMoved.windowId) ?? wins.find(w => w.focused) ?? wins[0];
+  if (!win) return;
+  const url = browser.runtime.getURL("settings/settings.html#moved");
+  for (const w of wins) {
+    if (w.id !== win.id && !wantsSidebar.has(w.id)) continue;
+    const open = (await browser.tabs.query({ windowId: w.id })).find(t => t.url?.startsWith(url.split("#")[0]));
+    const index = w.id === win.id && Number.isInteger(justMoved.index) ? justMoved.index : undefined;
+    if (open) await browser.tabs.update(open.id, { url, active: true }).catch(noteError); // Firefox closes it as Tidier stops; just in case it did not
+    else await browser.tabs.create({ url, windowId: w.id, index, active: true }).catch(noteError);
+  }
+  await browser.windows.update(win.id, { focused: true }).catch(() => {});
+}
+
+// The key that shows the sidebar, as the settings page writes keys (keys-commands.js).
+async function sidebarKey() {
+  const shortcut = (await browser.commands.getAll()).find(c => c.name === "_execute_sidebar_action")?.shortcut;
+  return shortcut ? prettyKey(shortcut, (await browser.runtime.getPlatformInfo()).os) : "";
+}
+
+// The line goes at the first switch of space, or its ×.
+function askHidingSeen() {
+  if (!askHidingLine) return;
+  askHidingLine = false;
+  viewAllSoon();
+}
+
+// The page says it is there, drawn: a moment for it to be seen, then the question.
+const releaseHidingSoon = () => sleep(300).then(() => serial(releaseHiding));
+
+// The settings page is in front and says it (or it never came): now tabs are hidden, and
+// Firefox asks, in the window in front. If nothing needed hiding, one tab is hidden and
+// shown again, so that it asks now and not later over the sidebar.
+async function releaseHiding() {
+  if (!hidingHeld) return;
+  hidingHeld = false;
+  let hidden = 0;
+  for (const w of await normalWindows()) hidden += await showSpace(w.id);
+  if (hidden || !browser.tabs.hide) return;
+  const [front] = await browser.windows.getAll({ windowTypes: ["normal"] }).then(ws => ws.filter(w => w.focused));
+  const tab = front && (await browser.tabs.query({ windowId: front.id, pinned: false, hidden: false, active: false }))[0];
+  if (!tab) return;
+  await browser.tabs.hide(tab.id).catch(() => {});
+  await browser.tabs.show(tab.id).catch(() => {});
+}
+
+// A window that came over without Tidier's sidebar gets it at the first key of Tidier's
+// pressed there: a key, like a click in a page of Tidier's, is what lets an extension open
+// a sidebar, and it has to be at once, while the key is being handled. Until the sidebar
+// is there (sidebarHere, sidebar-view.js), or Firefox restarts, which brings back each
+// window's own sidebar.
+const wantsSidebar = new Set(); // windowId
+const sidebarHere = windowId => wantsSidebar.delete(windowId);
+browser.commands.onCommand.addListener((name, tab) => {
+  if (name !== "_execute_sidebar_action" && wantsSidebar.delete(tab?.windowId)) browser.sidebarAction.open().catch(() => {});
+});
+browser.windows.onRemoved.addListener(id => wantsSidebar.delete(id));
 
 // Tidier alone: the pages of folders that are now Tidier's own, and any Sidebery folder
 // page left, are closed once, with nothing else happening to their tabs.
@@ -59,7 +166,13 @@ async function closeOldFolderPages() {
 // Back to Sidebery: you enable it first, since its folder pages are its own. Each
 // window gets its folder pages back, and Tidier starts again without the setting.
 async function moveBack() {
-  if (!tidierAlone) return;
+  if (!tidierAlone) return null;
+  // A folder page opened while Sidebery is off cannot load: Firefox leaves a blank tab named
+  // after its address, which Sidebery, once on, takes for an ordinary tab. Every folder would
+  // be gone there, and turning Sidebery on afterwards does not mend them.
+  const sidebery = await sideberyState();
+  if (sidebery === "off") return SIDEBERY_OFF;
+  if (sidebery === "none") return SIDEBERY_GONE;
   const all = await getSynced();
   const wins = await normalWindows();
   for (const [key, e] of Object.entries(all)) {
@@ -81,6 +194,7 @@ async function moveBack() {
   stopIsolation();
   await browser.storage.local.set({ tidierAlone: false, placeholdersNeedPages: true });
   browser.runtime.reload();
+  return null;
 }
 
 // Placeholders made with Tidier alone have no page (placeholderWithoutPage), but Sidebery
@@ -204,23 +318,26 @@ async function importSidebery(backup) {
 // --- The settings page -------------------------------------------------------------
 browser.runtime.onMessage.addListener((msg, sender) => {
   if (!msg?.type?.startsWith("settings:") || sender.id !== browser.runtime.id || !sender.url?.startsWith(browser.runtime.getURL(""))) return;
-  return serial(() => settingsAction(msg));
+  // The page is back in front after a move: tabs may be hidden now (afterMovingOver).
+  if (msg.type === "settings:moved") return releaseHidingSoon().then(() => true);
+  return serial(() => settingsAction(msg, sender));
 });
 
-async function settingsAction(msg) {
+async function settingsAction(msg, sender) {
   switch (msg.type.slice("settings:".length)) {
     case "get": {
       const stored = await browser.storage.local.get(["archiveAfterHours", "lastCopy"]);
       return {
         report: await moveReport(), rules: await rulesList.get(), spaces: await containerSpaces(), archiveHours: stored.archiveAfterHours ?? ARCHIVE_DEFAULT_HOURS,
         lastCopy: stored.lastCopy ?? null, version: browser.runtime.getManifest().version, hiding: !!browser.tabs.hide, notices: [...notices.values()],
+        sidebery: await sideberyState(), moved: movedOver && { noSidebar: [...wantsSidebar], sidebarKey: await sidebarKey() },
       };
     }
     case "archiveHours": await browser.storage.local.set({ archiveAfterHours: Number(msg.hours) }); return true;
     case "rules": rulesList.set(msg.rules.filter(r => r.url && r.space).map(r => ({ url: r.url, space: r.space }))); setNotice("rule", null); viewAllSoon(); return true;
     case "space": await browser.contextualIdentities.update(msg.id, msg.changes).catch(noteError); return true;
-    case "moveOver": await moveOver(); return true;
-    case "moveBack": await moveBack(); return true;
+    case "moveOver": return { refused: await moveOver(sender.tab) };
+    case "moveBack": return { refused: await moveBack() };
     case "importSidebery": return importSidebery(msg.backup);
     case "copyNow": return makeCopy();
     case "copyFile": return theCopy();

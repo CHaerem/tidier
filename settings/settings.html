@@ -9,6 +9,7 @@
 </head>
 <body>
   <h1>Tidier</h1>
+  <div id="moved" role="status" hidden></div>
   <div id="notices"></div>
 
   <section id="alone-section">
@@ -22,10 +23,12 @@
         <li>Disable Sidebery in <code>about:addons</code>. Keep it installed. (With it running, closing a folded folder's page would close the tabs in it.)</li>
         <li><button id="move-over">Move to Tidier alone</button></li>
       </ol>
+      <p id="move-said" role="status"></p>
     </div>
     <div id="move-back" hidden>
       <p>To go back: enable Sidebery in <code>about:addons</code> first.</p>
       <button id="do-move-back">Go back to Sidebery</button>
+      <p id="back-said" role="status"></p>
     </div>
     <p><label>Import Sidebery's export (rules, order, closed folders) <input type="file" class="file-input" id="sidebery-file" accept=".json"></label></p>
     <p id="sidebery-result"></p>

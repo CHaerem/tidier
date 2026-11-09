@@ -111,6 +111,10 @@ links from real apps, real sound and calls, and real Firefox Sync between two ma
 - [x] One explicit click, never an update: a report of what will happen, then the
       record is written, and only then are folder pages closed. It can be undone.
       Checked with a real Sidebery in the test Firefox, there and back.
+- [x] Neither way runs with Sidebery in the wrong state (off to move, on to go back). After
+      the move the settings page is back in front before any tab is hidden, to say what to
+      answer Firefox's question about hidden tabs, and a window without Tidier's sidebar
+      gets a button for it.
 - [ ] Sidebery disabled but installed for a few weeks.
 
 ## E. Without Sidebery, everywhere

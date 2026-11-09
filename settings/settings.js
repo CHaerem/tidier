@@ -13,6 +13,13 @@ async function refresh() {
   $("allow-hiding").hidden = !r.alone || state.hiding;
   $("move").hidden = r.alone;
   $("move-back").hidden = !(r.alone && r.canMoveBack);
+  // Each step needs Sidebery in one state (moveover.js refuses it otherwise): what it is in
+  // now, once Tidier may look, and as it changes in about:addons.
+  const sidebery = state.sidebery;
+  $("move-said").textContent = { on: "Sidebery is still on: disable it first.", off: "Sidebery is off: ready to move." }[sidebery] ?? "";
+  $("back-said").textContent = { on: "Sidebery is on: ready to go back.", off: "Sidebery is off: enable it first.", none: "Sidebery is not installed here." }[sidebery] ?? "";
+  watchSidebery();
+  drawMoved();
   $("report").replaceChildren(
     el("li", { textContent: `${r.essentials} essentials and ${r.tabs} tabs stay as they are.` }),
     el("li", { textContent: `${r.folders.length} folders become Tidier's own: ` + r.folders.map(f => `${f.name} (${f.tabs})`).join(", ") }),
@@ -58,14 +65,35 @@ $("add-rule").onclick = () => {
 
 $("archive-hours").onchange = e => ask("archiveHours", { hours: e.target.value });
 $("allow-hiding").onclick = () => browser.permissions.request({ permissions: ["tabHide"] }).then(refresh);
+
+let watching = false;
+function watchSidebery() {
+  if (watching || !browser.management?.onEnabled) return; // until the management permission is given
+  watching = true;
+  for (const event of ["onEnabled", "onDisabled", "onInstalled", "onUninstalled"]) browser.management[event].addListener(() => refresh());
+}
+
 $("move-over").onclick = async () => {
-  // Asked here, in one go: the permissions need your click. Without them, tabs are simply
-  // not hidden yet, and a page's first request can go out in the wrong container.
-  browser.sidebarAction.open(); // also needs your click: Firefox brings it back after Tidier starts again
-  await browser.permissions.request({ permissions: ["tabHide", "webRequest", "webRequestBlocking"], origins: ["<all_urls>"] }).catch(() => {});
-  await ask("moveOver");
+  if (state?.sidebery === "on") { $("move-said").textContent = "Sidebery is still on: disable it first."; return; }
+  // Both need your click, so they come before the first wait. Firefox gives a sidebar only
+  // to the window in front, and brings Tidier's back where it was open when Tidier starts
+  // again alone: with Sidebery off a window has no sidebar, and with the tab bar hidden no
+  // list of tabs at all. (Another window is not brought to the front to be given it too: it
+  // may be on another desktop, and Firefox may bring it only a moment later, too late. It
+  // gets this page instead, with a button for it: drawMoved.)
+  browser.sidebarAction.open().catch(() => {});
+  // Asked here, in one go. Without them, tabs are simply not hidden yet, and a page's first
+  // request can go out in the wrong container; management is to see whether Sidebery is off.
+  await browser.permissions.request({ permissions: ["tabHide", "webRequest", "webRequestBlocking", "management"], origins: ["<all_urls>"] }).catch(() => {});
+  const r = await ask("moveOver");
+  if (r?.refused) $("move-said").textContent = r.refused;
 };
-$("do-move-back").onclick = () => ask("moveBack");
+$("do-move-back").onclick = async () => {
+  await browser.permissions.request({ permissions: ["management"] }).catch(() => {});
+  const r = await ask("moveBack");
+  if (r?.refused) $("back-said").textContent = r.refused;
+};
+
 // A file you chose, or null if it is no JSON at all. Emptied after reading, or choosing
 // the same file again (after making a new export, say) would do nothing.
 const readFile = async input => {
@@ -129,6 +157,30 @@ $("merge-go").onclick = () => orSay($("merge-result"), async () => {
   $("merge-result").textContent = took ? `Took in ${took}. Nothing here was removed.` : "Nothing taken in.";
   refresh();
 });
+
+// Right after moving over (afterMovingOver, moveover.js), this page comes back in front:
+// what happened, and the one thing to do next. Firefox asks about hidden tabs once this
+// is drawn, and Tidier waits for it to be. A window that came over without Tidier's
+// sidebar shows it too, with the button for it: a click here is what lets Tidier open it.
+let movedTold = false;
+const thisWindow = browser.windows.getCurrent().then(w => w.id);
+async function drawMoved() {
+  const moved = location.hash === "#moved" ? state.moved : null;
+  $("moved").hidden = !moved;
+  if (!moved) return;
+  const me = await thisWindow, r = state.report;
+  const lacking = moved.noSidebar.includes(me), others = moved.noSidebar.filter(id => id !== me).length;
+  const show = el("button", { textContent: "Show Tidier's sidebar in this window" });
+  show.onclick = () => { browser.sidebarAction.open().catch(() => {}); show.disabled = true; setTimeout(refresh, 600); };
+  $("moved").replaceChildren(
+    el("h2", { textContent: "Moved over" }),
+    el("p", { textContent: `${counted(r.essentials, "essential")}, ${counted(r.tabs, "tab")} and ${counted(r.folders.length, "folder")} are Tidier's own now. Going back is below.` }),
+    el("p", { className: "notice" }, "When Firefox asks whether Tidier may hide tabs, choose ", el("strong", { textContent: "Keep Tabs Hidden" }), ". Disable Extension would turn Tidier off."),
+    ...(lacking ? [el("p", { textContent: "This window has no list of tabs yet." }), show] : []),
+    ...(others ? [el("p", { textContent: `${others === 1 ? "Your other window shows this page too, with a button for its sidebar" : `Your ${others} other windows show this page too, with a button for their sidebar`} (or press ${moved.sidebarKey || "the key for Tidier's sidebar"} there).` })] : []),
+  );
+  if (!movedTold) { movedTold = true; ask("moved"); }
+}
 
 browser.permissions.onAdded.addListener(refresh);
 refresh();
