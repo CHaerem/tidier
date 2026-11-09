@@ -7783,8 +7783,34 @@ def alone_look(m):
     dark = look_in_sidebar(m, """() => content.matchMedia("(prefers-color-scheme: dark)").matches""")
     r = [scheme_change(not dark), scheme_change(dark)]
     m.js(H + """Services.prefs.clearUserPref("ui.systemUsesDarkTheme"); await wait(300); return 1;""")
-    check("light to dark and back, the surface changes with the text", all(x and x["surface"] == x["frame"] for x in r), str(r))
-    check("the quiet line is never darker than the surface, in light or dark", all(x and x["lighter"] for x in r), str(r))
+    if r == [None, None]:
+        # Developer Edition's own dark theme decides the sidebar's scheme, whatever the system says.
+        print("SKIP  light to dark and back (the sidebar does not follow the system's scheme in this Firefox)", flush=True)
+    else:
+        check("light to dark and back, the surface changes with the text", all(x and x["surface"] == x["frame"] for x in r), str(r))
+        check("the quiet line is never darker than the surface, in light or dark", all(x and x["lighter"] for x in r), str(r))
+
+    # A notice (a live folder that stopped, say) has a ×, and a real click on it puts it away,
+    # in this sidebar and in Tidier's own list. Made by the background's own setNotice.
+    words = "Live folder \"Smoke\" is not updating: its helper does not answer"
+    r = look_in_sidebar(m, """async words => {
+      page.browser.extension.getBackgroundPage().setNotice("smoke-look", words);
+      const problem = doc.getElementById("problem");
+      for (let i = 0; i < 50 && problem.hidden; i++) await sleep(100);
+      const away = problem.querySelector(".ask-no"), b = away && box(away), p = box(problem);
+      return {shown: !problem.hidden, text: problem.querySelector(".text")?.textContent, x: b && b.x + b.width / 2, y: b && b.y + b.height / 2,
+        centred: !!b && Math.abs((b.y + b.height / 2) - (p.y + p.height / 2)) <= 1}; }""", words)
+    shown = r.get("shown") and r.get("text") == words
+    if shown:
+        click_at(m, m.js(SIDEBAR_AT), r["x"], r["y"])
+    gone = look_in_sidebar(m, """async words => {
+      const bg = page.browser.extension.getBackgroundPage(), problem = doc.getElementById("problem");
+      for (let i = 0; i < 50 && !problem.hidden; i++) await sleep(100);
+      // (Tidier's button says what the first notice is: notices itself is not reachable from here.)
+      const out = {hidden: problem.hidden, kept: (await page.browser.browserAction.getTitle({})).includes(words)};
+      bg.setNotice("smoke-look", null); // put away it is already: the words are this test's own
+      return out; }""", words)
+    check("a notice has a × in its middle, and a real click on it puts the notice away", shown and r["centred"] and gone["hidden"] and not gone["kept"], f"{r} {gone}")
     m.js(H + """main().document.getElementById("sidebar-box").style.width = args[0]; await wait(300); return 1;""", was)
 
 

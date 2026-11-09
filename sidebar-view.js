@@ -189,7 +189,7 @@ browser.runtime.onConnect.addListener(port => {
     } else if (msg.type === "space") {
       await serial(() => switchSpace(windowId, msg.space));
     } else if (msg.type === "newTab") {
-      await createTab({ windowId, cookieStoreId: msg.space, index: tidierAlone ? await topOfToday(windowId, msg.space) : undefined }).catch(ifGone); // common.js
+      await newTabInSpace(windowId, msg.space); // newtabs.js
     } else if (msg.type === "mute") {
       await browser.tabs.update(msg.tabId, { muted: msg.muted }).catch(() => {});
     } else if (msg.type === "undo") {

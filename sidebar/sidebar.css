@@ -75,6 +75,9 @@ img { filter: drop-shadow(0 0 .6px light-dark(rgb(40 30 20 / .3), rgb(255 255 25
   color: color-mix(in srgb, var(--accent) 45%, var(--text));
   font-size: calc(var(--letter) * .625); line-height: 1; font-weight: 600; text-transform: uppercase;
 }
+/* No letter to show (an empty new tab, a title of only signs): the icon's place stays, empty,
+ * as Firefox's own tab strip draws a new tab. An empty tile would look like a missing picture. */
+.letter:empty { background: none; }
 
 /* --- The list ---------------------------------------------------------------------
  * The list reaches the sidebar's edges, its rows kept in by padding, or the selected
@@ -265,6 +268,7 @@ img { filter: drop-shadow(0 0 .6px light-dark(rgb(40 30 20 / .3), rgb(255 255 25
 .notice > button { border: 0; background: none; color: var(--text); text-align: left; }
 .notice > button:first-child { flex: 1; align-self: stretch; min-width: 0; padding: 6px var(--pad); border-radius: var(--radius); }
 .notice:has(> button:first-child:hover) { background: var(--tile-hover); }
+.notice > .text { flex: 1; min-width: 0; padding: 6px var(--pad); } /* words that are not a button, beside a × */
 .notice .ask-no {
   flex: none; width: var(--button); height: var(--button); margin-right: var(--button-inset); padding: 0;
   border-radius: var(--radius-sm); color: var(--muted); font-size: 0;

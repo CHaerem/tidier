@@ -77,7 +77,7 @@ function second(row) {
 function picture(row) {
   const glyphs = { command: "›", choice: "›", folder: "▾", search: "⌕", address: "→", ask: "＋" };
   if (glyphs[row.kind]) return el("span", "glyph", glyphs[row.kind]);
-  const letter = () => el("span", "letter", letterOf(row.title)); // rank.js
+  const letter = () => el("span", "letter", (row.title || "?").trim()[0] || "?");
   if (!row.icon || !/^(https?:|data:|moz-extension:)/.test(row.icon)) return letter();
   const img = el("img");
   img.src = row.icon;

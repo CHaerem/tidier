@@ -82,8 +82,8 @@
 
   /* Type. The system's own: it loads instantly and reads as part of the Mac. Two sizes:
    * what you read as a line (a tab, a menu item, a notice) and what goes beside or above it
-   * (a count, an age, the space's name). A title (the settings page's, the command bar's
-   * field) is the one larger thing on a page. */
+   * (a count, an age, the space's name). A title (the settings page's) is the one larger
+   * thing on a page. */
   --font: system-ui, -apple-system, sans-serif;
   --size: 13px;
   --size-small: 11.5px;
@@ -101,8 +101,6 @@
   /* Icons, drawn here and used as masks, so they take the colour of the text. */
   --icon-plus: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M8 3.75v8.5M3.75 8h8.5' fill='none' stroke='%23000' stroke-width='1.5' stroke-linecap='round'/%3E%3C/svg%3E");
   --icon-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M6.25 3.75L10.5 8l-4.25 4.25' fill='none' stroke='%23000' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
-  --icon-search: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cg fill='none' stroke='%23000' stroke-width='1.5' stroke-linecap='round'%3E%3Ccircle cx='7' cy='7' r='4.25'/%3E%3Cpath d='M10.25 10.25L13.25 13.25'/%3E%3C/g%3E%3C/svg%3E");
-  --icon-arrow: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M3.25 8h9.5M8.75 4l4 4-4 4' fill='none' stroke='%23000' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
   --icon-close: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M4.5 4.5l7 7m0-7l-7 7' fill='none' stroke='%23000' stroke-width='1.5' stroke-linecap='round'/%3E%3C/svg%3E");
   --icon-folder: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M2 4.75C2 3.78 2.78 3 3.75 3h2.13c.46 0 .9.18 1.23.51L8.1 4.5h4.15c.97 0 1.75.78 1.75 1.75v5c0 .97-.78 1.75-1.75 1.75h-8.5C2.78 13 2 12.22 2 11.25z' fill='%23000' fill-opacity='.2' stroke='%23000' stroke-width='1.35' stroke-linejoin='round'/%3E%3C/svg%3E");
   --icon-folder-open: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cg fill='none' stroke='%23000' stroke-width='1.35' stroke-linejoin='round' stroke-linecap='round'%3E%3Cpath d='M2.2 11.9V4.75C2.2 3.78 2.98 3 3.95 3h1.93c.46 0 .9.18 1.23.51L8.1 4.5h3.15c.97 0 1.75.78 1.75 1.75V7'/%3E%3Cpath d='M4.72 7h8.72c.7 0 1.2.68 1 1.35l-1.03 3.4c-.22.74-.9 1.25-1.67 1.25H3.2c-.7 0-1.2-.68-1-1.35l1.03-3.4C3.45 7.51 4.06 7 4.72 7z'/%3E%3C/g%3E%3C/svg%3E");

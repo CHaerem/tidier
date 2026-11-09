@@ -23,6 +23,20 @@ async function topOfToday(windowId, space) {
   return first ? first.index : tabs.length;
 }
 
+// The new tab button, or a double click on the list: a new tab at the top of today's tabs,
+// unless the tab you are on is already an empty new tab of this space. Then there is nothing
+// to make: a second press would only list "New Tab" twice, under a button that says New tab.
+// (Only a new tab page that has finished counts: an about:blank, or one still loading, may be
+// a link on its way. An empty one you have left is a tab like any other, and stays listed.)
+const EMPTY_NEW_TAB = new Set(["about:newtab", "about:home"]);
+async function newTabInSpace(windowId, space) {
+  if (tidierAlone) {
+    const [on] = await browser.tabs.query({ windowId, active: true });
+    if (on && on.cookieStoreId === space && !on.pinned && EMPTY_NEW_TAB.has(on.url) && on.status === "complete") return;
+  }
+  await createTab({ windowId, cookieStoreId: space, index: tidierAlone ? await topOfToday(windowId, space) : undefined }).catch(ifGone); // common.js
+}
+
 // Whether the tab that opened `tab` is in today's list of `space`, so that next to it means
 // something. A rule can send a link from one space to another, where its opener is not shown.
 async function besideOpener(tab, space) {

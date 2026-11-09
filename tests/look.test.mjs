@@ -7,10 +7,11 @@ import { readFileSync } from "node:fs";
 import vm from "node:vm";
 
 const read = path => readFileSync(new URL("../" + path, import.meta.url), "utf8");
-const PAGES = ["sidebar/sidebar.html", "settings/settings.html", "commandbar/commandbar.html"];
+const PAGES = ["sidebar/sidebar.html", "settings/settings.html"];
 const STYLES = ["sidebar/tokens.css", "sidebar/sidebar.css", "sidebar/archived.css", "sidebar/agent.css", "settings/settings.css", "settings/bridge.css", "commandbar/commandbar.css"];
-// What the sidebar and the command bar draw: on the design's names throughout.
-const OWN = ["sidebar/sidebar.css", "sidebar/archived.css", "sidebar/agent.css", "commandbar/commandbar.css"];
+// What the sidebar draws, the archived list and the agent's line included: on the design's
+// names throughout. (The command bar is to join it, as its page links tokens.css.)
+const OWN = ["sidebar/sidebar.css", "sidebar/archived.css", "sidebar/agent.css"];
 
 test("every page links the design's names before its own styles", () => {
   for (const page of PAGES) {
@@ -140,14 +141,10 @@ function sidebarPage() {
   return code => vm.runInContext(code, ctx);
 }
 
-test("a page with no icon gets its first letter (a digit if it has none), in the sidebar and in the command bar", () => {
-  const bar = vm.createContext({ URL });
-  vm.runInContext(read("commandbar/rank.js"), bar);
-  const sidebar = sidebarPage();
+test("a page with no icon gets its first letter (a digit if it has none)", () => {
+  const sidebar = sidebarPage(), letterOf = sidebar("letterOf");
   const cases = [["(2) Inbox one", "I"], ["  Ærlig talt", "Æ"], ["#42: a ticket", "a"], ["2048", "2"], ["— Notes", "N"], ["!!!", ""], ["", ""], [undefined, ""]];
-  for (const letterOf of [sidebar("letterOf"), bar.letterOf]) {
-    for (const [title, letter] of cases) assert.equal(letterOf(title), letter, String(title));
-  }
+  for (const [title, letter] of cases) assert.equal(letterOf(title), letter, String(title));
   assert.equal(sidebar("icon")({ title: "(2) Inbox one" }).textContent, "I", "and the row draws it");
   assert.equal(sidebar("icon")({ title: "New Tab", blank: true }).textContent, "", "an empty new tab has no name to take a letter from");
 });

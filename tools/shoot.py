@@ -14,6 +14,7 @@ and writes PNGs at twice the size, as on a Retina screen:
     hover-*, menu-*, state-*     one thing at a time, at 300 px, light and dark
     state-essentials-N-WIDTH     one, two and three essentials, at each width
     bar-empty-SCHEME, bar-typed-SCHEME   the command bar's own window
+    window-no-container-, window-sidebar-closed-, window-bar-SCHEME   where the window meets other things
     settings-SCHEME              the settings page
     settings-in-full-SCHEME      with everything it can show, made up; -narrow- as narrow as it can be
 
@@ -547,7 +548,7 @@ def notices(cam):
     """By hand, with made-up words: the real ones take a fault."""
     select(cam.m, on_tab(PERSONAL), PERSONAL["ctx"])
     in_sidebar(cam.m, """doc.getElementById("hiding").hidden = false;
-      doc.getElementById("problem").hidden = false; doc.getElementById("problem").textContent = 'Live folder "Pull requests" is not updating: no answer';""")
+      doc.getElementById("problem").hidden = false; doc.querySelector("#problem .text").textContent = 'Live folder "Pull requests" is not updating: GitHub wants you to sign in again (gh auth login)';""")
     cam.shoot("state-notices")
     in_sidebar(cam.m, """doc.getElementById("hiding").hidden = true; doc.getElementById("problem").hidden = true;""")
 
@@ -685,6 +686,83 @@ def command_bar(cam):
         cam.current = None  # set above without the sidebar: the next picture sets it again
 
 
+# A window drawn as it is, sidebar or not: the command bar's own, or the main one with its
+# sidebar closed. (WHOLE_WINDOW draws the sidebar again on top, which needs one.)
+PLAIN_WINDOW = """
+  const {setTimeout: sT} = ChromeUtils.importESModule("resource://gre/modules/Timer.sys.mjs");
+  const wait = ms => new Promise(r => sT(r, ms));
+  const [popup] = args;
+  const w = [...Services.wm.getEnumerator("navigator:browser")].find(x => x.toolbar.visible !== popup);
+  if (!w) return null;
+  for (const a of w.document.getAnimations()) { try { a.finish(); } catch (e) {} }
+  await wait(300);
+  const shot = await w.browsingContext.currentWindowGlobal.drawSnapshot(new w.DOMRect(0, 0, w.innerWidth, w.innerHeight), w.devicePixelRatio, "rgb(255,255,255)");
+  const canvas = w.document.createElementNS("http://www.w3.org/1999/xhtml", "canvas");
+  canvas.width = shot.width; canvas.height = shot.height;
+  canvas.getContext("2d").drawImage(shot, 0, 0);
+  return canvas.toDataURL("image/png").split(",")[1];
+"""
+
+
+def window_edges(cam):
+    """The window where the dotfiles' userChrome.css meets what is not an ordinary page: a page
+    with no container selected (the settings page), the sidebar closed, and the command bar's
+    own window."""
+    m = cam.m
+    select(m, on_tab(PERSONAL), PERSONAL["ctx"])
+    # The settings page has no container: the window keeps the space's tint around it.
+    m.js(CHROME + """const t = gB.addTrustedTab("moz-extension://" + JSON.parse(Services.prefs.getStringPref("extensions.webextensions.uuids"))[args[0]] + "/settings/settings.html", {inBackground: false});
+      await wait(1500); return 1;""", testfirefox.EXT_ID)
+    cam.shoot("window-no-container", whole_window=True)
+    m.js(CHROME + """gB.removeTab(gB.tabs.find(t => t.linkedBrowser.currentURI.spec.endsWith("/settings/settings.html"))); await wait(300); return 1;""")
+    select(m, on_tab(PERSONAL), PERSONAL["ctx"])
+    # The command bar's own window, frame and all.
+    if cam.wanted("window-bar"):
+        bar_window(cam)
+    sidebar_closed(cam)
+
+
+def bar_window(cam):
+    m = cam.m
+    select(m, on_tab(PERSONAL), PERSONAL["ctx"])
+    m.js(CHROME + """w.focus(); for (let i = 0; i < 100 && Services.focus.activeWindow !== w; i++) await wait(50); gB.selectedBrowser.focus(); await wait(200); return 1;""")
+    keys = [{"type": "keyDown", "value": c} for c in ("\ue03d", "\ue008", "k")] + [{"type": "keyUp", "value": c} for c in ("k", "\ue008", "\ue03d")]
+    m.cmd("WebDriver:PerformActions", {"actions": [{"type": "key", "id": "kb", "actions": keys}]})
+    m.cmd("WebDriver:ReleaseActions")
+    try:
+        m.js(BAR_WINDOW + """for (let i = 0; i < 100 && !bar()?.gBrowser?.selectedBrowser; i++) await wait(50); await wait(1200); return 1;""")
+        for scheme in SCHEMES:
+            if cam.wanted(f"window-bar-{scheme}"):
+                # Not cam.scheme: that waits in the sidebar, and the bar is the most recent window now.
+                m.js(CHROME + """const [dark] = args;
+                  Services.prefs.setIntPref("ui.systemUsesDarkTheme", dark ? 1 : 0);
+                  Services.prefs.setIntPref("layout.css.prefers-color-scheme.content-override", dark ? 0 : 1);
+                  await wait(500); return 1;""", scheme == "dark")
+                shot = m.js(PLAIN_WINDOW, True)
+                if shot:
+                    cam.write(f"window-bar-{scheme}", shot)
+    finally:
+        m.js(BAR_WINDOW + """bar()?.close(); for (let i = 0; i < 100 && bar(); i++) await wait(50);
+          const main = [...Services.wm.getEnumerator("navigator:browser")].find(x => x.toolbar.visible); main?.focus(); await wait(500); return 1;""")
+        cam.current = None
+
+
+def sidebar_closed(cam):
+    """The sidebar closed (not compact mode): the toolbar goes back to the top."""
+    m = cam.m
+    for scheme in SCHEMES:
+        if not cam.wanted(f"window-sidebar-closed-{scheme}"):
+            continue
+        cam.scheme(scheme)
+        m.js(CHROME + """w.SidebarController.hide(); await wait(600); return 1;""")
+        shot = m.js(PLAIN_WINDOW, False)
+        m.js(CHROME + """await w.SidebarController.show("_6844a953-9931-4334-9ff6-257c246485cb_-sidebar-action"); for (let i = 0; i < 100 && !w.document.getElementById("sidebar").contentDocument?.getElementById("webext-panels-browser"); i++) await wait(100);
+          await wait(1500); return 1;""")
+        if shot:
+            cam.write(f"window-sidebar-closed-{scheme}", shot)
+    in_sidebar(m, """await until(() => doc.documentElement.dataset.space, "the sidebar again");""")
+
+
 def scrolled(cam):
     select(cam.m, on_tab(WORK), WORK["ctx"])
     # With the scrollbar, as while you scroll: here it stays, unlike everywhere else (main).
@@ -804,7 +882,7 @@ def settings(cam):
 
 
 STEPS = (space_by_space, hover, hover_more, menus, folders_closed, live_closed, folder_rename, marks, notices, space_rename, quiet_lines, picked, bar_marks,
-         little_window, command_bar, archived, scrolled, empty_spaces, few_essentials, icons_that_vanish, settings)
+         little_window, command_bar, window_edges, archived, scrolled, empty_spaces, few_essentials, icons_that_vanish, settings)
 
 
 def take_pictures(cam):

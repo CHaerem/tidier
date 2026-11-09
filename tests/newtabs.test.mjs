@@ -109,6 +109,34 @@ test("the new tab button opens first among today's tabs; with the setting off, a
   }
 });
 
+test("the new tab button makes no second empty new tab when you are on one", async () => {
+  const ff = new FakeFirefox();
+  const w = ff.addWindow({ focused: true });
+  const [first] = fill(ff, w, [["a"], ["b"]]);
+  first.active = true;
+  const x = await start(ff);
+  const send = await sidebar(x, w.id);
+  const count = () => ff.list(w.id).length;
+  const before = count();
+  // On an ordinary tab, with an empty one elsewhere in the list: a new one, as always.
+  const elsewhere = ff.addTab(w.id, { url: "about:newtab", cookieStoreId: C1 });
+  await send({ type: "newTab", space: C1 });
+  await wait(100);
+  assert.equal(count(), before + 2);
+  const fresh = ff.list(w.id).find(t => t.active);
+  assert.ok(fresh.id !== first.id && fresh.id !== elsewhere.id, "the new one is selected");
+  ff.navigate(fresh.id, "about:newtab");
+  await send({ type: "newTab", space: C1 });
+  await wait(100);
+  assert.equal(count(), before + 2, "on an empty new tab, nothing more is made");
+  // Still loading, it may be a link on its way: then the button makes one.
+  ff.tabs.get(fresh.id).status = "loading";
+  await send({ type: "newTab", space: C1 });
+  await wait(100);
+  assert.equal(count(), before + 3);
+  x.kill();
+});
+
 test("⌘T: a new tab page without a container is opened again at the top, and selected", async () => {
   const ff = new FakeFirefox();
   ff.store.syncedTabs = { F: folder() };

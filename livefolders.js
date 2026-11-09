@@ -98,11 +98,24 @@ function searchLiveFolder(folder) {
   return browser.runtime.sendNativeMessage(NATIVE_HOST, { folder: folder.id }).catch(err => ({ error: String(err) }));
 }
 
+// Why a live folder stopped, in words for the one who reads the sidebar; the helper's own
+// words (native/github-prs.py) go to the console above, for whoever fixes it.
+function liveTrouble(error) {
+  const text = String(error ?? "");
+  if (!error || /no host|native application|disconnected/i.test(text)) return "its helper does not answer";
+  if (text === "unknown folder") return "it is no longer in the helper's list of folders";
+  if (text === "gh not found") return "GitHub's own tool (gh) is not installed";
+  if (/auth|log ?in|token|credential|401|403/i.test(text)) return "GitHub wants you to sign in again (gh auth login)";
+  if (/live-folders\.json/.test(text)) return "the helper's list of folders could not be read";
+  if (/only part of the result/.test(text)) return "GitHub answered with only part of the list";
+  return "GitHub did not answer as it should";
+}
+
 async function refreshLiveFolder(folder, res) {
   if (!res || res.error || !Array.isArray(res.items)) {
     console.warn("Tidier: live folder", folder.id, res?.error);
     // A live folder that has stopped keeps its tabs, so it looks as if nothing has happened.
-    setNotice("live", `Live folder "${folder.name}" is not updating: ${res?.error || "no answer"}`);
+    setNotice("live", `Live folder "${folder.name}" is not updating: ${liveTrouble(res?.error)}`);
     return;
   }
   // The host's file still names a space that was removed, with its folder and tabs

@@ -213,7 +213,7 @@ async function lookAtRequest(details, look) {
   if (look.given || requestOfTab.get(tabId) !== requestId) return {};
   if (here !== NO_CONTAINER && !firstPage && typedTooFast()) {
     settle(tabId, url); // for good: such a page goes on asking, and must not get a tab out once the time is up
-    say(tab.windowId, "A page kept sending this tab to other spaces, so it stays here");
+    say(tab.windowId, "Stays here: a page kept sending this tab to other spaces"); // what happened first: a narrow sidebar cuts the end
     return {};
   }
   // A link from another app that a rule sends elsewhere goes to its small window there (littlewindow.js).
@@ -228,8 +228,9 @@ async function lookAtRequest(details, look) {
   // container is where a login must not land, and this space's login must not go to an
   // address that belongs to another. (A rule whose space is gone counts for nothing, so
   // this is a Firefox refusing for a moment, not an address that can never load.) The
-  // address goes with what is said, since it is then nowhere else.
-  say(tab.windowId, here === NO_CONTAINER ? `This could not be opened in a space, so it was not loaded: ${url}` : `This could not be opened in its space, so it was not loaded: ${url}`);
+  // address goes with what is said, since it is then nowhere else; what happened comes first,
+  // as a narrow sidebar cuts the end of the line (its tooltip has all of it).
+  say(tab.windowId, here === NO_CONTAINER ? `Not loaded, as it could not be opened in a space: ${url}` : `Not loaded, as it could not be opened in its space: ${url}`);
   return { cancel: true };
 }
 
@@ -456,7 +457,7 @@ function notPastProxy(details) {
     setTimeout(() => browser.tabs.update(tabId, { url, loadReplace: true }).catch(() => {}), 0); // once this one has gone
     setTimeout(() => askedAgain.delete(tabId), ASK_AGAIN_MS);
   } else if (tabId >= 0) {
-    browser.tabs.get(tabId).then(tab => say(tab.windowId, `This could not go through its space's proxy, so it was not loaded: ${url}`)).catch(() => {});
+    browser.tabs.get(tabId).then(tab => say(tab.windowId, `Not loaded, as its space's proxy could not be used: ${url}`)).catch(() => {});
   }
   return { cancel: true };
 }
@@ -966,6 +967,6 @@ async function isolationAction(msg) {
     case "copy": return copyToSpace(msg.tabIds, msg.space, msg.windowId);
     case "moveFolder": return moveFolderToSpace(msg.key, msg.space, msg.windowId);
     case "newSpaceWith": return newSpaceWith(msg.tabIds, msg.windowId);
-    case "seen": setNotice("spaceBack", null); return true;
+    case "seen": putNoticeAway(msg.text); return true; // the notice's × in the sidebar (common.js)
   }
 }

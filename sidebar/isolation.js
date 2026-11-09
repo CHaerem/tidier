@@ -49,8 +49,14 @@ browser.permissions.onAdded.addListener(readPermissions);
 browser.permissions.onRemoved.addListener(readPermissions);
 readPermissions();
 
-// A lasting notice about a space that came back goes when you have seen it.
-document.getElementById("problem").addEventListener("click", () => isolationTell("seen"));
+// A notice says what Tidier cannot do or has done by itself until you put it away with its ×.
+// One about a space that came back is then gone; one that keeps coming back with the same
+// words (a live folder tries every 15 minutes) stays away until Firefox starts again, and
+// other words show (putNoticeAway, common.js).
+const problemAway = el("button", "ask-no", "×");
+problemAway.title = "Put away";
+problemAway.onclick = () => isolationTell("seen", { text: view?.problem });
+document.getElementById("problem").append(problemAway);
 
 // --- Menus ------------------------------------------------------------------------------
 const spacesOtherThan = id => (view?.spaces ?? []).filter(s => s.id !== id);

@@ -243,6 +243,9 @@ function rename(key) {
 }
 
 // --- Everything -------------------------------------------------------------------
+// The notice's words; its × to put it away is sidebar/isolation.js's.
+const problemText = el("span", "text");
+document.getElementById("problem").append(problemText);
 let renameNext = false;
 let folderKeys = new Set();
 function render(next) {
@@ -254,9 +257,8 @@ function render(next) {
   document.documentElement.classList.toggle("alone", !!view.alone);
 
   document.getElementById("hiding").hidden = !view.needsHiding;
-  const problem = document.getElementById("problem");
-  problem.hidden = !view.problem;
-  problem.textContent = view.problem || "";
+  document.getElementById("problem").hidden = !view.problem;
+  problemText.textContent = view.problem || "";
 
   place(document.getElementById("essentials"), view.essentials.map(tile));
   document.getElementById("space-name").textContent = view.alone ? space?.name || "" : "";

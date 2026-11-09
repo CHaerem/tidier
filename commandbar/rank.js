@@ -153,9 +153,3 @@ function prettyKey(shortcut, mac) {
   const words = { Up: "↑", Down: "↓", Left: "←", Right: "→", Comma: ",", Period: "." };
   return parts.map(p => glyphs[p] ?? p).join("") + (words[key] ?? key);
 }
-
-// The letter on a page with no icon: its title's first letter (a digit if it has none), as in the sidebar
-// (sidebar.js, letterOf). Many titles start with something else, such as "(2) Inbox".
-function letterOf(title) {
-  return (String(title || "").match(/\p{L}/u) ?? String(title || "").match(/\p{N}/u))?.[0] ?? "";
-}
