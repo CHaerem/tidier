@@ -7907,42 +7907,6 @@ def alone_drag_details(m):
       return copies;""")
     check("and every window has it", len(r) > 1 and r == [[True]] * len(r), str(r))
 
-    # The place for a new space: after the last dot on the bar's line, never over one; lit
-    # when a tab is over it; and the space made there opens its name box, as from the menu.
-    r = sidebar_page(m, DRAG_TOOLS + """
-      const out = {}, row = plainTabs().at(-1), id = Number(row.dataset.tab), plus = doc.querySelector(".new-space");
-      const box = e => e.getBoundingClientRect(), bg = () => page.getComputedStyle(plus).backgroundColor;
-      const known = new Set(spaces().map(s => s.id));
-      out.atRest = plus.hidden;
-      const dotsAt = () => [...doc.querySelectorAll("#spaces .space")].map(d => box(d.querySelector(".dot")));
-      const was = dotsAt();
-      start(row);
-      const dots = dotsAt(), p = box(plus);
-      out.dotsStay = dots.every((d, i) => Math.abs(d.left - was[i].left) < 0.5);
-      out.inBar = plus.parentElement.id === "spaces";
-      out.afterLast = p.left >= dots.at(-1).right;
-      out.onLine = Math.abs((p.top + p.bottom) / 2 - (dots[0].top + dots[0].bottom) / 2) < 1;
-      const rest = bg();
-      plus.dispatchEvent(ev("dragover", plus));
-      out.lit = plus.classList.contains("drop-into") && bg() !== rest;
-      out.placed = drop(plus);
-      end(row);
-      const made = await until(() => doc.querySelector(".space-box") && spaces().some(s => !known.has(s.id)));
-      const input = doc.querySelector(".space-box");
-      out.box = made && {value: input.value, focus: doc.activeElement === input};
-      out.space = spaces().find(s => !known.has(s.id))?.id;
-      input?.dispatchEvent(new page.KeyboardEvent("keydown", {key: "Escape", bubbles: true}));
-      out.note = await until(() => doc.getElementById("note").classList.contains("shown")) && doc.querySelector("#note .text").textContent;
-      if (out.space) await page.browser.contextualIdentities.remove(out.space);
-      await until(() => !spaces().some(s => s.id === out.space));
-      return out;""")
-    check("the place for a new space shows only during a drag, on the bar's line after the last dot",
-          r["atRest"] is True and r["inBar"] and r["afterLast"] and r["onLine"], str(r))
-    check("and the dots stay where they were when it comes", r["dotsStay"], str(r))
-    check("it lights up when a tab is over it", r["lit"], str(r))
-    check("a tab dropped there makes a space whose name box opens, ready to type, and the line says where the tab went",
-          r["placed"] and r["box"] == {"value": "New space", "focus": True} and r["note"] == "Moved to a new space", str(r))
-
     # × inside a draggable row. A drag from it is refused, and the next drag is not.
     r = sidebar_page(m, DRAG_TOOLS + """
       const out = {}, [row, other] = plainTabs(), x = row.querySelector(".close"), press = el => el.dispatchEvent(new page.MouseEvent("mousedown", {bubbles: true}));
@@ -8086,6 +8050,46 @@ def alone_drag_details(m):
         m.chrome()
         m.js(H + """const w = main(); for (const t of [...w.gBrowser.tabs]) if (url(t).includes("smoke-long")) w.gBrowser.removeTab(t);
           if (w.__beforeDrag?.isConnected) w.gBrowser.selectedTab = w.__beforeDrag; await wait(2500); return 1;""")
+
+    # Last, after the real drags: in the test Firefox a real drag session that follows this
+    # scripted drop on the bar (a space made, its name box, the space removed) gets drag
+    # events at places the pointer never was, and the list's edge is never reached.
+    # The place for a new space: after the last dot on the bar's line, never over one; lit
+    # when a tab is over it; and the space made there opens its name box, as from the menu.
+    r = sidebar_page(m, DRAG_TOOLS + """
+      const out = {}, row = plainTabs().at(-1), id = Number(row.dataset.tab), plus = doc.querySelector(".new-space");
+      const box = e => e.getBoundingClientRect(), bg = () => page.getComputedStyle(plus).backgroundColor;
+      const known = new Set(spaces().map(s => s.id));
+      out.atRest = plus.hidden;
+      const dotsAt = () => [...doc.querySelectorAll("#spaces .space")].map(d => box(d.querySelector(".dot")));
+      const was = dotsAt();
+      start(row);
+      const dots = dotsAt(), p = box(plus);
+      out.dotsStay = dots.every((d, i) => Math.abs(d.left - was[i].left) < 0.5);
+      out.inBar = plus.parentElement.id === "spaces";
+      out.afterLast = p.left >= dots.at(-1).right;
+      out.onLine = Math.abs((p.top + p.bottom) / 2 - (dots[0].top + dots[0].bottom) / 2) < 1;
+      const rest = bg();
+      plus.dispatchEvent(ev("dragover", plus));
+      out.lit = plus.classList.contains("drop-into") && bg() !== rest;
+      out.placed = drop(plus);
+      end(row);
+      const made = await until(() => doc.querySelector(".space-box") && spaces().some(s => !known.has(s.id)));
+      const input = doc.querySelector(".space-box");
+      out.box = made && {value: input.value, focus: doc.activeElement === input};
+      out.space = spaces().find(s => !known.has(s.id))?.id;
+      input?.dispatchEvent(new page.KeyboardEvent("keydown", {key: "Escape", bubbles: true}));
+      out.note = await until(() => doc.getElementById("note").classList.contains("shown")) && doc.querySelector("#note .text").textContent;
+      if (out.space) await page.browser.contextualIdentities.remove(out.space);
+      await until(() => !spaces().some(s => s.id === out.space));
+      return out;""")
+    check("the place for a new space shows only during a drag, on the bar's line after the last dot",
+          r["atRest"] is True and r["inBar"] and r["afterLast"] and r["onLine"], str(r))
+    check("and the dots stay where they were when it comes", r["dotsStay"], str(r))
+    check("it lights up when a tab is over it", r["lit"], str(r))
+    check("a tab dropped there makes a space whose name box opens, ready to type, and the line says where the tab went",
+          r["placed"] and r["box"] == {"value": "New space", "focus": True} and r["note"] == "Moved to a new space", str(r))
+
 
 
 def alone_settings(m):
