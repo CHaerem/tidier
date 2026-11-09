@@ -815,15 +815,17 @@ test("a tab refused in a window that is still there is an error, and the others 
   x.kill();
 });
 
-test("a space with only placeholders goes back to the newest of them", async () => {
+test("a space with only placeholders goes back to the one you used, not the one made last", async () => {
   const ff = new FakeFirefox();
   const w = ff.addWindow({ focused: true });
   ff.store.syncedTabs = { a: entry("https://a.example/"), b: entry("https://b.example/") };
   ff.addTab(w.id, { url: "https://away.example/", active: true, cookieStoreId: C2 });
-  ff.addTab(w.id, { url: GHOST("ghost", "a"), discarded: true, cookieStoreId: C1, lastAccessed: 1000 }, { syncKey: "a", syncRole: "ghost" });
-  const newest = ff.addTab(w.id, { url: GHOST("ghost", "b"), discarded: true, cookieStoreId: C1, lastAccessed: 2000 }, { syncKey: "b", syncRole: "ghost" });
+  const used = ff.addTab(w.id, { url: GHOST("ghost", "a"), discarded: true, cookieStoreId: C1, lastAccessed: 1000 }, { syncKey: "a", syncRole: "ghost" });
+  ff.addTab(w.id, { url: GHOST("ghost", "b"), discarded: true, cookieStoreId: C1, lastAccessed: 2000 }, { syncKey: "b", syncRole: "ghost" });
   const x = await alone(ff);
-  assert.equal((await x.js("lastUsedIn")(w.id, C1)).id, newest.id);
+  assert.equal(await x.js("lastUsedIn")(w.id, C1), undefined, "none used yet: a new tab");
+  await x.js("spacePicks").set({ [C1]: ["a"] }); // as when its page was selected, in this window or another
+  assert.equal((await x.js("lastUsedIn")(w.id, C1)).id, used.id);
   x.kill();
 });
 

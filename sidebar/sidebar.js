@@ -15,11 +15,32 @@ port.onMessage.addListener(render);
 // as a file in ~/Library/Application Support/Mozilla/ManagedStorage): the
 // sidebar cannot be transparent, so the window's tint per space (userChrome.css)
 // is repeated there, keyed on html[data-space].
-browser.storage.managed.get("sidebarCSS").then(({ sidebarCSS }) => {
-  if (!sidebarCSS) return;
+const ownLook = css => {
   const style = document.createElement("style");
-  style.textContent = sidebarCSS;
+  style.textContent = css;
   document.head.append(style);
+};
+// The look of this sidebar's last view, put back at once. After an update the background
+// part takes a second or so to answer, and until then the sidebar was a blank, untinted panel
+// next to a tinted window. Kept per sidebar (sessionStorage), so each window has its own.
+const LAST_LOOK = "lastLook";
+let lastLook = null, cssShown = null;
+try {
+  lastLook = JSON.parse(sessionStorage.getItem(LAST_LOOK) || "null");
+  if (lastLook) {
+    document.documentElement.style.setProperty("--accent", lastLook.accent);
+    document.documentElement.dataset.space = lastLook.space;
+    document.documentElement.classList.toggle("alone", !!lastLook.alone);
+    if (lastLook.css) ownLook(cssShown = lastLook.css);
+  }
+} catch (err) { /* no storage: it is drawn with the first view */ }
+const keepLook = look => {
+  lastLook = { ...lastLook, ...look };
+  try { sessionStorage.setItem(LAST_LOOK, JSON.stringify(lastLook)); } catch (err) { /* only the moment after an update */ }
+};
+browser.storage.managed.get("sidebarCSS").then(({ sidebarCSS }) => {
+  if (lastLook?.css !== (sidebarCSS || null)) keepLook({ css: sidebarCSS || null });
+  if (sidebarCSS && sidebarCSS !== cssShown) ownLook(sidebarCSS); // (shown already, from the last view)
 }, () => {});
 
 let view = null;
@@ -240,6 +261,9 @@ function render(next) {
   document.documentElement.style.setProperty("--accent", space?.color || "#7a7a80");
   document.documentElement.dataset.space = view.space || "";
   document.documentElement.classList.toggle("alone", !!view.alone);
+  if (lastLook?.space !== (view.space || "") || lastLook?.accent !== (space?.color || "#7a7a80") || lastLook?.alone !== !!view.alone) {
+    keepLook({ space: view.space || "", accent: space?.color || "#7a7a80", alone: !!view.alone });
+  }
 
   document.getElementById("hiding").hidden = !view.needsHiding;
   const problem = document.getElementById("problem");

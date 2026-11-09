@@ -88,9 +88,11 @@ async function hiddenChanged(before) {
 
 // Whether a tab of this window's space, wherever you are. What is left open of a hidden
 // space (a page with unsaved input, a tab you opened in that container from Firefox's own
-// menu) is shown in every space, as a tab with no container is: it can always be reached,
-// saved and closed, and a tab that cannot be seen is the one thing that must not happen.
-const shownInSpace = (tab, space) => tab.cookieStoreId === space || tab.cookieStoreId === NO_CONTAINER || isHiddenSpace(tab.cookieStoreId);
+// menu) is shown in every space: it can always be reached, saved and closed, and a tab that
+// cannot be seen is the one thing that must not happen. A page with no container is shown
+// in the one space it belongs to (pageHomes, spaces.js), or wherever you are until it has one.
+const shownInSpace = (tab, space) => tab.cookieStoreId === space || isHiddenSpace(tab.cookieStoreId) ||
+  (tab.cookieStoreId === NO_CONTAINER && (pageHomes.get(tab.id) ?? space) === space);
 
 // Close the tabs of hidden spaces, keeping their place in Tidier's record (a tab Tidier
 // closes itself has lost its key by then, see tabsync.js, so nothing about it changes). A page

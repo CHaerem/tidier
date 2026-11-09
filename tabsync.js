@@ -389,6 +389,7 @@ browser.runtime.onMessage.addListener((msg, sender) => {
     newsMarks, newsSeen,
     settled,
     littles, newBlanks, // littlewindow.js
+    mutedTabs, pageHomes, windowsBorn,
   };
   // Counted once Tidier is done with what it was doing (the helper page
   // asking this causes a little work), so a list only shows what it keeps.
@@ -460,7 +461,7 @@ async function reconcileAll({ firefoxStart = false } = {}) {
       const keep = selected.find(t => t.windowId === focusedWindowId) || selected[0] || live.find(page) || reps.find(page) || reps.find(lookedAt) || live.find(t => !t.discarded) || live[0] || reps.find(t => !t.discarded) || reps[0];
       if (syncRoleByTab.get(keep.id) !== "live") await setRole(keep.id, key, "live");
       // Keep title and icon current (older entries have no icon).
-      if (isWeb(keep.url)) Object.assign(all[key], { title: keep.title || all[key].title, icon: keptIcon(all[key], keep) });
+      if (isWeb(keep.url)) Object.assign(all[key], { title: ownTitle(all[key], keep) || all[key].title, icon: keptIcon(all[key], keep) });
       for (const t of live) if (t.id !== keep.id) await setRole(t.id, key, "ghost");
       // A page is loaded once. Another copy that has it open (a ghost selected before the roles
       // were read, a window you reopened) is a placeholder again: unloaded, which a page with
@@ -691,14 +692,18 @@ async function dropIfUnused(key) {
 }
 
 // The live tab's window is closing: a ghost in another window takes over.
-async function handOver(key, closingWindowId) {
+async function handOver(key, closingWindowId, { muted = false } = {}) {
   const reps = (await repsNow(key)).filter(t => t.windowId !== closingWindowId);
   // A ghost shown while this waited in the queue has taken over already (ghostShown), and
   // opened the page: a second heir would open it twice. Or it was dragged out just before.
-  if (reps.some(t => syncRoleByTab.get(t.id) === "live")) return;
+  if (reps.some(t => syncRoleByTab.get(t.id) === "live")) {
+    if (muted) await Promise.all(reps.filter(t => syncRoleByTab.get(t.id) === "live").map(t => browser.tabs.update(t.id, { muted: true }).catch(() => {})));
+    return;
+  }
   if (reps.length) {
     // The one you are looking at, if it is one of them: it should not stay blank.
     const heir = reps.find(t => t.active && t.windowId === focusedWindowId) || reps[0];
+    if (muted) await browser.tabs.update(heir.id, { muted: true }).catch(() => {});
     await setRole(heir.id, key, "live");
     await openIfBlank(heir.windowId);
     return;
@@ -920,6 +925,11 @@ async function leaveSync(tabId, key) {
   await forgetClosedReps(key, others); // you pinned its placeholder, and the page is an essential now
 }
 
+// The title the record keeps for a page: its own, except a live folder's pull request,
+// which keeps the search's name for it (livefolders.js). Taking the page's while it ran and
+// the name again from the record after a restart, its row changed name across a restart.
+const ownTitle = (entry, tab) => entry.liveFolder ? entry.title : tab.title;
+
 browser.tabs.onUpdated.addListener((tabId, change, tab) => {
   if (!started) return;
   const key = syncKeyByTab.get(tabId);
@@ -943,10 +953,11 @@ browser.tabs.onUpdated.addListener((tabId, change, tab) => {
       if (!entry || !isWeb(tab.url)) return;
       const icon = keptIcon(entry, tab);
       const newIcon = entry.icon !== icon;
-      const changed = entry.title !== tab.title || newIcon;
+      const title = ownTitle(entry, tab);
+      const changed = entry.title !== title || newIcon;
       const moved = entry.url !== tab.url;
       if ((!changed && !moved) || (busyNow && !moved)) return;
-      Object.assign(entry, { url: tab.url, title: tab.title, icon });
+      Object.assign(entry, { url: tab.url, title, icon });
       // On its saved address, a saved tab's saved title and icon follow the page.
       if (entry.saved?.url === tab.url) Object.assign(entry.saved, { title: tab.title, icon: tab.favIconUrl || entry.saved.icon });
       noteSaved(all, [key]);
@@ -1079,7 +1090,16 @@ async function ghostInfo(kind, key) {
   return entry ? { url: entry.url, title: entry.name || entry.title, icon: entry.icon } : null;
 }
 
+// Tabs muted now. Firefox does not tell what a closed tab was, and the copy that takes
+// over a page whose window closed (handOver) would play out loud what you had muted.
+// (Those muted before Tidier started are read with Tidier alone: startSpaces, spaces.js.)
+const mutedTabs = new Set();
+browser.tabs.onUpdated.addListener((tabId, change) => {
+  if (change.mutedInfo?.muted) mutedTabs.add(tabId); else mutedTabs.delete(tabId);
+}, { properties: ["mutedInfo"] });
+
 browser.tabs.onRemoved.addListener((tabId, info) => {
+  const muted = mutedTabs.delete(tabId);
   clearTimeout(pending.get(tabId)); pending.delete(tabId);
   awaitingIcon.delete(tabId);
   const place = info.isWindowClosing ? null : closedPlace(info.windowId, tabId);
@@ -1092,7 +1112,7 @@ browser.tabs.onRemoved.addListener((tabId, info) => {
   syncBusy.delete(tabId);
   if (!started || !key) return;
   if (info.isWindowClosing) {
-    if (role === "live") serial(() => handOver(key, info.windowId));
+    if (role === "live") serial(() => handOver(key, info.windowId, { muted }));
     return;
   }
   // Folder copies belong to their window: closing one leaves the others alone

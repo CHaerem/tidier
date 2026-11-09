@@ -34,10 +34,22 @@ const BY_HAND_MS = 5000;
 //   rules        [{ url, space }]
 //   activeSpace  the space you are in
 //   exempt       opened by hand into its space, or an essential: no rule may send it away
+//   guessed      a new tab nobody in Tidier or in a page opened (on about:blank, with no
+//                opener), made while you were in another space: Firefox's guess, below
 //
 // A page outside any container goes to a space, always: with Tidier alone no web page is
 // ever loaded outside one, so no login can land there. To the rule's if one matches, else
 // the active one.
+//
+// So does a link from another app that Firefox has put in a container itself. Firefox
+// gives such a link the container of the visible tabs on the same site, counting every
+// window (URILoadingHelper.guessUserContextId), and pinned tabs are always visible to it:
+// the space with the most essentials on a site wins, whichever space you are in. With two
+// workplaces on the same sites, the other one's login would go out first, and a one-time
+// sign-in link would be used up there. That container is Firefox's choice, not yours, so
+// it counts as none: its first request goes where a link with no container goes. (The
+// dotfiles' browser.link.force_default_user_context_id_for_external_opens turns the guess
+// off in Firefox itself; this holds without it.)
 //
 // In a space, a rule counts only for what you chose yourself: a tab's first page, or a
 // navigation nobody's page asked for. A link followed inside a page and a redirect do not,
@@ -47,13 +59,15 @@ const BY_HAND_MS = 5000;
 // opened it, which moving it would break.
 //
 // Never a loop: whatever this returns, the same address then stays there.
-function whereItBelongs({ url, tab, originUrl, firstPage, redirect = false, popup = false, rules = [], activeSpace, exempt = false }) {
+function whereItBelongs({ url, tab, originUrl, firstPage, redirect = false, popup = false, rules = [], activeSpace, exempt = false, guessed = false }) {
   if (!isWeb(url) || tab.incognito) return null;
   const here = tab.cookieStoreId;
-  const chosen = here === NO_CONTAINER || (!redirect && !exempt && !popup && (firstPage || (!originUrl && tab.url !== url)));
+  const free = !redirect && !exempt && !popup;
+  const outside = here === NO_CONTAINER || (guessed && free && firstPage && !originUrl);
+  const chosen = outside || (free && (firstPage || (!originUrl && tab.url !== url)));
   const rule = chosen ? rules.find(r => r.space !== NO_CONTAINER && ruleMatches(r.url, url)) : null;
   if (rule) return rule.space === here ? null : rule.space;
-  return here === NO_CONTAINER ? activeSpace ?? null : null;
+  return outside && activeSpace !== here ? activeSpace ?? null : null;
 }
 
 // A tab opened by hand into a space (moved there, a copy, undo) has a first page like
@@ -182,30 +196,37 @@ async function lookAtRequest(details, look) {
   const { tabId, requestId, url, cookieStoreId: here } = details;
   if (!tidierAlone || tabId < 0 || details.incognito || !isWeb(url)) return {};
   const redirect = requestOfTab.get(tabId) === requestId;
+  // A new tab's very first request, with no page asking, in a container: it may be a link
+  // from another app in the container Firefox guessed for it (whereItBelongs). Only a tab
+  // still on the about:blank it was made with (newBlanks, littlewindow.js, which Firefox
+  // tells of before the tab's first request) is looked up; every other request passes as before.
+  const mayBeGuessed = here !== NO_CONTAINER && !details.originUrl && !requestOfTab.has(tabId) && newBlanks.has(tabId);
   requestOfTab.set(tabId, requestId);
   if (reopening.has(tabId) || leaving.has(tabId)) return { cancel: true };
   const rules = await rulesList.get();
+  const rule = here === NO_CONTAINER ? null : rules.find(r => ruleCounts(r) && ruleMatches(r.url, url)); // the first that matches decides
   if (here !== NO_CONTAINER) {
-    const rule = rules.find(r => ruleCounts(r) && ruleMatches(r.url, url)); // the first that matches decides
-    if (!rule || rule.space === here) return {};
-    if (redirect) { settle(tabId, url); return {}; }
+    if (rule?.space === here || (!rule && !mayBeGuessed)) return {};
+    if (rule && redirect) { settle(tabId, url); return {}; }
     // (A form sent to a new tab cannot be sent again from another tab, so no rule takes it.)
     if ((details.method ?? "GET") !== "GET" || isSettled(tabId, url)) return {};
   }
 
   const tab = await browser.tabs.get(tabId).catch(() => null);
   if (!tab) return {};
+  const guessed = mayBeGuessed && guessedByFirefox(tab, here); // littlewindow.js
+  if (here !== NO_CONTAINER && !rule && !guessed) return {};
   const win = await browser.windows.get(tab.windowId).catch(() => null);
   const popup = !!win && win.type !== "normal";
   // ⌘⇧T brings a tab back on about:blank with its Tidier values: it is not a new tab.
   const firstPage = !isWeb(tab.url) && !isGhostUrl(tab.url) && !syncKeyByTab.has(tabId) &&
     !(await browser.sessions.getTabValue(tabId, SYNC_KEY).catch(() => undefined));
-  const home = here === NO_CONTAINER ? await homeOf(tab) : null;
+  const home = here === NO_CONTAINER || guessed ? await homeOf(tab) : null;
   const byHandNow = !tab.pinned && takeByHand(here, url);
   if (byHandNow) settle(tabId, url);
   const space = whereItBelongs({
     url, tab: { ...tab, cookieStoreId: here }, originUrl: details.originUrl, firstPage, redirect, popup, rules: home?.inFolder ? [] : rules.filter(ruleCounts),
-    activeSpace: home?.space, exempt: tab.pinned || byHandNow || bridgeKeeps(tab), // bridge.js: no rule takes an agent's tab among your logins
+    activeSpace: home?.space, exempt: tab.pinned || byHandNow || bridgeKeeps(tab), guessed, // bridge.js: no rule takes an agent's tab among your logins
   });
   if (!space) return {};
   // The tab has moved on to another address meanwhile (Enter pressed twice): Firefox has
@@ -220,7 +241,8 @@ async function lookAtRequest(details, look) {
   if (littleTakes(tabId, url)) return { cancel: true };
   reopening.add(tabId);
   try {
-    if (await openElsewhere(tab, url, space, popup)) return { cancel: true };
+    // A guessed link's tab holds nothing yet, and stays nowhere: it was never in your space.
+    if (await openElsewhere(tab, url, space, popup, guessed)) return { cancel: true };
   } finally {
     reopening.delete(tabId);
   }
@@ -280,7 +302,7 @@ async function openElsewhere(tab, url, space, popup, leaves = false) {
     opening.then(late => { if (late?.id && !stays) return closeOldTab(tab, late, space); }).catch(() => {});
     return false;
   }
-  await littleAfterReopen(tab, created); // littlewindow.js: Firefox's mark on a link from another app comes after this request
+  await littleAfterReopen(tab, created, url); // littlewindow.js: Firefox's mark on a link from another app comes after this request
   if (!stays) await closeOldTab(tab, created, space);
   newTabs.delete(tab.id); // only now: until it has gone, no view draws it (reopensSoon, newtabs.js)
   return true;
@@ -727,6 +749,8 @@ async function forgetSpace(id) {
   if (network[id]) { delete network[id]; spaceNetwork.set({ ...network }); networkNow = await spaceNetwork.get(); applyNetwork(); rememberForStart(); }
   const memory = await spaceMemory.get();
   if (memory[id]) { delete memory[id]; spaceMemory.set({ ...memory }); }
+  const picks = await spacePicks.get(); // spaces.js
+  if (picks?.[id]) { delete picks[id]; spacePicks.set({ ...picks }); }
   const { spaceOrder } = await browser.storage.local.get("spaceOrder");
   if (spaceOrder?.includes(id)) await browser.storage.local.set({ spaceOrder: spaceOrder.filter(s => s !== id) });
   const left = await browser.tabs.query({ cookieStoreId: id });
@@ -881,10 +905,12 @@ async function copyToSpace(tabIds, space, windowId) {
 // input stays behind, as an ordinary tab, and the line says so: closesQuietly finds out.
 // You stay in the space you are in: the selected tab, if it is in the folder, first
 // gives way to one that isn't, since Firefox never unloads a selected tab.
-async function moveFolderToSpace(key, space, windowId) {
+// The line says where it went, with Undo, which moves it back (`back`, saying nothing more).
+async function moveFolderToSpace(key, space, windowId, { back = false } = {}) {
   const all = await getSynced();
   const folder = all[key];
   if (!isOwnFolder(folder) || folder.cookieStoreId === space) return { moved: 0, stayed: 0 };
+  const from = folder.cookieStoreId;
   const inFolder = Object.keys(all).filter(k => folderKeyOf(all, k) === key);
   await leaveTabsOf(new Set(inFolder));
   let moved = 0, stayed = 0;
@@ -909,6 +935,10 @@ async function moveFolderToSpace(key, space, windowId) {
   saveSynced(all);
   await showSpaceEverywhere(); // foldrest.js: what came with a closed folder rests there, and what stayed behind shows here
   if (stayed) say(windowId, stayed === 1 ? "One tab holds unsaved input and stayed here" : `${stayed} tabs hold unsaved input and stayed here`);
+  else if (!back && windowId !== undefined) {
+    const name = (await containerSpaces()).find(s => s.id === space)?.name ?? "another space";
+    say(windowId, `${folder.name} moved to ${name}`, { undo: () => moveFolderToSpace(key, from, windowId, { back: true }) });
+  }
   return { moved, stayed };
 }
 
@@ -951,7 +981,11 @@ async function isolationAction(msg) {
   switch (msg.type.slice("isolation:".length)) {
     case "get": {
       const network = await spaceNetwork.get();
-      const spaces = await Promise.all((await identities().catch(() => [])).map(async c => ({
+      // In the order of the bar, so the page and the sidebar agree; those the bar leaves out after.
+      const ids = await identities().catch(() => []);
+      const rank = new Map((await spaceList(new Set(ids.map(c => c.cookieStoreId)))).map((s, i) => [s.id, i]));
+      ids.sort((a, b) => (rank.get(a.cookieStoreId) ?? Infinity) - (rank.get(b.cookieStoreId) ?? Infinity));
+      const spaces = await Promise.all(ids.map(async c => ({
         id: c.cookieStoreId, name: c.name, color: c.color, colorCode: c.colorCode, icon: c.icon, iconUrl: c.iconUrl,
         network: network[c.cookieStoreId] ?? {}, contents: await spaceContents(c.cookieStoreId),
       })));

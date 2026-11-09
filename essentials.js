@@ -525,10 +525,16 @@ async function essentialShown(tab) {
   const loaded = (await copiesOf(key)).find(t => t.id !== tab.id && t.windowId !== tab.windowId && isLoadedCopy(t));
   if (!loaded) return true;
   if (loaded.active) {
-    // Leave the old window on a tab that is already loaded, so it does not
-    // load anything in the background.
-    const calm = (await browser.tabs.query({ windowId: loaded.windowId, hidden: false, discarded: false }))
-      .find(t => t.id !== loaded.id && !isGhostUrl(t.url));
+    // Leave the old window on a tab that is already loaded, so it does not load anything
+    // in the background, and in its own space: other spaces' essentials are pinned, never
+    // hidden, so the first loaded tab there is usually another space's, and the window you
+    // are not touching would change space. With Tidier alone, the tab closing would land
+    // on (nextAfterClosing, spaces.js), loaded or not: a placeholder selected in a window you
+    // are not using waits until you go there.
+    const space = activeSpace.get(loaded.windowId) ?? loaded.cookieStoreId;
+    const loadedThere = (await browser.tabs.query({ windowId: loaded.windowId, hidden: false, discarded: false }))
+      .filter(t => t.id !== loaded.id && !isGhostUrl(t.url));
+    const calm = loadedThere.find(t => t.cookieStoreId === space) ?? (tidierAlone ? await nextAfterClosing(loaded.windowId, space, loaded.id) : loadedThere[0]);
     if (calm) await browser.tabs.update(calm.id, { active: true }).catch(() => {});
   }
   // Firefox closes a window when the last tab it can show leaves it. Using an essential in
@@ -547,13 +553,16 @@ async function essentialShown(tab) {
 }
 
 // Keep one loaded copy of essential `key`: the one selected in the window you
-// are using, else a loaded one there, else the one used last. Every other copy
-// that shows the real page (loaded, or unloaded by Firefox) becomes a placeholder.
+// are using, else one selected in another window, else a loaded one in the window you are
+// using, else the one used last. Every other copy that shows the real page (loaded, or
+// unloaded by Firefox) becomes a placeholder. A window you reopen (⌘⇧N) loads all its
+// essentials and takes the focus: going by the window alone, its copy, which nobody is
+// looking at, took the page from the window where it was on show.
 async function oneLoaded(key) {
   const real = (await copiesOf(key)).filter(t => isWeb(t.url));
   const loaded = real.filter(t => !t.discarded);
   const here = loaded.filter(t => t.windowId === focusedWindowId);
-  const keep = here.find(t => t.active) || here[0] || loaded.sort((a, b) => (b.lastAccessed || 0) - (a.lastAccessed || 0))[0];
+  const keep = here.find(t => t.active) || loaded.find(t => t.active) || here[0] || loaded.sort((a, b) => (b.lastAccessed || 0) - (a.lastAccessed || 0))[0];
   for (const t of real) {
     if (t === keep) continue;
     await browser.tabs.update(t.id, { url: ghostUrl("essential", key) }).catch(() => {});

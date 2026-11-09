@@ -669,7 +669,30 @@ def settings(cam):
     pictures("settings-narrow")
 
 
-STEPS = (space_by_space, hover, hover_more, menus, folders_closed, live_closed, folder_rename, marks, notices, scrolled, empty_spaces, few_essentials, icons_that_vanish, settings)
+def little_window(cam):
+    """A link from another app, in a small window of its own: its row above the bar, at
+    rest and under the mouse, at each width. The link reaches Firefox as on a Mac, through
+    its own command line handler."""
+    select(cam.m, on_tab(PERSONAL), PERSONAL["ctx"])
+    main_window = """const main = () => [...Services.wm.getEnumerator("navigator:browser")].find(x => x.toolbar.visible);"""
+    cam.m.js(CHROME + main_window + """
+      Cc["@mozilla.org/browser/final-clh;1"].getService(Ci.nsICommandLineHandler).handle(Cu.createCommandLine(["-url", args[0]], Services.dirsvc.get("CurWorkD", Ci.nsIFile), Ci.nsICommandLine.STATE_REMOTE_AUTO));
+      for (let i = 0; i < 100 && ![...Services.wm.getEnumerator("navigator:browser")].some(x => !x.toolbar.visible); i++) await wait(50);
+      await wait(1500); main().focus(); await wait(500); return 1;""", cam.m.pages + "/with-title?little")
+    in_sidebar(cam.m, """await until(() => doc.querySelector("#little .little"), "the small window's row");""")
+    for px in WIDTHS:
+        cam.width(px)
+        cam.mouse_away()
+        cam.shoot(f"state-little-{px}")
+        if cam.point_at("#little .little .keep"):
+            cam.shoot(f"hover-little-{px}")
+    cam.width(WIDTH)
+    cam.mouse_away()
+    cam.m.js(CHROME + main_window + """for (const x of [...Services.wm.getEnumerator("navigator:browser")]) if (!x.toolbar.visible) x.close();
+      await wait(800); main().focus(); await wait(300); return 1;""")
+
+
+STEPS = (space_by_space, hover, hover_more, menus, folders_closed, live_closed, folder_rename, marks, notices, scrolled, empty_spaces, few_essentials, icons_that_vanish, settings, little_window)
 
 
 def take_pictures(cam):

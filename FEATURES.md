@@ -47,7 +47,7 @@ on the second Mac (PLAN.md, part C).
 | Spaces, one per container (own logins) | Z A S | Done | Tidier alone, checked; Sidebery's panels in the daily browser |
 | Space bar at the bottom with icons | Z A S | Partly | Tidier alone shows coloured dots, and the name above the list; icons to come |
 | Only the active space's tabs shown (⌃Tab too) | Z A S | Done | Tidier alone, checked. Other spaces' essentials stay in ⌃Tab: Firefox cannot hide a pinned tab |
-| Switch with ⌃1/2/3 | Z A S | Done | Tidier alone, checked; Sidebery's shortcuts in the daily browser |
+| Switch with ⌃1/2/3 | Z A S | Done | Tidier alone, checked: back to the tab you selected last in that space, in any window (not one opened in the background, moved there or resting in a closed folder, nor one another window is showing); Sidebery's shortcuts in the daily browser |
 | Switch by swiping sideways on the trackpad | Z A | Later | tried with Sidebery and left out: vertical swipes switched space by mistake; to try again without it |
 | Colour per space, for the whole window | Z A | Done | userChrome.css and tidier.css |
 | New, edited and deleted spaces in Tidier: name, icon and colour | Z A S | Done | Tidier alone, checked, on the settings page and from a space's menu; dropping a tab on the bar makes a new one; Firefox's container settings aren't needed |
@@ -56,8 +56,8 @@ on the second Mac (PLAN.md, part C).
 | Clear a site's cookies in one space, or a whole space's logins | S | Done | Tidier alone, checked; signing out asks first, since it can't be undone |
 | A vanished container comes back | | Done | Tidier alone, checked; with its name, colour and icon, and everything that pointed at it |
 | A folder to another space, and a copy of a tab | S | Done | Tidier alone, checked; unsaved input stays behind and says so |
-| Move a tab to another space without losing anything | S | Done | Tidier alone, checked: from the menu, by dragging to a dot or from the command bar; the page and its unsaved input are kept, and a rule does not send it back |
-| New tabs and links from other apps open in the active space | A S | Done | Tidier alone, checked; Sidebery in the daily browser |
+| Move a tab to another space without losing anything | S | Done | Tidier alone, checked: from the menu, by dragging to a dot or from the command bar; the page and its unsaved input are kept, an unloaded tab stays unloaded and a muted one muted, a rule does not send it back, and one line says where it went, with Undo |
+| New tabs and links from other apps open in the active space | A S | Done | Tidier alone, checked, also when Firefox guesses another space's container for a link (checked with a server recording cookies); Sidebery in the daily browser |
 | Rules: an address always opens in a given space ("Air Traffic Control") | A S | Done | Tidier alone, checked, on the settings page, and imported from Sidebery's export, also from its panels; Sidebery's rules in the daily browser. A rule for a space that is gone does nothing and says so |
 | Containers matched by name on another machine | | Done | Tidier alone, checked: copies and Sidebery's export land in the space of the same name, never by Firefox's number for it |
 | Open a link in another space (context menu) | A | Done | Tidier alone, checked: "Open link in" on a link's menu, which needs no access to pages; the tab menu has "Open a copy in space" |
@@ -110,7 +110,7 @@ on the second Mac (PLAN.md, part C).
 | Feature | From | Status | Notes |
 |---|---|---|---|
 | A new window gets every essential and tab | Z | Done | |
-| Closing a window hands its tabs over | Z | Done | |
+| Closing a window hands its tabs over | Z | Done | a muted page stays muted; a window reopened with ⌘⇧N comes back in its own space, on its own tab (Tidier alone, checked) |
 | A small window for links from other apps ("Little Arc") | A | Done | Tidier alone, checked in the test Firefox; links from real apps and whether the window comes to the front are to be tried on a Mac |
 | Link preview in a floating window ("Glance", "Peek") | Z A | Done | Tidier alone, checked: "Open link in" needs no access; ⌥-click needs the optional access to all websites |
 | Split view | Z A | No | Firefox has its own; Tidier stays out of its way, and it is checked with placeholders |

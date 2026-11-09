@@ -345,7 +345,7 @@ test("a rule pointing at a removed space counts for nothing: the link opens in t
   assert.equal((await ff.request({ tabId: t.id, url: WORK })).cancel, true);
   await wait(300);
   assert.equal(opened(ff, w.id, WORK)[0]?.cookieStoreId, A, "opened all the same");
-  const inSpace = newTab(ff, x, w, { cookieStoreId: B });
+  const inSpace = newTab(ff, x, w, { cookieStoreId: B, url: "about:newtab" }); // a new tab page you opened there
   let tried = 0;
   x.b.tabs.create = (create => async p => { tried++; return create(p); })(x.b.tabs.create);
   assert.equal((await ff.request({ tabId: inSpace.id, url: "https://work.example/y" })).cancel, undefined);

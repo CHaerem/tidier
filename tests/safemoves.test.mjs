@@ -137,7 +137,49 @@ test("a selected tab can move: you go to the tab used last in its space, and sta
   assert.deepEqual(ff.list(w.id).filter(t => t.url === SITE).map(t => t.cookieStoreId), [B]);
   assert.equal(ff.tabs.get(other.id).active, true);
   assert.equal(x.js("activeSpace").get(w.id), A);
-  assert.deepEqual(said(x), []);
+  assert.deepEqual(said(x), [`Moved to ${B}`]);
+  x.kill();
+});
+
+// What it was goes with it: unloaded stays unloaded (nothing asked of the site in a space
+// you are not looking at), muted stays muted, and one line says where it went, with Undo.
+test("a move loses nothing: an unloaded tab arrives unloaded with its title, a muted one muted", async () => {
+  const ff = new FakeFirefox();
+  const { w, tab } = aWindow(ff);
+  const asleep = ff.addTab(w.id, { url: "https://asleep.example/", title: "Asleep", cookieStoreId: A, discarded: true }, { syncKey: "asleep", syncRole: "live" });
+  ff.store.syncedTabs.asleep = { url: "https://asleep.example/", title: "Asleep", cookieStoreId: A, parentKey: null, group: false, added: 1 };
+  tab.mutedInfo = { muted: true };
+  const x = await alone(ff);
+  await move(x, asleep.id, B);
+  await move(x, tab.id, B);
+  const [there] = ff.list(w.id).filter(t => t.url === "https://asleep.example/");
+  assert.equal(there.cookieStoreId, B);
+  assert.equal(there.discarded, true, "not loaded in a space you are not in");
+  assert.equal(there.title, "Asleep");
+  const [loud] = ff.list(w.id).filter(t => t.url === SITE);
+  assert.equal(loud.cookieStoreId, B);
+  assert.equal(loud.discarded, false, "a loaded page stays loaded");
+  assert.equal(loud.mutedInfo?.muted, true, "and muted");
+  x.kill();
+});
+
+test("one line for the tabs of one move, whichever way they are sent, and Undo takes them back", async () => {
+  const ff = new FakeFirefox();
+  const { w, tab } = aWindow(ff);
+  const second = ff.addTab(w.id, { url: "https://second.example/", title: "Second", cookieStoreId: A }, { syncKey: "second", syncRole: "live" });
+  ff.store.syncedTabs.second = { url: "https://second.example/", title: "Second", cookieStoreId: A, parentKey: null, group: false, added: 1 };
+  const x = await alone(ff);
+  x.js("globalThis.say = (windowId, text, more) => { said.push(text); globalThis.lastUndo = more?.undo; };");
+  // As the sidebar sends a selection dragged onto a dot: one message per tab.
+  await x.js("serial")(() => x.js("moveToSpace")(tab.id, B, [tab.id, second.id]));
+  await x.js("serial")(() => x.js("moveToSpace")(second.id, B, [tab.id, second.id]));
+  await wait(500);
+  assert.deepEqual(said(x), [`Moved to ${B}`, `2 tabs moved to ${B}`]);
+  assert.equal(typeof x.js("lastUndo"), "function");
+  await x.js("serial")(x.js("lastUndo"));
+  await wait(700);
+  assert.deepEqual(ff.list(w.id).filter(t => [SITE, "https://second.example/"].includes(t.url)).map(t => t.cookieStoreId), [A, A], "both back where they were");
+  assert.equal(said(x).length, 2, "Undo says nothing more");
   x.kill();
 });
 

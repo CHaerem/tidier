@@ -43,6 +43,23 @@
     }
   });
 
+  // The sidebar made narrower or shorter (dragged, or a notice that now takes two lines):
+  // the rows above the selected one can grow, and it slid under the fade at the end of the
+  // list. With no tab being selected nothing above would bring it back, so it is kept in
+  // view here, by the least distance. (Not while you scroll: that changes no size.)
+  const wholly = row => { // clear of the fades at the ends, which the list's scroll-padding keeps clear
+    const r = row.getBoundingClientRect(), box = list.getBoundingClientRect(), style = getComputedStyle(list);
+    return r.top >= box.top + parseFloat(style.scrollPaddingTop || 0) && r.bottom <= box.bottom - parseFloat(style.scrollPaddingBottom || 0);
+  };
+  let sized = null;
+  new ResizeObserver(() => {
+    const size = `${list.clientWidth}x${list.clientHeight}`;
+    if (size === sized) return;
+    sized = size;
+    const row = list.querySelector(".tab.active");
+    if (row && !wholly(row)) row.scrollIntoView({ block: "nearest" });
+  }).observe(list);
+
   // You went back to the page: the cursor's mark is no longer true, and the next key
   // starts at the tab you are on then, not where you once left the cursor.
   addEventListener("blur", () => { if (view?.alone) moveCursor(null); });

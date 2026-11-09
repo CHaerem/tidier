@@ -517,12 +517,14 @@ async function check(W, phase, { strong }) {
     }
     // Spaces: only the active space's tabs are shown (Tidier alone).
     if (W.alone) {
-      const spaces = mem("activeSpace");
+      const spaces = mem("activeSpace"), homes = mem("pageHomes");
       for (const w of wins) {
         const space = spaces.get(w.id);
         if (!space) { bad("space", `window ${w.id} has no active space`); continue; }
         for (const t of W.tabsOf(w)) {
-          const here = t.cookieStoreId === space || t.cookieStoreId === NO_CONTAINER;
+          // A page with no container is in the one space it belongs to, which is the space a window
+          // is in while it is selected there (or it would have no row).
+          const here = t.cookieStoreId === space || (t.cookieStoreId === NO_CONTAINER && (homes?.get(t.id) ?? space) === space);
           if (t.active && !here) bad("space-selected", `window ${w.id} is in ${space} but tab ${t.id} of ${t.cookieStoreId} is selected`);
           if (t.pinned) continue;
           if (here && t.hidden) bad("space-hidden", `window ${w.id} in ${space}: tab ${t.id} ${t.url} is hidden`);

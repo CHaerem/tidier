@@ -131,21 +131,58 @@ async function moveInWindow(tabs, tabId, beforeId) {
 // The address is the page's own while it is loaded: the record follows a page once it
 // has finished loading, and a tab can be moved before that. A placeholder's own address
 // says nothing, so then it is the record's.
-async function moveToSpace(tabId, space, leaving = []) {
+//
+// It loses nothing else either: a page that was not loaded arrives unloaded, with its
+// title, so nothing is asked of the site in a space you are not looking at, and a muted
+// one stays muted, so a podcast you had silenced does not play there out of sight.
+// (What it was is read first: leaving unloads it, to see whether it holds unsaved input.)
+// The line says where it went, with Undo (sayMoved); `back` is that Undo, which says nothing.
+async function moveToSpace(tabId, space, leaving = [], { back = false } = {}) {
   const tab = await browser.tabs.get(tabId).catch(() => null);
-  if (!tab || tab.cookieStoreId === space || tab.pinned) return;
-  const key = syncKeyByTab.get(tabId), live = await pageTab(tab, key);
-  const url = isWeb(live?.url) ? live.url : (await getSynced())[key]?.url;
-  if (!isWeb(url)) return;
+  if (!tab || tab.cookieStoreId === space || tab.pinned) return null;
+  const key = syncKeyByTab.get(tabId), live = await pageTab(tab, key), entry = key ? (await getSynced())[key] : null;
+  const url = isWeb(live?.url) ? live.url : entry?.url;
+  if (!isWeb(url)) return null;
+  const unloaded = !live || live.discarded || isGhostUrl(live.url), muted = !!live?.mutedInfo?.muted;
+  const title = (isWeb(live?.url) && live.title) || entry?.title || url;
+  const was = { space: tab.cookieStoreId, folder: entry?.parentKey ?? null };
   const noSpace = () => void say(tab.windowId, "That space could not be opened, so the tab stayed here");
   // Asked first, since leaving unloads the tab and selects another one. (Only a window
   // closing or a space removed this very moment can still refuse the new tab below.)
   if (await spaceGone(space)) return noSpace();
   if (!(await leavesQuietly(live, key, leaving))) return sayStayed(tab.windowId);
-  const opened = await openUnruled({ windowId: tab.windowId, cookieStoreId: space, url, active: false }).catch(() => null);
+  const opened = await openUnruled({ windowId: tab.windowId, cookieStoreId: space, url, active: false, ...(unloaded ? { discarded: true, title } : {}) }).catch(() => null);
   if (!opened) return noSpace();
+  if (muted) await browser.tabs.update(opened.id, { muted: true }).catch(() => {});
   // (A live folder's pull request counts as closed, or the next search brings it back.)
   if (key) await closeEverywhere(key);
   else await browser.tabs.remove(tabId).catch(() => {});
   await forgetClosedPages([url]); // you moved it: ⌘⇧T must not bring it back in the space it left
+  if (!back) await sayMoved(tab.windowId, space, opened.id, was);
+  return opened;
+}
+
+// One line for one move, however its tabs are sent (a selection's tabs, and a drag of
+// them onto a dot, arrive one by one): where they went, with Undo, which takes each back
+// to the space it came from, and into its folder if that is still there. Without it a moved
+// tab simply vanished from the list.
+const MOVED_GROUP_MS = 2000;
+let movedGroup = null; // { windowId, space, tabs: [{ id, was }], timer }
+async function sayMoved(windowId, space, tabId, was) {
+  if (movedGroup?.windowId !== windowId || movedGroup.space !== space) movedGroup = { windowId, space, tabs: [] };
+  const group = movedGroup;
+  group.tabs.push({ id: tabId, was });
+  clearTimeout(group.timer);
+  group.timer = setTimeout(() => { if (movedGroup === group) movedGroup = null; }, MOVED_GROUP_MS);
+  const name = (await containerSpaces()).find(s => s.id === space)?.name ?? "another space";
+  const n = group.tabs.length;
+  say(windowId, n === 1 ? `Moved to ${name}` : `${n} tabs moved to ${name}`, { undo: () => undoMove(group) });
+}
+async function undoMove(group) {
+  if (movedGroup === group) movedGroup = null;
+  const ids = group.tabs.map(t => t.id);
+  for (const { id, was } of group.tabs) {
+    const back = await moveToSpace(id, was.space, ids, { back: true }).catch(noteError);
+    if (back && was.folder && isOwnFolder((await getSynced())[was.folder])) await moveTab(group.windowId, back.id, null, was.folder);
+  }
 }

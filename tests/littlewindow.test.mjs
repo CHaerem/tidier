@@ -265,6 +265,46 @@ test("Keep puts it first among today's tabs in every window, selected, and it is
   x.kill();
 });
 
+test("a kept small window is forgotten among the closed windows, so ⌘⇧N cannot bring its page back twice", async () => {
+  const ff = new FakeFirefox();
+  const { w } = session(ff);
+  const x = await start(ff);
+  const t = linkFromOutside(ff, x, w.id);
+  await wait(300);
+  const [small] = popups(ff);
+  // As Firefox keeps a window that closed when its last tab moved out (and one closed before).
+  ff.recentlyClosed = [
+    { lastModified: 2, window: { sessionId: "kept", tabs: [{ url: LINK }] } },
+    { lastModified: 1, window: { sessionId: "older", tabs: [{ url: "https://else.example/" }] } },
+  ];
+  x.js(`serial(() => keepLittle(${t.id}, ${w.id}))`);
+  await wait(1200);
+  assert.ok(!ff.wins.has(small.id));
+  assert.deepEqual(ff.recentlyClosed.map(c => c.window.sessionId), ["older"]);
+  x.kill();
+});
+
+test("the same link twice (a double click in the other app): one small window, brought to the front", async () => {
+  const ff = new FakeFirefox();
+  const { w } = session(ff);
+  const x = await start(ff);
+  linkFromOutside(ff, x, w.id);
+  await wait(300);
+  const [first] = popups(ff);
+  ff.focused = w.id;
+  const again = linkFromOutside(ff, x, w.id);
+  await wait(400);
+  assert.equal(popups(ff).length, 1);
+  assert.equal(ff.focused, first.id, "the one there is comes to the front");
+  assert.ok(!ff.tabs.has(again.id), "and the second tab goes");
+  assert.equal(ff.list(w.id).filter(t => t.url === LINK).length, 0);
+  // Another link still gets its own.
+  linkFromOutside(ff, x, w.id, { url: "https://link.example/other" });
+  await wait(400);
+  assert.equal(popups(ff).length, 2);
+  x.kill();
+});
+
 test("Keep goes under the folders, and asks no window that is closed", async () => {
   const ff = new FakeFirefox();
   const { w, old } = session(ff);
@@ -530,7 +570,7 @@ test("a new tab in another space that is no link still takes you there, once it 
   x.kill();
 });
 
-test("off in the settings, a link Firefox guessed into another space goes there as any tab does", async () => {
+test("off in the settings, a link Firefox guessed into another space opens in yours, as an ordinary tab", async () => {
   const ff = new FakeFirefox();
   const { w } = session(ff);
   ff.store.littleWindow = false;
@@ -538,8 +578,80 @@ test("off in the settings, a link Firefox guessed into another space goes there 
   const t = linkFromOutside(ff, x, w.id, { container: C2 });
   await wait(300);
   assert.deepEqual(popups(ff), []);
-  assert.ok(ff.wins.get(w.id).order.includes(t.id));
-  assert.equal(x.js(`activeSpace.get(${w.id})`), C2);
+  assert.ok(!ff.tabs.has(t.id), "not in the space Firefox guessed");
+  const [here] = ff.list(w.id).filter(x => x.url === LINK);
+  assert.equal(here?.cookieStoreId, C1);
+  assert.ok(here.active, "selected, as the link was");
+  assert.equal(x.js(`activeSpace.get(${w.id})`), C1, "and your window stays in your space");
+  x.kill();
+});
+
+// With the permission, the link's request is stopped before it goes out in the container
+// Firefox guessed: what the server would see is only what is asked for in your space.
+// Firefox's mark comes after that request (littleAfterReopen).
+const GUARD = ["webRequest", "webRequestBlocking", "<all_urls>"];
+function guessedLink(ff, x, windowId, container) {
+  const on = ff.wins.get(windowId).order.find(id => ff.tabs.get(id).active);
+  const t = ff.addTab(windowId, { url: "about:blank", title: LINK, cookieStoreId: container });
+  (ff.wasOn ??= new Map()).set(t.id, on);
+  x.b.tabs.onCreated.fire(ff.snap(t));
+  ff.select(t.id);
+  const answer = ff.request({ tabId: t.id, url: LINK });
+  x.b.tabs.onUpdated.fire(t.id, { status: "complete", url: "about:blank" }, ff.snap(t)); // the mark
+  return { t, answer };
+}
+
+for (const little of [true, false]) test(`a link Firefox guessed into another space never goes out there: stopped first, and opened in yours${little ? ", in a small window" : ""}`, async () => {
+  const ff = new FakeFirefox(); ff.granted = new Set(GUARD);
+  const { w, on } = session(ff);
+  ff.addTab(w.id, { url: "https://link.example/essential", title: "Essential", cookieStoreId: C2, pinned: true });
+  if (!little) ff.store.littleWindow = false;
+  const x = await start(ff);
+  ff.winValueLog = [];
+  const { t, answer } = guessedLink(ff, x, w.id, C2);
+  assert.equal((await answer)?.cancel, true, "its first request does not leave in Firefox's guess");
+  await wait(400);
+  assert.ok(!ff.tabs.has(t.id), "that tab goes");
+  const where = [...ff.tabs.values()].filter(x => x.url === LINK);
+  assert.deepEqual(where.map(x => x.cookieStoreId), [C1], "the page is in your space, once");
+  assert.equal(popups(ff).length, little ? 1 : 0);
+  if (little) assert.equal(tabOf(popups(ff)[0]), where[0].id);
+  else assert.equal(where[0].windowId, w.id);
+  assert.equal(x.js(`activeSpace.get(${w.id})`), C1);
+  assert.ok(!ff.winValueLog.some(([id, k, v]) => id === w.id && k === "space" && v === C2), "your window never goes there");
+  // What it opened passes: never a loop.
+  assert.deepEqual({ ...await ff.request({ tabId: where[0].id, url: LINK }) }, {});
+  if (!little) assert.ok(ff.tabs.get(on.id), "and nothing of yours is touched");
+  x.kill();
+});
+
+test("a link Firefox guessed into another space that a rule sends there stays there; and a tab of yours in another space is no guess", async () => {
+  const ff = new FakeFirefox(); ff.granted = new Set(GUARD);
+  const { w, on } = session(ff);
+  ff.store.rules = [{ url: "link.example", space: C2 }];
+  const x = await start(ff);
+  const { t, answer } = guessedLink(ff, x, w.id, C2);
+  assert.equal((await answer)?.cancel, undefined, "the rule's space is where it belongs");
+  await wait(300);
+  x.b.tabs.remove(t.id);
+  ff.store.rules = [];
+  x.js(`rulesList.set([])`);
+  // Opened by Tidier on your behalf (a move, a copy): marked, and left alone.
+  x.b.tabs.create = (create => async p => {
+    const made = ff.addTab(p.windowId, { url: "about:blank", cookieStoreId: p.cookieStoreId });
+    x.b.tabs.onCreated.fire(ff.snap(made));
+    made.answer = await ff.request({ tabId: made.id, url: p.url });
+    return ff.snap(made);
+  })(x.b.tabs.create);
+  const moved = await x.ctx.openUnruled({ windowId: w.id, cookieStoreId: C2, url: "https://link.example/moved", active: false });
+  assert.equal(ff.tabs.get(moved.id).answer?.cancel, undefined);
+  // A page's own new tab has an opener, and its request a page's name.
+  const fromPage = ff.addTab(w.id, { url: "about:blank", cookieStoreId: C2, openerTabId: on.id });
+  x.b.tabs.onCreated.fire(ff.snap(fromPage));
+  assert.equal((await ff.request({ tabId: fromPage.id, url: LINK }))?.cancel, undefined);
+  const named = ff.addTab(w.id, { url: "about:blank", cookieStoreId: C2 });
+  x.b.tabs.onCreated.fire(ff.snap(named));
+  assert.equal((await ff.request({ tabId: named.id, url: LINK, originUrl: "https://page.example/" }))?.cancel, undefined);
   x.kill();
 });
 

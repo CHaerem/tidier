@@ -68,9 +68,9 @@ async function setSpace(windowId, space) {
 }
 
 // Show the active space's tabs and hide the others', and those in a closed folder
-// (foldrest.js). A tab without a container is shown wherever you are (it is about to be
-// opened in the space, see below, or is a page that cannot be: about:, extensions'
-// pages). Firefox cannot hide a pinned tab or the selected one.
+// (foldrest.js). A tab without a container is shown in the space it belongs to (it is about
+// to be opened in the space, see below, or is a page that cannot be: about:, extensions'
+// pages, pageHomes). Firefox cannot hide a pinned tab or the selected one.
 async function showSpace(windowId) {
   if (!tidierAlone) return;
   const space = activeSpace.get(windowId);
@@ -81,6 +81,7 @@ async function showSpace(windowId) {
     browser.tabs.query({ windowId, pinned: false, hidden: true, cookieStoreId: [space, NO_CONTAINER, ...hiddenSpaceIds] }),
     browser.tabs.query({ windowId, pinned: false, hidden: false }),
   ]).catch(() => [])).flat();
+  for (const t of tabs) if (!t.hidden && t.cookieStoreId === NO_CONTAINER && !pageHomes.has(t.id)) setPageHome(t, space); // first seen here
   const all = await getSynced();
   const visible = t => shownInSpace(t, space) && !restsInFolder(all, syncKeyByTab.get(t.id)); // hiddenspaces.js, foldrest.js
   const show = tabs.filter(t => t.hidden && visible(t)).map(t => t.id);
@@ -90,14 +91,64 @@ async function showSpace(windowId) {
   if (hide.length) await browser.tabs.hide?.(hide).catch(() => {});
 }
 
-// The tab to go back to in a space: the one used last, an essential counts. A placeholder
-// only if there is nothing else: its lastAccessed is when it was made, not when you used
-// it, so a tab opened in another window meanwhile would count as the one used last here,
-// and going back to the space would pull it out of the window you opened it in.
+// The tab to go back to in a space: the one you selected last there, in any window, an
+// essential too. Firefox's lastAccessed cannot say that: a tab opened in the background,
+// moved or copied into a space is stamped when it is made, and a placeholder when Tidier
+// makes it, so a new window landed on whichever placeholder came last, often in a closed
+// folder, and a space you had sent tabs to on the newest of them. So Tidier keeps, per
+// space, the tabs you selected, newest first, by their record's key (the same in every
+// window, and over a restart); a tab with no record yet goes by its id until it has one.
+// Only the window you are using counts: a tab Tidier or Firefox selects in another window
+// (a page leaving it for yours) is not one you chose.
+const PICKS_KEPT = 12; // per space: enough to pass over what is selected elsewhere or closed
+const spacePicks = storedValue("spacePicks", () => null); // { [space]: [key or "tab:id"] }
+const keysOfTab = t => [syncKeyByTab.get(t.id), keyByTab.get(t.id), `tab:${t.id}`].filter(Boolean);
+async function notePick(tab) {
+  if (!tidierAlone || (focusedWindowId !== browser.windows.WINDOW_ID_NONE && tab.windowId !== focusedWindowId)) return;
+  const pick = keysOfTab(tab)[0], all = await picksNow();
+  const before = all[tab.cookieStoreId] ?? [];
+  if (before[0] === pick) return;
+  all[tab.cookieStoreId] = [pick, ...before.filter(p => p !== pick && p !== `tab:${tab.id}`)].slice(0, PICKS_KEPT);
+  spacePicks.set({ ...all }, { lazy: true }); // lost in a crash, a switch lands one tab earlier
+}
+
+// The tab to go back to (see above), in this window: never one resting in a closed folder,
+// nor one another window is showing, which going there would pull away from it. With
+// nothing you used there left, a page already loaded here, so that going there wakes
+// nothing (a space made by dropping tabs on the bar, one whose tabs you closed); else none,
+// and the caller opens a new tab.
 async function lastUsedIn(windowId, space, ...except) {
-  const tabs = await browser.tabs.query({ windowId, cookieStoreId: space }).catch(() => []);
-  return tabs.filter(t => !except.includes(t.id))
-    .sort((a, b) => isGhostUrl(a.url) - isGhostUrl(b.url) || (b.lastAccessed || 0) - (a.lastAccessed || 0))[0];
+  const all = await getSynced();
+  const tabs = (await browser.tabs.query({ windowId, cookieStoreId: space }).catch(() => []))
+    .filter(t => !except.includes(t.id) && !restsInFolder(all, syncKeyByTab.get(t.id)));
+  const elsewhere = new Set((await browser.tabs.query({ active: true }).catch(() => [])).filter(t => t.windowId !== windowId).flatMap(keysOfTab));
+  const picks = (await picksNow())[space] ?? [];
+  for (const pick of picks) {
+    // A tab picked before it had a record is found by its key now, also as another window's placeholder.
+    const key = pick.startsWith("tab:") ? syncKeyByTab.get(Number(pick.slice(4))) ?? pick : pick;
+    if (elsewhere.has(key)) continue;
+    const found = tabs.find(t => keysOfTab(t).includes(key));
+    if (found) return found;
+  }
+  return tabs.filter(t => !t.discarded && !isGhostUrl(t.url) && !keysOfTab(t).some(k => elsewhere.has(k)))
+    .sort((a, b) => (b.lastAccessed || 0) - (a.lastAccessed || 0))[0];
+}
+
+// What there is to go on the first time, before anything was picked: the selected tab of
+// each window, then the pages loaded in each space, by when Firefox saw them last. Asked
+// for when it is first needed, not while Tidier starts.
+async function picksNow() {
+  const kept = await spacePicks.get();
+  if (kept) return kept;
+  const tabs = await browser.tabs.query({}).catch(() => []);
+  const used = t => (t.active ? 2 : 1) * 1e15 + (t.lastAccessed || 0);
+  const all = {};
+  for (const t of tabs.filter(t => !t.discarded && !isGhostUrl(t.url) && t.cookieStoreId !== NO_CONTAINER).sort((a, b) => used(b) - used(a))) {
+    const list = all[t.cookieStoreId] ??= [], pick = keysOfTab(t)[0];
+    if (list.length < PICKS_KEPT && !list.includes(pick)) list.push(pick);
+  }
+  spacePicks.set(all);
+  return all;
 }
 
 // The tab to land on when the selected one closes. You did not ask for this tab, so it
@@ -106,8 +157,8 @@ async function lastUsedIn(windowId, space, ...except) {
 // already loaded in this window, else the one used last. An essential counts. (Switching
 // space is different: there you asked for that space, and lastUsedIn takes you back to the
 // tab you were on, loaded or not.)
-async function nextAfterClosing(windowId, space, exceptId) {
-  const here = (await browser.tabs.query({ windowId, cookieStoreId: space }).catch(() => [])).filter(t => t.id !== exceptId);
+async function nextAfterClosing(windowId, space, ...except) {
+  const here = (await browser.tabs.query({ windowId, cookieStoreId: space }).catch(() => [])).filter(t => !except.includes(t.id));
   const all = await getSynced();
   const outside = here.filter(t => !restsInFolder(all, syncKeyByTab.get(t.id)));
   const choice = outside.length ? outside : here;
@@ -154,9 +205,16 @@ async function switchToNth(windowId, n) {
 // ⌃Tab) takes you there. Closing the last tab of a space is different: Firefox then
 // selects any tab it can show, and you stay in the space, with a new tab.
 const closedIn = new Map(); // windowId -> { space } a tab was closed in, for a moment
+// (Not while Firefox starts, nor in a window just made: restoring a session or a window you
+// reopen (⌘⇧N) closes the window's first tab, which is no tab you left. Taken for one, the
+// reopened window went to the space of the window you were in, which it had been given as
+// it opened (below), and pulled that space's tab out of your window.)
+const windowsBorn = new Map(); // windowId -> when it opened
+browser.windows.onCreated.addListener(win => { windowsBorn.set(win.id, Date.now()); });
+browser.windows.onRemoved.addListener(windowId => windowsBorn.delete(windowId));
 browser.tabs.onRemoved.addListener((tabId, { windowId, isWindowClosing }) => {
-  // (Not while Firefox starts: restoring a session closes the window's first tab, which is no tab you left.)
   if (!tidierAlone || !started || isWindowClosing || !activeSpace.has(windowId)) return;
+  if (Date.now() - (windowsBorn.get(windowId) ?? 0) < RESTORED_LATE_MS) return;
   const closed = { space: activeSpace.get(windowId) };
   closedIn.set(windowId, closed);
   // Only its own moment: with several tabs closing, an earlier one's timer must not end
@@ -172,7 +230,7 @@ browser.tabs.onActivated.addListener(({ tabId, windowId }) => {
     // for a moment (each page an Undo brings back) would show each one's space in turn.
     // (A tab that has moved to another window since does not decide this window's space.)
     if (!tab?.active || tab.windowId !== windowId) { viewSoon(windowId); return; }
-    if (tab.cookieStoreId === NO_CONTAINER) { await setSuccessor(tab); viewSoon(windowId); return; }
+    if (tab.cookieStoreId === NO_CONTAINER) { setPageHome(tab, activeSpace.get(windowId)); await setSuccessor(tab); viewSoon(windowId); return; }
     if (littleHolds(tab)) { viewSoon(windowId); return; } // littlewindow.js
     if (isHiddenSpace(tab.cookieStoreId)) { viewSoon(windowId); return; } // what is left open of a hidden space is shown in every space (hiddenspaces.js)
     if (tidierAlone && stay && stay !== tab.cookieStoreId) {
@@ -181,6 +239,7 @@ browser.tabs.onActivated.addListener(({ tabId, windowId }) => {
       // Refused when the space has just been removed (safemoves.js): then this tab's space it is.
       if (await createTab({ windowId, cookieStoreId: stay }).catch(() => null)) return;
     }
+    await notePick(tab);
     await setSpace(windowId, tab.cookieStoreId);
     await setSuccessor(tab);
     viewSoon(windowId);
@@ -243,6 +302,20 @@ browser.windows.onRemoved.addListener(windowId => {
 browser.windows.onCreated.addListener(win => {
   if (tidierAlone && activeSpace.has(focusedWindowId)) activeSpace.set(win.id, activeSpace.get(focusedWindowId));
 });
+
+// --- A page with no space ----------------------------------------------------
+// Pages a container cannot have (Tidier's settings, about:addons, a file) are in no space.
+// Shown in every space, they turned up in each list at a different place, the agents' space
+// too, as if they were its. So each belongs to one space: the one it was first seen in, or
+// where you last had it selected. Kept with the tab (a sessions value), for after a restart.
+const PAGE_HOME_KEY = "home";
+const pageHomes = new Map(); // tabId -> space
+function setPageHome(tab, space) {
+  if (!space || pageHomes.get(tab.id) === space) return;
+  pageHomes.set(tab.id, space);
+  browser.sessions.setTabValue(tab.id, PAGE_HOME_KEY, space).catch(() => {});
+}
+browser.tabs.onRemoved.addListener(tabId => pageHomes.delete(tabId));
 
 // --- A tab without a container is opened again in the space you are in -----
 // ⌘T opens a new tab page, a link from another app (Slack, Mail) an address, both
@@ -320,11 +393,12 @@ async function sayIfRuleGone(url, windowId) {
   if (gone) await ruleFailed(gone);
 }
 
-async function byRule(tabId, url) {
+// `link`: a link from another app (littlewindow.js), whose container may be Firefox's guess.
+async function byRule(tabId, url, { link = false } = {}) {
   const rule = (await rulesList.get()).find(r => ruleCounts(r) && ruleMatches(r.url, url)); // rulematch.js, isolation.js
   if (!rule) await sayIfRuleGone(url, (await browser.tabs.get(tabId).catch(() => null))?.windowId);
   const tab = rule && await browser.tabs.get(tabId).catch(() => null);
-  if (!tab || tab.cookieStoreId === rule.space || await exemptFromRules(tabId) || bridgeKeeps(tab)) return intoSpace(tabId); // bridge.js: an agent's tab stays in its space
+  if (!tab || tab.cookieStoreId === rule.space || await exemptFromRules(tabId) || bridgeKeeps(tab)) return intoSpace(tabId, link ? { link: !rule, url } : {}); // bridge.js: an agent's tab stays in its space
   const opened = await browser.tabs.create({ windowId: tab.windowId, cookieStoreId: rule.space, url, active: tab.active, index: await indexWhenReopened(tab, rule.space) }).catch(err => ruleFailed(rule, err));
   if (!opened) return intoSpace(tabId); // closing it now would lose the link (safemoves.js)
   await browser.tabs.remove(tabId).catch(() => {});
@@ -332,14 +406,18 @@ async function byRule(tabId, url) {
 }
 
 // (The tab stays in newTabs until it is gone, so no view draws it meanwhile: reopensSoon.)
-async function intoSpace(tabId) {
+// `link`: a link from another app with no rule, which goes to the space you are in also
+// from a container Firefox guessed for it (whereItBelongs, isolation.js). Without the
+// permission its first request has gone out there already; the tab at least does not stay.
+// `url`: its address, which the tab may never show: its request can have been stopped.
+async function intoSpace(tabId, { link = false, url: asked } = {}) {
   const tab = await browser.tabs.get(tabId).catch(() => null);
-  if (!tab || tab.pinned || tab.cookieStoreId !== NO_CONTAINER) return; // (pinned meanwhile: an essential now)
+  if (!tab || tab.pinned || (tab.cookieStoreId !== NO_CONTAINER && !link)) return; // (pinned meanwhile: an essential now)
   const win = await browser.windows.get(tab.windowId).catch(() => null);
   // (A new window's first tab can come before the window is announced.)
   const space = activeSpace.get(tab.windowId) ?? activeSpace.get(focusedWindowId);
-  if (!win || win.type !== "normal" || !space) return;
-  const url = NEW_TAB_PAGES.has(tab.url) ? undefined : tab.url;
+  if (!win || win.type !== "normal" || !space || space === tab.cookieStoreId) return;
+  const url = asked ?? (NEW_TAB_PAGES.has(tab.url) ? undefined : tab.url);
   if (url !== undefined && !isWeb(url)) return;
   await createTab({ windowId: tab.windowId, cookieStoreId: space, url, active: tab.active, index: await indexWhenReopened(tab, space) }).catch(ifGone);
   await browser.tabs.remove(tab.id).catch(() => {});
@@ -357,6 +435,7 @@ browser.permissions.onAdded.addListener(() => { if (started) serial(startSpaces)
 async function startSpaces() {
   if (!tidierAlone) return takeKeysBackIfGiven(); // keys-commands.js
   await giveKeys().catch(noteError); // here and not in the manifest, so that they are not taken from Sidebery while it is in use; keys must not stop the rest
+  for (const t of await browser.tabs.query({ muted: true }).catch(() => [])) mutedTabs.add(t.id); // tabsync.js: restored muted
   await startLittleWindow(); // littlewindow.js
   for (const w of await normalWindows()) await startSpaceIn(w.id);
   await leaveHiddenSpaces(); // a window restored on a tab of a space that is hidden now
@@ -364,6 +443,10 @@ async function startSpaces() {
 }
 async function startSpaceIn(windowId) {
   const tabs = await browser.tabs.query({ windowId });
+  for (const t of tabs.filter(t => t.cookieStoreId === NO_CONTAINER && !pageHomes.has(t.id))) {
+    const home = await browser.sessions.getTabValue(t.id, PAGE_HOME_KEY).catch(() => undefined);
+    if (home) pageHomes.set(t.id, home);
+  }
   const used = new Set([...(await getList()).map(e => e.cookieStoreId), ...tabs.map(t => t.cookieStoreId)]);
   const spaces = await spaceList(used);
   const space = await spaceOf(windowId, tabs, spaces);
