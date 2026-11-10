@@ -750,7 +750,8 @@ its own:
      1.6.7, so nobody has to bump it;
    - addons.mozilla.org signs it as *unlisted* (not in its catalogue), because
      Firefox only installs signed extensions;
-   - it puts the `.xpi` and `updates.json` on a GitHub Release.
+   - it puts the `.xpi` (also as `tidier.xpi`, the same name every time) and
+     `updates.json` on a GitHub Release.
 3. Firefox reads `updates.json` through `update_url` in `manifest.json` and
    installs the new version by itself. It checks once a day; *Check for
    updates* in `about:addons` checks at once.
@@ -780,9 +781,12 @@ Set up once:
   `tools/setup-amo-key.sh`, which stores it as the secrets `AMO_JWT_ISSUER`
   and `AMO_JWT_SECRET`. Only the release workflow, which runs code from `main`,
   can read them.
-- Firefox: install the first release by hand (open the `.xpi` from the newest
-  [release](https://github.com/CHaerem/tidier/releases)). Versions before
-  1.6 have no `update_url`, so they cannot find updates.
+- Firefox: install the first release by hand, by opening
+  <https://github.com/CHaerem/tidier/releases/latest/download/tidier.xpi> in
+  Firefox: always the newest release. A machine set up from a file can let
+  Firefox do it, with that address as the `install_url` of the policy
+  `ExtensionSettings` for Tidier's ID. Versions before 1.6 have no
+  `update_url`, so they cannot find updates.
 
 ## Testing
 

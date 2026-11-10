@@ -15,18 +15,22 @@ last release.
 - Release: the signed .xpi and updates.json go on a GitHub Release (tag
   v<version>). manifest.json's update_url points at the latest release's
   updates.json, so Firefox finds and installs the new version by itself.
+  The .xpi is there under a second name too, tidier.xpi, which is the same for
+  every release: releases/latest/download/tidier.xpi is always the newest, for
+  a first install (by hand, or by a Firefox policy's install_url).
 
 Re-running is safe: a version that AMO already has is not uploaded again,
 and a version that already has a release is skipped.
 
   tools/release.py --dry-run DIR   build the .xpi and updates.json into DIR only
 """
-import base64, hashlib, hmac, json, os, subprocess, sys, time, uuid, zipfile
+import base64, hashlib, hmac, json, os, shutil, subprocess, sys, time, uuid, zipfile
 import urllib.error, urllib.request
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 REPO = "CHaerem/tidier"
 AMO = "https://addons.mozilla.org/api/v5"
+FIXED_NAME = "tidier.xpi"  # on every release, beside tidier-<version>.xpi: the address of the newest never changes
 # Everything in git goes into the extension, except these.
 EXCLUDE = ("README.md", "FEATURES.md", "PLAN.md", "CLAUDE.md", ".gitignore", ".github/", "native/", "tests/", "tools/")
 POLL_SECONDS, POLL_LIMIT_SECONDS = 10, 30 * 60  # AMO usually signs within minutes
@@ -178,6 +182,13 @@ def sign(xpi, ver, out_dir):
 
 # --- GitHub ----------------------------------------------------------------
 
+def fixed_name(signed, out_dir):
+    """The signed .xpi once more, under the name that every release has (FIXED_NAME)."""
+    path = os.path.join(out_dir, FIXED_NAME)
+    shutil.copyfile(signed, path)
+    return path
+
+
 def release(ver, files, tag):
     commits = git("log", "--format=- %s", f"{tag}..HEAD" if tag else "HEAD")
     subprocess.run(["gh", "release", "create", f"v{ver}", *files, "--repo", REPO, "--target", git("rev-parse", "HEAD"),
@@ -203,7 +214,7 @@ def main():
     unsigned_dir = os.path.join(out, "unsigned")
     os.makedirs(unsigned_dir, exist_ok=True)
     signed = sign(build(unsigned_dir, ver), ver, out)
-    release(ver, [signed, updates_json(out, ver)], tag)
+    release(ver, [signed, fixed_name(signed, out), updates_json(out, ver)], tag)
     print(f"Released Tidier {ver}")
 
 

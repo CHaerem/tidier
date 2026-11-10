@@ -98,6 +98,14 @@ test("the documents stay out of the signed extension, so changing them is no rel
   }
 });
 
+test("the newest release has an address that never changes, and the README gives it", () => {
+  // A first install (by hand, or by a Firefox policy) needs one: the versioned name changes with every commit.
+  const release = readFileSync(new URL("../tools/release.py", import.meta.url), "utf8");
+  const name = release.match(/^FIXED_NAME = "([^"]+)"/m)[1];
+  assert.match(release, /release\(ver, \[signed, fixed_name\(signed, out\), updates_json\(out, ver\)\], tag\)/);
+  assert.ok(readFileSync(new URL("../README.md", import.meta.url), "utf8").includes(`/releases/latest/download/${name}`));
+});
+
 test("a green run on main releases, whatever started it", () => {
   // A run started by hand or by the schedule cancels a push's run, so a gate on
   // event == 'push' would leave that commit unreleased, with nothing red.
