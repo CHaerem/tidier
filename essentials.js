@@ -496,33 +496,28 @@ async function copiesOf(key) {
 async function essentialShown(tab) {
   if (tab.windowId !== focusedWindowId) return false;
   const key = await keyOf(tab);
+  veilPictures.delete(tab.windowId); // of the page as it was when it left this window
   if (!key || !(await getList()).some(e => e.key === key)) return true;
   const loaded = (await copiesOf(key)).find(t => t.id !== tab.id && t.windowId !== tab.windowId && isLoadedCopy(t));
   if (!loaded) return true;
-  if (loaded.active) {
-    // Leave the old window on a tab that is already loaded, so it does not load anything
-    // in the background, and in its own space: other spaces' essentials are pinned, never
-    // hidden, so the first loaded tab there is usually another space's, and the window you
-    // are not touching would change space. So it is the tab closing would land
-    // on (nextAfterClosing, spaces.js), loaded or not: a placeholder selected in a window you
-    // are not using waits until you go there.
-    const space = activeSpace.get(loaded.windowId) ?? loaded.cookieStoreId;
-    const loadedThere = (await browser.tabs.query({ windowId: loaded.windowId, hidden: false, discarded: false }))
-      .filter(t => t.id !== loaded.id && !isGhostUrl(t.url));
-    const calm = loadedThere.find(t => t.cookieStoreId === space) ?? await nextAfterClosing(loaded.windowId, space, loaded.id);
-    if (calm) await browser.tabs.update(calm.id, { active: true }).catch(() => {});
-  }
   // Firefox closes a window when the last tab it can show leaves it. Using an essential in
-  // another window must not close this one, so here it gets its placeholder first.
+  // another window must not close this one, so here it gets its placeholder first. So does a
+  // window that is on this essential, and it stays on it: its placeholder, selected, shows
+  // the page under a veil until you come back to that window, and the page with you
+  // (selectedEssential), as a tab's does (pull, tabsync.js).
   const others = await browser.tabs.query({ windowId: loaded.windowId, hidden: false });
-  if (!others.some(t => t.id !== loaded.id)) {
+  let left;
+  if (loaded.active || !others.some(t => t.id !== loaded.id)) {
     const entry = (await getList()).find(e => e.key === key);
     await createEssentials(loaded.windowId, [{ entry, index: loaded.index + 1 }]);
+    left = loaded.active && (await copiesOf(key)).find(t => t.windowId === loaded.windowId && t.id !== loaded.id);
+    if (left) await browser.tabs.update(left.id, { active: true }).catch(() => {});
   }
   // Moved into the placeholder's place; onDetached gives the old window one.
   // Refused if you have just closed it: this placeholder then opens the page itself.
   if (await browser.tabs.move(loaded.id, { windowId: tab.windowId, index: tab.index }).then(() => false, err => { ifGone(err); return true; })) return true;
   await browser.tabs.update(loaded.id, { active: true }).catch(() => {});
+  if (left) veilPictures.set(loaded.windowId, { tabId: left.id, picture: pictureFor(loaded.id) });
   await dropDoubleCopies(loaded.id, tab.windowId); // here, in case its arrival was not looked at
   return false;
 }

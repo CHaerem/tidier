@@ -571,6 +571,23 @@ async function openIfBlank(windowId) {
   await openPlaceholder(active.id, syncKeyByTab.get(active.id));
 }
 
+// What a page looked like as it left a window that stays on it: its placeholder there shows
+// it under a veil (ghost.js, face). Only where you have let Tidier see pages (the same
+// permission as the little window's, littlewindow.js): Firefox gives no picture of a page
+// without it, and the placeholder then says which page it is in words. Kept in memory only.
+// One for each window at most, of the tab it is on, and gone when that window goes to
+// another tab or closes: a picture nobody sees is only memory.
+const veilPictures = new Map(); // windowId -> { tabId: the placeholder it is for, picture: a promise of a data: address, or of null }
+browser.tabs.onActivated.addListener(({ tabId, windowId }) => { if (veilPictures.has(windowId) && veilPictures.get(windowId).tabId !== tabId) veilPictures.delete(windowId); });
+browser.windows.onRemoved.addListener(windowId => veilPictures.delete(windowId));
+async function pictureFor(tabId) {
+  // Firefox has the function only for an extension given "<all_urls>" itself (its schema says
+  // so); with every website given as "*://*/*", as Tidier asks, it is not there at all.
+  if (typeof browser.tabs.captureTab !== "function") return null;
+  if (!(await browser.permissions.contains(ALL_SITES).catch(() => false))) return null;
+  return browser.tabs.captureTab(tabId, { format: "jpeg", quality: 60, scale: 0.5 }).catch(() => null);
+}
+
 // Pull the live tab for `ghostId` into the ghost's window. The part you see
 // (moving the tab in and selecting it) happens first; the bookkeeping after.
 async function pull(ghostId) {
@@ -585,6 +602,7 @@ async function pull(ghostId) {
   // You may have moved on while this waited in the queue: it must not take the
   // selection back.
   if (!ghost.active || ghost.windowId !== focusedWindowId) return;
+  veilPictures.delete(ghost.windowId); // of the page as it was when it left this window
   if (!live || live.windowId === ghost.windowId) {
     // No live tab to pull: the ghost becomes the live tab and loads itself.
     await setRole(ghostId, key, "live");
@@ -599,16 +617,15 @@ async function pull(ghostId) {
     // in it. Using a tab in another window must not close this one: it gets its ghost first.
     const others = await browser.tabs.query({ windowId: fromWindow, hidden: false });
     const entryNow = (await getSynced())[key];
-    const leftBehind = entryNow && !others.some(t => t.id !== live.id)
+    // The window it leaves stays on it, if it was the tab there, as in Zen and Arc: the window
+    // you use has the page, and the other one shows its placeholder under a veil (ghost.js),
+    // until you come back to it and the page comes back with you (pullSelected). Sent to
+    // another tab instead, that window changed under you, and no longer showed where the page
+    // was. So it gets its placeholder first, selected before the page leaves: Firefox would
+    // else choose a tab itself, and load it.
+    const leftBehind = entryNow && (live.active || !others.some(t => t.id !== live.id))
       ? await createRep(fromWindow, key, entryNow, fromIndex + 1) : null;
-    if (live.active) {
-      // Leave the old window on a tab that is already loaded, preferably in the
-      // same space, so the old window does not load anything in the background.
-      const oldTabs = await browser.tabs.query({ windowId: fromWindow, hidden: false, discarded: false });
-      const calm = oldTabs.find(t => t.id !== live.id && t.cookieStoreId === live.cookieStoreId) ||
-        oldTabs.find(t => t.id !== live.id);
-      if (calm) await browser.tabs.update(calm.id, { active: true }).catch(() => {});
-    }
+    if (live.active && leftBehind) await browser.tabs.update(leftBehind.id, { active: true }).catch(() => {});
     // Bookkeeping too. A tab moved before it was ever loaded (a live folder's pull
     // request) can arrive without its sessions values, so they are set again. Any of
     // it is refused if you close the tab or the window meanwhile: ⌘W right after a
@@ -620,6 +637,7 @@ async function pull(ghostId) {
       .then(() => browser.tabs.update(live.id, { active: true }))
       .then(() => setRole(live.id, key, "live"), () => false);
     if (!moved) return;
+    if (live.active && leftBehind) veilPictures.set(fromWindow, { tabId: leftBehind.id, picture: pictureFor(live.id) });
     forget(ghostId);
     const all = await getSynced();
     const entry = all[key];
@@ -763,6 +781,7 @@ browser.runtime.onMessage.addListener((msg, sender) => {
   const tab = sender.tab;
   if (!tab || sender.id !== browser.runtime.id) return;
   if (msg.type === "ghostInfo") return ghostInfo(msg.kind, msg.key);
+  if (msg.type === "ghostPicture") return Promise.resolve(veilPictures.get(tab.windowId)?.tabId === tab.id ? veilPictures.get(tab.windowId).picture : null);
   if (msg.type === "ghostReady") { unloadWhenIconShown(tab.id, sender.url, msg.icon); return; }
   if (msg.type === "ghostOrphan") return serial(() => closeOrphan(tab.id, msg.kind, msg.key));
   // A ghost is being shown. It loads the real page itself only when there is

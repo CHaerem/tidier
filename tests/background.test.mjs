@@ -290,6 +290,49 @@ test("a ghost selected right after another is pulled in too", async () => {
   x.kill();
 });
 
+test("the window a page is taken from stays on it, as a placeholder with a picture of it", async () => {
+  const ff = new FakeFirefox();
+  const { x, home, here, liveA, liveB, ghostA } = await twoWindows(ff);
+  x.b.permissions.contains = async () => true;
+  x.b.tabs.captureTab = async id => "data:image/jpeg;base64," + id;
+  ff.select(ghostA.id);
+  await wait(1500);
+  assert.equal(ff.tabs.get(liveA.id).windowId, here.id, "the page came to the window you use");
+  const left = ff.list(home.id).find(t => t.active);
+  assert.deepEqual([ff.values.get(left.id)?.syncKey, ff.values.get(left.id)?.syncRole], ["a", "ghost"], "the window it left stays on it");
+  assert.equal(ff.tabs.get(liveB.id).active, false, "and is not moved to another tab");
+  assert.equal(ff.list(home.id).filter(t => ff.values.get(t.id)?.syncKey === "a").length, 1, "one placeholder for it there");
+  assert.equal(await x.send({ type: "ghostPicture" }, { tab: ff.snap(left) }), "data:image/jpeg;base64," + liveA.id, "with the page as it was");
+  assert.equal(await x.send({ type: "ghostPicture" }, { tab: ff.snap(ff.tabs.get(liveB.id)) }), null, "for that placeholder only");
+  // Back in the first window, the page comes back, and the window you left stays on it in turn.
+  ff.focused = home.id; x.b.windows.onFocusChanged.fire(home.id);
+  await wait(1500);
+  assert.equal(ff.tabs.get(liveA.id).windowId, home.id, "the page follows you back");
+  assert.equal(ff.tabs.get(liveA.id).active, true);
+  assert.equal(ff.values.get(ff.list(here.id).find(t => t.active).id)?.syncRole, "ghost");
+  assert.equal(ff.list(home.id).filter(t => ff.values.get(t.id)?.syncKey === "a").length, 1, "and its placeholder there is gone");
+  assert.equal(x.js("veilPictures").has(home.id), false, "with its picture");
+  // The window you left goes to another tab: its picture is of a page nobody looks at now.
+  assert.equal(x.js("veilPictures").has(here.id), true);
+  ff.select(ff.list(here.id).find(t => t.url === "about:home").id);
+  await wait(100);
+  assert.equal(x.js("veilPictures").has(here.id), false, "a picture nobody sees is not kept");
+  x.kill();
+});
+
+test("a page taken from a window that was on another tab leaves that window as it was", async () => {
+  const ff = new FakeFirefox();
+  const { x, home, here, liveA, liveB, ghostB } = await twoWindows(ff);
+  x.b.permissions.contains = async () => true;
+  x.b.tabs.captureTab = async id => "data:image/jpeg;base64," + id;
+  ff.select(ghostB.id);
+  await wait(1500);
+  assert.equal(ff.tabs.get(liveB.id).windowId, here.id);
+  assert.equal(ff.tabs.get(liveA.id).active, true, "the first window is still on its own tab");
+  for (const t of ff.list(home.id)) assert.equal(await x.send({ type: "ghostPicture" }, { tab: ff.snap(t) }), null, "and no picture is taken of a page nobody had in front");
+  x.kill();
+});
+
 test("a pull that waited in the queue does not take the selection back", async () => {
   const ff = new FakeFirefox();
   const { x, home, liveA, ghostA } = await twoWindows(ff);
@@ -3030,8 +3073,13 @@ test("an essential's page going to the window you use leaves the other window in
   await wait(500);
   assert.equal(asked.load, false, "the loaded copy came here");
   assert.equal(ff.tabs.get(shown.id)?.windowId, here.id);
-  assert.equal(ff.list(there.id).find(t => t.active)?.id, own.id, "the window left behind is on a loaded tab of its own space");
+  // It stays on the essential, as its placeholder: the page under a veil (ghost.js).
+  const left = ff.list(there.id).find(t => t.active);
+  assert.equal(ff.values.get(left.id)?.essentialKey, "e", "the window left behind stays on the essential");
+  assert.ok(left.pinned && left.url.startsWith(GHOST("essential", "e")), left.url);
+  assert.equal(ff.tabs.get(own.id).active, false);
   assert.equal(x.js("activeSpace").get(there.id), C1);
+  assert.equal(await x.send({ type: "ghostPicture" }, { tab: ff.snap(left) }), null, "no picture without the right to see pages");
   x.kill();
 });
 

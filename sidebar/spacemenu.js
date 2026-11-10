@@ -13,12 +13,42 @@ function spaceMenu(space) {
   return [
     { heading: s?.name ?? "", color: s?.color },
     ["Rename", () => openSpaceBox(space)],
+    ["Icon", spaceIconMenu(space)],
     ["Unload this space", () => send({ type: "unloadSpace", space })],
     ["Archived tabs", () => openArchived(space)], // archived.js
     null,
     ["Settings", () => browser.runtime.openOptionsPage()],
     ...(space === view.space && clearableHere() ? [null, clearItem()] : []),
   ];
+}
+
+// --- An icon of its own: an emoji at the start of the name -----------------------
+// A space's icon is the emoji its name starts with ("🏠 Home"). The name is the container's,
+// so the icon shows in Firefox's own lists too and goes to your other machines with the name,
+// and nothing more is stored. On the bar it is drawn in the dot's place (sidebar.js), as Arc
+// and Zen give a space an icon. (A flag, a keycap, or a picture with what joins and tints it.)
+const SPACE_ICON = /^((?:\p{Regional_Indicator}{2}|[#*0-9]\uFE0F?\u20E3|\p{Extended_Pictographic}(?:\uFE0F|\p{Emoji_Modifier})?(?:\u200D\p{Extended_Pictographic}(?:\uFE0F|\p{Emoji_Modifier})?)*))\s*/u;
+function spaceIcon(name) {
+  const m = SPACE_ICON.exec(name ?? "");
+  return m ? { icon: m[1], rest: name.slice(m[0].length) } : { icon: "", rest: name ?? "" };
+}
+// A few to choose from, as not everybody knows where the system keeps its emoji; any other
+// can be typed (on a Mac: fn E opens the system's list).
+const SPACE_ICONS = ["🏠", "💼", "🧪", "🛠️", "📚", "🎵", "🎮", "💬", "🛒", "✈️", "💰", "🌱"];
+function spaceIconMenu(space) {
+  const has = spaceIcon(view.spaces.find(x => x.id === space)?.name).icon;
+  return [
+    ...SPACE_ICONS.map(icon => [icon, () => setSpaceIcon(space, icon)]),
+    null,
+    ["Another", () => openSpaceBox(space, true)],
+    ...(has ? [["No icon", () => setSpaceIcon(space, "")]] : []),
+  ];
+}
+function setSpaceIcon(space, icon) {
+  const s = view.spaces.find(x => x.id === space);
+  if (!s) return;
+  const name = `${icon} ${spaceIcon(s.name).rest}`.trim();
+  if (name && name !== s.name) send({ type: "renameSpace", space, name });
 }
 
 // Clear closes today's tabs but the selected one, so with no other tab it has nothing
@@ -79,16 +109,19 @@ function markSpaceDot(dot) {
 // whatever the font: a line's height is the system's, and differs per machine.
 let spaceBox = null;
 
-function openSpaceBox(space) {
+// The same box takes the space's icon (`forIcon`, spaceIconMenu above): an emoji typed there,
+// or nothing for the plain dot. Anything else typed is not an icon, and changes nothing.
+function openSpaceBox(space, forIcon = false) {
   const line = document.getElementById("space-name"), s = view.spaces.find(x => x.id === space);
   if (spaceBox || !s) return;
   const input = el("input", "space-box");
-  input.value = s.name;
+  input.value = forIcon ? spaceIcon(s.name).icon : s.name;
+  if (forIcon) input.placeholder = "An emoji";
   // In the colour of the space it names, which need not be the one you are in. (--accent-line
   // is worked out where it is defined, from the page's --accent, so it is given here too.)
   input.style.setProperty("--accent", s.color);
   input.style.setProperty("--accent-line", `color-mix(in srgb, ${s.color} 62%, transparent)`);
-  input.setAttribute("aria-label", "Name of this space");
+  input.setAttribute("aria-label", forIcon ? "Icon of this space: an emoji" : "Name of this space");
   const room = line.getBoundingClientRect().height;
   line.hidden = true;
   line.after(input);
@@ -103,6 +136,7 @@ function openSpaceBox(space) {
     line.hidden = false;
     input.remove();
     markSpaceDot(null);
+    if (forIcon) { if (save && (!name || spaceIcon(name).icon)) setSpaceIcon(space, spaceIcon(name).icon); return; }
     if (!save || !name || name === s.name) return;
     if (space === view.space) line.textContent = name; // at once: the view with it comes a moment later
     send({ type: "renameSpace", space, name });

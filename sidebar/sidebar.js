@@ -134,7 +134,14 @@ const roomFor = list => { if (list.size >= ICONS_REMEMBERED) list.clear(); };
 // something else, such as "(2) Inbox" while a message waits. A title with neither gets an
 // empty tile, as quiet as can be.
 const letterOf = title => (String(title || "").match(/\p{L}/u) ?? String(title || "").match(/\p{N}/u))?.[0] ?? "";
+// A live folder's pull request shows what it waits for where its icon would be (liveState,
+// livefolders.js): they would all have GitHub's mark. Said in words in its tooltip.
+const PR_WORDS = {
+  review: "Waits for your review", draft: "A draft", failing: "Its checks fail", conflict: "Conflicts with its base branch",
+  changes: "Changes are asked for", approved: "Approved", running: "Its checks are running", open: "Open",
+};
 function icon(item) {
+  if (item.pr) return el("span", "pr " + (PR_WORDS[item.pr] ? item.pr : "open"));
   const failed = iconsFailed.get(item.icon);
   if (item.icon && /^(https?:|data:|moz-extension:)/.test(item.icon) && !(Date.now() - failed < ICON_RETRY_MS)) {
     const img = el("img"), asks = !item.icon.startsWith("data:");
@@ -258,7 +265,7 @@ function row(item, folderKey) {
     parts.push(close);
     e.replaceChildren(...parts);
   });
-  setIf(r, "title", item.tip || item.title);
+  setIf(r, "title", (item.pr ? (PR_WORDS[item.pr] ?? PR_WORDS.open) + "\n" : "") + (item.tip || item.title));
   setIf(r, "data-folder", folderKey ?? "");
   const level = folderKey == null ? "1" : "2";
   setIf(r, "aria-level", level); // only when it moved: a view comes with every tab event
@@ -497,6 +504,10 @@ function render(next) {
     b.setAttribute("aria-label", s.name);
     if (s.id === view.space) b.setAttribute("aria-current", "true"); else b.removeAttribute("aria-current");
     b.style.setProperty("--color", s.color);
+    // Its own icon, if its name starts with one (spaceIcon, spacemenu.js), in the dot's place.
+    const dot = b.querySelector(".dot"), { icon } = spaceIcon(s.name);
+    if (dot.textContent !== icon) dot.textContent = icon;
+    dot.classList.toggle("emoji", !!icon);
     spaceSound(b, s);
   })), ...bar.querySelectorAll(":scope > .new-space")]);
 

@@ -201,17 +201,43 @@ function sidebar({ active = C1, tabs = [{ id: 1, active: true }, { id: 2 }], fac
 // A space is only a dot on the bar, so its menu says which one it is first; Clear, which
 // closes tabs, is apart after the rest, as Close is in the tab menu, and More comes last, as
 // it does there (the space you see has tabs to sort, so it has More).
-const OWN = ["(One)", "Rename", "Unload this space", "Archived tabs", "|", "Settings", "|", "Clear today's tabs", "|", "More"];
+const OWN = ["(One)", "Rename", "Icon", "Unload this space", "Archived tabs", "|", "Settings", "|", "Clear today's tabs", "|", "More"];
 test("a space's menu: its name first, then in groups; Clear apart, only for the space you are in, and only with something to clear", async () => {
   const s = sidebar();
   assert.ok(await s.rightClick("#spaces .space", { space: C1 }));
   assert.deepEqual(s.labels(s.menus.at(-1)), OWN);
   assert.ok(await s.rightClick("#spaces .space", { space: C2 }));
-  assert.deepEqual(s.labels(s.menus.at(-1)), ["(Two)", "Rename", "Unload this space", "Archived tabs", "|", "Settings"]);
+  assert.deepEqual(s.labels(s.menus.at(-1)), ["(Two)", "Rename", "Icon", "Unload this space", "Archived tabs", "|", "Settings"]);
   assert.equal(s.menus.at(-1)[0].color, "#000", "with its dot's colour");
   const lone = sidebar({ tabs: [{ id: 1, active: true }] });
   await lone.rightClick("#spaces .space", { space: C1 });
-  assert.deepEqual(lone.labels(lone.menus.at(-1)), ["(One)", "Rename", "Unload this space", "Archived tabs", "|", "Settings"]);
+  assert.deepEqual(lone.labels(lone.menus.at(-1)), ["(One)", "Rename", "Icon", "Unload this space", "Archived tabs", "|", "Settings"]);
+});
+
+// A space's icon is the emoji its name starts with, so it is set by renaming the container:
+// nothing more is stored, and it follows the name to Firefox's own lists and to other machines.
+test("a space's icon is the emoji its name starts with, and choosing one renames the space", async () => {
+  const s = sidebar();
+  const icon = name => { const r = vm.runInContext(`spaceIcon(${JSON.stringify(name)})`, s.ctx); return [r.icon, r.rest]; };
+  assert.deepEqual(icon("🏠 Home"), ["🏠", "Home"]);
+  assert.deepEqual(icon("✈️Travel"), ["✈️", "Travel"], "with or without a space after it");
+  assert.deepEqual(icon("👩‍💻 Work"), ["👩‍💻", "Work"], "a joined one is one icon");
+  assert.deepEqual(icon("🇳🇴 Norge"), ["🇳🇴", "Norge"], "a flag");
+  assert.deepEqual(icon("Home 🏠"), ["", "Home 🏠"], "only at the start");
+  assert.deepEqual(icon("2024 plans"), ["", "2024 plans"], "a digit is no icon");
+  await s.rightClick("#spaces .space", { space: C1 });
+  const choices = s.menus.at(-1).find(i => i?.[0] === "Icon")[1];
+  assert.deepEqual(s.labels(choices).slice(-2), ["|", "Another"], "no icon yet: nothing to take away");
+  choices[0][1]();
+  assert.deepEqual({ ...s.sent.at(-1) }, { type: "renameSpace", space: C1, name: "🏠 One" });
+  vm.runInContext(`view.spaces[0].name = "🏠 One"`, s.ctx);
+  await s.rightClick("#spaces .space", { space: C1 });
+  const again = s.menus.at(-1).find(i => i?.[0] === "Icon")[1];
+  again[1][1]();
+  assert.deepEqual({ ...s.sent.at(-1) }, { type: "renameSpace", space: C1, name: "💼 One" }, "another icon takes the first one's place");
+  assert.equal(s.labels(again).at(-1), "No icon");
+  again.at(-1)[1]();
+  assert.deepEqual({ ...s.sent.at(-1) }, { type: "renameSpace", space: C1, name: "One" });
 });
 
 test("the name above the list has the same menu, for the space you are in", async () => {

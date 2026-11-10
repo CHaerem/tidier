@@ -110,7 +110,7 @@ function littleTakes(tabId, url) {
   blank.taken = true;
   firstPage.delete(tabId);
   serial(async () => {
-    const opened = await littleSetting.get() && await littleForLink(tabId, url).catch(async err => {
+    const opened = await littleForLink(tabId, url, await littleSetting.get()).catch(async err => {
       if (await browser.tabs.get(tabId).catch(() => null)) noteError(err); // closed meanwhile is no fault
       return false;
     });
@@ -135,7 +135,8 @@ function littleTakes(tabId, url) {
 let littleReopens = Promise.resolve();
 function littleAfterReopen(oldTab, tab, url) {
   littleReopens = littleReopens.then(async () => {
-    if (!newBlanks.get(oldTab.id)?.fromOutside || !tab?.id || !await littleSetting.get()) return;
+    if (!newBlanks.get(oldTab.id)?.fromOutside || !tab?.id) return;
+    if (await toListed(url, tab.cookieStoreId, tab) || !await littleSetting.get()) return;
     if (await toLittleShowing(url, tab.cookieStoreId, tab.id)) return;
     await openLittle(oldTab.windowId, { tabId: tab.id }, tab.cookieStoreId, oldTab.width);
   }).catch(noteError);
@@ -158,6 +159,27 @@ async function toLittleShowing(url, space, tabId) {
   return false;
 }
 
+// A link to a page that is in your list already (a pull request in a live folder, sent to
+// you in a message): its row in this window is selected, as a click on it would, and the
+// new tab goes. Opened once more it was a second copy of the page, in a window of its own,
+// beside the one in the list. Only the very page, in the space the link belongs to: another
+// space has another sign-in. Returns whether there was one.
+async function toListed(url, space, tab) {
+  if (!isWeb(url)) return false;
+  const at = withoutFragment(url), all = await getSynced();
+  for (const [key, e] of Object.entries(all)) {
+    if (e.group || e.cookieStoreId !== space || ![e.url, e.liveUrl].some(u => u && withoutFragment(u) === at)) continue;
+    const here = (await repsNow(key)).find(t => t.windowId === tab.windowId);
+    if (!here || here.id === tab.id) continue;
+    if (!await browser.tabs.update(here.id, { active: true }).catch(() => null)) continue;
+    toForget.set(url, Date.now() + FORGET_MS); // closed by Tidier: ⌘⇧T must bring back what you closed (common.js)
+    setTimeout(forgetClosedNow, FORGET_MS + 100);
+    await browser.tabs.remove(tab.id).catch(() => {});
+    return true;
+  }
+  return false;
+}
+
 // A rule's space, if it still exists: a window opened in a removed container is refused,
 // and the link would be gone with its first tab.
 async function ruledSpace(url) {
@@ -174,7 +196,7 @@ async function littleSpace(url, windowId, fallback) {
 // sign-in sent by mail), and it has already been asked for. Otherwise, and that is most
 // links, since a site you have no tab on gets no container, it is opened again there,
 // as a tab in the wrong space always is.
-async function littleForLink(tabId, url) {
+async function littleForLink(tabId, url, little = true) {
   const tab = await browser.tabs.get(tabId).catch(() => null);
   if (!tab) return true; // closed meanwhile: nothing left to do
   if (syncKeyByTab.has(tabId)) return false;
@@ -182,6 +204,8 @@ async function littleForLink(tabId, url) {
   if ((await browser.windows.get(tab.windowId).catch(() => null))?.type !== "normal") return false;
   const space = await littleSpace(url, tab.windowId, tab.cookieStoreId);
   if (!space) return false;
+  if (await toListed(url, space, tab)) return true;
+  if (!little) return false; // turned off in the settings: an ordinary tab
   if (await toLittleShowing(url, space, tabId)) return true;
   const moves = tab.cookieStoreId === space;
   await openLittle(tab.windowId, moves ? { tabId } : { url, cookieStoreId: space }, space, tab.width);

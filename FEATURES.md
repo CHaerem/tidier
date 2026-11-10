@@ -49,7 +49,7 @@ part C).
 | Feature | From | Status | Notes |
 |---|---|---|---|
 | Spaces, one per container (own logins) | Z A S | Done | checked |
-| Space bar at the bottom with icons | Z A S | Partly | coloured dots, and the name above the list; icons to come |
+| Space bar at the bottom with icons | Z A S | Done | checked: a coloured dot, or the emoji its name starts with (Icon in the space's menu); the name above the list |
 | Only the active space's tabs shown (⌃Tab too) | Z A S | Done | checked. Other spaces' essentials stay in ⌃Tab: Firefox cannot hide a pinned tab |
 | Switch with ⌃1/2/3 | Z A S | Done | checked: back to the tab you selected last in that space, in any window (not one opened in the background, moved there or resting in a closed folder, nor one another window is showing) |
 | Switch by swiping sideways on the trackpad | Z A | Later | tried with Sidebery and left out: vertical swipes switched space by mistake; to try again in Tidier's own sidebar |
@@ -95,7 +95,7 @@ part C).
 | A closed folder rests: hidden from ⌃Tab and unloaded | S | Done | checked; the selected tab, sound and unsaved input stay |
 | New folder with a good name, ready to rename | S | Done | from the menu, a key, or a selection, which names it after what the tabs share |
 | New tab in a folder | S | Done | checked: New tab here in its menu; saved there once it has a page |
-| Live folders (GitHub pull requests) | A | Done | |
+| Live folders (GitHub pull requests) | A | Done | checked: each row's icon says what the pull request waits for (your review, draft, failing checks, conflict, changes asked for, approved, running, open) |
 | Folder state (open/closed) kept per space and window | Z A S | Partly | kept per folder, the same in every window |
 
 ## Tabs that tidy themselves

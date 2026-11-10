@@ -273,6 +273,36 @@ test("a new pull request in a closed live folder is hidden", async () => {
   x.kill();
 });
 
+test("a live folder's pull request shows what it waits for, and follows it at the next search", async () => {
+  const ff = new FakeFirefox();
+  ff.store.syncedTabs = { L: folder({ live: "prs" }), here: entry("https://here.example/") };
+  ff.store.liveFolders = { prs: { groupKey: "L", dismissed: [] } };
+  const w = ff.addWindow({ focused: true });
+  live(ff, w, "here", { active: true });
+  const x = await alone(ff);
+  const state = x.js("liveState");
+  // The most pressing first; with an older helper only a draft is known.
+  assert.deepEqual([
+    {}, { draft: true }, { mine: false, asked: true, draft: true }, { mine: true, checks: "failing", review: "approved" },
+    { mine: true, conflict: true }, { mine: false, checks: "failing" }, { review: "changes" }, { review: "approved", checks: "running" },
+    { mine: true, checks: "running" }, { mine: true, checks: "ok", review: "wanted" },
+  ].map(state), ["open", "draft", "review", "failing", "conflict", "open", "changes", "approved", "running", "open"]);
+
+  const pr = more => ({ url: "https://pr.example/1", repo: "r", number: 1, title: "t", ...more });
+  const search = items => x.js("serial")(() => x.js("refreshLiveFolder")({ id: "prs", name: "Folder", cookieStoreId: C1 }, { items }));
+  const shown = async () => Array.from((await x.js("viewFor")(w.id)).folders[0].tabs, t => t.pr);
+  await search([pr({ mine: true, checks: "running" }), { ...pr({ draft: true }), url: "https://pr.example/2", number: 2 }]);
+  await wait(500);
+  assert.deepEqual(await shown(), ["running", "draft"]);
+  assert.equal((await x.js("viewFor")(w.id)).tabs[0].pr, undefined, "an ordinary tab has none");
+  const tabs = ff.list(w.id).map(t => [t.id, t.url]);
+  await search([pr({ mine: true, checks: "ok", review: "approved" }), { ...pr({ draft: true }), url: "https://pr.example/2", number: 2 }]);
+  await wait(500);
+  assert.deepEqual(await shown(), ["approved", "draft"]);
+  assert.deepEqual(ff.list(w.id).map(t => [t.id, t.url]), tabs, "and no tab is touched for it");
+  x.kill();
+});
+
 test("a window closing while its folder closes stops nothing else", async () => {
   const ff = new FakeFirefox();
   const s = twoWindows(ff);

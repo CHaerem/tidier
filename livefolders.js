@@ -48,12 +48,28 @@ async function ensureFolderGroup(folder, state) {
 
 const liveTitle = item => `${item.repo}#${item.number} ${item.title}`;
 
+// What a pull request waits for, which its row shows as its icon (sidebar.js): a row of
+// GitHub's mark said nothing. One word, the most pressing first: someone waits for your
+// review; then, of your own, what stops it. An older helper says only whether it is a
+// draft, and then that is all the icon says.
+function liveState(item) {
+  const mine = item.mine !== false;
+  if (!mine && item.asked) return "review";
+  if (item.draft) return "draft";
+  if (mine && item.checks === "failing") return "failing";
+  if (mine && item.conflict) return "conflict";
+  if (item.review === "changes") return "changes";
+  if (item.review === "approved") return "approved";
+  if (mine && item.checks === "running") return "running";
+  return "open";
+}
+
 // A tab for one pull request: live in the home window, ghosts elsewhere.
 async function createLiveItem(folder, groupKey, item) {
   const all = await getSynced();
   const key = crypto.randomUUID();
   const entry = {
-    url: item.url, liveUrl: item.url, title: liveTitle(item), icon: GITHUB_ICON,
+    url: item.url, liveUrl: item.url, title: liveTitle(item), icon: GITHUB_ICON, pr: liveState(item),
     cookieStoreId: folder.cookieStoreId, parentKey: groupKey, group: false, liveFolder: folder.id,
   };
   all[key] = entry;
@@ -118,7 +134,7 @@ async function refreshLiveFolder(folder, res) {
     if (!wanted.has(url) && !repsOf(k, tabs).some(t => t.active) && await closesQuietly(k)) await closeEverywhere(k, { dismiss: false });
   }
   for (const item of res.items) {
-    if (have.has(item.url)) await renameLiveItem(have.get(item.url), item);
+    if (have.has(item.url)) { await renameLiveItem(have.get(item.url), item); await markLiveItem(have.get(item.url), item); }
     else if (!state.dismissed.includes(item.url)) await createLiveItem(folder, groupKey, item);
   }
 }
@@ -138,6 +154,16 @@ async function renameLiveItem(key, item) {
     const kind = syncRoleByTab.get(t.id) === "live" ? "lazy" : "ghost";
     await browser.tabs.update(t.id, { url: ghostUrl(kind, key) }).catch(() => {});
   }
+}
+
+// What it waits for now. Only the record changes, opened or not: no tab is touched, and
+// saving the record draws the sidebars again (saveSynced, tabsync.js).
+async function markLiveItem(key, item) {
+  const all = await getSynced();
+  const entry = all[key], pr = liveState(item);
+  if (!entry || entry.pr === pr) return;
+  entry.pr = pr;
+  saveSynced(all);
 }
 
 // Called by tab sync when you close a tab: a live folder tab stays closed

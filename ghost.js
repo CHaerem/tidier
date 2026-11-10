@@ -36,8 +36,18 @@ function face(info) {
   if (/^data:/.test(info.icon || "")) main.append(Object.assign(document.createElement("img"), { src: info.icon, alt: "" }));
   main.append(Object.assign(document.createElement("div"), { className: "title", textContent: info.title || site }));
   if (site && site !== info.title) main.append(Object.assign(document.createElement("div"), { className: "site", textContent: site }));
-  main.append(Object.assign(document.createElement("div"), { className: "when", textContent: "Opens when you come to this window" }));
+  main.append(Object.assign(document.createElement("div"), { className: "when", textContent: "In another window now. It comes here when you use this one." }));
   document.body.append(main);
+  // The page as it was when it left this window for the one you use, grey under a veil, as
+  // Zen and Arc show a tab that another window has (pull, tabsync.js). There at once, and
+  // the words with it: this window was showing the page a moment ago.
+  browser.runtime.sendMessage({ type: "ghostPicture" }).then(picture => {
+    if (!/^data:image\//.test(picture || "")) return;
+    const veil = Object.assign(document.createElement("div"), { className: "veil" });
+    veil.style.backgroundImage = `url("${picture}")`;
+    document.body.prepend(veil);
+    document.body.classList.add("veiled");
+  }).catch(() => {});
 }
 
 // The first icon that loads: the one saved for the page, else the site's

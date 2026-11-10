@@ -347,6 +347,19 @@ test("a host that goes away is started again a few times, then a notice says so"
   x.kill();
 });
 
+test("where Firefox has no picture function for Tidier, a screenshot is refused in words", async () => {
+  const ff = new FakeFirefox();
+  alone(ff);
+  const x = await start(ff);
+  await x.settings("on", { on: true });
+  const host = x.hosts[0];
+  const { tab } = JSON.parse((await host.call("open_tab", { url: "https://a.example/" })).text);
+  delete x.b.tabs.captureTab; // as with every website given as "*://*/*", which is all Tidier asks for
+  assert.match((await host.call("screenshot", { tab })).error, /no pictures of pages.*read_page/);
+  assert.ok((await host.call("read_page", { tab })).ok);
+  x.kill();
+});
+
 test("without access to pages, an agent still sees tabs, and is told why not more", async () => {
   const ff = new FakeFirefox();
   alone(ff);

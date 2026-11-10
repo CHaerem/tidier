@@ -285,6 +285,37 @@ test("a kept small window is forgotten among the closed windows, so ⌘⇧N cann
   x.kill();
 });
 
+test("a link to a page that is in your list already goes to its row: no small window, no second copy", async () => {
+  const ff = new FakeFirefox();
+  const { w, old } = session(ff);
+  const x = await start(ff);
+  const t = linkFromOutside(ff, x, w.id, { url: "https://old.example/#part" });
+  await wait(400);
+  assert.equal(popups(ff).length, 0);
+  assert.ok(ff.tabs.get(old.id).active, "the tab you had is the one you are on");
+  assert.ok(!ff.tabs.has(t.id), "and the new tab goes");
+  assert.equal(ff.list(w.id).length, 2);
+  // Another page of the same site is not in the list: that one gets its small window.
+  linkFromOutside(ff, x, w.id, { url: "https://old.example/other" });
+  await wait(400);
+  assert.equal(popups(ff).length, 1);
+  x.kill();
+});
+
+test("with the small window turned off, a link to a page in your list still goes to its row", async () => {
+  const ff = new FakeFirefox();
+  const { w, old } = session(ff);
+  ff.store.littleWindow = false;
+  const x = await start(ff);
+  const t = linkFromOutside(ff, x, w.id, { url: "https://old.example/" });
+  await wait(400);
+  assert.ok(ff.tabs.get(old.id).active);
+  assert.ok(!ff.tabs.has(t.id));
+  assert.equal(popups(ff).length, 0);
+  assert.equal(ff.list(w.id).length, 2);
+  x.kill();
+});
+
 test("the same link twice (a double click in the other app): one small window, brought to the front", async () => {
   const ff = new FakeFirefox();
   const { w } = session(ff);

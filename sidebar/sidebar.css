@@ -20,20 +20,21 @@ button { font: inherit; letter-spacing: inherit; color: inherit; cursor: default
 :focus-visible { outline: 2px solid var(--accent-line); outline-offset: -2px; }
 
 /* --- Essentials ------------------------------------------------------------------
- * Generous tiles that fill their row, as in Arc: four across at usual widths, up to six
- * in the widest sidebar. Their height moves in whole steps, so an edge never lands
- * between two pixels. */
+ * Generous tiles that fill their row, as in Arc. How many go in a row follows the sidebar's
+ * width, as in Zen: a tile is never narrower than 50px, so a wider sidebar takes one more
+ * (four at the usual width, three in the narrowest, eight in the widest). Their height
+ * moves in whole steps, so an edge never lands between two pixels. */
 #essentials {
   --tile-height: clamp(40px, round(13.5vw, 2px), 48px);
   --tile-gap: 6px;
   display: grid; gap: var(--tile-gap); margin: 4px 0 8px;
-  grid-template-columns: repeat(auto-fit, minmax(max(46px, min(19%, 72px)), 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(50px, 1fr));
   transition: background-color var(--quick), box-shadow var(--quick);
 }
 /* In a wide sidebar a few would be long empty bands, and a tile's size would jump from
  * space to space, so there they keep one size and leave the rest of the row free. */
 @media (min-width: 400px) {
-  #essentials { grid-template-columns: repeat(auto-fill, minmax(72px, 1fr)); }
+  #essentials { grid-template-columns: repeat(auto-fill, minmax(50px, 1fr)); }
 }
 #essentials:empty { display: none; }
 .tile {
@@ -59,10 +60,17 @@ button { font: inherit; letter-spacing: inherit; color: inherit; cursor: default
 /* The halo: an icon that is all white or all black would vanish on one scheme's card.
  * On any other it does not show. */
 img { filter: drop-shadow(0 0 .6px light-dark(rgb(40 30 20 / .3), rgb(255 255 255 / .5))); }
-/* A live folder's unloaded tabs all have GitHub's mark (livefolders.js), black as it is
- * in the placeholder. On dark, a row of black ones would be a row of holes, so there it
- * is a pale mark. Once loaded, a tab has the icon its page chose for itself. */
-@media (prefers-color-scheme: dark) { .folder.live .tab.unloaded img { filter: brightness(0) invert(.9); } }
+/* A live folder's pull requests would all have GitHub's mark, so each shows what it waits
+ * for instead (liveState, livefolders.js), by shape as well as by colour: yours to review,
+ * a draft, stopped (checks, a conflict, changes asked for), approved, or simply open. */
+.row .pr { width: var(--icon); height: var(--icon); flex: none; background: var(--state-good); mask: var(--icon-pr) center / contain no-repeat; }
+.row .pr.draft { background: var(--muted); mask-image: var(--icon-pr-draft); }
+.row .pr.review { background: var(--state-wait); mask-image: var(--icon-eye); }
+.row .pr.running { background: var(--state-wait); mask-image: var(--icon-clock); }
+.row .pr.approved { mask-image: var(--icon-check); }
+.row .pr.failing { background: var(--state-bad); mask-image: var(--icon-cross); }
+.row .pr.conflict { background: var(--state-bad); mask-image: var(--icon-warning); }
+.row .pr.changes { background: var(--state-bad); mask-image: var(--icon-comment); }
 /* An unloaded tab is quieter, and wakes up under the mouse. */
 .unloaded :is(img, .letter) { opacity: .66; transition: opacity var(--quick); }
 .unloaded:hover :is(img, .letter) { opacity: 1; }
@@ -263,6 +271,17 @@ html.space-arriving .folder > .children { transition: none; } /* a whole space c
  * in its full colour, among the pale ones, and the active space's stays the larger. The
  * two mean the same, "something there to look at", so they look the same. */
 .space:is(.news, .agent-left) .dot { background: var(--color); }
+/* A space with an icon of its own (an emoji its name starts with, spacemenu.js) shows it in
+ * the dot's place. An emoji has its own colours, so here the others are dimmed and greyed
+ * instead of tinted, as Arc's are, and the active one, or one with something for you, is whole. */
+#spaces .dot.emoji {
+  width: auto; height: auto; border-radius: 0; background: none; font-size: var(--size); line-height: 1;
+  opacity: .5; filter: grayscale(.8);
+  transition: opacity var(--soft), filter var(--soft), transform var(--spring);
+}
+#spaces .space:hover .dot.emoji { opacity: .85; filter: grayscale(.3); }
+#spaces .space:is(.active, .news, .agent-left) .dot.emoji { opacity: 1; filter: none; }
+#spaces .space.active .dot.emoji { transform: scale(1.2); }
 
 /* --- Notices: quiet, on the icons' edge, in the same soft shape as everything else.
  * Never a white card: that means you are here. Every line that tells you something has

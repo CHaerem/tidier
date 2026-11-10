@@ -55,6 +55,7 @@ const tabItem = (t, title, entry) => ({
   page: isWeb(t.url) || isGhostUrl(t.url), // else a new tab page or the like, which only has a place among the tabs (drag.js)
   blank: NEW_TAB_PAGES.has(t.url) || undefined, // an empty new tab: no page yet, so no letter of a name that is not one (sidebar.js icon)
   note: forYouNotes.get(syncKeyByTab.get(t.id)), // bridge.js
+  pr: entry?.liveFolder ? entry.pr || "open" : undefined, // a live folder's pull request: what it waits for (liveState, livefolders.js)
 });
 
 // The icon in the record, for a placeholder that has none of its own (createRep,

@@ -392,6 +392,28 @@ def tab_sync(m):
     check("a pulled tab and the ghost left behind stay in their container", r["containers"] == [3, 3], str(r["containers"]))
     check("pulling a tab in leaves no placeholder in Recently Closed (⌘⇧T reopens what you closed)", r["closedGhosts"] == 0, str(r["closedGhosts"]))
     check("closing a tab closes it everywhere", r["closed"] == [[], []], str(r["closed"]))
+    # The window a page is taken from stays on it, as in Zen and Arc: the window you use has
+    # the page, and the other one shows which page that is, not some other tab. Coming back
+    # brings the page back, and the other window is then the one that waits.
+    r = m.js(H + """
+      const a = main(), w = other(); a.focus(); await wait(800);
+      const aBefore = a.gBrowser.selectedTab, wBefore = w.gBrowser.selectedTab;
+      const t = a.gBrowser.addTrustedTab("https://example.org/?smoke-stays", {userContextId: 3}); a.gBrowser.selectedTab = t;
+      await wait(4500); const k = key(a, t);
+      const on = x => { const spec = x.gBrowser.selectedBrowser.currentURI.spec; return (key(x, x.gBrowser.selectedTab) === k ? "" : "another tab: ") + (spec.includes("smoke-stays") ? "page" : spec.includes("ghost.html") ? "placeholder" : spec); };
+      w.focus(); await wait(800);
+      w.gBrowser.selectedTab = w.gBrowser.tabs.find(x => key(w, x) === k); await wait(3000);
+      const taken = [on(a), on(w)], copies = find(k).map(x => x.length);
+      a.focus(); await wait(3000);
+      const back = [on(a), on(w)];
+      a.gBrowser.removeTab(a.gBrowser.tabs.find(x => key(a, x) === k)); await wait(3000);
+      const closed = find(k);
+      if (!aBefore.closing) a.gBrowser.selectedTab = aBefore;
+      if (!wBefore.closing) w.gBrowser.selectedTab = wBefore;
+      await wait(1500);
+      return {taken, copies, back, closed};""")
+    check("the window a page is taken from stays on it, as a placeholder", r["taken"] == ["placeholder", "page"] and r["copies"] == [1, 1], str(r))
+    check("coming back to that window brings the page back, and the other one waits", r["back"] == ["page", "placeholder"] and r["closed"] == [[], []], str(r))
     r = m.js(H + """
       const a = main(), urls = ["https://example.org/?smoke-quick-1", "https://example.org/?smoke-quick-2", "https://example.org/?smoke-quick-3"];
       const tabs = urls.map(u => a.gBrowser.addTrustedTab(u, {userContextId: 3, inBackground: true}));
@@ -694,10 +716,10 @@ def look(m):
 def live_folders(m):
     # The native host is a stand-in (fake_github_host.py) that answers from
     # m.fake_prs; the test rewrites the file and asks Tidier to refresh.
-    def answer(items, renamed=()):
+    def answer(items, renamed=(), more=None):
         json.dump({"folders": [{"id": "smoke", "name": "Smoke PRs", "container": "firefox-container-2"}],
                    "items": {"smoke": [{"url": f"https://example.org/?smoke-pr-{n}", "title": f"Pull request {n}" + (" renamed" if n in renamed else ""),
-                                        "number": n, "repo": "smoke"} for n in items]}}, open(m.fake_prs, "w"))
+                                        "number": n, "repo": "smoke", **(more or {})} for n in items]}}, open(m.fake_prs, "w"))
         return extension_message(m, {"type": "refreshLiveFolders"})
 
     # The folder is one of Tidier's own, in the record (live: its id); its tabs are in it by their
@@ -749,6 +771,16 @@ def live_folders(m):
     fourth = m.js(state)
     check("a renamed pull request's unloaded tabs take the new title",
           all(w["inFolder"] == ["Pull request 3 renamed"] and not w["loaded"] for w in fourth), str(fourth))
+    # What it waits for is in its record, for its icon in the sidebar, and changing it touches no tab.
+    waits = H + """const all = (await storage("%s", ["syncedTabs"])).syncedTabs;
+      return [Object.values(all).filter(e => e.liveFolder === "smoke").map(e => e.pr),
+              wins().map(w => w.gBrowser.tabs.filter(t => t.label.includes("Pull request ")).map(t => [t.linkedPanel, t.hasAttribute("pending")]))];""" % EXT_ID
+    before = m.js(waits)
+    answer([3], renamed=[3], more={"mine": True, "checks": "failing"})
+    time.sleep(3)
+    after = m.js(waits)
+    check("a pull request's record says what it waits for, and follows the search without touching its tabs",
+          before[0] == ["open"] and after[0] == ["failing"] and after[1] == before[1], f"{before} -> {after}")
     # A search that fails (gh logged out, no network) changes nothing.
     json.dump({"folders": [{"id": "smoke", "name": "Smoke PRs", "container": "firefox-container-2"}], "items": {}}, open(m.fake_prs, "w"))
     extension_message(m, {"type": "refreshLiveFolders"})
@@ -8098,7 +8130,7 @@ def alone_space_menu(m):
     # What it offers.
     # Clear, which closes tabs, comes on its own after the rest (spacemenu.js), and More last,
     # as in a tab's menu (both spaces have pages loaded, so both have it).
-    ELSEWHERE, IN_SPACE = ["Rename", "Unload this space", "Archived tabs", "New space", "Settings", "More"], ["Rename", "Unload this space", "Archived tabs", "New space", "Settings", "Clear today's tabs", "More"]
+    ELSEWHERE, IN_SPACE = ["Rename", "Icon", "Unload this space", "Archived tabs", "New space", "Settings", "More"], ["Rename", "Icon", "Unload this space", "Archived tabs", "New space", "Settings", "Clear today's tabs", "More"]
     r = menu_on(m, f"dot({json.dumps(there)})", ELSEWHERE)
     place = in_sidebar(m, """(id) => ({menuBottom: doc.getElementById("menu").getBoundingClientRect().bottom, bar: doc.getElementById("spaces").getBoundingClientRect().top, marked: dot(id).classList.contains("menu-for"), active: doc.querySelector("#spaces .space.active").dataset.space,
       heading: doc.querySelector("#menu .heading")?.textContent, name: dot(id).title, lines: doc.querySelectorAll("#menu .line").length})""", there)

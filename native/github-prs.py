@@ -18,6 +18,7 @@ import getpass
 import glob
 import json
 import os
+import re
 import shutil
 import struct
 import subprocess
@@ -29,7 +30,13 @@ CONFIG = os.path.join(HOME, "live-folders.json")
 COPIES = 14
 # Every folder shows open pull requests you are involved in, within its search.
 BASE = "is:open is:pr archived:false (review-requested:@me OR author:@me OR assignee:@me)"
-JQ = '{incomplete: .incomplete_results, items: [.items[] | {url: .html_url, title, number, draft, repo: (.repository_url | split("/") | .[-1])}]}'
+JQ = '{incomplete: .incomplete_results, items: [.items[] | {id: .node_id, url: .html_url, title, number, draft, repo: (.repository_url | split("/") | .[-1])}]}'
+# What each of them waits for, for the icon before its name: the search does not say.
+STATE = """{nodes(ids:%s){... on PullRequest{id viewerDidAuthor reviewDecision mergeable
+  reviewRequests(first:50){nodes{requestedReviewer{... on User{isViewer}}}}
+  commits(last:1){nodes{commit{statusCheckRollup{state}}}}}}}"""
+REVIEW = {"APPROVED": "approved", "CHANGES_REQUESTED": "changes", "REVIEW_REQUIRED": "wanted"}
+CHECKS = {"SUCCESS": "ok", "FAILURE": "failing", "ERROR": "failing", "PENDING": "running", "EXPECTED": "running"}
 
 
 def folders():
@@ -46,6 +53,36 @@ def gh():
     extra = ["/opt/homebrew/bin", "/usr/local/bin", f"/etc/profiles/per-user/{getpass.getuser()}/bin",
              os.path.expanduser("~/.nix-profile/bin"), "/run/current-system/sw/bin"]
     return shutil.which("gh", path=os.pathsep.join([os.environ.get("PATH", ""), *extra]))
+
+
+def states(ids):
+    # A second question, and whatever goes wrong with it the list still stands: a folder
+    # without these only shows plainer icons. (The ids go into the question as they are, so
+    # only what looks like one of GitHub's does.)
+    ids = [i for i in ids if isinstance(i, str) and re.fullmatch(r"[A-Za-z0-9_=-]+", i)]
+    if not ids:
+        return {}
+    try:
+        result = subprocess.run([gh(), "api", "graphql", "-f", "query=" + STATE % json.dumps(ids)],
+                                capture_output=True, text=True, timeout=20)
+        nodes = json.loads(result.stdout)["data"]["nodes"]  # with an error for one of them, the others are still there
+    except Exception:
+        return {}
+    out = {}
+    for n in nodes:
+        if not isinstance(n, dict) or "id" not in n:
+            continue
+        commits = ((n.get("commits") or {}).get("nodes") or [{}])
+        rollup = ((commits[-1] or {}).get("commit") or {}).get("statusCheckRollup") or {}
+        asked = ((n.get("reviewRequests") or {}).get("nodes") or [])
+        out[n["id"]] = {
+            "mine": bool(n.get("viewerDidAuthor")),
+            "review": REVIEW.get(n.get("reviewDecision"), ""),
+            "checks": CHECKS.get(rollup.get("state"), ""),
+            "asked": any(((r or {}).get("requestedReviewer") or {}).get("isViewer") for r in asked),
+            "conflict": n.get("mergeable") == "CONFLICTING",
+        }
+    return out
 
 
 def read_message():
@@ -116,7 +153,8 @@ def main():
     if answer.get("incomplete") or not isinstance(answer.get("items"), list):
         send({"error": "GitHub's search answered with only part of the result"})
     else:
-        send({"items": answer["items"]})
+        more = states([i.get("id") for i in answer["items"]])
+        send({"items": [{**{k: v for k, v in i.items() if k != "id"}, **more.get(i.get("id"), {})} for i in answer["items"]]})
 
 
 main()

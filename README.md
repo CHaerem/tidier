@@ -109,7 +109,9 @@ be done, in order, is in [PLAN.md](PLAN.md).
 2. **Tabs in every window.** Every other tab is *live* in one window and an
    unloaded *ghost* in the others (same URL, title and container). Selecting a ghost
    moves the live tab into your window and leaves a ghost behind, so each page is only
-   ever loaded once. Opening a tab adds it everywhere; closing it closes it everywhere;
+   ever loaded once. The window the page is taken from stays on that tab, as Zen and Arc
+   do: its placeholder names the page and says it is in another window now, and the page
+   comes back when you use that window again. Opening a tab adds it everywhere; closing it closes it everywhere;
    moving it into or out of a folder is the same in every window, since a folder is
    Tidier's own data; closing a window hands its tabs over to another window.
 3. **Folders** (`ownfolders.js`): each space has its folders first, then today's tabs, as
@@ -123,7 +125,9 @@ be done, in order, is in [PLAN.md](PLAN.md).
    15 minutes and at startup: new pull requests get an unloaded tab, merged or closed
    ones are removed (the one you are looking at once you leave it), and a renamed one's
    unloaded tabs take the new title. A pull request tab you close stays closed until it
-   leaves the search.
+   leaves the search. Each row's icon says what the pull request waits for, by shape and
+   colour, with the words in its tooltip: your review, a draft, failing checks, a
+   conflict, changes asked for, approved, checks running, or simply open.
 5. **⇧⌘C copies the address** of the current tab, as in Arc and Zen
    (`shortcuts.js`). Firefox gives ⇧⌘C to the developer tools' element
    picker, which wins over extensions; free it in `about:keyboard` (the
@@ -161,7 +165,9 @@ this repository: `~/.config/tidier/live-folders.json` (see
 `native/live-folders.example.json`), one entry per folder with its name, its
 container (so its space) and a GitHub search (`org:…`, `user:…`, `repo:…`).
 The extension only learns each folder's id, name and container, and the host
-only runs those searches; anything else is refused.
+only runs those searches; anything else is refused. For each pull request found it
+also asks GitHub what it waits for (review, checks, a conflict), which the rows show;
+if that question fails, the rows only tell a draft from an open one.
 
 Install the host once (and again if this folder moves); it also creates the
 config file from the example if there is none:
@@ -266,7 +272,9 @@ screenshot shows what the page shows, also a name typed in a field, and a rich t
 that is part of a page (not a form field) is read as the page's text.
 
 Reading pages and screenshots need access to all websites, which is optional and asked
-for in the click that turns these on. Without it an agent can still see tabs and addresses,
+for in the click that turns these on. (A screenshot is refused in words for now: Firefox
+gives pictures of pages only to an extension that asks for `<all_urls>`, which adds
+access to local files, and Tidier asks for websites only.) Without it an agent can still see tabs and addresses,
 and a copy holds the title and address. A click in the sidebar does not give a page's
 `activeTab` in Firefox (only its own menus, keys and toolbar button do), so that is not used.
 It can be taken back in `about:addons`.
@@ -465,7 +473,9 @@ on a site wins. With Tidier that guess counts for nothing, and its login never g
 turns it off in Firefox itself. Tidier opens the link in a small window of its own
 (`littlewindow.js`), in the rule's space or else the one you are in, to read and close, or
 to keep with one click; it can be turned off on the settings page, and then the link is an
-ordinary tab in the same space. The same link twice (a double click in the other app)
+ordinary tab in the same space. A link to a page that is in your list already (a pull
+request in a live folder, say) goes to its row instead, in the window you have, with the
+small window on or off. The same link twice (a double click in the other app)
 brings its small window to the front. Closed, ⇧⌘T gives it back as a small window, with
 its row and Keep. Tidier cannot do this for addons.mozilla.org, which Firefox shields from
 extensions.
