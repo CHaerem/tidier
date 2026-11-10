@@ -12,8 +12,8 @@ const c = n => `firefox-container-${n}`;
 function machine(names) {
   const ids = Object.keys(names).map(c);
   const ff = new FakeFirefox({ containers: ["firefox-default", ...ids] });
+  ff.managed = {}; // what a machine declares (hiddenSpaces)
   ff.identities = Object.fromEntries(Object.entries(names).map(([n, name]) => [c(n), { name, color: "blue", icon: "circle" }]));
-  ff.managed = { tidierAlone: true };
   const w = ff.addWindow({ focused: true });
   ff.addTab(w.id, { url: "https://home.example/", title: "Home", active: true, cookieStoreId: ids[0] });
   return { ff, w };
@@ -78,17 +78,6 @@ test("with sync not turned on, nothing goes to or comes from storage.sync", asyn
   await wait(ROUND * 2);
   assert.equal(ff.syncWrites, undefined);
   assert.ok(![...ff.containers].some(id => ff.identities?.[id]?.name === "Other"));
-  x.kill();
-});
-
-test("without Tidier alone, turning it on does nothing, and nothing is touched", async () => {
-  const { ff } = machine({ 1: "Work" });
-  ff.managed = {};
-  const x = await boot(ff);
-  await turnOn(x);
-  await wait(ROUND);
-  assert.equal(ff.syncWrites, undefined);
-  assert.equal((await report(x)).alone, false);
   x.kill();
 });
 
@@ -495,21 +484,6 @@ test("turned off, it stops, and turned on again it merges again instead of sprea
   end();
 });
 
-test("moving back to Sidebery forgets what was seen, so moving over again deletes nothing", async () => {
-  const { ff, w } = machine({ 1: "Work" });
-  let x = await boot(ff);
-  await pin(x, ff, w.id, "https://one.example/", c(1));
-  await turnOn(x);
-  await wait(500);
-  assert.ok(ff.store.syncState.seen);
-  x.kill();
-  ff.managed = {};
-  x = await boot(ff);
-  assert.equal(ff.store.syncState, undefined);
-  x.kill();
-  void w;
-});
-
 // Bring a machine's Firefox down the hard way: what is on disk is what was on disk at that moment.
 async function restartFrom(m, store) {
   m.x.kill();
@@ -861,12 +835,6 @@ test("while sync is off Tidier is not told of every write to storage", async () 
   const y = await boot(ff);
   assert.equal(y.b.storage.onChanged.ls.length, 1, "and after a start, if it is on");
   y.kill();
-  const off = machine({ 1: "Work" });
-  off.ff.managed = {};
-  off.ff.store.syncOn = true;
-  const z = await boot(off.ff);
-  assert.equal(z.b.storage.onChanged.ls.length, 0, "without Tidier alone, whatever is stored");
-  z.kill();
 });
 
 // --- Two machines used at random, with the real scripts ------------------------------
@@ -1360,19 +1328,6 @@ test("a hidden space whose container is removed: what the record has of it goes,
   assert.deepEqual(x.errors, []);
   assert.deepEqual(Object.values(ff.synced).filter(e => e.cookieStoreId === c(2)), []);
   void w;
-  x.kill();
-});
-
-test("without Tidier alone, a removed container leaves the record as it was", async () => {
-  const { ff } = machine({ 1: "Work", 2: "Client" });
-  ff.managed = {};
-  ff.store.syncedTabs = { saved: { url: "https://saved.example/", title: "Saved", cookieStoreId: c(2), parentKey: null, group: false, added: 1 } };
-  const x = await boot(ff);
-  await wait(2000); // the tab Tidier finds at the start is registered a moment later (seeUnseenTabs, tabsync.js)
-  const writes = ff.storeWrites;
-  x.b.contextualIdentities.onRemoved.fire({ contextualIdentity: { cookieStoreId: c(2) } });
-  await wait(500);
-  assert.equal(ff.storeWrites, writes);
   x.kill();
 });
 

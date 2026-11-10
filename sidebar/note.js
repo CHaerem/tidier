@@ -120,7 +120,7 @@
   // The area it listens on lies over that gap, so nothing is taller for it.
   const drawClear = () => {
     const divider = document.querySelector("#tabs > .divider");
-    if (!divider || !view.alone) return;
+    if (!divider) return;
     if (!divider.firstChild) {
       const reach = el("div", "clear-reach"), button = el("button", "clear", "Clear");
       button.title = "Close today's tabs, except the one you are on";

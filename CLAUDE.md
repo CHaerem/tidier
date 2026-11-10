@@ -3,8 +3,9 @@
 Read the README first: **The goal** and **Where it stands** say what Tidier is
 for; PLAN.md is everything that has to be done, in order; FEATURES.md lists what
 to aim for from Zen, Arc and Sidebery. In short: Firefox and Tidier only, with as
-much as possible in Tidier itself, and Sidebery being replaced by Tidier's own
-sidebar. Nothing that exists only for Sidebery gets better from here.
+much as possible in Tidier itself. Sidebery has been replaced by Tidier's own
+sidebar; what is left of it is taking in its export, and moving a browser that
+still had it over at its first start (`moveover.js`).
 
 ## Never touch the user's own Firefox
 
@@ -20,11 +21,11 @@ sidebar. Nothing that exists only for Sidebery gets better from here.
 ## The fast loop
 
 ```bash
-node --test                                   # unit tests, a few seconds
+node --test                                   # unit tests, about half a minute
 tests/smoke.py --only essentials,tab_sync     # some groups, about a minute
-tests/smoke.py --only alone_setup,alone_many  # a Tidier-alone group by itself, a few minutes
-tests/smoke.py --part alone-3                 # one of the five Tidier-alone parts, as on GitHub, 10 to 15 minutes
-tests/smoke.py                                # everything, nine Firefoxes at once, about a quarter of an hour
+tests/smoke.py --only alone_setup,alone_many  # a group of the chain by itself, a few minutes
+tests/smoke.py --part alone-3                 # one of the chain's five parts (or core), as on GitHub, 10 to 15 minutes
+tests/smoke.py                                # everything, eight Firefoxes at once, about a quarter of an hour
 ```
 
 - Run the smoke test under `nice -n 19` (and `taskpolicy -b` on macOS) so the
@@ -32,24 +33,24 @@ tests/smoke.py                                # everything, nine Firefoxes at on
 - Two smoke tests at once need their own ports: `--port 3000` (it uses the next
   ones as well), or the second one stops and says so.
 - `--only` adds the setup groups a group needs (NEEDS in smoke.py).
-- A Tidier-alone group (`alone_*`) makes what it needs itself and must not lean on the
-  group before it: it has to pass by itself after `alone_setup`, and in its part.
+- A group of the chain (`alone_*`, named from when Tidier also ran beside Sidebery) makes
+  what it needs itself and must not lean on the group before it: it has to pass by itself
+  after `alone_setup`, and in its part.
 - A failure that happens "sometimes" is real: rerun the group alone and with
   two runs in parallel (load makes timing bugs show), and compare with the
   last release (`git archive` it into a temporary folder and run the same
   groups there) before deciding whose bug it is.
-- A check marked KNOWN is a reported Sidebery bug (KNOWN_SIDEBERY_BUGS).
 
 ## Code
 
 - The background scripts are plain scripts sharing one scope
   (manifest.json, background.scripts): a top-level name defined twice
   silently replaces the first. A unit test stops that.
-- Comments in English, explaining *why*: what Firefox or Sidebery does that
-  makes the code necessary. They are the documentation for the next person.
+- Comments in English, explaining *why*: what Firefox does that makes the code
+  necessary. They are the documentation for the next person.
 - Behaviour goes in Tidier, not in Firefox settings, unless an extension
   cannot do it; then it goes in the dotfiles (`~/src/private/dotfiles`,
-  `home/firefox/`: user.js, userChrome.css, tidier.css, sidebery.css).
+  `home/firefox/`: user.js, userChrome.css, tidier.css, customKeys.json).
 - New behaviour gets a check: a unit test where no Firefox is needed, else a
   smoke check. Memory and idle work are checked too (many_tabs): with nothing
   happening, Tidier must do nothing.
@@ -63,8 +64,8 @@ tests/smoke.py                                # everything, nine Firefoxes at on
   (SSH) by the user's own git config.
 - Commit and push as separate commands; a push may be refused by the
   permission check, and then the user pushes.
-- A push to main runs the smoke test on GitHub (Firefox and Developer
-  Edition); when it passes, the Release workflow signs the extension on AMO
+- A push to main runs the smoke test on GitHub (Developer Edition, in six
+  parts; the newest Firefox too every Monday); when it passes, the Release workflow signs the extension on AMO
   and publishes it with `updates.json`, and Firefox updates itself. A smoke
   test that fails on its first try gets one more in the same job, and a warning.
 - The version is `1.6.<number of commits>` (tools/release.py). A commit gets a

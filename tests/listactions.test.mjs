@@ -40,7 +40,6 @@ function sessionsRestore(ff, x) {
 
 async function alone(ff) {
   closedList(ff);
-  ff.managed = { tidierAlone: true };
   const x = ff.boot();
   x.b.runtime.onStartup.fire({});
   await wait(1200);

@@ -4,28 +4,24 @@
     tests/smoke.py              # this folder, as a temporary add-on
     tests/smoke.py --installed  # the signed version installed in your Firefox
     tests/smoke.py --xpi FILE   # a given signed .xpi
-    tests/smoke.py --only trees,folders  # only these groups (the def names below)
-    tests/smoke.py --serial     # all groups in one test Firefox (as on GitHub)
+    tests/smoke.py --only tab_sync,saved_tabs  # only these groups (the def names below)
+    tests/smoke.py --serial     # all groups in one test Firefox
+    tests/smoke.py --part core  # one half of --serial (or --part alone), as on GitHub
     tests/smoke.py --port 3000  # on other ports, to run beside another smoke test
 
-By default the groups run in three test Firefoxes at once (SHARDS). The
-logic that needs no Firefox has unit tests instead, in under a second:
-`node --test` (in this repo).
+By default the groups run in several test Firefoxes at once: the core groups
+(GROUPS, in SHARDS) and the chain (ALONE_GROUPS, in one Firefox, in order). The
+logic that needs no Firefox has unit tests instead: `node --test` (in this repo).
 
 It runs in an invisible test Firefox with a throwaway profile (see
 testfirefox.py), so it never touches your own Firefox: no restart, no window,
 no clipboard. The profile is built from dotfiles and tests/fixtures, with test
 tabs in each space. Each group of checks runs on its own; a check that crashes
-is reported as failed. It checks that:
+is reported as failed. The core groups check, where Tidier may not hide tabs,
+that:
 
   - a new window gets every essential and synced tab, unloaded, with the same
-    essentials and folders per container, each container in one Sidebery space,
-    also in three more new windows opened while another space is active;
-  - a new window gets every folder with its own tabs, also after a tab was
-    dragged into another space's folder in the window it is copied from;
-  - every tab sits in its container's space in every window, also after an
-    essential is closed (and brought back) or newly pinned, and after a tab is
-    pulled in from another window;
+    essentials and folders per container;
   - selecting a ghost pulls the live tab in, and leaves no placeholder in
     Recently Closed; a ghost takes its live tab's new title; closing a tab
     closes it everywhere; closing a window hands its tabs over, and reopening
@@ -38,40 +34,41 @@ is reported as failed. It checks that:
     ghost; unpinning a copy removes it everywhere, and the copy you unpinned
     opens its page; an essential copy opens the real page in its container;
     an essential dragged to another window is there once, and comes back in
-    the window it left;
-    an essential is renamed by its own page, but not by a page on another
-    site (a sign-in it redirects to);
+    the window it left; an essential is loaded in one window only, and is
+    renamed by its own page, but not by a page on another site (a sign-in it
+    redirects to);
   - a placeholder of a tab that no longer exists closes itself;
   - a popup window (as for signing in) is left out of tab sync;
   - unloaded essential copies show the essential's name;
   - the extension starts again after being disabled and enabled;
-  - with Tidier alone, a link from another app opens in a small window, which can be
-    kept into your list in every window or closed leaving nothing, and nothing else
-    opens one; a link's menu opens one or another space, and ⌥-click with the access;
-  - a tab opened without a container, as links from other apps are, lands in
-    the active space's container (spaces switched with ⌃1/⌃2/⌃3), so logins
-    never mix between spaces;
   - archiving closes a tab unused for longer than the limit everywhere, keeps
     newer tabs, folder tabs and selected tabs, and leaves only the real page
     (no placeholders) in Recently Closed;
-  - ⌘⇧C copies the address; ⌘B leaves Sidebery in the sidebar; ⌘S switches
+  - ⌘⇧C copies the address; ⌘B leaves Tidier in the sidebar; ⌘S switches
     compact mode on and off;
   - the toolbar follows the sidebar's width (220–480 px), and ⌘L opens the
     address bar centred with its results under it, also in compact mode;
-  - a live folder (with a stand-in for the native host) is in every window,
-    first in its space, with its pull requests unloaded; a closed pull request
-    stays closed, one that leaves the search is removed everywhere, a
-    renamed one takes its new title, and a failed search changes nothing;
+  - a live folder (with a stand-in for the native host) has its pull requests
+    unloaded in every window; a closed pull request stays closed, one that
+    leaves the search is removed everywhere, a renamed one takes its new
+    title, and a failed search changes nothing;
   - with ten more essentials and thirty more tabs, a new window still gets
-    them all, in their spaces, and they all go when closed;
-  - after Firefox is quit and started again, both windows come back with the
-    same essentials and tabs, one live tab each, folders with their tabs and
-    every tab in its space, and tab sync and new windows still work (only
-    where Tidier can be installed for real: Developer Edition, or --xpi);
-  - the bridge to agents, end to end through the real MCP server, socket and
-    host (alone_bridge): off means no socket and no process; an agent sees and
-    touches only its own space, and is refused elsewhere, also past the server;
-    what comes from a page is marked as untrusted; Stop cuts it at once.
+    them all, in their containers, and they all go when closed; with nothing
+    happening Tidier does nothing, and its lists in memory shrink again;
+  - after an update over a running session, and after Firefox is quit and
+    started again, both windows have the same essentials and tabs, one live
+    tab each, folders with their tabs, and tab sync and new windows still work
+    (only where Tidier can be installed for real: Developer Edition, or --xpi);
+  - a browser that never moved over from Sidebery is moved at its first start:
+    a copy first, then its folders as Tidier's own, then their pages closed, and
+    its sidebar says so until you have seen it.
+
+The chain (alone_*) checks everything else, with tabs hidden as once you allow it: spaces,
+folders, the sidebar and its menus, keys, the command bar, isolation, small windows for links,
+sync, and the bridge to agents, end to end through the real MCP server, socket and host
+(alone_bridge): off means no socket and no process; an agent sees and touches only its own
+space, and is refused elsewhere, also past the server; what comes from a page is marked as
+untrusted; Stop cuts it at once.
 """
 import base64
 import glob
@@ -89,7 +86,7 @@ import urllib.parse
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from mcp_client import Mcp  # noqa: E402
-from testfirefox import EXT_DIR, EXT_ID, PORT, SIDEBERY_ID, TestFirefox  # noqa: E402
+from testfirefox import EXT_DIR, EXT_ID, PORT, TestFirefox  # noqa: E402
 
 CMD, SHIFT, CTRL, ESC = "", "", "", ""
 
@@ -108,55 +105,22 @@ H = """
   const role = (w, t) => value(w, t, "syncRole");
   const url = t => { try { return t.linkedBrowser.currentURI.spec; } catch (e) { return ""; } };
   const find = k => wins().map(w => w.gBrowser.tabs.filter(t => key(w, t) === k).map(t => role(w, t) + (t.linkedPanel ? "/loaded" : "/unloaded")));
-  const sbPanel = (w, t) => { try { return JSON.parse(w.SessionStore.getCustomTabValue(t, "extension:%(sb)s:data") || "{}").panelId; } catch (e) { return undefined; } };
   const ctxOf = t => t.userContextId ? "firefox-container-" + t.userContextId : "firefox-default";
-  const panelFor = async () => {
-    const out = {};
-    for (const p of Object.values((await storage("%(sb)s", ["sidebar"])).sidebar.panels)) if (p.type === 2 && p.newTabCtx && p.newTabCtx !== "none") out[p.newTabCtx] = p.id;
-    return out;
-  };
-  // Tabs whose Sidebery space is not their container's (tabs without a stored space yet are skipped).
-  const misplaced = async w => { const pf = await panelFor();
-    return w.gBrowser.tabs.filter(t => t.userContextId && pf[ctxOf(t)] && sbPanel(w, t) && sbPanel(w, t) !== pf[ctxOf(t)]).map(t => (t.pinned ? "essential " : "") + t.label); };
   const close = async w => { Services.prefs.setBoolPref("browser.tabs.warnOnClose", false); w.close(); await wait(2500); };
   const removeWhere = async test => { for (const w of wins()) for (const t of [...w.gBrowser.tabs]) if (test(w, t)) w.gBrowser.removeTab(t); await wait(2500); };
-""" % {"ext": EXT_ID, "sb": SIDEBERY_ID}
+""" % {"ext": EXT_ID}
 
 results = []
-known = []
-sidebery_version = None  # set in main()
-
-# Failures caused by a Sidebery bug that is reported upstream: up to the
-# Sidebery version named here they are printed as KNOWN and do not fail the
-# run; with a newer Sidebery the check is strict again, so a release without
-# the fix shows up. Remove an entry when the fix is released.
-KNOWN_SIDEBERY_BUGS = {
-    # A pinned tab created before a new window's sidebar is ready ignores the
-    # container rules (seen on GitHub's slower machines; PIN_SETTLE_MS in common.js).
-    "pin race": ("5.6.1", "https://github.com/mbnuqw/sidebery/pull/2497"),
-}
-
-
-def as_version(v):
-    return tuple(int(p) for p in v.split(".") if p.isdigit())
-
 
 setup_only = False  # True while a group runs only to set up others (see run_groups)
 
 
-def check(name, ok, detail="", sidebery_bug=None):
+def check(name, ok, detail=""):
     if setup_only:  # reported only when it fails, by the run that owns the group
         if not ok:
             results.append(False)
             print(f"FAIL  {name}  (setup for the checks below{'; ' + detail if detail else ''})", flush=True)
         return
-    if not ok and sidebery_bug and sidebery_version:
-        upto, link = KNOWN_SIDEBERY_BUGS[sidebery_bug]
-        if as_version(sidebery_version) <= as_version(upto):
-            known.append(name)
-            results.append(True)
-            print(f"KNOWN {name}  ({detail}; Sidebery {sidebery_version} bug, {link})", flush=True)
-            return
     results.append(bool(ok))
     print(f"{'PASS' if ok else 'FAIL'}  {name}" + (f"  ({detail})" if detail and not ok else ""), flush=True)
 
@@ -233,77 +197,48 @@ def new_window(m):
     check(f"a new window gets all essentials and tabs ({fill['ms']} ms)", fill["ms"] is not None and fill["essentials"][0] == fill["essentials"][1]
           and fill["tabs"][0] == fill["tabs"][1], f"essentials {fill['essentials']}, tabs {fill['tabs']}")
     check("placeholders unload themselves", not fill["stillLoaded"], f"still loaded: {fill['stillLoaded']}")
-    waits = extension_message(m, {"type": "sidebarWaits"})
-    print(f"INFO  waiting for Sidebery's sidebar in new windows: {waits}", flush=True)
-    time.sleep(3)  # Sidebery stores its spaces shortly after the tabs settle
+    # Per container: the same essentials, and the same tabs in its folders (Tidier's own,
+    # in the record), in the new window as in the main one.
     view = """const w = args[0] ? other() : main(), out = {};
+      const all = (await storage("%s", ["syncedTabs"])).syncedTabs;
+      const folderOf = k => { for (let x = all[k]?.parentKey, n = 0; x && all[x] && n < 50; x = all[x].parentKey, n++) if (all[x].group) return all[x].name; return null; };
       for (const t of w.gBrowser.tabs) {
-        if (!t.pinned && !url(t).includes("/sidebery/group.html")) continue;
-        const c = out[t.userContextId] ??= {essentials: 0, folders: [], spaces: []};
-        if (t.pinned) c.essentials++; else c.folders.push(t.label);
-        if (sbPanel(w, t) && !c.spaces.includes(sbPanel(w, t))) c.spaces.push(sbPanel(w, t));
+        const c = out[t.userContextId] ??= {essentials: [], inFolders: []};
+        if (t.pinned) c.essentials.push(ek(w, t));
+        else if (key(w, t) && folderOf(JSON.parse(key(w, t)))) c.inFolders.push(folderOf(JSON.parse(key(w, t))) + " " + key(w, t));
       }
-      for (const c of Object.values(out)) c.folders.sort();
-      return out;"""
+      for (const c of Object.values(out)) { c.essentials.sort(); c.inFolders.sort(); }
+      return out;""" % EXT_ID
     old, new = m.js(H + view, False), m.js(H + view, True)
-    # An essential in another space is Sidebery's pin race (seen when the
-    # machine is busy); anything else is strict.
     for ctx, v in sorted(old.items()):
-        n = new.get(ctx, {})
-        same = (n.get("essentials"), n.get("folders")) == (v["essentials"], v["folders"])
-        check(f"container {ctx}: the same essentials and folders in the new window", same, f"main {v} / new {n}")
-        check(f"container {ctx}: in one space in the new window", len(n.get("spaces", [])) == 1, f"main {v} / new {n}",
-              sidebery_bug="pin race" if same else None)
-    for which in ("main", "other"):
-        wrong = m.js(H + f"return await misplaced({which}());")
-        name = f"every tab in the {'main' if which == 'main' else 'new'} window is in its container's space"
-        check(name, not wrong, str(wrong[:5]), sidebery_bug="pin race" if all(x.startswith("essential ") for x in wrong) else None)
-
-
-def more_windows(m):
-    # Three more new windows, each opened while another space is active: an
-    # essential pinned before Sidebery placed it would land in that space.
-    wrong = m.js(H + """const out = [], m0 = main(), pinned = () => m0.gBrowser.tabs.filter(t => t.pinned).length;
-      for (const ctx of [1, 2, 3]) {
-        m0.gBrowser.selectedTab = m0.gBrowser.tabs.find(t => !t.pinned && !t.hidden && t.userContextId === ctx) || m0.gBrowser.selectedTab;
-        await wait(800);
-        const w = m0.OpenBrowserWindow(); w.__extra = true;
-        try {
-          for (let i = 0; i < 100 && !w.gBrowser; i++) await wait(100);  // the window is still being built
-          for (let i = 0; i < 100 && w.gBrowser.tabs.filter(t => t.pinned).length < pinned(); i++) await wait(100);
-          await wait(4000);
-          out.push(await misplaced(w));
-        } finally { await close(w); }
-      }
-      return out;""")
-    check("essentials and tabs land in their own space in three more new windows", all(not x for x in wrong), str(wrong),
-          sidebery_bug="pin race" if all(y.startswith("essential ") for x in wrong for y in x) else None)
-    print(f"INFO  waiting for Sidebery's sidebar in those windows: {extension_message(m, {'type': 'sidebarWaits'})[-3:]}", flush=True)
+        if ctx == "0":
+            continue  # pages with no container: about:, Tidier's own
+        check(f"container {ctx}: the same essentials and folders in the new window", new.get(ctx) == v and (v["essentials"] or v["inFolders"]), f"main {v} / new {new.get(ctx)}")
 
 
 def essentials(m):
     r = m.js(H + """
-      const w = main(), pf = await panelFor();
+      const w = main();
       w.gBrowser.selectedTab = w.gBrowser.tabs.find(t => !t.pinned && !t.hidden && t.userContextId === 3);
       await wait(800);  // another space (3) is active
       const victim = w.gBrowser.tabs.find(t => t.pinned && t.userContextId === 1 && ek(w, t)), k = ek(w, victim);
       w.gBrowser.removeTab(victim); await wait(5000);
       const back = w.gBrowser.tabs.find(t => t.pinned && ek(w, t) === k);
-      return {back: !!back, space: back && sbPanel(w, back), want: pf["firefox-container-1"], misplaced: await misplaced(w)};""")
-    check("a closed essential comes back, in its own space", r["back"] and r["space"] == r["want"] and not r["misplaced"], str(r))
+      return {back: !!back, container: back?.userContextId, unloaded: back ? !back.linkedPanel : null};""")
+    check("a closed essential comes back, unloaded, in its own container", r["back"] and r["container"] == 1 and r["unloaded"], str(r))
     r = m.js(H + """
-      const pf = await panelFor(), t = main().gBrowser.addTrustedTab("https://example.org/?smoke-pin", {userContextId: 1, inBackground: true});
+      const t = main().gBrowser.addTrustedTab("https://example.org/?smoke-pin", {userContextId: 1, inBackground: true});
       await wait(2500); main().gBrowser.pinTab(t); await wait(5000);
       const k = ek(main(), t), copy = other().gBrowser.tabs.find(x => x.pinned && ek(other(), x) === k);
-      const r = {key: !!k, copy: !!copy, spaces: [sbPanel(main(), t), copy && sbPanel(other(), copy)], want: pf["firefox-container-1"]};
-      // Each space's essentials together (Sidebery would sort them so at the next start).
+      const r = {key: !!k, copy: !!copy, containers: [t.userContextId, copy?.userContextId]};
+      // Each space's essentials together, for ⌃Tab (essentials.js).
       r.order = wins().map(w => w.gBrowser.tabs.filter(x => x.pinned).map(x => x.userContextId));
       r.grouped = r.order.map(cs => cs.every((c, i) => i === 0 || c === cs[i - 1] || !cs.slice(0, i).includes(c)));
       if (copy) { other().gBrowser.unpinTab(copy); await wait(4000); r.unpinnedOpens = url(copy); }
       r.leftPinned = wins().map(w => w.gBrowser.tabs.filter(x => x.pinned && ek(w, x) === k).length);
       await removeWhere((w, x) => url(x).includes("smoke-pin"));
       return r;""")
-    check("a pinned tab becomes an essential in every window, in its space", r["key"] and r["copy"] and r["spaces"] == [r["want"]] * 2, str(r))
+    check("a pinned tab becomes an essential in every window, in its container", r["key"] and r["copy"] and r["containers"] == [1, 1], str(r))
     check("a new essential is put with the other essentials of its space, in every window", r.get("grouped") == [True, True], str(r.get("order")))
     check("unpinning a copy removes the essential everywhere", r["leftPinned"] == [0, 0], str(r))
     check("an unloaded copy you unpin opens its page as an ordinary tab", r.get("unpinnedOpens") == "https://example.org/?smoke-pin", str(r))
@@ -326,9 +261,8 @@ def essentials(m):
       const saved = (await storage("%s", ["essentials"])).essentials.map(e => e.key).filter(k => both.includes(k));
       return {moved: here.indexOf(ek(w, mine[mine.length - 1])) < here.indexOf(ek(w, mine[0])),
               otherFollows: JSON.stringify(there.filter(k => both.includes(k))) === JSON.stringify(both),
-              saved: JSON.stringify(saved) === JSON.stringify(both), misplaced: [...await misplaced(w), ...await misplaced(other())]};""" % EXT_ID)
-    check("a moved essential keeps its place, in the list and in the other window", r and r["moved"] and r["otherFollows"] and r["saved"]
-          and not r["misplaced"], str(r))
+              saved: JSON.stringify(saved) === JSON.stringify(both)};""" % EXT_ID)
+    check("a moved essential keeps its place, in the list and in the other window", r and r["moved"] and r["otherFollows"] and r["saved"], str(r))
     # Dragging an essential to the other window, which has its own copy of it.
     r = m.js(H + """
       const count = () => wins().map(w => { const by = {}; for (const t of w.gBrowser.tabs) if (t.pinned && ek(w, t)) by[ek(w, t)] = (by[ek(w, t)] || 0) + 1; return by; });
@@ -336,10 +270,10 @@ def essentials(m):
       other().gBrowser.adoptTab(t, {tabIndex: 0}); await wait(5000);
       const after = count();
       return {k, before: before.map(b => b[k]), after: after.map(a => a[k]), same: JSON.stringify(before.map(b => Object.keys(b).sort())) === JSON.stringify(after.map(a => Object.keys(a).sort())),
-              doubled: after.flatMap(a => Object.entries(a).filter(([, n]) => n > 1)), misplaced: [...await misplaced(w), ...await misplaced(other())],
+              doubled: after.flatMap(a => Object.entries(a).filter(([, n]) => n > 1)),
               pinnedThere: [main(), other()].map(x => x.gBrowser.tabs.filter(y => y.pinned).map(y => [(ek(x, y) || "").slice(0, 4), url(y).slice(-24)]))};""")
     check("an essential dragged to the other window is there once, and comes back in the window it left",
-          r["after"] == [1, 1] and r["same"] and not r["doubled"] and not r["misplaced"], str(r))
+          r["after"] == [1, 1] and r["same"] and not r["doubled"], str(r))
     # The same with an unloaded copy, which Firefox unpins for a moment on the way.
     r = m.js(H + """
       const w = main(), t = w.gBrowser.tabs.find(x => x.pinned && ek(w, x) && !x.selected);
@@ -368,7 +302,7 @@ def essential_once(m):
     # the loaded tab there and leaves a placeholder behind, and a copy that
     # loads its page anyway (as after a restart) makes the other a placeholder.
     r = m.js(H + """
-      const a = main(), b = other(), pf = await panelFor();
+      const a = main(), b = other();
       const loaded = k => wins().flatMap(w => w.gBrowser.tabs.filter(t => t.pinned && ek(w, t) === k && t.linkedPanel && !url(t).includes("ghost.html"))
         .map(t => (w === a ? "main" : "other") + (t.selected ? "/selected" : "")));
       const copyIn = (w, k) => w.gBrowser.tabs.find(t => t.pinned && ek(w, t) === k);
@@ -380,7 +314,7 @@ def essential_once(m):
       b.focus(); await wait(500); b.gBrowser.selectedTab = copyIn(b, k); await wait(5000);
       const there = copyIn(b, k), left = copyIn(a, k);
       out.pulled = {loaded: loaded(k), copies: wins().map(w => w.gBrowser.tabs.filter(t => t.pinned && ek(w, t) === k).length),
-                    leftIsPlaceholder: !!left && url(left).includes("ghost.html"), spaces: [there && sbPanel(b, there), left && sbPanel(a, left)], want: pf["firefox-container-3"]};
+                    leftIsPlaceholder: !!left && url(left).includes("ghost.html"), containers: [there?.userContextId, left?.userContextId]};
       // Restored by Firefox in the window you are not using, selected there (as
       // after a restart): that copy loads its page itself.
       a.gBrowser.selectedTab = left; await wait(1500);  // selected in a window you are not using, it stays a placeholder
@@ -388,12 +322,11 @@ def essential_once(m):
       left.linkedBrowser.loadURI(Services.io.newURI(url(there)), {triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal()});
       await wait(5000);
       out.restored = loaded(k);
-      out.misplaced = [...await misplaced(a), ...await misplaced(b)];
       a.focus(); await wait(500);
       return out;""")
-    check("an essential is loaded in one window: selecting its copy moves the loaded tab in, in its space, and leaves a placeholder",
+    check("an essential is loaded in one window: selecting its copy moves the loaded tab in, in its container, and leaves a placeholder",
           r and r["first"] == ["main/selected"] and r["pulled"]["loaded"] == ["other/selected"] and r["pulled"]["copies"] == [1, 1]
-          and r["pulled"]["leftIsPlaceholder"] and r["pulled"]["spaces"] == [r["pulled"]["want"]] * 2 and not r["misplaced"], str(r))
+          and r["pulled"]["leftIsPlaceholder"] and r["pulled"]["containers"] == [3, 3], str(r))
     check("an essential's placeholder selected in a window you are not using stays a placeholder",
           r and r["waits"] == {"selectedThere": True, "loaded": ["other/selected"]}, str(r))
     check("an essential copy that loads its page in another window makes that one a placeholder again", r and r["restored"] == ["other/selected"], str(r))
@@ -440,78 +373,6 @@ def essential_title(m):
           other_site and own_site and after_other == before and after_own == "Smoke own title", f"{before!r} -> {after_other!r} -> {after_own!r}")
 
 
-def folders(m):
-    r = m.js(H + """
-      const w = main(), SB = "extension:%s:data";
-      const sbParent = t => { try { return JSON.parse(w.SessionStore.getCustomTabValue(t, SB) || "{}").parentId; } catch (e) { return undefined; } };
-      const run = () => w.gBrowser.tabs.filter(t => !t.pinned && t.userContextId === 1);
-      const group = run().find(t => url(t).includes("/sidebery/group.html"));
-      const plain = run().filter(t => !url(t).includes("/sidebery/group.html") && t.openerTab !== group).pop();
-      if (!group || !plain) return null;
-      const children = run().filter(t => t.openerTab === group);
-      w.gBrowser.moveTabBefore(plain, group);  // an ordinary tab above the folder
-      await wait(4000);
-      const {ExtensionParent} = ChromeUtils.importESModule("resource://gre/modules/ExtensionParent.sys.mjs");
-      const now = run(), gid = ExtensionParent.apiManager.global.tabTracker.getId(group);
-      return {first: now.slice(0, 1 + children.length).map(t => t === group ? "folder" : children.includes(t) ? "in folder" : url(t)),
-              children: children.length, treeKept: children.every(c => sbParent(c) === gid),
-              misplaced: [...await misplaced(w), ...await misplaced(other())]};""" % SIDEBERY_ID)
-    check("folders stay first in their space, with their tabs, when a tab is moved above them",
-          r and r["first"] == ["folder"] + ["in folder"] * r["children"] and r["children"] > 0 and r["treeKept"] and not r["misplaced"], str(r))
-
-
-def trees(m):
-    # A tab dragged into another space's folder (Sidebery then changes its
-    # space and folder) must not spread to a new window: there, tabs used to
-    # be moved into the dragged order one by one, and Sidebery put every tab
-    # between a folder and one of its tabs into that folder (all of them, in
-    # every space). The new window must get Tidier's own record of the tree
-    # (each tab's folder), tab by tab, whatever the other windows look like.
-    r = m.js(H + """
-      const SB = "extension:%s:data", m0 = main();
-      const sbData = (w, t) => { try { return JSON.parse(w.SessionStore.getCustomTabValue(t, SB) || "{}"); } catch (e) { return {}; } };
-      const tree = w => {
-        const tabs = w.gBrowser.tabs.filter(t => !t.pinned && value(w, t, "syncKey")), byId = new Map(tabs.map(t => [sbData(w, t).id, t]));
-        return Object.fromEntries(tabs.map(t => { const p = byId.get(sbData(w, t).parentId); return [value(w, t, "syncKey"), p ? value(w, p, "syncKey") : null]; }));
-      };
-      const name = {}; for (const t of m0.gBrowser.tabs) name[value(m0, t, "syncKey")] = (url(t).match(/fixture-[a-z-]+[0-9-]+|#[^~]+/) || [t.label])[0];
-      const gB = m0.gBrowser, byUrl = s => gB.tabs.find(t => url(t).includes(s));
-      const dragged = byUrl("fixture-in-folder-1-1"), home = byUrl("fixture-in-folder-1-2");
-      gB.moveTabTo(dragged, {tabIndex: gB.tabs.indexOf(byUrl("fixture-in-folder-3-1")) + 1});
-      await wait(3000);
-      const synced = (await storage("%s", ["syncedTabs"])).syncedTabs || {};
-      const before = Object.fromEntries(Object.keys(tree(m0)).filter(k => synced[k]).map(k => [k, synced[k].parentKey || null]));
-      const w = m0.OpenBrowserWindow(); w.__extra = true;
-      let wrong;
-      try {
-        for (let i = 0; i < 100 && !w.gBrowser; i++) await wait(100);
-        for (let i = 0; i < 100 && Object.keys(tree(w)).length < Object.keys(before).length; i++) await wait(100);
-        // Until the tree has stayed the same for 2 s (at most 12 s): Tidier sorts 1.5 s after filling.
-        let now = tree(w), same = 0;
-        for (let i = 0; i < 24 && same < 4; i++) { await wait(500); const t = tree(w); same = JSON.stringify(t) === JSON.stringify(now) ? same + 1 : 0; now = t; }
-        // Named by their stored address (a ghost's own address is its placeholder's).
-        const nm = k => (synced[k]?.url?.match(/fixture-[a-z-]+[0-9-]+|#[^~]+|smoke-[a-z-]+/) || [synced[k]?.title || name[k] || k])[0];
-        const folder = k => k ? nm(k) : "no folder";
-        wrong = Object.keys(before).filter(k => now[k] !== before[k]).map(k => nm(k) + " in " + folder(now[k]) + ", not " + folder(before[k]));
-        if (wrong.length) {
-          // For finding out why: each window's tabs in the spaces concerned,
-          // indented by Sidebery's tree, with their role, and Tidier's record.
-          const ctxs = new Set(Object.keys(before).filter(k => now[k] !== before[k]).map(k => synced[k]?.cookieStoreId));
-          const strip = x => { const ts = x.gBrowser.tabs.filter(t => !t.pinned && ctxs.has(ctxOf(t))), byId = new Map(ts.map(t => [sbData(x, t).id, t]));
-            const depth = t => { let d = 0; for (let p = byId.get(sbData(x, t).parentId); p && d < 9; p = byId.get(sbData(x, p).parentId)) d++; return d; };
-            return ts.map(t => "  ".repeat(depth(t)) + (value(x, t, "syncKey") ? nm(value(x, t, "syncKey")) : t.label) + " [" + (role(x, t) || "-") + "]"); };
-          wrong.push({main: strip(m0), other: strip(other()), new: strip(w),
-            stored: Object.keys(synced).filter(k => ctxs.has(synced[k].cookieStoreId)).map(k => nm(k) + " < " + folder(synced[k].parentKey))});
-        }
-      } finally { await close(w); }
-      gB.moveTabBefore(dragged, home);  // put it back for the checks after this one
-      await wait(4000);
-      return {tabs: Object.keys(before).length, wrong};""" % (SIDEBERY_ID, EXT_ID))
-    wrong = [x for x in r["wrong"] if isinstance(x, str)]
-    check("a tab dragged into another space's folder leaves new windows' folders alone", r["tabs"] > 0 and not wrong,
-          f"{len(wrong)} of {r['tabs']} tabs in the wrong folder: {wrong[:6]}; " + json.dumps([x for x in r["wrong"] if not isinstance(x, str)]))
-
-
 def tab_sync(m):
     r = m.js(H + """
       const t = main().gBrowser.addTrustedTab("https://example.org/?smoke-sync", {userContextId: 3, inBackground: true});
@@ -522,13 +383,13 @@ def tab_sync(m):
       await wait(2500); const pulled = find(k);
       const closedUrls = wins().flatMap(x => x.SessionStore.getClosedTabDataForWindow(x)).map(c => c.state.entries?.[c.state.index - 1]?.url || "");
       const closedGhosts = closedUrls.filter(u => u.includes("ghost.html") && u.includes(encodeURIComponent(JSON.parse(k)))).length;
-      const pf = await panelFor(), moved = w.gBrowser.tabs.find(x => key(w, x) === k), left = main().gBrowser.tabs.find(x => key(main(), x) === k);
-      const spaces = [sbPanel(w, moved) === pf[ctxOf(moved)], left && sbPanel(main(), left) === pf[ctxOf(left)]];
+      const moved = w.gBrowser.tabs.find(x => key(w, x) === k), left = main().gBrowser.tabs.find(x => key(main(), x) === k);
+      const containers = [moved?.userContextId, left?.userContextId];
       w.gBrowser.removeTab(moved); await wait(3000);
-      return {created, ms, pulled, spaces, closedGhosts, closed: find(k)};""")
+      return {created, ms, pulled, containers, closedGhosts, closed: find(k)};""")
     check("a new tab gets a ghost in the other window", r["created"] == [["live/loaded"], ["ghost/unloaded"]], str(r["created"]))
     check(f"selecting a ghost pulls the live tab in ({r['ms']} ms)", r["pulled"] == [["ghost/unloaded"], ["live/loaded"]], str(r["pulled"]))
-    check("a pulled tab and the ghost left behind stay in their space", r["spaces"] == [True, True], str(r["spaces"]))
+    check("a pulled tab and the ghost left behind stay in their container", r["containers"] == [3, 3], str(r["containers"]))
     check("pulling a tab in leaves no placeholder in Recently Closed (⌘⇧T reopens what you closed)", r["closedGhosts"] == 0, str(r["closedGhosts"]))
     check("closing a tab closes it everywhere", r["closed"] == [[], []], str(r["closed"]))
     r = m.js(H + """
@@ -560,70 +421,6 @@ def tab_sync(m):
     check("the extension starts again after being disabled and enabled", r == [["live/loaded"], ["ghost/unloaded"]], str(r))
 
 
-def folder_pull(m):
-    # A tab in a folder, pulled into the other window: the ghost left behind is
-    # in the folder of the window it came from (Sidebery's own tree, from its
-    # tab data). In the window it moved to, Sidebery places it as a tab another
-    # extension moved in, outside the folder (README, Known limitations), so
-    # only its role is checked there.
-    r = m.js(H + """
-      const {ExtensionParent} = ChromeUtils.importESModule("resource://gre/modules/ExtensionParent.sys.mjs");
-      const id = t => ExtensionParent.apiManager.global.tabTracker.getId(t);
-      const sbParent = (w, t) => { try { return JSON.parse(w.SessionStore.getCustomTabValue(t, "extension:%s:data") || "{}").parentId; } catch (e) { return undefined; } };
-      const folderOf = (w, ctx) => w.gBrowser.tabs.find(t => url(t).includes("group.html#Fixture%%20folder%%20" + ctx));
-      const a = main(), b = other();
-      const live = a.gBrowser.tabs.find(t => role(a, t) === "live" && t.userContextId === 2 && t.openerTab === folderOf(a, 2) && !t.selected);
-      if (!live) return null;
-      const k = key(a, live), ghost = b.gBrowser.tabs.find(t => key(b, t) === k);
-      const before = [sbParent(a, live) === id(folderOf(a, 2)), ghost && sbParent(b, ghost) === id(folderOf(b, 2))];
-      b.focus(); await wait(500); b.gBrowser.selectedTab = ghost; await wait(4000);
-      const moved = b.gBrowser.tabs.find(t => key(b, t) === k), left = a.gBrowser.tabs.find(t => key(a, t) === k);
-      const r = {before, leftInFolder: left && sbParent(a, left) === id(folderOf(a, 2)), roles: [role(b, moved), role(a, left)]};
-      a.focus(); await wait(500);
-      return r;""" % SIDEBERY_ID)
-    check("a tab pulled in from a folder leaves its ghost in the folder (Sidebery's tree)",
-          r and r["before"] == [True, True] and r["leftInFolder"] and r["roles"] == ["live", "ghost"], str(r))
-
-
-def tab_moves(m):
-    # A tab moved into a folder in one window, then out of it again: the other
-    # window's ghost follows, in Sidebery's own tree and next to the same tab,
-    # and the stored parent follows too (new windows). The move into the folder is
-    # made the way Sidebery adopts a tab: placed before the folder's first tab.
-    r = m.js(H + """
-      const {ExtensionParent} = ChromeUtils.importESModule("resource://gre/modules/ExtensionParent.sys.mjs");
-      const id = t => ExtensionParent.apiManager.global.tabTracker.getId(t);
-      const sbParent = (w, t) => { try { return JSON.parse(w.SessionStore.getCustomTabValue(t, "extension:%s:data") || "{}").parentId; } catch (e) { return undefined; } };
-      const folderOf = w => w.gBrowser.tabs.find(t => url(t).includes("group.html#Fixture%%20folder%%202"));
-      const a = main(), b = other();
-      a.focus(); await wait(500);
-      const t = a.gBrowser.addTrustedTab("https://example.org/?smoke-move", {userContextId: 2, inBackground: true});
-      await wait(6000);  // moves of a tab in its first seconds are Sidebery placing it
-      const k = key(a, t);
-      // Where the tab is in a window: its Sidebery parent (the folder, or none)
-      // and the synced tab right after it.
-      const place = w => { const ts = [...w.gBrowser.tabs], x = ts.find(y => key(w, y) === k);
-        if (!x) return null; const next = ts.slice(ts.indexOf(x) + 1).find(y => key(w, y));
-        const p = sbParent(w, x), name = y => y === x ? "*moved*" : (url(y).match(/fixture-[a-z-]+[0-9-]+|#Fixture[^~]+|smoke-[a-z-]+/) || [y.label.slice(0, 12)])[0];
-        return {inFolder: p === id(folderOf(w)), root: p === -1, next: next ? key(w, next) : null,
-          opener: x.openerTab ? ts.indexOf(x.openerTab) : null, at: ts.indexOf(x), folderAt: ts.indexOf(folderOf(w)),
-          space: ts.filter(y => !y.pinned && y.userContextId === 2).map(y => (sbParent(w, y) > 0 ? "  " : "") + name(y))}; };
-      const stored = async () => (await storage("%s", ["syncedTabs"])).syncedTabs?.[JSON.parse(k)]?.parentKey ?? null;
-      const folderKey = JSON.parse(key(a, folderOf(a)));
-      const first = a.gBrowser.tabs[a.gBrowser.tabs.indexOf(folderOf(a)) + 1];
-      a.gBrowser.moveTabBefore(t, first); await wait(5000);
-      const into = {a: place(a), b: place(b), stored: (await stored()) === folderKey};
-      a.gBrowser.moveTabBefore(t, folderOf(a)); await wait(6000);
-      const out = {a: place(a), b: place(b), stored: await stored()};
-      await removeWhere((w, x) => key(w, x) === k);
-      return {into, out};""" % (SIDEBERY_ID, EXT_ID))
-    into, out = (r or {}).get("into"), (r or {}).get("out")
-    check("a tab moved into a folder is in that folder in the other window too, in the same place",
-          into and into["a"] and into["a"]["inFolder"] and into["b"] and into["b"]["inFolder"] and into["b"]["next"] == into["a"]["next"] and into["stored"], str(into))
-    check("a tab moved out of a folder leaves it in the other window too, in the same place",
-          out and out["a"] and out["a"]["root"] and out["b"] and out["b"]["root"] and out["b"]["next"] == out["a"]["next"] and out["stored"] is None, str(out))
-
-
 def saved_tabs(m):
     # A tab in a folder is saved: closing it while it is loaded (⌘W) unloads it
     # back to the address it had when it came into the folder, in the same
@@ -631,60 +428,76 @@ def saved_tabs(m):
     # the placeholder opens the saved address. Dragged out of the folder it is
     # an ordinary tab again, which closing closes everywhere; closing a saved
     # tab that is unloaded removes it everywhere too.
-    r = m.js(H + """
-      const {ExtensionParent} = ChromeUtils.importESModule("resource://gre/modules/ExtensionParent.sys.mjs");
-      const id = t => ExtensionParent.apiManager.global.tabTracker.getId(t);
-      const sbParent = (w, t) => { try { return JSON.parse(w.SessionStore.getCustomTabValue(t, "extension:%s:data") || "{}").parentId; } catch (e) { return undefined; } };
-      const folderOf = w => w.gBrowser.tabs.find(t => url(t).includes("group.html#Fixture%%20folder%%202"));
+    SAVED = "https://example.org/?smoke-saved"
+    tools = H + """
       const entry = async k => (await storage("%s", ["syncedTabs"])).syncedTabs?.[JSON.parse(k)] ?? null;
-      const a = main(), b = other(), gB = a.gBrowser, SAVED = "https://example.org/?smoke-saved";
+      const all = async () => (await storage("%s", ["syncedTabs"])).syncedTabs;
+      const a = main(), b = other(), gB = a.gBrowser;
       const tabOf = (w, k) => w.gBrowser.tabs.find(t => key(w, t) === k);
-      // The tab's folder in this window and the synced tab right after it.
-      const place = (w, k) => { const ts = [...w.gBrowser.tabs], x = tabOf(w, k); if (!x) return null;
-        const next = ts.slice(ts.indexOf(x) + 1).find(y => key(w, y)); return {inFolder: sbParent(w, x) === id(folderOf(w)), next: next ? key(w, next) : null}; };
-      const intoFolder = async address => {
-        const t = gB.addTrustedTab(address, {userContextId: 2, inBackground: true});
-        await wait(6000);  // moves of a tab in its first seconds are Sidebery placing it
-        gB.moveTabBefore(t, gB.tabs[gB.tabs.indexOf(folderOf(a)) + 1]); await wait(5000);
-        return t;
-      };
-      a.focus(); await wait(500);
-      const out = {};
-      let t = await intoFolder(SAVED);
-      const k = key(a, t);
-      t.linkedBrowser.loadURI(Services.io.newURI(SAVED + "-later"), {triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal()});
-      await wait(3000);
-      out.before = {place: place(a, k), url: (await entry(k))?.url, saved: (await entry(k))?.saved?.url};
-      gB.selectedTab = t; await wait(500); gB.removeTab(t); await wait(3500);
-      out.closed = {tabs: find(k), place: place(a, k), url: (await entry(k))?.url};
-      a.SessionStore.undoCloseTab(a, 0); await wait(4500);
-      out.reopened = find(k);
-      gB.removeTab(tabOf(a, k)); await wait(3500);
-      gB.selectedTab = tabOf(a, k); await wait(4000);
-      out.opened = {tabs: find(k), url: url(tabOf(a, k))};
-      gB.moveTabBefore(tabOf(a, k), folderOf(a)); await wait(6000);  // dragged out of the folder
-      out.out = {saved: (await entry(k))?.saved ?? null, parent: (await entry(k))?.parentKey ?? null};
-      gB.removeTab(tabOf(a, k)); await wait(3500);
-      out.outClosed = {tabs: find(k), stored: await entry(k)};
-      t = await intoFolder(SAVED + "-unloaded");
-      const k2 = key(a, t);
-      gB.selectedTab = folderOf(a); await wait(500); gB.discardBrowser(t); await wait(500);
+      // Whether the tab is in Fixture folder 2, by the record, and the synced tab right after it in this window.
+      const place = async (w, k) => { const ts = [...w.gBrowser.tabs], x = tabOf(w, k), r = await all(); if (!x) return null;
+        const next = ts.slice(ts.indexOf(x) + 1).find(y => key(w, y));
+        return {inFolder: r[r[JSON.parse(k)]?.parentKey]?.name === "Fixture folder 2", next: next ? key(w, next) : null}; };
+    """ % (EXT_ID, EXT_ID)
+    flush = lambda: extension_message(m, {"type": "flush"})
+    m.js(H + """main().focus(); await wait(500); main().gBrowser.addTrustedTab(args[0], {userContextId: 2, inBackground: true}); await wait(5000); return 1;""", SAVED)
+    to_folder(m, SAVED, "Fixture folder 2", before="fixture-in-folder-2-2")
+    k = m.js(H + """const t = main().gBrowser.tabs.find(t => url(t) === args[0]); const k = key(main(), t);
+      t.linkedBrowser.loadURI(Services.io.newURI(args[0] + "-later"), {triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal()});
+      await wait(3000); return k;""", SAVED)
+    flush()
+    r = {}
+    r["before"] = m.js(tools + """const k = args[0]; return {place: await place(a, k), url: (await entry(k))?.url, saved: (await entry(k))?.saved?.url};""", k)
+    r["closed"] = m.js(tools + """const k = args[0]; const t = tabOf(a, k); gB.selectedTab = t; await wait(500); gB.removeTab(t); await wait(3500);
+      return {tabs: find(k), place: await place(a, k), url: (await entry(k))?.url};""", k)
+    r["reopened"] = m.js(tools + """a.SessionStore.undoCloseTab(a, 0); await wait(4500); return find(args[0]);""", k)
+    r["opened"] = m.js(tools + """const k = args[0]; gB.removeTab(tabOf(a, k)); await wait(3500); gB.selectedTab = tabOf(a, k); await wait(4000);
+      return {tabs: find(k), url: url(tabOf(a, k))};""", k)
+    to_folder(m, SAVED, None)  # dragged out of the folder
+    flush()
+    r["out"] = m.js(tools + """const k = args[0]; return {saved: (await entry(k))?.saved ?? null, parent: (await entry(k))?.parentKey ?? null};""", k)
+    r["outClosed"] = m.js(tools + """const k = args[0]; gB.removeTab(tabOf(a, k)); await wait(3500); return {tabs: find(k), stored: await entry(k)};""", k)
+    m.js(H + """main().gBrowser.addTrustedTab(args[0], {userContextId: 2, inBackground: true}); await wait(5000); return 1;""", SAVED + "-unloaded")
+    to_folder(m, SAVED + "-unloaded", "Fixture folder 2")
+    r["unloadedClosed"] = m.js(tools + """const t = gB.tabs.find(t => url(t) === args[0]), k2 = key(a, t);
+      gB.selectedTab = gB.tabs.find(x => !x.pinned && x !== t && x.linkedPanel && key(a, x)); await wait(500); gB.discardBrowser(t); await wait(500);
       gB.removeTab(t); await wait(3500);
-      out.unloadedClosed = {tabs: find(k2), stored: await entry(k2)};
-      return out;""" % (SIDEBERY_ID, EXT_ID))
+      return {tabs: find(k2), stored: await entry(k2)};""", SAVED + "-unloaded")
     b, c = r["before"], r["closed"]
     check("a tab moved into a folder keeps the address it had then as its saved address",
-          b["place"] and b["place"]["inFolder"] and b["url"].endswith("-later") and b["saved"] == "https://example.org/?smoke-saved", str(b))
+          b["place"] and b["place"]["inFolder"] and b["url"].endswith("-later") and b["saved"] == SAVED, str(b))
     check("closing a loaded saved tab unloads it in every window, in its folder and place, back to its saved address",
           c["tabs"] in ([["ghost/unloaded"], ["ghost/unloaded"]], [["live/unloaded"], ["ghost/unloaded"]]) and c["place"]
-          and c["place"]["inFolder"] and c["place"]["next"] == b["place"]["next"] and c["url"] == "https://example.org/?smoke-saved", f"before {b}, after {c}")
+          and c["place"]["inFolder"] and c["place"]["next"] == b["place"]["next"] and c["url"] == SAVED, f"before {b}, after {c}")
     check("reopening a closed saved tab (⌘⇧T) takes its placeholder's place", r["reopened"] == [["live/loaded"], ["ghost/unloaded"]], str(r["reopened"]))
     check("selecting a saved tab's placeholder opens its saved address",
-          r["opened"]["tabs"] == [["live/loaded"], ["ghost/unloaded"]] and r["opened"]["url"] == "https://example.org/?smoke-saved", str(r["opened"]))
+          r["opened"]["tabs"] == [["live/loaded"], ["ghost/unloaded"]] and r["opened"]["url"] == SAVED, str(r["opened"]))
     check("a saved tab dragged out of its folder is an ordinary tab, which closing closes everywhere",
           r["out"] == {"saved": None, "parent": None} and r["outClosed"] == {"tabs": [[], []], "stored": None}, f"{r['out']}, {r['outClosed']}")
     check("closing a saved tab while it is unloaded removes it everywhere",
           r["unloadedClosed"] == {"tabs": [[], []], "stored": None}, str(r["unloadedClosed"]))
+    close_sidebar_page(m)
+
+
+def to_folder(m, address, folder, before=None):
+    """Move the main window's tab with this address into the folder of that name (None: out of
+    any), before the tab whose address has `before` in it (None: last there), as a drag in the
+    sidebar does."""
+    sidebar_page(m, """const [address, name, before] = args;
+      await page.browser.runtime.sendMessage(page.JSON.parse(JSON.stringify({type: "flush"})));
+      const all = (await page.browser.storage.local.get("syncedTabs")).syncedTabs;
+      const folder = name ? Object.keys(all).find(k => all[k].group && all[k].name === name) : null;
+      const tabs = await page.browser.tabs.query(page.JSON.parse(JSON.stringify({windowId: (await page.browser.windows.getCurrent()).id})));
+      const tab = tabs.find(t => t.url === address), next = before ? tabs.find(t => t.url.includes(before)) : null;
+      send({type: "moveTab", tabId: tab.id, folder, before: next?.id ?? null});
+      await wait(2500);
+      return 1;""", address, folder, before)
+
+
+def close_sidebar_page(m):
+    """Close the sidebar page sidebar_page opened in a tab, so that it is not counted as a tab."""
+    m.js(H + """for (const w of wins()) for (const t of [...w.gBrowser.tabs]) if (url(t).includes("/sidebar/sidebar.html")) w.gBrowser.removeTab(t);
+      await wait(500); return 1;""")
 
 
 def ghost_title(m):
@@ -769,25 +582,6 @@ def popups(m):
     check("a popup window (as for signing in) is left out of tab sync", r["popup"] and r["synced"] == 0 and r["ghosts"] == 0, str(r))
 
 
-def external_links(m):
-    for digit, ctx in (("2", 3), ("3", 1), ("1", 2)):
-        m.js(H + "main().focus(); await wait(300); return 1;")
-        press(m, digit, CTRL)
-        time.sleep(1.5)
-        tag = f"smoke-external-{digit}"
-        got = m.js(H + """
-          // A tab without a container, which is how links from other apps arrive.
-          // (Emulating the macOS hand-over itself does not behave like the real
-          // one in a headless Firefox; the real route was checked by hand.)
-          main().gBrowser.selectedTab = main().gBrowser.addTrustedTab("https://example.org/?" + args[0], {});
-          await wait(6000);
-          const pf = await panelFor();
-          const r = wins().flatMap(w => w.gBrowser.tabs.filter(t => url(t).includes(args[0])).map(t => [t.userContextId, sbPanel(w, t) === pf[ctxOf(t)]]));
-          await removeWhere((w, t) => url(t).includes(args[0]));
-          return r;""", tag)
-        check(f"a tab without a container (as links from other apps) lands in the active space's container (⌃{digit})", got == [[ctx, True]], str(got))
-
-
 def archiving(m):
     # Pretending time has passed. An old test tab, a tab selected in the other
     # window, and a fixture folder tab; all must be kept within the limit.
@@ -849,7 +643,7 @@ def shortcuts(m):
     press(m, "b", CMD)
     time.sleep(1.2)
     after = m.js(H + "const S = main().SidebarController; return [S.isOpen, S.currentID];")
-    check("⌘B leaves Sidebery in the sidebar", after == [True, before], f"{before} -> {after}")
+    check("⌘B leaves Tidier in the sidebar", after == [True, before] and "6844a953" in (before or ""), f"{before} -> {after}")
     look = H + """const d = main().document;
       return [Math.round(d.getElementById("tabbrowser-tabbox").getBoundingClientRect().left), Math.round(d.getElementById("navigator-toolbox").getBoundingClientRect().right)];"""
     start = m.js(look)
@@ -857,12 +651,6 @@ def shortcuts(m):
     press(m, "s", CMD); time.sleep(1.2); back = m.js(look)
     check("⌘S switches compact mode on (sidebar and toolbar hidden, page full width) and off",
           compact[0] < 20 and compact[1] <= 0 and back == start, f"start {start}, ⌘S {compact}, ⌘S again {back}")
-    # With the setting off the command bar exists, but has no key and opens nothing.
-    keys = m.js(BAR_KEYS)
-    press(m, "k", CMD, SHIFT)
-    time.sleep(1)
-    r = m.js(BAR + "return !!bar();")
-    check("with Sidebery the command bar has no key, and ⌘⇧K opens nothing", keys == [] and not r, f"{keys} {r}")
 
 
 def look(m):
@@ -903,21 +691,6 @@ def look(m):
               got["open"] and abs(got["centre"]) <= 2 and got["list"] is not None and abs(got["list"]) <= 5, str(got))
 
 
-def tab_menu_off(m):
-    # Without the setting a right click on a row only asks Firefox for its tab menu, as it
-    # always has, and Tidier's own menu stays out of the daily browser.
-    r = sidebar_page(m, """await wait(800); const row = doc.querySelector("#tabs .tab"); const box = row.getBoundingClientRect(); return {id: Number(row.dataset.tab), at: [box.left + 30, box.top + 8], alone: doc.documentElement.classList.contains("alone")};""")
-    m.js(H + """const w = main(); w.__before = w.gBrowser.selectedTab; w.gBrowser.selectedTab = w.gBrowser.tabs.find(t => url(t).includes("/sidebar/sidebar.html")); await wait(800); return 1;""")
-    real_click(m, "/sidebar/sidebar.html", r["at"][0], r["at"][1], button=2)
-    time.sleep(1)
-    asked = m.js(H + """const w = main(), popup = w.document.getElementById("contentAreaContextMenu"); const data = w.gContextMenu?.contentData?.webExtContextData;
-      const got = {state: popup?.state, context: data?.overrideContext ?? null, tabId: data?.tabId ?? null}; popup?.hidePopup(); await wait(300); return got;""")
-    own = sidebar_page(m, "return doc.getElementById('menu').hidden;")
-    m.js(H + """const w = main(); if (w.__before && !w.__before.closing) w.gBrowser.selectedTab = w.__before; await wait(300);
-      for (const t of [...w.gBrowser.tabs]) if (url(t).includes("/sidebar/sidebar.html")) w.gBrowser.removeTab(t); await wait(300); return 1;""")
-    check("with the setting off, a right click on a row only asks Firefox for its tab menu", not r["alone"] and own and asked["context"] == "tab" and asked["tabId"] == r["id"], f"{r}, {asked}, {own}")
-
-
 def live_folders(m):
     # The native host is a stand-in (fake_github_host.py) that answers from
     # m.fake_prs; the test rewrites the file and asks Tidier to refresh.
@@ -927,26 +700,26 @@ def live_folders(m):
                                         "number": n, "repo": "smoke"} for n in items]}}, open(m.fake_prs, "w"))
         return extension_message(m, {"type": "refreshLiveFolders"})
 
+    # The folder is one of Tidier's own, in the record (live: its id); its tabs are in it by their
+    # record, and in container 2.
     state = H + """
-      const pf = await panelFor(), out = [], isGroup = t => url(t).includes("/sidebery/group.html");
+      const all = (await storage("%s", ["syncedTabs"])).syncedTabs, out = [];
+      const folder = Object.keys(all).find(k => all[k].group && all[k].live === "smoke");
+      const inIt = (w, t) => !!folder && !!key(w, t) && all[JSON.parse(key(w, t))]?.parentKey === folder;
       for (const w of [main(), other()]) {
-        const group = w.gBrowser.tabs.find(t => !t.pinned && url(t).includes("/sidebery/group.html#Smoke%20PRs"));
         const prs = w.gBrowser.tabs.filter(t => t.label.includes("Pull request "));
-        const run = w.gBrowser.tabs.filter(t => !t.pinned && t.userContextId === 2);
-        const before = group ? run.slice(0, run.indexOf(group)) : [];
-        out.push({group: !!group, inFolder: prs.filter(t => group && t.openerTab === group).map(t => t.label.replace(/^.*Pull/, "Pull")).sort(),
-                  outside: prs.filter(t => !group || t.openerTab !== group).map(t => t.label),
+        out.push({group: !!folder && all[folder].own && all[folder].cookieStoreId === "firefox-container-2", inFolder: prs.filter(t => inIt(w, t)).map(t => t.label.replace(/^.*Pull/, "Pull")).sort(),
+                  outside: prs.filter(t => !inIt(w, t)).map(t => t.label),
                   loaded: prs.filter(t => t.linkedPanel && !t.hasAttribute("pending") && !t.selected).map(t => t.label),  // pending: not loaded yet
-                  first: before.every(t => isGroup(t) || (t.openerTab && isGroup(t.openerTab))),
-                  space: !!group && sbPanel(w, group) === pf["firefox-container-2"]});
+                  space: prs.every(t => t.userContextId === 2)});
       }
-      return out;"""
+      return out;""" % EXT_ID
     replied = answer([1, 2])
     time.sleep(4)
     first = m.js(state)
     want = ["Pull request 1", "Pull request 2"]
-    check("a live folder is in every window, first in its space, with its pull requests unloaded",
-          replied is True and all(w["group"] and w["inFolder"] == want and not w["outside"] and not w["loaded"] and w["first"] and w["space"]
+    check("a live folder is Tidier's own, with its pull requests unloaded in every window, in its space",
+          replied is True and all(w["group"] and w["inFolder"] == want and not w["outside"] and not w["loaded"] and w["space"]
                                   for w in first), f"{replied}, {first}")
     m.js(H + """const t = main().gBrowser.tabs.find(t => t.label.endsWith("Pull request 1")); if (t) main().gBrowser.removeTab(t); await wait(3000); return 1;""")
     answer([1, 2, 3])
@@ -984,11 +757,11 @@ def live_folders(m):
     content = lambda ws: [(w["group"], w["inFolder"], w["outside"]) for w in ws]
     check("a failed search leaves the live folder as it was", content(fifth) == content(fourth), f"{fourth} -> {fifth}")
     json.dump({}, open(m.fake_prs, "w"))
-    m.js(H + """await removeWhere((w, t) => url(t).includes("group.html#Smoke%20PRs") || t.label.includes("Pull request ")); return 1;""")
+    m.js(H + """await removeWhere((w, t) => t.label.includes("Pull request ")); return 1;""")
 
 
 # The extension process's memory and CPU time so far (Tidier shares it with
-# Sidebery and Firefox's own extensions).
+# Firefox's own extensions).
 PROC_INFO = """const info = await ChromeUtils.requestProcInfo();
   const ext = info.children.filter(c => c.type === "extension");
   return {mb: Math.round(ext.reduce((s, c) => s + (c.memory || 0), 0) / 1048576), cpuS: ext.reduce((s, c) => s + (c.cpuTime || 0), 0) / 1e9};"""
@@ -1018,14 +791,11 @@ def many_tabs(m):
           if (n.gBrowser.tabs.filter(t => t.pinned).length >= pinned0 && n.gBrowser.tabs.filter(t => !t.pinned && role(n, t)).length >= want) ms = Date.now() - t0;
         }
         const loaded = () => n.gBrowser.tabs.filter(t => t.linkedPanel && !t.selected && url(t).includes("ghost.html"));
-        const await_pf = await panelFor();
         for (let i = 0; i < 60 && (i < 16 || loaded().length); i++) await wait(250);
+        // Each tab of the new window in the container its tab has in the main window.
+        const containerOf = new Map(w.gBrowser.tabs.filter(t => key(w, t)).map(t => [key(w, t), t.userContextId]));
         return {ms, essentials: [pinned0, n.gBrowser.tabs.filter(t => t.pinned).length], tabs: [want, n.gBrowser.tabs.filter(t => !t.pinned && role(n, t)).length],
-                stillLoaded: loaded().length, misplaced: {main: await misplaced(w), other: await misplaced(other()), new: await misplaced(n)},
-                strip: [w, n].map(x => { const pf = await_pf, runs = [];
-                  for (const t of x.gBrowser.tabs) { if (t.pinned) continue; const cell = t.userContextId + ":" + (Object.entries(pf).find(([, id]) => id === sbPanel(x, t))?.[0].slice(-1) ?? "?");
-                    if (runs.length && runs[runs.length - 1][0] === cell) runs[runs.length - 1][1]++; else runs.push([cell, 1]); }
-                  return runs.map(([c, k]) => c + "x" + k).join(" "); })};
+                stillLoaded: loaded().length, elsewhere: n.gBrowser.tabs.filter(t => key(n, t) && containerOf.get(key(n, t)) !== t.userContextId).map(t => t.label)};
       } finally {
         await close(n);
         // Unpinning one copy removes an essential everywhere; then the tabs go.
@@ -1035,9 +805,7 @@ def many_tabs(m):
       }""")
     check(f"with {r['essentials'][0]} essentials and {r['tabs'][0]} tabs, a new window gets them all ({r['ms']} ms)",
           r["ms"] is not None and r["essentials"][0] == r["essentials"][1] and r["tabs"][0] == r["tabs"][1], str(r))
-    wrong = [x for found in r["misplaced"].values() for x in found]
-    check("with that many, every tab is in its container's space in every window", not wrong, str(r),
-          sidebery_bug="pin race" if all(x.startswith("essential ") for x in wrong) else None)
+    check("with that many, every tab is in its own container in the new window", not r["elsewhere"], str(r))
     check("with that many, the placeholders unload", not r["stillLoaded"], str(r))
     left = m.js(H + """await wait(2000); return wins().map(w => w.gBrowser.tabs.filter(t => url(t).includes("smoke-many") || (t.pinned && !ek(w, t))).map(t => t.label));""")
     check("and they are all gone again once closed", all(not x for x in left), str(left))
@@ -1067,8 +835,8 @@ def many_tabs(m):
     check("a page whose title ticks writes Tidier's record rarely", r["writes"] <= 3, str(r))
     proc = m.js(PROC_INFO)
     print(f"INFO  for 30 tabs and 10 essentials, a new window and closing them all: {after['jobs'] - before['jobs']} jobs, "
-          f"queue busy {round((after['queueMs'] - before['queueMs']) / 1000, 1)} s (Sidebery waits included), "
-          f"{after['lookups'] - before['lookups']} tab lookups; extension process (Tidier and Sidebery) "
+          f"queue busy {round((after['queueMs'] - before['queueMs']) / 1000, 1)} s, "
+          f"{after['lookups'] - before['lookups']} tab lookups; extension process "
           f"{proc['mb']} MB, {round(proc['cpuS'] - proc0['cpuS'], 1)} s CPU", flush=True)
 
 
@@ -1079,8 +847,6 @@ def handover(m):
       await close(other());
       return find(k);""")
     check("closing a window hands its tabs over", r in ([["live/unloaded"]], [["live/loaded"]]), str(r))
-    wrong = m.js(H + "return await misplaced(main());")
-    check("every tab in the main window is still in its container's space", not wrong, str(wrong[:5]))
 
 
 def reopened_window(m):
@@ -1089,7 +855,7 @@ def reopened_window(m):
     r = m.js(H + """
       const count = () => { const by = {};
         for (const [i, w] of wins().entries()) for (const t of w.gBrowser.tabs) { const k = key(w, t); if (!k) continue;
-          const c = by[k] ??= {perWindow: wins().map(() => 0), live: 0}; c.perWindow[i]++; if (role(w, t) === "live") c.live++; if (role(w, t) === "copy") c.copy = true; }
+          const c = by[k] ??= {perWindow: wins().map(() => 0), live: 0}; c.perWindow[i]++; if (role(w, t) === "live") c.live++; }
         return by; };
       const synced = async () => Object.keys((await storage("%s", ["syncedTabs"])).syncedTabs).length;
       const before = await synced();
@@ -1097,7 +863,7 @@ def reopened_window(m):
       for (let i = 0; i < 100 && !w.gBrowser; i++) await wait(100);
       await wait(9000);
       const by = count(), after = await synced();
-      const doubled = Object.entries(by).filter(([, c]) => (!c.copy && c.live !== 1) || c.perWindow.some(n => n !== 1)).map(([k, c]) => [k, c]);
+      const doubled = Object.entries(by).filter(([, c]) => c.live !== 1 || c.perWindow.some(n => n !== 1)).map(([k, c]) => [k, c]);
       const all = (await storage("%s", ["syncedTabs"])).syncedTabs;
       const dead = w.gBrowser.tabs.filter(t => url(t).includes("ghost.html") && !key(w, t) && !t.pinned)
         .map(t => { const q = new URLSearchParams(url(t).split("?")[1]); return [t.label, q.get("kind"), q.get("kind") === "essential" ? "" : all[q.get("key")] ? "synced" : "gone"]; });
@@ -1108,14 +874,6 @@ def reopened_window(m):
           and r["pinned"][0] == r["pinned"][1], str(r))
 
 
-AFTER_MOVE_OVER = """
-  const [id] = args;
-  const {ExtensionPermissions} = ChromeUtils.importESModule("resource://gre/modules/ExtensionPermissions.sys.mjs");
-  await ExtensionPermissions.add(id, {permissions: ["tabHide"], origins: []}, WebExtensionPolicy.getByID(id).extension);
-  return 1;
-"""
-
-
 def no_problems(m, when):
     """Errors inside Tidier (common.js, noteError): each is a tab that was not handled."""
     problems = extension_message(m, {"type": "stats"})["problems"]
@@ -1124,19 +882,22 @@ def no_problems(m, when):
 
 # Every window's essentials and tabs, to compare a session before and after.
 SNAP = H + """
-      const out = [];
+      const out = [], all = (await storage("%s", ["syncedTabs"])).syncedTabs;
+      // A test tab seeded in a folder (seed_folders) is in it by the record, and so in every window.
+      const entryOf = (w, t) => key(w, t) ? all[JSON.parse(key(w, t))] : null;
+      const seededIn = (w, t) => /fixture-in-folder/.test(entryOf(w, t)?.url || "");
       for (const w of wins()) {
         const tabs = w.gBrowser.tabs;
         out.push({essentials: tabs.filter(t => t.pinned).map(t => ek(w, t) || "untagged " + t.label),
                   keys: tabs.filter(t => !t.pinned && key(w, t)).map(t => key(w, t)).sort(),
                   live: tabs.filter(t => !t.pinned && role(w, t) === "live").map(t => key(w, t)),
                   untagged: tabs.filter(t => !t.pinned && !key(w, t)).map(t => t.label + " " + url(t).slice(0, 60)),
-                  inFolders: tabs.filter(t => /fixture-in-folder/.test(t.label + url(t)) && !(t.openerTab && url(t.openerTab).includes("/sidebery/group.html"))).map(t => t.label),
-                  wrong: await misplaced(w)});
+                  folderTabs: tabs.filter(t => seededIn(w, t)).length,
+                  inFolders: tabs.filter(t => seededIn(w, t) && !all[entryOf(w, t).parentKey]?.group).map(t => t.label)});
       }
       const order = w => JSON.stringify([w.keys, w.essentials, w.untagged]);
       out.sort((a, b) => order(a) < order(b) ? -1 : order(a) > order(b) ? 1 : 0);
-      const synced = Object.keys((await storage("%s", ["syncedTabs"])).syncedTabs).length;
+      const synced = Object.keys(all).length;
       return {windows: out, synced};""" % EXT_ID
 
 
@@ -1210,8 +971,8 @@ def restart(m):
     check("after a restart, every tab is live in one window only, and no other tab came or went",
           len(lives) == len(set(lives)) and sorted(w["untagged"] for w in aw) == sorted(w["untagged"] for w in bw),
           f"doubled {[k for k in lives if lives.count(k) > 1][:3]}, others before {[w['untagged'] for w in bw]}, after {[w['untagged'] for w in aw]}")
-    check("after a restart, folders keep their tabs and every tab is in its container's space",
-          all(not w["inFolders"] and not w["wrong"] for w in aw), str([(w["inFolders"][:3], w["wrong"][:3]) for w in aw]))
+    check("after a restart, folders keep their tabs",
+          all(w["folderTabs"] and not w["inFolders"] for w in aw), str([(w["folderTabs"], w["inFolders"][:3]) for w in aw]))
     # Tab sync works as before: a new tab gets a ghost in the other window.
     r = m.js(H + """
       const [a] = wins(); const t = a.gBrowser.addTrustedTab("https://example.org/?smoke-after-restart", {userContextId: 1, inBackground: true});
@@ -1229,226 +990,88 @@ def restart(m):
     check("after a restart, a new window gets all essentials and tabs", r["want"] == r["got"], str(r))
 
 
-def real_sidebery_export(m):
-    """What Sidebery's export of this browser holds, with a snapshot Sidebery itself made (its Create snapshot button)."""
-    m.js(H + """const w = main(); w.focus();
-      w.gBrowser.addTrustedTab("moz-extension://" + JSON.parse(Services.prefs.getStringPref("extensions.webextensions.uuids"))[args[0]] + "/page.setup/setup.html#settings_snapshots", {inBackground: true});
-      await wait(4000); return 1;""", SIDEBERY_ID)
-    m.cmd("Marionette:SetContext", {"value": "content"})
-    for h in m.cmd("WebDriver:GetWindowHandles"):
-        m.cmd("WebDriver:SwitchToWindow", {"handle": h, "focus": False})
-        if "page.setup" in m.cmd("WebDriver:GetCurrentURL"):
-            break
-    clicked = m.cmd("WebDriver:ExecuteScript", {"script": """
-      const button = [...document.querySelectorAll(".btn")].find(b => b.textContent.trim() === "Create snapshot");
-      if (button) button.click();
-      return !!button;"""})
-    m.chrome()
-    return clicked, m.js(H + """for (let i = 0; i < 40 && !(await storage(args[0], ["snapshots"])).snapshots?.length; i++) await wait(250);
-      await removeWhere((w, t) => url(t).includes("page.setup"));
-      return {ver: "5.6.1", ...(await storage(args[0], ["containers", "sidebar", "snapshots"]))};""", SIDEBERY_ID)
+# A Sidebery folder's page as a browser that never moved over still has it: unloaded, in each
+# window, in the folder's space. (Sidebery's own address; the page itself is never shown.)
+OLD_FOLDER_PAGE = "moz-extension://3c078156-979c-498b-8990-85f7987dd929/sidebery/group.html#Old%20folder"
 
 
-# What the settings page's moving steps say, read from the page itself.
-MOVE_STEPS = """await wait(600);
-  const done = id => doc.getElementById(id)?.classList.contains("done");
-  return {export: done("step-export"), allow: done("step-allow"), off: done("step-off"), canMove: !doc.getElementById("move-over").disabled,
-          state: doc.getElementById("sidebery-state").textContent, moved: doc.getElementById("moved").hidden ? "" : doc.getElementById("moved").textContent,
-          backOff: done("step-back-off"), canGoBack: !doc.getElementById("move-back").hidden && !doc.getElementById("do-move-back").disabled};"""
-
-# Sidebery's own tree in each window, from what it keeps for each tab (its "data" in the
-# session, which it starts from): for each folder page, the record's tabs in that folder
-# that Sidebery does not have under it, and whether the page is in its container's space.
-SIDEBERY_TREE = H + """const {ExtensionParent} = ChromeUtils.importESModule("resource://gre/modules/ExtensionParent.sys.mjs");
-  const tabId = t => ExtensionParent.apiManager.global.tabTracker.getId(t);
-  const sb = (w, t) => { try { return JSON.parse(w.SessionStore.getCustomTabValue(t, "extension:%(sb)s:data") || "{}"); } catch (e) { return {}; } };
-  const all = (await storage("%(ext)s", ["syncedTabs"])).syncedTabs, pf = await panelFor(), out = [];
-  for (const w of wins()) {
-    const tabs = w.gBrowser.tabs, byKey = new Map(tabs.filter(t => key(w, t)).map(t => [JSON.parse(key(w, t)), t]));
-    for (const [k, e] of Object.entries(all)) {
-      const page = e.group && byKey.get(k);
-      if (!page) continue;
-      const outside = Object.keys(all).filter(x => all[x].parentKey === k && byKey.get(x) && sb(w, byKey.get(x)).parentId !== tabId(page)).map(x => byKey.get(x).label);
-      out.push({folder: page.label, outside, inItsSpace: sb(w, page).panelId === pf[ctxOf(page)], tabs: Object.keys(all).filter(x => all[x].parentKey === k).length});
-    }
-  }
-  return out;""" % {"sb": SIDEBERY_ID, "ext": EXT_ID}
-MOVE_PERMISSIONS = (["tabHide", "webRequest", "webRequestBlocking", "management"], ["<all_urls>"])
-
-
-def move_over(m):
-    # Moving this browser from Sidebery to Tidier alone, and back (PLAN.md, part D): every
-    # folder and tab stays, folder pages go, and the record is what carries it. Both ways
-    # with Sidebery off, in the steps the settings page checks, and back again Sidebery's
-    # own tree has every folder's tabs under its page.
-    record = H + """const all = (await storage("%s", ["syncedTabs"])).syncedTabs;
-      const name = e => e.own ? e.name : decodeURIComponent((e.url.split("#")[1] || "").replace(/~!.*!~$/, ""));
-      const folders = {};
-      for (const [k, e] of Object.entries(all)) if (e.group) folders[name(e)] = Object.entries(all).filter(([, x]) => x.parentKey === k).map(([x]) => x).sort();
-      return {folders, tabs: Object.keys(all).filter(k => !all[k].group).sort(), saved: Object.values(all).filter(e => e.saved).length,
-              pages: wins().map(w => w.gBrowser.tabs.filter(t => url(t).includes("group.html")).length)};""" % EXT_ID
-    tabs_here = H + """return wins().map(w => w.gBrowser.tabs.filter(t => !t.pinned && role(w, t) && role(w, t) !== "copy").map(t => key(w, t)).sort()).sort();"""
-    sidebery_enabled = lambda on: m.js(H + """const {AddonManager} = ChromeUtils.importESModule("resource://gre/modules/AddonManager.sys.mjs");
-      await (await AddonManager.getAddonByID("%s"))[args[0] ? "enable" : "disable"](); await wait(args[0] ? 4000 : 1500); return 1;""" % SIDEBERY_ID, on)
-    # Two windows, whatever the groups before left: the checks below count folder pages per
-    # window, and a placeholder made meanwhile is only a placeholder in another window.
-    # (On GitHub the group before it can end with one window: seen 2026-11-09.)
-    m.js(H + """if (wins().length < 2) { const w = main().OpenBrowserWindow(); for (let i = 0; i < 100 && !w.gBrowser; i++) await wait(100); await wait(9000); } return 1;""")
-    before, tabs0 = m.js(record), m.js(tabs_here)
-    keys_now = """return Object.fromEntries((await WebExtensionPolicy.getByID(args[0]).extension.shortcuts.allCommands()).map(c => [c.name, c.shortcut]));"""
-    keys0 = m.js(keys_now, EXT_ID)
-    check("with Sidebery, Tidier's only key is the one to copy an address", [k for k, v in keys0.items() if v] == ["copy-url"], str(keys0))
-    r = ext_page(m, "/settings/settings.html", """await wait(300); return doc.getElementById("claude-section").hidden;""")
-    check("with Sidebery, the settings page offers nothing for agents", r is True, str(r))
-    report = extension_message(m, {"type": "settings:get"})["report"]
-    check("the report before moving names the folders and their tabs", len(report["folders"]) == len(before["folders"]) and not report["alone"] and report["tabs"] == len(before["tabs"]), str(report))
-    steps = ext_page(m, "/settings/settings.html", MOVE_STEPS)
-    check("before anything is done, no step is ticked and Move cannot be clicked", not steps["export"] and not steps["allow"] and not steps["off"] and not steps["canMove"], str(steps))
-    # Step 2, as its click would give it (Firefox's prompt cannot be clicked here).
-    m.js(GIVE_PERMISSIONS, EXT_ID, *MOVE_PERMISSIONS)
-    steps = ext_page(m, "/settings/settings.html", MOVE_STEPS)
-    check("with Sidebery on, the page says so, and Move cannot be clicked", steps["allow"] and not steps["off"] and not steps["canMove"] and "on" in steps["state"], str(steps))
-    refused = extension_message(m, {"type": "settings:moveOver"})
-    check("moving over is refused while Sidebery runs, and nothing changes", "refused" in (refused or {}) and m.js(record) == before and m.js(tabs_here) == tabs0, f"{refused}")
-    # Sidebery's real export, with one folder closed in its snapshot: the record has an address
-    # with a suffix Sidebery adds, the snapshot one without. (Closing it in Sidebery's sidebar for
-    # real is out of reach here: the sidebar's page cannot be scripted, so `folded` is set here.)
-    # Closed in one window only, as Sidebery opens every folder in a new window: it counts.
-    clicked, export = real_sidebery_export(m)
-    closed_folder = sorted(before["folders"])[0]
-    in_snapshot = 0
-    for window in export.get("snapshots", [{}])[-1].get("tabs", []):
-        for panel in window:
-            for tab in panel:
-                if isinstance(tab, dict) and "group.html#" + closed_folder.replace(" ", "%20") in tab["url"]:
-                    in_snapshot += 1
-                    tab["folded"] = in_snapshot == 1
-    imported = extension_message(m, {"type": "settings:importSidebery", "backup": export})
-    check("Sidebery's own export and snapshot are understood, and a folder closed in one window is found by its address", clicked and in_snapshot == len(before["pages"]) and imported["folds"] == 1 and imported["order"] == 3, f"{clicked}, {in_snapshot}, {imported}")
-    again = extension_message(m, {"type": "settings:importSidebery", "backup": export})
-    check("the same export again is nothing new", [again["rules"], again["order"], again["newFolds"]] == [0, 0, 0], str(again))
-    check("taking its folds in changes nothing until the move", m.js(tabs_here) == tabs0 and m.js(record) == before, str(m.js(record)))
-    sidebery_enabled(False)
-    still = m.js(tabs_here)
-    check("disabling Sidebery closes no folder page and no tab", m.js(record)["pages"] == before["pages"] and still == tabs0, f"{before['pages']} -> {m.js(record)['pages']}")
-    steps = ext_page(m, "/settings/settings.html", MOVE_STEPS)
-    check("with Sidebery off, every step is ticked, and Move can be clicked", steps["export"] and steps["allow"] and steps["off"] and steps["canMove"], str(steps))
-    m.js(H + """for (const w of wins()) for (const t of [...w.gBrowser.tabs]) if (url(t).includes("/settings/settings.html")) w.gBrowser.removeTab(t); await wait(300); return 1;""")
-    # The click on Move opens Tidier's sidebar in its window (settings.js), and Firefox brings it
-    # back there as Tidier starts again; a click cannot be made here, so it is opened like this.
-    m.js(H + """await main().SidebarController.show("_6844a953-9931-4334-9ff6-257c246485cb_-sidebar-action"); await wait(500); return 1;""")
-    fire_message(m, {"type": "settings:moveOver"})
-    # Firefox's note about hidden tabs hangs over the top of the sidebar, with Disable Extension
-    # where New tab is: it must come while the settings page is in front to say what to choose.
-    note = m.js(H + """const page = w => url(w.gBrowser.selectedTab).split("/").slice(3).join("/");
-      for (let i = 0; i < 120; i++) {
-        const w = main(), open = w.document.getElementById("extension-notification-panel")?.state === "open";
-        if (open && !w.document.getElementById("extension-tab-hide-notification").hidden)
-          return {page: page(w), front: Services.wm.getMostRecentWindow("navigator:browser") === w};
-        await wait(250);
+def old_browser(m):
+    # A browser that skipped the click on the move over (PLAN.md, part E): its record has a
+    # folder of Sidebery's, whose page is open in every window, with two tabs in it, and Tidier
+    # is enabled again with that. Its first start moves it over by itself (moveover.js): a copy
+    # first, then the record, and only then are the pages closed. Nothing is lost.
+    state = H + """const all = (await storage(args[0], ["syncedTabs", "movedNote", "importedFolds", "copyBeforeMove"]));
+      const r = all.syncedTabs, f = r["smoke-old-folder"];
+      return {folder: f && {own: !!f.own, name: f.name ?? null, oldUrl: f.oldUrl ?? null, collapsed: !!f.collapsed},
+              inIt: Object.keys(r).filter(k => r[k].parentKey === "smoke-old-folder").map(k => [k, !!r[k].saved]).sort(),
+              pages: wins().map(w => w.gBrowser.tabs.filter(t => url(t).includes("/sidebery/group.html")).length),
+              copies: Object.keys(r).filter(k => r[k].parentKey === "smoke-old-folder").map(k => wins().map(w => w.gBrowser.tabs.filter(t => key(w, t) === JSON.stringify(k)).length)),
+              note: all.movedNote ?? null, waiting: all.importedFolds ?? null, inStorage: !!all.copyBeforeMove,
+              settings: wins().map(w => w.gBrowser.tabs.filter(t => url(t).includes("/settings/settings.html")).length),
+              inFront: wins().filter(w => url(w.gBrowser.selectedTab).includes("/settings/settings.html")).length,
+              closed: wins().flatMap(w => w.SessionStore.getClosedTabDataForWindow(w)).filter(c => JSON.stringify(c.state.entries || []).includes("/sidebery/group.html")).length};"""
+    extension_message(m, {"type": "flush"})
+    picked = m.js(H + """const {AddonManager} = ChromeUtils.importESModule("resource://gre/modules/AddonManager.sys.mjs");
+      const [id, page] = args, ext = WebExtensionPolicy.getByID(id).extension;
+      const db = await ExtensionStorageIDB.open(ExtensionStorageIDB.getStoragePrincipal(ext));
+      const addon = await AddonManager.getAddonByID(id);
+      await addon.disable(); await wait(1500);
+      const r = (await db.get(["syncedTabs"])).syncedTabs;
+      const two = Object.keys(r).filter(k => !r[k].group && r[k].cookieStoreId === "firefox-container-2" && !r[k].parentKey && /fixture-tab-2/.test(r[k].url)).slice(0, 2);
+      r["smoke-old-folder"] = {group: true, url: page, title: "Old folder", cookieStoreId: "firefox-container-2", parentKey: null, added: 1};
+      for (const k of two) Object.assign(r[k], {parentKey: "smoke-old-folder", saved: {url: r[k].url, title: r[k].title}});
+      // Closed in Sidebery's export, which an older Tidier took in before the move.
+      await db.set({syncedTabs: r, importedFolds: ["firefox-container-2|group.html#Old%20folder"]});
+      for (const w of wins()) {
+        const t = w.gBrowser.addTrustedTab(page, {userContextId: 2, inBackground: true, createLazyBrowser: true, lazyTabTitle: "Old folder"});
+        w.SessionStore.setCustomTabValue(t, "extension:" + id + ":syncKey", JSON.stringify("smoke-old-folder"));
+        w.SessionStore.setCustomTabValue(t, "extension:" + id + ":syncRole", JSON.stringify("copy"));
       }
-      return {page: page(main())};""")
-    def windows_shot(when):  # the windows as you find them, to look at (Firefox's note itself is not drawn)
-        if not os.environ.get("TIDIER_SHOTS"):
-            return
+      await wait(500);
+      const pages = wins().map(w => w.gBrowser.tabs.filter(t => url(t).includes("/sidebery/group.html")).length);
+      await addon.enable(); await wait(12000);
+      return {two, pages};""", EXT_ID, OLD_FOLDER_PAGE)
+    r = m.js(state, EXT_ID)
+    copy = json.load(open(m.fake_prs + ".copy")) if os.path.exists(m.fake_prs + ".copy") else {}
+    was = copy.get("data", {}).get("syncedTabs", {}).get("smoke-old-folder", {})
+    check("(a browser that never moved over: Sidebery's folder pages in every window, and its folder in the record)", len(picked["two"]) == 2 and picked["pages"] == [1, 1], str(picked))
+    check("its first start takes a copy first, of the record as it was", was.get("url") == OLD_FOLDER_PAGE and not was.get("own") and not r["inStorage"], f"{was}, {r}")
+    check("Sidebery's folder becomes Tidier's own, with its name, closed as Sidebery had it", r["folder"] == {"own": True, "name": "Old folder", "oldUrl": OLD_FOLDER_PAGE, "collapsed": True}
+          and r["waiting"] == [], str(r))
+    check("its tabs stay in it, saved, in every window", r["inIt"] == sorted([k, True] for k in picked["two"]) and r["copies"] == [[1, 1], [1, 1]], str(r))
+    check("only then are the folder pages closed, and none is left in Recently Closed", r["pages"] == [0, 0] and r["closed"] == 0, str(r))
+    # Nobody asked for the move, so Tidier's settings page is in front and says what came over
+    # (afterMoving, moveover.js). Here Tidier may not hide tabs, as on a browser that ran it
+    # beside Sidebery, so the page says how to let it; and each window without Tidier's sidebar
+    # has the page, with a button for the sidebar (aftermove.js).
+    said = None
+    if r["inFront"]:
+        into_page(m, "/settings/settings.html")
+        said = m.cmd("WebDriver:ExecuteScript", {"script": """const d = (window.wrappedJSObject || window).document, shown = id => !d.getElementById(id).hidden;
+          return {text: shown("moved-section") && shown("moved") ? d.getElementById("moved").textContent : null, ask: shown("moved-ask"), allow: shown("moved-allow"),
+                  sidebar: shown("windows-without") && shown("show-sidebar")};"""})
         m.chrome()
-        for n, handle in enumerate(m.cmd("WebDriver:GetWindowHandles")):
-            m.cmd("WebDriver:SwitchToWindow", {"handle": handle, "focus": True})
-            time.sleep(1.5)  # a window behind is drawn only once it is in front
-            open(os.path.join(os.environ["TIDIER_SHOTS"], f"moved-{when}-window-{n + 1}.png"), "wb").write(base64.b64decode(m.cmd("WebDriver:TakeScreenshot", {})))
-        m.chrome()
-    windows_shot("asked")
-    ask = ext_page(m, "/settings/settings.html", """return {ask: !doc.getElementById("moved-ask").hidden && doc.getElementById("moved-ask").textContent, without: doc.getElementById("windows-without").hidden ? "" : doc.getElementById("windows-without-text").textContent};""")
-    check("after moving over, Firefox asks about hidden tabs while the settings page is in front, saying what to choose",
-          note["page"] == "settings/settings.html" and note.get("front") and "Keep Tabs Hidden" in str(ask["ask"]), f"{note}, {ask}")
-    # The second window came over with no sidebar, and so no list of tabs: it shows the page too,
-    # whose button gives it the sidebar (a click in a page of Tidier's is what lets that happen).
-    other_page = m.js(H + """for (let i = 0; i < 40 && !url(other().gBrowser.selectedTab).includes("/settings/settings.html"); i++) await wait(250);
-      return url(other().gBrowser.selectedTab).split("/").slice(3).join("/");""")
-    check("after moving over, a window without Tidier's sidebar shows the page too, and the page in front says so",
-          other_page == "settings/settings.html" and ask["without"].startswith("Another window has no sidebar yet: it shows this page too, with a button for it"), f"{other_page}, {ask}")
-    handle = m.js(H + """const {NavigableManager} = ChromeUtils.importESModule("chrome://remote/content/shared/NavigableManager.sys.mjs");
-      main().document.getElementById("extension-notification-panel")?.hidePopup?.(); other().focus(); await wait(500);
-      return NavigableManager.getIdForBrowser(other().gBrowser.selectedTab.linkedBrowser);""")
-    m.cmd("Marionette:SetContext", {"value": "content"})
-    m.cmd("WebDriver:SwitchToWindow", {"handle": handle, "focus": False})
-    said = m.cmd("WebDriver:ExecuteScript", {"script": """const d = (window.wrappedJSObject || window).document;
-      return d.getElementById("windows-without").hidden ? "" : d.getElementById("windows-without-text").textContent;""", "args": []})
-    button = m.cmd("WebDriver:FindElement", {"using": "css selector", "value": "#show-sidebar"})
-    m.cmd("WebDriver:ElementClick", {"id": next(iter(button.values()))})
-    m.chrome()
-    r = m.js(H + """for (let i = 0; i < 20 && !other().SidebarController.isOpen; i++) await wait(100);
-      const ids = wins().map(w => w.SidebarController.isOpen && w.SidebarController.currentID); main().focus();
-      for (const t of [...other().gBrowser.tabs]) if (url(t).includes("/settings/settings.html")) other().gBrowser.removeTab(t);
-      await wait(300); return ids;""")
-    windows_shot("later")
-    check("its button gives the second window Tidier's sidebar", "This window has no sidebar yet" in str(said) and "6844a953" in str(r[1]), f"{said}, {r}")
-    m.js(AFTER_MOVE_OVER, EXT_ID)
-    after = m.js(record)
-    check("after moving over, every folder has its tabs, and the pages are gone",
-          after["folders"] == before["folders"] and after["tabs"] == before["tabs"] and after["saved"] == before["saved"] and after["pages"] == [0, 0], f"{before} -> {after}")
-    check("after moving over, every window has its tabs", m.js(tabs_here) == tabs0, f"{tabs0} -> {m.js(tabs_here)}")
-    folds = m.js(H + """const all = (await storage("%s", ["syncedTabs"])).syncedTabs; return Object.values(all).filter(e => e.group && e.collapsed).map(e => e.name);""" % EXT_ID)
-    check("after moving over, the folder closed in Sidebery's snapshot is closed, and no other", folds == [closed_folder], f"{folds}, {closed_folder}")
-    r = m.js(H + "await wait(1500); return wins().map(w => [...new Set(w.gBrowser.tabs.filter(t => !t.pinned && !t.hidden && t.userContextId).map(t => t.userContextId))].length);")
-    check("after moving over, each window shows one space", all(x == 1 for x in r), str(r))
-    moved = m.js(H + """return wins().flatMap(w => w.gBrowser.tabs).filter(t => url(t).includes("/settings/settings.html")).length;""")
-    steps = ext_page(m, "/settings/settings.html", MOVE_STEPS) if moved else {}
-    check("after moving over, the settings page is open again, and says what came over", moved == 1 and steps["moved"].startswith("Moved: ") and steps["canGoBack"], f"{moved}, {steps}")
-    no_problems(m, "after moving over")
-    keys = m.js(keys_now, EXT_ID)
-    check("after moving over, Tidier's keys are given", keys["tab-1"] == "Ctrl+1" and keys["space-1"] == "MacCtrl+1" and keys["next-tab"] == "Ctrl+MacCtrl+Down", str(keys))
-    # A placeholder made from here on has no page, and Sidebery draws the tab itself:
-    # after moving back it has its icon.
-    # (/icon-png: Firefox shows an SVG icon through an address of its own, not as data:.)
-    icon_key = m.js(H + """const t = main().gBrowser.addTrustedTab(args[0] + "/icon-png", {userContextId: 1, inBackground: true}); await wait(4000); return JSON.parse(key(main(), t));""", m.pages)
-    # On Tidier alone, as a day there goes: a folder renamed, and one made with a tab put in it.
-    # Going back says so first, and gives both their page in Sidebery, under the names they have.
-    made = sidebar_page(m, """await wait(500);
-      const heads = () => [...doc.querySelectorAll("#tabs .folder .head")], named = n => heads().find(h => h.querySelector(".title")?.textContent === n);
-      const old = folders().map(f => f.name).find(n => n !== args[0]);
-      if (!old) return {missing: folders()};
-      send({type: "renameFolder", key: named(old).dataset.folderHead, name: "Renamed here"});
-      send({type: "newFolder", space: spaces().find(s => s.active).id, name: "Made here"});
-      await wait(1500);
-      send({type: "moveTab", tabId: Number(plainTabs()[0].dataset.tab), folder: named("Made here").dataset.folderHead, before: null});
-      await wait(2500);
-      return {old, folders: folders().map(f => f.name)};""", closed_folder)
-    mid = m.js(record)
-    expected = dict(before["folders"])
-    if made.get("old") in expected:
-        expected["Renamed here"] = expected.pop(made["old"])
-    expected["Made here"] = mid["folders"].get("Made here")
-    check("on Tidier alone, a folder is renamed, and one is made with a tab in it", mid["folders"] == expected and len(expected["Made here"] or []) == 1, f"{made}, {mid['folders']}")
-    # (The page is open, from the move: it follows the record by itself.)
-    said = ext_page(m, "/settings/settings.html", """await wait(1500); return doc.getElementById("back-report").textContent;""")
-    check("before going back, the page says which folders come back, made and renamed here, and that a closed one opens",
-          all(x in (said or "") for x in (f"{len(expected)} folders get their page", "1 of them made here", "1 with its new name", "closed folder comes back open")), str(said))
-    # And back, with Sidebery still off: Tidier gives each window its folder pages, and
-    # Sidebery, turned on afterwards, builds its tree from them.
-    m.js(H + """for (const w of wins()) for (const t of [...w.gBrowser.tabs]) if (url(t).includes("/settings/settings.html")) w.gBrowser.removeTab(t); await wait(300); return 1;""")
-    fire_message(m, {"type": "settings:moveBack"})
-    m.js(H + "await wait(10000); return 1;")
-    back = m.js(record)
-    check("after moving back, every folder has its tabs and its pages, the one made here and the one renamed too", back["folders"] == expected and [k for k in back["tabs"] if k != icon_key] == before["tabs"] and back["pages"] == [n + 1 for n in before["pages"]], f"{expected} -> {back}")
-    check("after moving back, Sidebery has the keys again", m.js(keys_now, EXT_ID) == keys0, str(m.js(keys_now, EXT_ID)))
-    sidebery_enabled(True)
-    m.js(H + """for (const w of wins()) { await w.SidebarController.show("_3c078156-979c-498b-8990-85f7987dd929_-sidebar-action"); } await wait(6000); return 1;""")
-    tree = m.js(SIDEBERY_TREE)
-    check("after moving back and turning Sidebery on, Sidebery's own tree has every folder's tabs under its page, in its space, in every window",
-          len(tree) == 2 * len(expected) and all(not f["outside"] and f["inItsSpace"] for f in tree) and {f["folder"] for f in tree} >= {"Renamed here", "Made here"}, str(tree))
-    m.js(H + "await wait(8000); return 1;")  # Sidebery's first sort and Tidier's folders first are done by now
-    later = m.js(record)
-    check("some seconds later, Tidier's record still has every folder with its tabs", later["folders"] == expected and later["saved"] >= before["saved"], f"{expected} -> {later}")
-    r = m.js(H + """const copies = () => wins().flatMap(w => w.gBrowser.tabs.filter(t => value(w, t, "syncKey") === args[0] && value(w, t, "syncRole") === "ghost"));
-      for (let i = 0; i < 80 && !(copies().length && copies().every(t => t.image && !t.linkedPanel)); i++) await wait(250);
-      return copies().map(t => ({icon: (t.image || "").slice(0, 10), loaded: !!t.linkedPanel}));""", icon_key)
-    check("after moving back, a placeholder made meanwhile has its icon, and is unloaded", r and all(x["icon"] == "data:image" and not x["loaded"] for x in r), str(r))
-    m.js(H + """await removeWhere((w, t) => value(w, t, "syncKey") === args[0]); return 1;""", icon_key)
+    check("Tidier's settings page is in front and says what came over, after a copy", bool(said) and "1 folder" in (said["text"] or "") and "A copy of everything was taken first" in said["text"]
+          and "Sidebery is no longer needed" in said["text"], f"{said} {r['settings']}")
+    check("where Tidier may not hide tabs yet, the page says how to let it", bool(said) and said["allow"] and not said["ask"], str(said))
+    check("said once: the note is gone from storage", r["note"] is None, str(r["note"]))
+    m.js(H + """await removeWhere((w, t) => url(t).includes("/settings/settings.html")); return 1;""")
+    view = sidebar_page(m, """send({type: "space", space: "firefox-container-2"}); await wait(1500);
+      return {folders: folders().filter(f => f.name === "Old folder").map(f => [f.tabs.length, f.collapsed])};""")
+    check("the sidebar shows it as a folder, closed", view.get("folders") == [[0, True]] or view.get("folders") == [[2, True]], str(view))
+    later = ext_page(m, "/settings/settings.html", """await wait(800); return doc.getElementById("moved").hidden;""")
+    check("a settings page opened later does not say it again", later is True, str(later))
+    r = m.js(state, EXT_ID)
+    m.js(H + """const {AddonManager} = ChromeUtils.importESModule("resource://gre/modules/AddonManager.sys.mjs");
+      const addon = await AddonManager.getAddonByID(args[0]); await addon.disable(); await wait(1500); await addon.enable(); await wait(9000); return 1;""", EXT_ID)
+    again = m.js(state, EXT_ID)
+    check("the next start has nothing to move, and leaves it as it is", again["folder"] == r["folder"] and again["inIt"] == r["inIt"] and again["pages"] == [0, 0] and again["inFront"] == 0, f"{r} -> {again}")
+    no_problems(m, "after a browser moved over by itself")
+    close_sidebar_page(m)
 
 
-# The windows whose essentials (pinned tabs) are not together by space, with
-# the containers of their pinned tabs in order.
+# The windows whose essentials (pinned tabs) are not together by space, with the
+# containers of their pinned tabs in order: essentials.js keeps them so, for ⌃Tab.
 PINS_APART = """
   const apart = cs => !cs.every((c, i) => i === 0 || c === cs[i - 1] || !cs.slice(0, i).includes(c));
   const ws = wins().map(w => w.gBrowser.tabs.filter(t => t.pinned).map(t => t.userContextId + ":" + (ek(w, t) || "-").slice(0, 4)));
@@ -1458,9 +1081,10 @@ PINS_APART = """
 apart_after = []
 
 
-# --- Tidier alone (PLAN.md): no Sidebery, the setting on --------------------------
-# In a test Firefox of its own, with test tabs in each space. The sidebar is
-# used for real: its page is opened in a tab, where the test can read and click it.
+# --- The chain (alone_*): one test Firefox, the groups in order ---------------------
+# In a test Firefox of its own, with test tabs in each space and the permission to hide
+# tabs. The sidebar is used for real: its page is opened in a tab, where the test can read
+# and click it. (Named for the time when this was Tidier alone, beside Sidebery.)
 
 def sidebar_page(m, script, *args):
     """Run `script` in Tidier's sidebar page (opened in a tab of the main window, once)."""
@@ -1497,15 +1121,14 @@ def ext_page(m, path, script, *args):
 
 
 def alone_setup(m):
-    r = m.js(H + """const {AddonManager} = ChromeUtils.importESModule("resource://gre/modules/AddonManager.sys.mjs");
-      const w = main(); await wait(1500);
-      return {sidebery: !!(await AddonManager.getAddonByID("%s")), panel: w.SidebarController.currentID, hidden: w.gBrowser.tabs.filter(t => t.hidden).length, visible: w.gBrowser.tabs.filter(t => !t.hidden).length};""" % SIDEBERY_ID)
-    check("Tidier alone runs with no Sidebery, and its sidebar is the sidebar", not r["sidebery"] and "6844a953" in r["panel"], str(r))
+    r = m.js(H + """const w = main(); await wait(1500);
+      return {panel: w.SidebarController.currentID, hidden: w.gBrowser.tabs.filter(t => t.hidden).length, visible: w.gBrowser.tabs.filter(t => !t.hidden).length};""")
+    check("Tidier's sidebar is the sidebar", "6844a953" in (r["panel"] or ""), str(r))
     check("Tidier hides the other spaces' tabs", r["hidden"] > 0, str(r))
 
 
 def alone_second_window(m):
-    # A new window gets every essential and tab, in one go, without Sidebery's waits.
+    # A new window gets every essential and tab, in one go.
     r = m.js(H + """const a = main(), pinned0 = a.gBrowser.tabs.filter(t => t.pinned).length, want = a.gBrowser.tabs.filter(t => !t.pinned && role(a, t)).length;
       const t0 = Date.now(), w = a.OpenBrowserWindow(); w.__smoke = true;
       let ms = null;
@@ -2389,25 +2012,6 @@ def alone_quiet_undo(m):
     # tab (reconcileAll), which alone_update would see as a change.
     m.js(H + """await removeWhere((w, t) => args[0].includes(key(w, t))); return 1;""", m.js(NO_PAGE, space))
     no_problems(m, "after Clear and Undo")
-
-
-def quiet_off(m):
-    # The setting off, as in the daily browser on Sidebery: a close only closes, with no
-    # line and nothing remembered, and neither Clear nor a key can find what is not shown.
-    more_tabs_here(m, "off")
-    r = sidebar_page(m, """
-      const note = doc.getElementById("note"), act = doc.querySelector("#note .act");
-      const out = {alone: doc.documentElement.classList.contains("alone"), height: note.getBoundingClientRect().height, undo: page.getComputedStyle(act).visibility, clear: !!doc.querySelector(".clear, .clear-reach")};
-      const n = plainTabs().length;
-      for (const r of plainTabs().slice(-2)) r.querySelector(".close").click();
-      for (let i = 0; i < 50 && plainTabs().length > n - 2; i++) await wait(100);
-      await wait(1000);
-      return {...out, n, left: plainTabs().length, shown: note.classList.contains("shown")};""")
-    check("with the setting off, the sidebar has no line and no Clear", r["alone"] is False and r["height"] == 0 and r["undo"] == "hidden" and not r["clear"], str(r))
-    check("with the setting off, closes in the sidebar only close, and nothing is said", r["left"] == r["n"] - 2 and r["shown"] is False, str(r))
-    sizes = extension_message(m, {"type": "stats"})["sizes"]
-    check("with the setting off, nothing is remembered", sizes["quietNotes"] == 0 and sizes["closeGroups"] == 0, str(sizes))
-    m.js(H + """await removeWhere((w, t) => url(t).includes("/sidebar/sidebar.html") || url(t).includes("smoke-off-")); return 1;""")
 
 
 def real_click(m, path, x, y, button=0):
@@ -4081,10 +3685,6 @@ def alone_touches(m):
       const icon = await until(() => row.querySelector(".slow-load"), 6000);
       const style = icon && page.getComputedStyle(icon);
       const out = {name: style?.animationName, opacity: style?.opacity, moving: icon?.getAnimations().length, window: page.getComputedStyle(doc.documentElement).transitionDuration};
-      // The setting off has a sidebar too, which stays as it was.
-      doc.documentElement.classList.remove("alone");
-      out.withoutAlone = page.getComputedStyle(doc.documentElement).transitionDuration;
-      doc.documentElement.classList.add("alone");
       await until(async () => await status(slowId) === "complete");
       await wait(300);
       out.after = row.querySelector("img").getAnimations().length;
@@ -4101,7 +3701,6 @@ def alone_touches(m):
       return 1;""", m.pages, opened, m.pages.replace("127.0.0.1", "localhost"))
     check("with less motion asked for, a slow load is a still dim", r.get("name") == "none" and r.get("moving") == 0 and r.get("opacity") == "0.55" and r.get("after") == 0, str(r))
     check("with less motion asked for, nothing in the sidebar moves", r.get("window") == "0s", str(r))
-    check("with the setting off, what is in the sidebar's style stays as it was", r.get("withoutAlone") == "0.25s", str(r))
     no_problems(m, "after the small touches")
 
 
@@ -4183,7 +3782,7 @@ def guessed_links(m, space, other):
 
 def alone_isolation(m):
     base = m.pages
-    # Tidier alone stays on one space while this runs; the tabs made here are hidden or not, but they load either way.
+    # Tidier stays on one space while this runs; the tabs made here are hidden or not, but they load either way.
     press(m, "1", CTRL)
     time.sleep(1)
     space = m.js(H + "return main().gBrowser.selectedTab.userContextId;")
@@ -6656,7 +6255,7 @@ def alone_update(m):
     bare = [s for s in again if not s["space"] or (was.get("own") and not s["own"])]
     check("during an update the sidebar keeps its space's look until it has its view", again and not bare, f"before {was}, then {seen[:6]}")
     after = m.js(SNAP_ALONE)
-    check("after an update with Tidier alone, the same tabs, folders and one space shown", before == after, f"{before} -> {after}")
+    check("after an update, the same tabs, folders and one space shown", before == after, f"{before} -> {after}")
     left = m.js(H + """return wins().filter(w => !w.toolbar.visible).length;""")
     check("an update with the command bar open leaves no window of it behind", left == 0, str(left))
     r = m.js(H + "return main().SidebarController.currentID;")
@@ -6667,7 +6266,7 @@ def alone_restart(m):
     if not m.can_restart:
         print("SKIP  alone_restart (needs Tidier installed for real: Developer Edition, or --xpi)", flush=True)
         return
-    no_problems(m, "before a restart with Tidier alone")
+    no_problems(m, "before a restart")
     # Two windows, as after alone_second_window: a placeholder is another window's copy of a page.
     m.js(H + """if (!other()) { const w = main().OpenBrowserWindow(); w.__smoke = true; await wait(4000); } return 1;""")
     # Names, as the record and the list keep them: an essential's, and a saved tab's.
@@ -6689,12 +6288,8 @@ def alone_restart(m):
     on_now = H + """return wins().map(w => { const t = w.gBrowser.selectedTab; return [url(t).slice(0, 60), role(w, t) ?? null, !!t.pinned]; });"""
     archived = extension_message(m, {"type": "archivedTabs"})
     before, on_before = m.js(SNAP_ALONE), m.js(on_now)
-    # Also in the extension's own storage, as a browser moved over has it: this test Firefox is
-    # only pointed at its managed storage once it has started (USE_TEST_MANAGED_STORAGE), too
-    # late for the first view of a sidebar that is open, which a real file is not.
-    sidebar_page(m, """await page.browser.storage.local.set(page.JSON.parse(JSON.stringify({tidierAlone: true}))); return 1;""")
     # A settings page selected in a window when Firefox quits is loaded again as it starts, maybe
-    # before Tidier has: it must not then say this browser is on Sidebery.
+    # before Tidier has: it must still be whole then.
     m.js(H + """const w = wins().find(w => w !== main()) ?? main();
       w.gBrowser.selectedTab = w.gBrowser.addTrustedTab("moz-extension://" + JSON.parse(Services.prefs.getStringPref("extensions.webextensions.uuids"))[args[0]] + "/settings/settings.html?restart", {}); await wait(1500); return 1;""", EXT_ID)
     bar_open(m)  # quit with the command bar open: Firefox brings popups back with the session
@@ -6706,16 +6301,16 @@ def alone_restart(m):
     # back with that window in front. Its page then comes over, as it would for a click.
     def wherever(snap):
         return {**snap, "windows": [{k: v for k, v in w.items() if k != "live"} for w in snap["windows"]], "pages": sum(w["live"] for w in snap["windows"])}
-    check("after a restart with Tidier alone, the same tabs, folders and one space shown", wherever(before) == wherever(after), f"on {on_before} -> {on_after}; {before} -> {after}")
+    check("after a restart, the same tabs, folders and one space shown", wherever(before) == wherever(after), f"on {on_before} -> {on_after}; {before} -> {after}")
     r = m.js(H + """return {left: wins().filter(w => !w.toolbar.visible && url(w.gBrowser.selectedTab).includes("/commandbar/commandbar.html")).length,
       closed: main().SessionStore.getClosedWindowData().filter(w => w.tabs[0]?.entries?.[0]?.url?.includes("/commandbar/commandbar.html")).length};""")
     check("a command bar left open at a restart does not come back, and is not kept as a closed window", r == {"left": 0, "closed": 0}, str(r))
     into_page(m, "settings.html?restart")
     r = m.cmd("WebDriver:ExecuteScript", {"script": """const d = (window.wrappedJSObject || window).document;
-      return {state: d.getElementById("alone-state").textContent, agents: !d.getElementById("claude-section").hidden, keys: !d.getElementById("keys-section").hidden};"""})
+      return {agents: !d.getElementById("claude-section").hidden, keys: !d.getElementById("keys-section").hidden, moved: !d.getElementById("moved-section").hidden};"""})
     m.chrome()
     m.js(H + """await removeWhere((w, t) => url(t).includes("settings.html?restart")); return 1;""")
-    check("a settings page Firefox brings back at a start shows Tidier alone, with its agents and keys", "on its own" in r["state"] and r["agents"] and r["keys"], str(r))
+    check("a settings page Firefox brings back at a start shows its agents and keys, and nothing about a move", r["agents"] and r["keys"] and not r["moved"], str(r))
     check("after a restart, the list of archived tabs is still there", extension_message(m, {"type": "archivedTabs"}) == archived, str(archived))
     # Its rows, not only the tabs: in a sidebar page opened now, and in the window's own sidebar.
     r = ext_page(m, "/sidebar/sidebar.html?after-restart", """for (let i = 0; i < 40 && !rows().length; i++) await wait(250);
@@ -8152,9 +7747,9 @@ def alone_settings(m):
     # The settings page draws, and rules work: a tab's first page, in the rule's space.
     r = ext_page(m, "/settings/settings.html", """
       await wait(800);
-      return {state: doc.getElementById("alone-state").textContent, spaces: doc.querySelectorAll("#spaces .line").length, hours: doc.getElementById("archive-hours").value,
+      return {state: [doc.getElementById("sidebery-file") ? "export" : "", doc.getElementById("moved").hidden ? "" : "moved"].join(" "), spaces: doc.querySelectorAll("#spaces .line").length, hours: doc.getElementById("archive-hours").value,
               saved: await page.browser.runtime.sendMessage(page.JSON.parse(JSON.stringify({type: "settings:rules", rules: [{url: "smoke-rule", space: "firefox-container-2"}]})))};""")
-    check("the settings page shows Tidier alone, the spaces and the time for archiving", "on its own" in r["state"] and r["spaces"] >= 3 and r["hours"] == "12", str(r))
+    check("the settings page shows the spaces, the time for archiving, and where to take in Sidebery's export (no move here)", r["state"] == "export " and r["spaces"] >= 3 and r["hours"] == "12", str(r))
     r = m.js(H + """const w = main(); w.focus(); await wait(300);
       const space = w.gBrowser.selectedTab.userContextId === 2 ? 1 : w.gBrowser.selectedTab.userContextId;
       const t = w.gBrowser.addTrustedTab("about:blank", {userContextId: 1, inBackground: true}); await wait(300);
@@ -8252,7 +7847,7 @@ def alone_copy(m):
 def choose_file(m, input_id, contents):
     """Give a file input on the settings page a file, the way the file picker does: it fires `change`. Returns once the page has answered."""
     ext_page(m, "/settings/settings.html", "return 1;")
-    result = {"copy-file": "merge-result", "sidebery-file": "sidebery-result", "sidebery-file-alone": "sidebery-result-alone"}[input_id]
+    result = {"copy-file": "merge-result", "sidebery-file": "sidebery-result"}[input_id]
     with tempfile.TemporaryDirectory() as folder:
         path = os.path.join(folder, "chosen.json")
         with open(path, "w") as out:
@@ -8310,9 +7905,9 @@ def alone_copy_and_import(m):
     done = ext_page(m, "/settings/settings.html", """doc.getElementById("merge-go").click();
       const goneAtOnce = doc.getElementById("merge").hidden; // a second click would find it all here, and say only that
       for (let i = 0; i < 60 && !doc.getElementById("merge-result").textContent; i++) await wait(200);
-      return {result: doc.getElementById("merge-result").textContent, goneAtOnce, shown: !doc.getElementById("merge").hidden, ruleLines: doc.querySelectorAll("#rules .line").length, back: !doc.getElementById("move-back").hidden};""")
+      return {result: doc.getElementById("merge-result").textContent, goneAtOnce, shown: !doc.getElementById("merge").hidden, ruleLines: doc.querySelectorAll("#rules .line").length};""")
     check("taking it in says what came", done["result"] == "Took in 2 essentials, 1 folder, 1 saved tab, 1 rule and 1 new space. Nothing here was removed." and done["goneAtOnce"] and not done["shown"], str(done))
-    check("and the page's rules follow, and no way back to a Sidebery this browser never had appears", done["ruleLines"] >= 1 and not done["back"], str(done))
+    check("and the page's rules follow", done["ruleLines"] >= 1, str(done))
     time.sleep(2)
     after = m.js(named)
     check("an essential whose ids are swapped lands under the right space's name, in every window", after["two"] and all(x == ["Space 2"] for x in after["two"]), str(after))
@@ -8343,13 +7938,13 @@ def alone_copy_and_import(m):
     choose_file(m, "copy-file", "not json at all")
     r = ext_page(m, "/settings/settings.html", """return doc.getElementById("merge-result").textContent;""")
     check("a file that is not even JSON says so", r == "This is not a Tidier copy.", str(r))
-    choose_file(m, "sidebery-file-alone", copy)
-    r = ext_page(m, "/settings/settings.html", """return doc.getElementById("sidebery-result-alone").textContent;""")
+    choose_file(m, "sidebery-file", copy)
+    r = ext_page(m, "/settings/settings.html", """return doc.getElementById("sidebery-result").textContent;""")
     check("a Tidier copy is not taken for Sidebery's export", r == "This is not Sidebery's export.", str(r))
     # Sidebery's export: address rules from panels, and the folder it had closed closes at once.
     with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "fixtures", "sidebery_export.json")) as f:
-        choose_file(m, "sidebery-file-alone", f.read())
-    r = ext_page(m, "/settings/settings.html", """return doc.getElementById("sidebery-result-alone").textContent;""")
+        choose_file(m, "sidebery-file", f.read())
+    r = ext_page(m, "/settings/settings.html", """return doc.getElementById("sidebery-result").textContent;""")
     check("Sidebery's export says what came, and what it left out", r == "Took in 3 rules, the order of 2 spaces and 1 closed folder. Left out the rules of 1 panel with no container.", str(r))
     s = m.js(named)
     check("its address rules go to their panel's space", ["two.example.org", "Space 2"] in s["rules"] and ["reopen.example.org", "Space 1"] in s["rules"] and not [x for x in s["rules"] if "nowhere" in x[0] or "excluded" in x[0]], str(s))
@@ -8358,8 +7953,8 @@ def alone_copy_and_import(m):
       return folders().filter(f => f.name === "Reading");""")
     check("the folder Sidebery had closed is closed in the sidebar", [f["collapsed"] for f in shown] == [True], str(shown))
     with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "fixtures", "sidebery_export.json")) as f:
-        choose_file(m, "sidebery-file-alone", {k: v for k, v in json.load(f).items() if k != "snapshots"})
-    r = ext_page(m, "/settings/settings.html", """return doc.getElementById("sidebery-result-alone").textContent;""")
+        choose_file(m, "sidebery-file", {k: v for k, v in json.load(f).items() if k != "snapshots"})
+    r = ext_page(m, "/settings/settings.html", """return doc.getElementById("sidebery-result").textContent;""")
     check("an export with no snapshot says folders start open", "no snapshot in this export, so folders start open" in r, str(r))
     no_problems(m, "taking in a copy and an export")
     # Leave no trace for the groups after this one.
@@ -8919,41 +8514,6 @@ def alone_look(m):
       return out; }""", words)
     check("a notice has a × in its middle, and a real click on it puts the notice away", shown and r["centred"] and r.get("fading") and gone["hidden"] and not gone["kept"], f"{r} {gone}")
     m.js(H + """main().document.getElementById("sidebar-box").style.width = args[0]; await wait(300); return 1;""", was)
-
-
-def sidebar_setting_off(m):
-    # The setting off is the daily browser: should Tidier's sidebar be opened beside
-    # Sidebery, the list keeps behaving as it always did (compare alone_stay_put).
-    r = sidebar_page(m, """
-      await wait(1000);
-      const obj = o => page.JSON.parse(JSON.stringify(o)), tabs = page.browser.tabs, out = {};
-      const list = doc.getElementById("tabs"), key = k => page.dispatchEvent(new page.KeyboardEvent("keydown", {key: k, bubbles: true, cancelable: true}));
-      const until = async test => { for (const t0 = Date.now(); Date.now() - t0 < 5000 && !test(); ) await wait(30); };
-      list.style.cssText = "flex:none;height:64px";
-      const folder = doc.querySelector("#tabs .folder"), far = [...doc.querySelectorAll("#tabs > .tab")].at(-1);
-      if (!folder || !far) return {missing: true};
-      const before = (await tabs.query(obj({active: true, currentWindow: true})))[0].id;
-      await tabs.update(Number(far.dataset.tab), obj({active: true}));
-      await until(() => doc.querySelector("#tabs > .tab.active"));
-      await wait(300);
-      out.listStays = list.scrollTop === 0 && !!doc.querySelector("#tabs > .tab.active");
-      const inside = folder.querySelector(".tab");
-      await tabs.update(Number(inside.dataset.tab), obj({active: true}));
-      await until(() => folder.querySelector(".tab.active"));
-      folder.querySelector(".head").click();
-      await until(() => folder.classList.contains("collapsed"));
-      out.closedHidesAll = !!folder.querySelector(".tab.active") && [...folder.querySelectorAll(".tab")].every(x => x.offsetParent === null);
-      key("ArrowDown");
-      out.keyAtTop = doc.querySelector(".cursor") === doc.querySelector(".tile, #tabs .head, #tabs .tab");
-      page.dispatchEvent(new page.Event("blur"));
-      out.cursorStays = !!doc.querySelector(".cursor");
-      await tabs.update(before, obj({active: true}));
-      return out;""")
-    check("with the setting off, the list does not follow the selected tab", r.get("listStays") is True, str(r))
-    check("with the setting off, a closed folder hides all its tabs", r.get("closedHidesAll") is True, str(r))
-    check("with the setting off, the first arrow key starts at the top, and the cursor stays", r.get("keyAtTop") is True and r.get("cursorStays") is True, str(r))
-    m.js(H + """const w = main(); for (const t of [...w.gBrowser.tabs]) if (url(t).includes("/sidebar/sidebar.html")) w.gBrowser.removeTab(t);
-      await wait(300); return 1;""")
 
 
 def alone_more(m):
@@ -10134,7 +9694,7 @@ def alone_bar_edges(m):
     start = m.js(H + """const w = main(); w.focus(); await wait(300); return {space: w.gBrowser.selectedTab.userContextId, tabs: w.gBrowser.tabs.length};""")
     kept_before = extension_message(m, {"type": "stats"})["sizes"]
     keys = m.js(BAR_KEYS)
-    check("with Tidier alone the command bar has its keys", len(keys) == 2, str(keys))
+    check("the command bar has its keys", len(keys) == 2, str(keys))
 
     # A space key while the bar has the focus: a small window has no spaces, and would get a tab.
     bar_open(m)
@@ -10514,7 +10074,7 @@ def alone_many(m):
 
 
 def alone_end(m):
-    no_problems(m, "with Tidier alone")
+    no_problems(m, "by the end of the chain")
 
 
 # A folder's tabs as Firefox itself has them, in the main window and a window of this
@@ -10775,9 +10335,6 @@ def alone_isolation_start(m):
     time.sleep(1)
     space = m.js(H + "return main().gBrowser.selectedTab.userContextId;")
     m.js(GIVE_PERMISSIONS, EXT_ID, ["webRequest", "webRequestBlocking"], ["<all_urls>"])
-    # The test declares Tidier alone through a stand-in for managed storage that exists only once
-    # it has connected, which is later than this is about: so the setting as the settings page stores it.
-    m.js(H + """const db = await ExtensionStorageIDB.open(ExtensionStorageIDB.getStoragePrincipal(WebExtensionPolicy.getByID(args[0]).extension)); await db.set({tidierAlone: true}); return 1;""", EXT_ID)
     visit(m, space, f"{base}/set-cookie?v=at-start")
     m.js(ISOLATION_JS + """await closeAll("/set-cookie"); return 1;""")
     # A page you opened before there was a rule for it: Firefox restoring it, or you reloading it, is no reason to move it.
@@ -10954,31 +10511,49 @@ ALONE_SHARDS = (
 assert {g for shard in ALONE_SHARDS for g in shard} == set(ALONE_GROUPS), "every Tidier-alone group is in a part"
 
 
-GROUPS = (external_links, new_window, more_windows, essentials, folders, tab_sync, folder_pull, tab_moves, saved_tabs, quiet_off, ghost_title,
+# The core of tab sync, essentials and saved tabs, each group on its own, in test Firefoxes
+# where Tidier may not hide tabs: as on a browser moved over from Sidebery by itself, before
+# its sidebar has been asked to (seed_folders makes a folder in each space first).
+GROUPS = (new_window, essentials, tab_sync, saved_tabs, ghost_title,
           pinned_ghost, orphans, popups, archiving, shortcuts, look,
-          sidebar_setting_off,
-          tab_menu_off,
-          live_folders, many_tabs, trees, handover, reopened_window, update, restart, move_over)
+          live_folders, many_tabs, handover, reopened_window, update, restart, old_browser)
 # What a group needs run before it (as setup, reported only if it fails) when
 # it runs without it: the second window new_window opens, and the window
 # handover closes, which reopened_window reopens.
-NEEDS = {g: [new_window] for g in (essentials, folders, tab_sync, folder_pull, tab_moves, saved_tabs, ghost_title, pinned_ghost,
-                                   archiving, live_folders, many_tabs, handover)}
+NEEDS = {g: [new_window] for g in (essentials, tab_sync, saved_tabs, ghost_title, pinned_ghost,
+                                   archiving, live_folders, many_tabs, handover, old_browser)}
 NEEDS[reopened_window] = [new_window, handover]
 NEEDS[update] = [new_window]
-NEEDS[move_over] = [new_window]
 # By default the groups run in these parallel runs, each in its own test
 # Firefox, about equally long (the whole test in about a third of the time).
-SHARDS = (  # measured: about 120, 145 and 140 s on a Mac, before saved_tabs (about 60 s)
-    (external_links, new_window, more_windows, orphans, popups, shortcuts, look, sidebar_setting_off, ghost_title, saved_tabs, quiet_off, tab_menu_off),
-    (essentials, folders, tab_sync, folder_pull, tab_moves, trees, pinned_ghost),
+SHARDS = (
+    (new_window, orphans, popups, shortcuts, look, ghost_title, saved_tabs),
+    (essentials, tab_sync, pinned_ghost, old_browser),
     (archiving, live_folders, many_tabs, handover, reopened_window, update, restart),
-    (move_over,),
 )
 
+
+def seed_folders(m):
+    """A folder of Tidier's own in each space, made as the sidebar makes one, with two tabs in it:
+    fixture-in-folder-<space>-1 and -2, in Fixture folder <space>."""
+    m.js(H + """const w = main();
+      for (const ctx of [1, 2, 3]) for (const i of [1, 2]) { w.gBrowser.addTrustedTab("https://example.org/?fixture-in-folder-" + ctx + "-" + i, {userContextId: ctx, inBackground: true}); await wait(300); }
+      await wait(4000); return 1;""")
+    sidebar_page(m, """for (const ctx of [1, 2, 3]) send({type: "newFolder", space: "firefox-container-" + ctx, name: "Fixture folder " + ctx});
+      await wait(1500); return 1;""")
+    for ctx in (1, 2, 3):
+        for i in (1, 2):
+            to_folder(m, f"https://example.org/?fixture-in-folder-{ctx}-{i}", f"Fixture folder {ctx}")
+    close_sidebar_page(m)
+    made = m.js(H + """const all = (await storage(args[0], ["syncedTabs"])).syncedTabs;
+      return Object.values(all).filter(e => /fixture-in-folder/.test(e.url || "") && all[e.parentKey]?.group && e.saved).length;""", EXT_ID)
+    if made != 6:
+        check("(setup: a folder with two tabs in each space)", False, f"{made} of 6 tabs in their folders")
+
+
 def run_alone(groups, xpi, port, order=None):
-    """Run Tidier-alone groups in a test Firefox of their own, in ALONE_GROUPS order (or the given one)."""
-    with TestFirefox(xpi=xpi, port=port, alone=True) as m:
+    """Run the chain's groups in a test Firefox of their own, in ALONE_GROUPS order (or the given one)."""
+    with TestFirefox(xpi=xpi, port=port) as m:
         for group in [g for g in order or ALONE_GROUPS if g in groups]:
             t0 = time.time()
             try:
@@ -10991,11 +10566,9 @@ def run_alone(groups, xpi, port, order=None):
 
 def run_groups(groups, xpi, port):
     """Run some groups in one test Firefox, in GROUPS order."""
-    global sidebery_version, setup_only
-    with TestFirefox(xpi=xpi, port=port) as m:
-        sidebery_version = m.js("""const {AddonManager} = ChromeUtils.importESModule("resource://gre/modules/AddonManager.sys.mjs");
-          return (await AddonManager.getAddonByID(args[0])).version;""", SIDEBERY_ID)
-        print(f"Sidebery {sidebery_version}", flush=True)
+    global setup_only
+    with TestFirefox(xpi=xpi, port=port, hiding=False) as m:
+        seed_folders(m)
         needed = {n for g in groups for n in NEEDS.get(g, [])} - set(groups)
         setup = [g for g in GROUPS if g in needed]
         for group in setup + [g for g in GROUPS if g in groups]:
@@ -11006,8 +10579,7 @@ def run_groups(groups, xpi, port):
             except Exception:
                 check(f"{group.__name__} ran", False, traceback.format_exc(limit=2).strip().splitlines()[-1])
                 m.chrome()
-            # Sidebery sorts pinned tabs by space when Firefox starts, so
-            # essentials apart from their space would be reordered then.
+            # Each space's essentials stay together (essentials.js), whatever a group did.
             apart = m.js(H + PINS_APART)
             if apart:
                 apart_after.append((group.__name__, apart))
@@ -11015,7 +10587,7 @@ def run_groups(groups, xpi, port):
             if not setup_only:
                 print(f"TIME  {group.__name__} {round(time.time() - t0)} s", flush=True)
         setup_only = False
-        if restart not in groups and move_over not in groups:  # which end with a new background page, and check before it
+        if restart not in groups and old_browser not in groups:  # which end with a new background page, and check before it
             no_problems(m, "by the end of the run")
     check("every window's essentials stay together by space", not apart_after, str(apart_after[:2]))
 
@@ -11026,18 +10598,18 @@ def run_parallel(argv, base=PORT):
     procs = [subprocess.Popen([sys.executable, "-I", os.path.abspath(__file__), *run, "--port", str(base + 1 + i), *argv],
                               stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
              for i, run in enumerate(runs)]
-    passed = total = known_bugs = 0
+    passed = total = 0
     for p in procs:
         out = p.communicate()[0]
         for line in out.splitlines():
-            if line.startswith(("PASS", "FAIL", "KNOWN", "SKIP", "INFO", "TIME")):
+            if line.startswith(("PASS", "FAIL", "SKIP", "INFO", "TIME")):
                 print(line, flush=True)
-            elif m := re.match(r"(\d+)/(\d+) passed.*?(?:\((\d+) known)?", line):
-                passed, total, known_bugs = passed + int(m[1]), total + int(m[2]), known_bugs + int(m[3] or 0)
+            elif m := re.match(r"(\d+)/(\d+) passed", line):
+                passed, total = passed + int(m[1]), total + int(m[2])
         if p.returncode and not re.search(r"^\d+/\d+ passed", out, re.M):
             print(f"FAIL  a parallel run crashed:\n{out[-1500:]}", flush=True)
             total += 1
-    return passed, total, known_bugs
+    return passed, total
 
 
 def main():
@@ -11061,34 +10633,33 @@ def main():
             run_groups({g for g in GROUPS if g.__name__ in names}, xpi, port)
         if any(g.__name__ in names for g in ALONE_GROUPS):
             run_alone({g for g in ALONE_GROUPS if g.__name__ in names}, xpi, port)
-        passed, total, known_bugs = sum(results), len(results), len(known)
+        passed, total = sum(results), len(results)
     elif "--serial" in args:
         print(f"Testing {xpi or EXT_DIR} in a test Firefox", flush=True)
         run_groups(set(GROUPS), xpi, port)
         run_alone(set(ALONE_GROUPS), xpi, port)
-        passed, total, known_bugs = sum(results), len(results), len(known)
+        passed, total = sum(results), len(results)
     elif "--part" in args:
-        # One part of the whole, so that GitHub can run each on a runner of its own: the
-        # Sidebery groups, the Tidier-alone chain in one Firefox (alone), or one of its
-        # parts in a Firefox of its own (alone-1 to alone-5: ALONE_SHARDS).
+        # One part of the whole, so that GitHub can run each on a runner of its own: the core
+        # groups, the chain in one Firefox (alone), or one of its parts in a Firefox of its
+        # own (alone-1 to alone-5: ALONE_SHARDS).
         part = args[args.index("--part") + 1]
-        parts = ["sidebery", "alone"] + [f"alone-{i + 1}" for i in range(len(ALONE_SHARDS))]
+        parts = ["core", "alone"] + [f"alone-{i + 1}" for i in range(len(ALONE_SHARDS))]
         if part not in parts:
             raise SystemExit(f"--part is one of {', '.join(parts)}")
         print(f"Testing {xpi or EXT_DIR} in a test Firefox: the {part} part", flush=True)
-        if part == "sidebery":
+        if part == "core":
             run_groups(set(GROUPS), xpi, port)
         elif part == "alone":
             run_alone(set(ALONE_GROUPS), xpi, port)
         else:
             shard = ALONE_SHARDS[int(part.split("-")[1]) - 1]
             run_alone(set(shard), xpi, port, order=shard)
-        passed, total, known_bugs = sum(results), len(results), len(known)
+        passed, total = sum(results), len(results)
     else:
         print(f"Testing {xpi or EXT_DIR} in {len(SHARDS) + len(ALONE_SHARDS)} test Firefoxes at once", flush=True)
-        passed, total, known_bugs = run_parallel(passthrough, port)
-    print(f"\n{passed}/{total} passed in {round(time.time() - t0)} s"
-          + (f" ({known_bugs} known Sidebery bug)" if known_bugs else ""))
+        passed, total = run_parallel(passthrough, port)
+    print(f"\n{passed}/{total} passed in {round(time.time() - t0)} s")
     sys.exit(0 if passed == total else 1)
 
 

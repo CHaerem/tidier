@@ -1,4 +1,4 @@
-// The menu on a tab or a tile (Tidier alone). Firefox's own tab menu cannot serve here:
+// The menu on a tab or a tile. Firefox's own tab menu cannot serve here:
 // since Firefox 158 it hides all its items once a page names a tab with overrideContext,
 // so a row offered only what Tidier added, and that misfired on tiles.
 //

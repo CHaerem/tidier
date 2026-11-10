@@ -11,7 +11,6 @@ const NONE = "firefox-default", A = "firefox-container-1", B = "firefox-containe
 const GUARD = ["webRequest", "webRequestBlocking", "<all_urls>"];
 
 async function run(ff) {
-  ff.managed = { tidierAlone: true };
   ff.granted ??= new Set(GUARD);
   const x = ff.boot();
   x.b.runtime.onStartup.fire({ reason: "update" });
@@ -105,21 +104,6 @@ test("an unloaded tab outside any container showing its address is not a page: i
   await wait(500);
   assert.ok(ff.tabs.has(t.id));
   assert.equal(opened(ff, w.id, "https://resting.example/").length, 1);
-  x.kill();
-});
-
-test("with the setting off nothing of this runs", async () => {
-  const ff = new FakeFirefox(); ff.granted = new Set(GUARD);
-  const { w } = aWindow(ff);
-  const x = ff.boot();
-  x.b.runtime.onStartup.fire({ reason: "update" });
-  await wait(1200);
-  for (let i = 0; i < 300 && !x.started(); i++) await wait(1000);
-  const t = ff.addTab(w.id, { url: "about:blank" });
-  ff.navigate(t.id, HIDDEN);
-  await wait(500);
-  assert.ok(ff.tabs.has(t.id));
-  assert.equal(ff.tabs.get(t.id).cookieStoreId, NONE);
   x.kill();
 });
 
@@ -220,7 +204,7 @@ test("a window whose space has not been read yet goes by its own, not by another
 });
 
 test("a known tab outside any container asking while Tidier is still starting stays what it is: no page twice, no placeholder left outside", async () => {
-  const ff = new FakeFirefox(); ff.granted = new Set(GUARD); ff.managed = { tidierAlone: true };
+  const ff = new FakeFirefox(); ff.granted = new Set(GUARD);
   ff.store.syncedTabs = {
     f: { own: true, name: "F", group: true, cookieStoreId: B, parentKey: null, rank: 1, url: "x" },
     k: { url: "https://old.example/", title: "Old", cookieStoreId: NONE, parentKey: "f", group: false, added: 1, saved: { url: "https://old.example/" } },

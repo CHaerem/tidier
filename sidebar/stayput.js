@@ -1,4 +1,4 @@
-// A list that shows where you are, and stays as you left it (Tidier alone).
+// A list that shows where you are, and stays as you left it.
 //
 // Each space keeps how far down its list you were, while this sidebar is open. And the
 // list moves by itself for one thing only: the selected tab became another one, which is
@@ -27,7 +27,6 @@
   };
 
   port.onMessage.addListener(next => {
-    if (!next.alone) return;
     cursor?.classList.add("cursor"); // a row drawn again has lost its mark, and you your place
     if (next.space !== shown) {
       shown = next.space;
@@ -61,7 +60,7 @@
   let size = null, selectedInView = false;
   const notice = () => { const row = list.querySelector(".tab.active"); selectedInView = !!row && !outOfView(row); };
   list.addEventListener("scroll", notice, { passive: true });
-  port.onMessage.addListener(next => { if (next.alone) notice(); });
+  port.onMessage.addListener(notice);
   // The room's part is told apart by its height: the list and the room together keep theirs
   // when only the room comes or goes, also when something else changes in the same moment.
   // The width is the list's with its scroll bar: where a scroll bar takes room (a Mac with
@@ -79,5 +78,5 @@
 
   // You went back to the page: the cursor's mark is no longer true, and the next key
   // starts at the tab you are on then, not where you once left the cursor.
-  addEventListener("blur", () => { if (view?.alone) moveCursor(null); });
+  addEventListener("blur", () => { if (view) moveCursor(null); });
 }

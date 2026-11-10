@@ -1,16 +1,15 @@
 # The smoke test on GitHub: the same tests/smoke.py as on your Mac, in a
 # headless Firefox on a macOS runner.
 #
-# On each push: Tidier alone (the way Tidier is going), in Firefox Developer Edition.
-# Only there can Tidier be installed unsigned for real, so only there does the test
-# quit and restart Firefox and update Tidier over a running session, which is where tabs
-# could be lost; and it is the Beta, about four weeks ahead, so a Firefox change that
-# breaks something shows up before it reaches you. Its groups run in five parts
-# (ALONE_SHARDS in tests/smoke.py), each on a runner of its own at the same time: a
-# push is judged in about the time of the longest part, not of all of them in a row.
+# On each push: in Firefox Developer Edition. Only there can Tidier be installed
+# unsigned for real, so only there does the test quit and restart Firefox and update
+# Tidier over a running session, which is where tabs could be lost; and it is the Beta,
+# about four weeks ahead, so a Firefox change that breaks something shows up before it
+# reaches you. The test runs in six parts, each on a runner of its own at the same time:
+# the chain's five (ALONE_SHARDS in tests/smoke.py) and the core groups. A push is
+# judged in about the time of the longest part, not of all of them in a row.
 # Every Monday, and by hand (Actions → Smoke test → Run workflow): also the newest
-# Firefox, and the Sidebery groups, while a browser still runs with Sidebery. They are
-# not run on each push: Sidebery is on its way out (PLAN.md).
+# Firefox, which is what yours updates to.
 #
 # The Firefox files come from the private dotfiles repository, read with a
 # read-only deploy key (secret DOTFILES_DEPLOY_KEY, set up once with
@@ -68,7 +67,7 @@ jobs:
       fail-fast: false
       matrix:
         firefox: ${{ fromJSON(github.event_name == 'push' && '["latest-devedition"]' || '["latest-devedition", "latest"]') }}
-        part: ${{ fromJSON(github.event_name == 'push' && '["alone-1", "alone-2", "alone-3", "alone-4", "alone-5"]' || '["alone-1", "alone-2", "alone-3", "alone-4", "alone-5", "sidebery"]') }}
+        part: ["alone-1", "alone-2", "alone-3", "alone-4", "alone-5", "core"]
     steps:
       - name: Check out Tidier
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -87,19 +86,15 @@ jobs:
         uses: browser-actions/setup-firefox@0bc507ddf224827e3b1af68e014d5e42ab93e795 # v1.7.2
         with:
           firefox-version: ${{ matrix.firefox }}
-      - name: Download Sidebery
-        run: curl -fsSL -o "$RUNNER_TEMP/sidebery.xpi" https://addons.mozilla.org/firefox/downloads/latest/sidebery/latest.xpi
       # One test Firefox per runner (--part): GitHub's runner is slower than a Mac, and
       # several at once there would test the runner, not Tidier.
       #
-      # A failure gets one more try, in the same job: on GitHub's slower machines
-      # a new window's essentials can land in the wrong space (a Sidebery bug, with
-      # a proposed fix in mbnuqw/sidebery#2497). It covers any failure, not only
-      # that one, so it is marked: a warning on the run, seen in Actions.
+      # A failure gets one more try, in the same job: GitHub's runners are slower and
+      # busier than a Mac, and a check's timing can miss there. It covers any failure,
+      # so it is marked: a warning on the run, seen in Actions.
       - name: Smoke test
         env:
           TIDIER_FIREFOX: ${{ steps.firefox.outputs.firefox-path }}
-          TIDIER_SIDEBERY_XPI: ${{ runner.temp }}/sidebery.xpi
           TIDIER_DOTFILES: ${{ github.workspace }}/dotfiles/home/firefox
           # Only there is Tidier installed for real; if that fails the run must not
           # stay green without the restart and update checks.

@@ -11,7 +11,6 @@ const C1 = "firefox-container-1", C2 = "firefox-container-2";
 
 // --- What it does ---------------------------------------------------------------
 async function alone(ff) {
-  ff.managed = { tidierAlone: true };
   const x = ff.boot();
   x.b.runtime.onStartup.fire();
   await wait(1200);
@@ -148,27 +147,25 @@ async function sidebarPort(x, windowId) {
   return say;
 }
 
-test("with the setting off a space's messages do nothing, and with it on they do", async () => {
-  for (const setting of [false, true]) {
-    const ff = new FakeFirefox();
-    const { a, tabs } = session(ff);
-    const x = setting ? await alone(ff) : ff.boot();
-    const calls = [];
-    x.b.contextualIdentities.update = async id => { calls.push(id); };
-    const say = await sidebarPort(x, a.id);
-    await say({ type: "unloadSpace", space: C1 });
-    await say({ type: "renameSpace", space: C1, name: "Home" });
-    assert.equal(tabs.here.discarded, setting);
-    assert.equal(calls.length, setting ? 1 : 0);
-    x.kill();
-  }
+test("a space's messages from the sidebar do what they say", async () => {
+  const ff = new FakeFirefox();
+  const { a, tabs } = session(ff);
+  const x = await alone(ff);
+  const calls = [];
+  x.b.contextualIdentities.update = async id => { calls.push(id); };
+  const say = await sidebarPort(x, a.id);
+  await say({ type: "unloadSpace", space: C1 });
+  await say({ type: "renameSpace", space: C1, name: "Home" });
+  assert.equal(tabs.here.discarded, true);
+  assert.equal(calls.length, 1);
+  x.kill();
 });
 
 // --- What it offers ---------------------------------------------------------------
 // The sidebar's own scripts, with the little of a page that they need. Text-only, as a
 // menu is: what is drawn is for the smoke test.
 // `facts`: what the background says of the space when its menu opens (spaceFacts, listactions.js).
-function sidebar({ alone = true, active = C1, tabs = [{ id: 1, active: true }, { id: 2 }], facts = { loaded: 0, unmuted: 0, muted: 0, duplicates: 0 } } = {}) {
+function sidebar({ active = C1, tabs = [{ id: 1, active: true }, { id: 2 }], facts = { loaded: 0, unmuted: 0, muted: 0, duplicates: 0 } } = {}) {
   const listeners = {}, sent = [], menus = [], options = [], asked = [];
   const box = { hidden: true, style: {}, offsetHeight: 90, getBoundingClientRect: () => ({ top: 500 }), addEventListener() {}, setAttribute() {} };
   const ctx = vm.createContext({
@@ -185,7 +182,7 @@ function sidebar({ alone = true, active = C1, tabs = [{ id: 1, active: true }, {
   });
   ctx.window = ctx;
   const REPO = new URL("../", import.meta.url);
-  vm.runInContext(`let view = ${JSON.stringify({ alone, space: active, tabs, spaces: [{ id: C1, name: "One", color: "#000" }, { id: C2, name: "Two", color: "#000" }] })};`, ctx);
+  vm.runInContext(`let view = ${JSON.stringify({ space: active, tabs, spaces: [{ id: C1, name: "One", color: "#000" }, { id: C2, name: "Two", color: "#000" }] })};`, ctx);
   for (const f of ["sidebar/menu.js", "sidebar/tabmenu.js", "sidebar/spacemenu.js", "sidebar/moremenu.js"]) vm.runInContext(readFileSync(new URL(f, REPO), "utf8"), ctx, { filename: f });
   vm.runInContext("var showMenu = items => __opened(items)", Object.assign(ctx, { __opened: items => menus.push(items) }));
   // Firefox's own menu is held back in the click; Tidier's comes once the background has answered.
@@ -289,13 +286,6 @@ test("the list's menu is New folder, Clear today's tabs, Archived tabs, Settings
   assert.equal(s.options.length, 1);
   const lone = sidebar({ tabs: [{ id: 1, active: true }] });
   assert.deepEqual(lone.labels(lone.list()), ["New folder", "Archived tabs", "Settings"]);
-});
-
-test("without Tidier alone a right click on a dot is Firefox's, as today", async () => {
-  const s = sidebar({ alone: false });
-  assert.equal(await s.rightClick("#spaces .space", { space: C1 }), false);
-  assert.equal(await s.rightClick("#space-name"), false);
-  assert.equal(s.menus.length, 0);
 });
 
 // The sidebar's scripts share one scope as well, and here it is worse than in the

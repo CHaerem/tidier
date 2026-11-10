@@ -1,6 +1,6 @@
 // The command bar, like Arc's: one key, one field, and everything is reached from it.
 // Tabs of all spaces, essentials, folders, what was closed, history and bookmarks if
-// you allow it, and commands. Only with Tidier alone.
+// you allow it, and commands.
 //
 // An extension cannot draw over a page, so the bar is a small popup window of its own
 // (windows.create type popup), centred over the window you are in. Tab sync and
@@ -154,7 +154,7 @@ browser.windows.onRemoved.addListener(id => {
   barForgetUntil = Date.now() + BAR_FORGET_MS;
 });
 browser.commands.onCommand.addListener((name, tab) => {
-  if ((name === "command-bar" || name === "command-bar-t") && tidierAlone && started) toggleCommandBar(tab).catch(noteError);
+  if ((name === "command-bar" || name === "command-bar-t") && started) toggleCommandBar(tab).catch(noteError);
 });
 
 // --- What the bar works on ---------------------------------------------------------
@@ -419,7 +419,7 @@ async function barTabItems(ctx) {
       continue;
     }
     const reps = repsByKey.get(key);
-    if (entry.group || !reps) continue; // Sidebery's folder pages, or a tab no window has any more
+    if (entry.group || !reps) continue; // a folder, or a tab no window has any more
     const live = reps.find(t => syncRoleByTab.get(t.id) === "live");
     const used = live && !isGhostUrl(live.url) ? live.lastAccessed : 0;
     items.push({

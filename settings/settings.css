@@ -175,6 +175,9 @@ h3 { margin: 14px 0 6px; font-size: var(--size); line-height: 20px; font-weight:
 .proxy-line select { flex: 0 0 auto; }
 .field .content { min-width: 0; }
 .line.tight { margin: 0; }
+/* A tick with a long text: the text wraps beside the box, not under it on a line of its own. */
+label.line:has(> input[type=checkbox]) { flex-wrap: nowrap; align-items: flex-start; }
+label.line > input[type=checkbox] { flex: none; margin-top: 2px; }
 .line:has(> .rule-problem:not([hidden])) { flex-wrap: wrap; }
 .rule-problem { flex-basis: 100%; margin: 0; }
 .choices { display: flex; flex-wrap: wrap; gap: 4px; }

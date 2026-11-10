@@ -1,4 +1,4 @@
-// News (Tidier alone): a still dot when a page you are not looking at has something
+// News: a still dot when a page you are not looking at has something
 // new. Across spaces this is how you see that chat or mail moved without going there.
 //
 // Firefox only tells that a tab's title changed, and titles change for many reasons,
@@ -56,14 +56,13 @@ function dropNews(tabId) {
 // The titles as they are when Tidier starts, so that the first change after an update
 // counts: a page that stays loaded through an update sends no load to learn its title from.
 async function startNews() {
-  if (!tidierAlone) return;
   for (const t of await browser.tabs.query({ discarded: false })) {
     if (!isGhostUrl(t.url)) newsSeen.set(t.id, { title: t.title, quietFrom: Date.now() });
   }
 }
 
 browser.tabs.onUpdated.addListener((tabId, change, tab) => {
-  if (!tidierAlone || !started) return;
+  if (!started) return;
   if ("pinned" in change) dropNews(tabId); // it changes from record to essential or back, so the mark's key is no longer its own
   // A placeholder's title is only the page's, shown again. An unloaded page that wakes up
   // starts over (it passes through about:blank and its own address on the way), as a page
@@ -101,7 +100,6 @@ browser.tabs.onActivated.addListener(({ tabId, previousTabId, windowId }) => {
 // tabs.onActivated says nothing. And the selected tab of the window you leave has just
 // lost focus, which is another moment a page sets its title.
 browser.windows.onFocusChanged.addListener(async windowId => {
-  if (!tidierAlone) return;
   for (const t of await browser.tabs.query({ active: true }).catch(() => [])) {
     const seen = newsSeen.get(t.id);
     if (seen) seen.quietFrom = Date.now();

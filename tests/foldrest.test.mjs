@@ -19,7 +19,6 @@ async function run(ff) {
   return x;
 }
 async function alone(ff) {
-  ff.managed = { tidierAlone: true };
   return run(ff);
 }
 
@@ -403,7 +402,6 @@ test("a start hides a closed folder's tabs and unloads nothing", async () => {
 test("leaving a tab while Tidier starts unloads nothing", async () => {
   // Firefox has only just brought the session back, and nothing you did closed a folder.
   const ff = new FakeFirefox();
-  ff.managed = { tidierAlone: true };
   ff.store.syncedTabs = { F: folder({ collapsed: true }), a: inFolder("https://a.example/"), here: entry("https://here.example/") };
   const w = ff.addWindow({ focused: true });
   const a = live(ff, w, "a", { active: true }), here = live(ff, w, "here");
@@ -438,23 +436,6 @@ test("a new window's placeholders of a closed folder's tabs are hidden", async (
   assert.equal(reps("a")[0].hidden, true);
   assert.equal(reps("b")[0].hidden, true);
   assert.equal(reps("there")[0].hidden, false);
-  x.kill();
-});
-
-test("with the setting off, a closed folder hides and unloads nothing", async () => {
-  const ff = new FakeFirefox();
-  const s = twoWindows(ff, folder({ collapsed: true }));
-  const x = await run(ff);
-  assert.equal(x.js("tidierAlone"), false);
-  ff.select(s.a.id);
-  await wait(300);
-  ff.select(s.here.id);
-  await wait(300);
-  await x.js("foldChanged")("F");
-  await x.js("restMoved")("a");
-  assert.ok(!ff.log.some(l => ["hide", "discard"].includes(l[0])));
-  assert.equal(s.a.hidden, false);
-  assert.equal(s.a.discarded, false);
   x.kill();
 });
 

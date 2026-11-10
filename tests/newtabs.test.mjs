@@ -11,8 +11,7 @@ const page = key => `https://${key}.example/`;
 const entry = (key, more = {}) => ({ url: page(key), title: key, cookieStoreId: C1, parentKey: null, group: false, added: 1, ...more });
 const folder = (cookieStoreId = C1) => ({ group: true, own: true, name: "Kept", cookieStoreId, parentKey: null, rank: 1 });
 
-async function start(ff, { alone = true } = {}) {
-  if (alone) ff.managed = { tidierAlone: true };
+async function start(ff) {
   const x = ff.boot();
   x.b.runtime.onStartup.fire({ reason: "update" });
   await wait(1200);
@@ -92,21 +91,19 @@ test("topOfToday: a tab without a container is a row of every space; another spa
   x.kill();
 });
 
-test("the new tab button opens first among today's tabs; with the setting off, at the end as before", async () => {
-  for (const alone of [true, false]) {
-    const ff = new FakeFirefox();
-    const w = ff.addWindow({ focused: true });
-    const [first] = fill(ff, w, [["a"], ["b"]]);
-    first.active = true;
-    const x = await start(ff, { alone });
-    const send = await sidebar(x, w.id);
-    await send({ type: "newTab", space: C1 });
-    await wait(100);
-    const fresh = ff.list(w.id).find(t => !ff.values.has(t.id));
-    assert.equal(fresh.cookieStoreId, C1);
-    assert.equal(fresh.index, alone ? 0 : 2, alone ? "at the top" : "at the end");
-    x.kill();
-  }
+test("the new tab button opens first among today's tabs", async () => {
+  const ff = new FakeFirefox();
+  const w = ff.addWindow({ focused: true });
+  const [first] = fill(ff, w, [["a"], ["b"]]);
+  first.active = true;
+  const x = await start(ff);
+  const send = await sidebar(x, w.id);
+  await send({ type: "newTab", space: C1 });
+  await wait(100);
+  const fresh = ff.list(w.id).find(t => !ff.values.has(t.id));
+  assert.equal(fresh.cookieStoreId, C1);
+  assert.equal(fresh.index, 0, "at the top");
+  x.kill();
 });
 
 test("the new tab button makes no second empty new tab when you are on one", async () => {
@@ -274,23 +271,6 @@ test("a link from a tab has the same neighbours in another window", async () => 
   x.kill();
 });
 
-test("with the setting off, another window's placeholder is added at the end, as before", async () => {
-  const ff = new FakeFirefox();
-  const w = ff.addWindow({ focused: true }), v = ff.addWindow();
-  const [a] = fill(ff, w, [["a"], ["b"]]);
-  a.active = true;
-  fill(ff, v, [["a"], ["b"]], "ghost");
-  const x = await start(ff, { alone: false });
-  // (No opener: with Sidebery an opener is its tree, which has its own rules for the place.)
-  const link = ff.addTab(w.id, { url: "about:blank", cookieStoreId: C1, index: 1 });
-  x.b.tabs.onCreated.fire(ff.snap(link));
-  await wait(50);
-  ff.navigate(link.id, "https://link.example/");
-  await wait(3000); // a new tab is registered once it has settled (SETTLE_MS)
-  assert.deepEqual(keysIn(ff, v.id), ["a", "b", ff.values.get(link.id).syncKey]);
-  x.kill();
-});
-
 test("a tab about to be opened again is not drawn, so it does not jump; a page that stays is drawn at once", async () => {
   const ff = new FakeFirefox();
   const w = ff.addWindow({ focused: true });
@@ -407,10 +387,10 @@ test("while a tab is opened again its row is not drawn, up to when it is gone", 
 });
 
 // The double click (sidebar/newtab.js), on a small stand-in for the sidebar page.
-function sidebarPage({ alone = true } = {}) {
+function sidebarPage() {
   const on = {}, sent = [], list = { addEventListener: (type, f) => { on[`list:${type}`] = f; } };
   const ctx = vm.createContext({
-    view: { alone, space: C1 }, send: m => sent.push({ ...m }),
+    view: { space: C1 }, send: m => sent.push({ ...m }),
     document: { getElementById: () => list }, addEventListener: (type, f, capture) => { on[`window:${type}:${!!capture}`] = f; },
   });
   vm.runInContext(readFileSync(new URL("../sidebar/newtab.js", import.meta.url), "utf8"), ctx);
@@ -420,13 +400,11 @@ function sidebarPage({ alone = true } = {}) {
   return { list, twice, sent };
 }
 
-test("a double click on the empty part opens a tab; only there, and only with the setting on", () => {
+test("a double click on the empty part opens a tab, and only there", () => {
   const empty = sidebarPage();
   assert.deepEqual(empty.twice(empty.list), [{ type: "newTab", space: C1 }]);
   const row = sidebarPage();
   assert.deepEqual(row.twice({ className: "row" }, row.list), [], "the first click was on a row, which went from under the pointer");
-  const off = sidebarPage({ alone: false });
-  assert.deepEqual(off.twice(off.list), [], "with the setting off a double click does nothing");
 });
 
 test("a double click that began outside the list opens nothing, whatever a click long ago was on", () => {
@@ -494,19 +472,3 @@ test("a link from a tab in another space's folder stays next to it: that tab is 
   x.kill();
 });
 
-test("with the setting off a link from a tab is never moved, wherever its opener is", async () => {
-  const ff = new FakeFirefox();
-  const w = ff.addWindow({ focused: true });
-  const essential = ff.addTab(w.id, { pinned: true, url: "https://essential.example/", cookieStoreId: C1, active: true });
-  fill(ff, w, [["a"], ["b"]]);
-  const x = await start(ff, { alone: false });
-  const first = await linkFrom(ff, x, w, essential, "https://one.example/");
-  // Firefox puts the next one after the last link from the same tab: with Tidier alone, the
-  // one place would be above it.
-  const second = ff.addTab(w.id, { url: "about:blank", cookieStoreId: C1, openerTabId: essential.id, index: ff.index(first) + 1 });
-  x.b.tabs.onCreated.fire(ff.snap(second));
-  await wait(100);
-  assert.equal(ff.index(second), ff.index(first) + 1);
-  assert.ok(!ff.log.some(([what, id]) => what === "move" && id === second.id));
-  x.kill();
-});

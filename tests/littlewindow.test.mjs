@@ -69,14 +69,15 @@ function withWindows(ff, x) {
     from.forEach(closeIfEmpty);
   };
   ff.winValues ??= new Map();
-  b.sessions.setWindowValue = async (id, k, v) => { ff.winValues.set(`${id}/${k}`, v); (ff.winValueLog ??= []).push([id, k, v]); };
-  b.sessions.getWindowValue = async (id, k) => ff.winValues.get(`${id}/${k}`);
+  // As in Firefox, a window that has closed is refused (windowTracker.getWindow, ext-sessions).
+  const known = id => { if (!ff.wins.has(id)) throw new Error(`Invalid window ID: ${id}`); };
+  b.sessions.setWindowValue = async (id, k, v) => { known(id); ff.winValues.set(`${id}/${k}`, v); (ff.winValueLog ??= []).push([id, k, v]); };
+  b.sessions.getWindowValue = async (id, k) => { known(id); return ff.winValues.get(`${id}/${k}`); };
   b.menus.update = async (id, p) => { (ff.menuUpdates ??= []).push([id, p]); };
   return x;
 }
 
 async function start(ff) {
-  ff.store.tidierAlone ??= true;
   const x = withWindows(ff, ff.boot());
   x.b.runtime.onStartup.fire();
   await wait(1200);
@@ -355,24 +356,11 @@ test("the setting is read and written through the settings page", async () => {
   const ff = new FakeFirefox();
   session(ff);
   const x = await start(ff);
-  assert.deepEqual({ ...await x.send({ type: "little:get" }) }, { alone: true, on: true });
-  assert.deepEqual({ ...await x.send({ type: "little:set", on: false }) }, { alone: true, on: false });
+  assert.deepEqual({ ...await x.send({ type: "little:get" }) }, { on: true });
+  assert.deepEqual({ ...await x.send({ type: "little:set", on: false }) }, { on: false });
   await wait(1000);
   assert.equal(ff.store.littleWindow, false);
   assert.equal(x.send({ type: "little:get" }, { id: "someone-else" }), undefined);
-  x.kill();
-});
-
-test("without Tidier alone, nothing changes", async () => {
-  const ff = new FakeFirefox();
-  const { w } = session(ff);
-  ff.store.tidierAlone = false;
-  const x = await start(ff);
-  const t = linkFromOutside(ff, x, w.id);
-  await wait(300);
-  assert.deepEqual(popups(ff), []);
-  assert.ok(ff.wins.get(w.id).order.includes(t.id));
-  assert.equal(ff.menuUpdates, undefined);
   x.kill();
 });
 
@@ -429,7 +417,6 @@ test("⌥-click: a script in every page only while the access is given", async (
   x.b.contentScripts = { register: async o => { const s = { ...o, unregister: async () => { scripts.splice(scripts.indexOf(s), 1); } }; scripts.push(s); return s; } };
   let given = false;
   x.b.permissions.contains = async () => given;
-  ff.store.tidierAlone = true;
   x.b.runtime.onStartup.fire();
   await wait(1200);
   for (let i = 0; i < 300 && !x.started(); i++) await wait(1000);

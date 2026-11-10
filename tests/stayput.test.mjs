@@ -10,7 +10,6 @@ const entry = (url, more = {}) => ({ url, title: url, cookieStoreId: C1, parentK
 const folder = collapsed => ({ group: true, own: true, name: "F", cookieStoreId: C1, parentKey: null, rank: 1, collapsed });
 
 async function start(ff) {
-  ff.managed = { tidierAlone: true };
   const x = ff.boot();
   x.b.runtime.onStartup.fire({ reason: "update" });
   await wait(1200);
@@ -205,23 +204,6 @@ test("a burst while the queue is busy makes one look, for what is true by then, 
   for (let i = 0; i < 100 && ff.tabs.get(selected.id).successorTabId !== fresh.id; i++) await wait(100);
   assert.equal(ff.tabs.get(selected.id).successorTabId, fresh.id);
   assert.ok(x.js("work.jobs") - jobs <= 3, `${x.js("work.jobs") - jobs} jobs`); // the held one, and one look (a last event may ask for a second)
-  assert.equal(x.js("successorDue.size"), 0);
-  x.kill();
-});
-
-test("with the setting off, Firefox is told nothing and nothing waits", async () => {
-  const ff = new FakeFirefox();
-  const { w, selected, made } = fill(ff, [["other", {}]]);
-  ff.select(selected.id);
-  const x = ff.boot();
-  x.b.runtime.onStartup.fire({ reason: "update" });
-  await wait(1200);
-  for (let i = 0; i < 300 && !x.started(); i++) await wait(1000);
-  ff.select(made.other.id);
-  x.b.tabs.onRemoved.fire(-1, { windowId: w.id, isWindowClosing: false });
-  await wait(1000);
-  assert.equal(x.js("tidierAlone"), false);
-  assert.equal(ff.tabs.get(made.other.id).successorTabId, undefined);
   assert.equal(x.js("successorDue.size"), 0);
   x.kill();
 });

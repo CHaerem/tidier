@@ -1,4 +1,4 @@
-// Where the sound is coming from (Tidier alone). Other spaces' tabs are hidden, and
+// Where the sound is coming from. Other spaces' tabs are hidden, and
 // the copy of a tab in this window stays silent while its real page plays in another
 // window, since a page is loaded only once. So noise could have no visible source.
 //
@@ -79,6 +79,6 @@ async function goToSound(windowId, tabId) {
 // sound with no such change, and a tile elsewhere would go on showing it: the tab
 // closes, or it becomes a placeholder (a second loaded copy of an essential does, and
 // keeps its mute).
-browser.tabs.onUpdated.addListener(() => { if (tidierAlone) viewAllSoon(); }, { properties: ["audible", "mutedInfo"] });
+browser.tabs.onUpdated.addListener(() => viewAllSoon(), { properties: ["audible", "mutedInfo"] });
 browser.tabs.onUpdated.addListener(tabId => { if (soundTabs.has(tabId)) viewAllSoon(); }, { properties: ["url"] });
 browser.tabs.onRemoved.addListener(tabId => { if (soundTabs.delete(tabId)) viewAllSoon(); });

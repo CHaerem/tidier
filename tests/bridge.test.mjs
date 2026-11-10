@@ -73,7 +73,6 @@ async function start(ff, { read = true, before = null } = {}) {
 }
 
 function alone(ff) {
-  ff.managed = { tidierAlone: true };
   const w = ff.addWindow({ focused: true });
   ff.addTab(w.id, { url: "https://work.example/", active: true, cookieStoreId: WORK, title: "Work" });
   ff.addTab(w.id, { url: "https://home.example/", cookieStoreId: HOME, title: "Home" });
@@ -144,16 +143,7 @@ test("off means nothing: no port, no container, and calls from anywhere are refu
   assert.equal(x.hosts.length, 0, "no port while it is off");
   assert.ok(!ff.containers.has(AGENT), "no Agent space while it is off");
   assert.equal(x.js("claudeCopyOn"), false);
-  // Without Tidier alone, it cannot even be turned on.
   x.kill();
-  const off = new FakeFirefox();
-  off.addWindow({ focused: true });
-  const y = await start(off);
-  await y.settings("on", { on: true });
-  await y.settings("copy", { on: true });
-  assert.equal(y.hosts.length, 0, "with the daily browser on Sidebery, it cannot be turned on");
-  assert.equal(y.js("claudeCopyOn"), false);
-  y.kill();
 });
 
 test("only the settings page can turn it on or open a space", async () => {

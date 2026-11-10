@@ -4,20 +4,21 @@ Everything that has to be done, in order, with what "done" means. The goal and
 the background are in the README, and the features to aim for in FEATURES.md.
 Tick things off here as they land, so the next person can see where things are.
 
-**In short:** Tidier takes over from Sidebery step by step, while the daily
-Firefox keeps working as it does today. A second Mac runs Tidier alone first.
-The daily browser moves over when Tidier alone is good enough, and only then is
-Sidebery removed and sync added.
+**In short:** Tidier took over from Sidebery step by step, while the daily
+Firefox kept working as it did. On 10 November 2026 the owner asked for the whole
+step at once: Sidebery is out of Tidier's code (part E), and a browser that still
+ran Tidier beside it is moved when it updates. What is left is to use it, on the
+daily Mac and on a second one, and to clear Sidebery out of the dotfiles.
 
 Rules for all of it:
 
-- **Every commit on main reaches the daily browser**, so everything for Tidier
-  alone sits behind a setting that is off by default. With it off, nothing changes.
-- **Every step has a check**, in the test Firefox with Sidebery or without it.
-- **Nothing that exists only for Sidebery gets better from here.** It is kept
-  working until it can be removed.
-- **Nothing can lose tabs without a way back.** Moving the daily browser is
-  explicit, can be resumed, and can be undone.
+- **Every commit on main reaches the daily browser.** There is no setting to hide
+  behind: until part E everything for Tidier alone sat behind one that was off by
+  default; now a browser that still has Sidebery's folders is moved at its first start.
+- **Every step has a check**, in the test Firefox.
+- **Nothing can lose tabs without a copy.** The move a browser makes by itself is
+  preceded by a copy, writes the record in one piece, and is taken up again at the next
+  start if it was cut short. It cannot be undone: there is nothing to go back to.
 
 ## A. A safe core (needed with or without Sidebery)
 
@@ -53,13 +54,13 @@ Rules for all of it:
       closed within half a second of another close goes back to its saved address instead
       of being removed. The Sidebery checks and a long run with Sidebery pass.
 
-## B. Tidier alone (behind the setting)
+## B. Tidier alone (once behind a setting, now the only way)
 
 A first version of all of it works in the test Firefox, without Sidebery.
 
-- [x] **The setting and the test Firefox.** `tidierAlone`, from the extension's storage or
-      declared in managed storage for a machine. A test Firefox without Sidebery, run in
-      every smoke test. With the setting on, what exists only for Sidebery does not run.
+- [x] **The setting and the test Firefox.** `tidierAlone` chose it per machine, until
+      part E took the setting away; a value still stored is never read. Every test
+      Firefox is without Sidebery.
 - [x] **The sidebar as the sidebar.** A key and a button for it, back after an update.
       Checks of what it shows and does, and of its idle cost. It draws only what
       changed, so clicks and drags are not lost.
@@ -105,34 +106,37 @@ Tidier is generic: this repository holds no one's setup, and nothing in it shoul
   browser, in your Firefox account through Firefox Sync, and in a daily copy on each machine.
   It gets there once, by taking in a file: from Zen or Arc (`tools/from_arc_zen.py`), or a
   Tidier copy. Such a file holds your addresses and stays on the machine.
-- **Each machine's own choices** (Tidier alone on, which spaces are hidden there) and
+- **Each machine's own choices** (which spaces are hidden there, which of Firefox's keys are cleared) and
   Firefox's settings are in dotfiles, given to Tidier as managed storage.
 - To do: Tidier's own tests run with Tidier's defaults, not with the private dotfiles; a
   check of the dotfiles' Firefox files belongs with the dotfiles.
 
 ## The order from here
 
-1. Everything so far to main (off by default: the daily browser goes on as today), and a
-   day of watching it.
-2. A short check on the second Mac of what only a real screen can show.
-3. The daily Mac moves over: Tidier alone on, the move from Sidebery by its click, then the
-   Zen file taken in on the settings page. Sidebery disabled, still installed.
+1. This to main, where the smoke test is the gate, and the daily Mac updates by itself: its
+   open tabs and essentials stay, Sidebery's folders become Tidier's, and the settings
+   page comes in front to say so. The owner then shows Tidier's sidebar, lets Tidier hide
+   other spaces' tabs, and removes Sidebery in about:addons.
+2. The Zen file taken in on the settings page: it is the setup the owner wants, and
+   what the move brought from Sidebery need not be kept.
+3. The dotfiles cleared of Sidebery, and Firefox's own ⌘1 to ⌘9, ⌘D and ⌘T cleared in
+   `customKeys.json`, with `firefoxKeys` telling Tidier so (part E).
 4. Sync turned on there, with Add-ons ticked in Firefox Sync (or
    `services.sync.engine.extension-storage.force`). The setup is about 12 kB of the
    100 kB Firefox gives an add-on.
-5. The second Mac signs in to the same Firefox account, turns on Tidier alone and sync, and
-   gets the same setup, with the daily Mac's work space hidden there: the first real sync between two machines.
-6. A week or two of daily use; then Sidebery is removed (part E), and there is no way back.
+5. The second Mac signs in to the same Firefox account, turns on sync, and gets the same
+   setup, with the daily Mac's work space hidden there: the first real sync between two
+   machines. What only a real screen can show is measured there (part C).
 
 ## C. Trying it on the second Mac
 
 - [ ] It gets Firefox as default, and the Firefox files from dotfiles, declared in its
       own configuration. Its commits are signed: an unsigned commit in dotfiles
       stops the Firefox updates on the daily Mac.
-- [ ] Tidier alone from a clean Firefox, from what is written down, with no Sidebery. Its
-      host in the dotfiles says it runs Tidier alone (`tidier.alone`), which clears ⌘1 to
-      ⌘9, ⌘D and ⌘T in `about:keyboard` there and tells Tidier so, and `user.js` stops
-      Firefox from guessing a link's container (README, Keys and Isolation).
+- [ ] Tidier from a clean Firefox, from what is written down, with no Sidebery. The
+      dotfiles clear ⌘1 to ⌘9, ⌘D and ⌘T in `about:keyboard` and tell Tidier so
+      (`firefoxKeys`), and `user.js` stops Firefox from guessing a link's container
+      (README, Keys and Isolation).
 - [ ] Measured there, where the test Firefox cannot: switching space, a new window, the
       command bar opening; and whether quick presses of ⌃⌘↓ are lost while the tab just
       selected starts loading (about 1 in 8 in the slowed-down test Firefox, none with
@@ -141,33 +145,39 @@ Tidier is generic: this repository holds no one's setup, and nothing in it shoul
 
 ## D. Moving the daily browser
 
-- [ ] Sidebery's export taken first, for its rules and order (the Firefox profile itself
-      need not be kept: Zen holds the setup the owner wants).
 - [x] Rules and order of spaces imported from Sidebery's export, which is the only
       place they can be read from, also the address rules of its panels and which folders
       were closed.
-- [x] One explicit click, never an update: a report of what will happen, then the
-      record is written, and only then are folder pages closed. It can be undone.
-      Checked with a real Sidebery in the test Firefox, there and back.
-- [x] Steps the settings page checks itself (the export, the permissions, Sidebery off), both
-      ways refused while Sidebery runs, and the page opens again after a move to say what
-      happened. Going back gives Sidebery its folders back, each tab under its folder's page in
-      Sidebery's own tree in every window, also folders made or renamed on Tidier alone.
-- [x] After the move no tab is hidden until the settings page is back in front, so that
+- [x] The move by itself, at the first start of a Tidier without Sidebery, which an update
+      is: a copy, then the record, and only then are Sidebery's folder pages closed. Open
+      tabs and essentials are not touched. Checked on the fake Firefox from the states a
+      browser can be in (the setting never set or off, with and without what an export
+      left, essentials, several containers, two windows, hiding not allowed, a start cut
+      short, Sidebery still running and closing a folder's tabs), and in the test Firefox
+      (`old_browser`). The click-by-click move and the way back, which were built first
+      and checked with a real Sidebery, are gone with the setting.
+- [x] After the move no tab is hidden until the settings page is in front, so that
       Firefox's question about hidden tabs comes while the page says what to answer, and not
-      over the sidebar. Another window, which Firefox leaves without Tidier's sidebar, shows
-      the page too, with a button for it.
+      over the sidebar. The page says once what came over and that Sidebery can be removed.
+      Another window, which Firefox leaves without Tidier's sidebar, shows the page too,
+      with a button for it.
 - [x] Spaces, essentials, pinned tabs and folders from Arc or Zen, which is the setup the
       owner wants (`tools/from_arc_zen.py`), taken in on the settings page like a copy.
       Checked with made-up files and with the owner's real Zen setup (31 essentials,
       8 folders, 43 saved tabs in three spaces), in a test Firefox.
-- [ ] Sidebery disabled but installed for a few weeks.
+- [ ] The daily Mac has updated, and Sidebery is removed from it (the owner's click: Tidier
+      neither can nor may see other extensions).
 
 ## E. Without Sidebery, everywhere
 
-- [ ] Sidebery and all that exists because of it removed: folders first, its tree
+- [x] Sidebery and all that exists because of it removed: folders first, its tree
       rules, waiting for its sidebar, `tests/fixtures/sidebery.json`, `tools/fix_spaces.py`,
-      and its files in dotfiles (in that order, or releases stop).
+      the setting, the move by a click and moving back, and the right to see other
+      extensions (`management`). Tidier takes no message from another extension, and the
+      README lists every right it has (a unit test holds both).
+- [ ] Then its files in dotfiles (`sidebery.css`, `sidebery-settings.json`, their managed
+      storage, the lines of `user.js` and `customKeys.json` that were for Sidebery). Tidier
+      and its tests read none of them any more.
 - [x] Essentials, folders and spaces on every machine by Firefox Sync, within its limits.
       Built and checked in a test Firefox, off by default; real Firefox Sync between two
       machines is not tried yet.
@@ -181,7 +191,7 @@ Code can work in the browser, local only. Agents get a space of their own with i
 logins, see and touch only that, unless you allow more. What they do shows, and one
 click stops it.
 
-- [x] All of it is there with Tidier alone, off by default, and checked; not yet tried with
+- [x] All of it is there, off by default, and checked; not yet tried with
       Claude Code itself.
 - [x] The log says what happened, once, and what was refused, in plain words with the space
       it tried, file: addresses included; closing a space ends what waits there; each agent
@@ -195,24 +205,23 @@ What FEATURES.md has as Later, starting with what is missed most in use.
 
 Changed by saying so. All of them can be reversed.
 
-- A tab that is only a placeholder is archived like any other (Tidier alone), the time counting
-  from when it became one, since Tidier's own list holds its address and can bring it back. With
-  Sidebery it is kept until you have selected it: Recently Closed would have nothing of it.
+- A tab that is only a placeholder is archived like any other, the time counting from when it
+  became one, since Tidier's own list holds its address and can bring it back.
 - Closing the last window and quitting brings your tabs back unloaded.
 - A failed smoke test gets one more try, marked with a warning. To be looked at
   again once it is known how often the first try fails.
 - A failure in Developer Edition only stops releases until restart is also
   tested in release Firefox; then it only warns.
 - Archiving counts clock time: a night away closes yesterday's ordinary tabs.
-- `tabHide` is optional, asked for when Tidier alone is turned on, so that no update
-  ever waits for a click. Firefox shows hidden tabs again at each update, so
-  Tidier hides them again when it starts.
+- `tabHide` is optional, asked for in the sidebar, so that no update ever waits for a
+  click. Firefox shows hidden tabs again at each update, so Tidier hides them again
+  when it starts. A browser moved over by itself has not been asked yet: its sidebar asks.
 - Essentials stay pinned tabs, so other spaces' essentials stay in ⌃Tab; Firefox
   cannot hide a pinned tab.
-- A link opened from a tab in a folder is an ordinary tab, as in Arc (Tidier alone).
+- A link opened from a tab in a folder is an ordinary tab, as in Arc.
 - No page's first request goes out in the wrong container: it is stopped before it
-  leaves, as Sidebery does. That takes access to all websites, so it is optional, asked
-  for in the same click as hiding tabs. Without it a link's first request goes out with
+  leaves, as Sidebery did. That takes access to all websites, so it is optional, asked
+  for in the sidebar after hiding tabs. Without it a link's first request goes out with
   no container before it is opened in its space, as before: it carries no login.
 - An address that belongs in another space opens there, and the tab it was typed in stays
   if it holds anything: a page's history or a saved tab is not lost for it. A rule's
@@ -234,8 +243,8 @@ Changed by saying so. All of them can be reversed.
   One line says where they went, with Undo.
 - Small windows for links from other apps have one on-off on the settings page, to be looked
   at again after the second Mac.
-- Firefox's own ⌘1 to ⌘9, ⌘D and ⌘T are cleared only on a machine on Tidier alone, by its
-  dotfiles; the daily browser on Sidebery needs them. No extension can read about:keyboard,
+- Firefox's own ⌘1 to ⌘9, ⌘D and ⌘T are to be cleared by the dotfiles, now that no
+  browser needs them for Sidebery. No extension can read about:keyboard,
   so the dotfiles tell Tidier what they cleared (managed storage), and a key they did not
   clear is shown as Firefox's, not as Tidier's.
 - An address the MCP server refuses (file:, about:) still goes to Tidier, marked as refused

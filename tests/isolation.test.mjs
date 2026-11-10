@@ -10,8 +10,7 @@ import { FakeFirefox, wait, GHOST } from "./fake_firefox.mjs";
 const NONE = "firefox-default", A = "firefox-container-1", B = "firefox-container-2", C = "firefox-container-3";
 const GUARD = ["webRequest", "webRequestBlocking", "<all_urls>"];
 
-async function run(ff, { alone = true } = {}) {
-  if (alone) ff.managed = { tidierAlone: true };
+async function run(ff) {
   const x = ff.boot();
   x.b.runtime.onStartup.fire({ reason: "update" });
   await wait(1200);
@@ -308,18 +307,6 @@ test("without the permission no listener is added and the old path runs; given l
   x.kill();
 });
 
-test("with the setting off no listener is added, even with the permission", async () => {
-  const ff = new FakeFirefox(); ff.granted = new Set([...GUARD, "proxy"]);
-  ff.store.spaceNetwork = { [A]: { proxy: { type: "http", host: "p.example", port: 3128 }, userAgent: "X" } };
-  aWindow(ff);
-  const x = await run(ff, { alone: false });
-  assert.equal(x.js("tidierAlone"), false);
-  assert.equal(x.b.webRequest.onBeforeRequest.ls.length, 0);
-  assert.equal(x.b.webRequest.onBeforeSendHeaders.ls.length, 0);
-  assert.equal(x.b.proxy.onRequest.ls.length, 0);
-  x.kill();
-});
-
 test("the listener is back while the background page loads, for what Firefox holds at a start", async () => {
   const ff = new FakeFirefox(); ff.granted = new Set(GUARD);
   aWindow(ff);
@@ -330,8 +317,8 @@ test("the listener is back while the background page loads, for what Firefox hol
   assert.equal(y.b.webRequest.onBeforeRequest.ls.length, 1);
   await wait(300);
   y.kill();
-  // Tidier alone turned off meanwhile: gone as soon as that is read.
-  ff.managed = {};
+  // The access to all websites taken back meanwhile (in about:addons): gone as soon as that is read.
+  ff.granted = new Set(["webRequest", "webRequestBlocking"]);
   const z = ff.boot();
   assert.equal(z.b.webRequest.onBeforeRequest.ls.length, 1);
   await wait(300);
@@ -341,7 +328,7 @@ test("the listener is back while the background page loads, for what Firefox hol
 });
 
 test("a request made before Tidier has read the window's space still goes to the right one", async () => {
-  const ff = new FakeFirefox(); ff.granted = new Set(GUARD); ff.managed = { tidierAlone: true };
+  const ff = new FakeFirefox(); ff.granted = new Set(GUARD);
   ff.pageStorageData = { isolationAtStart: JSON.stringify({ guard: true, network: {} }) };
   const { w } = aWindow(ff);
   const t = ff.addTab(w.id, { url: "about:blank" });
@@ -367,22 +354,6 @@ test("a page already loaded outside any space when Tidier starts is moved, with 
     assert.ok(ff.tabs.has(blank.id), "a new tab page is no web page");
     x.kill();
   }
-});
-
-test("moving over: the listener is there as the page loads again, so Firefox remembers it", async () => {
-  const ff = new FakeFirefox(); ff.granted = new Set([...GUARD, "management"]); ff.sidebery = "off";
-  aWindow(ff);
-  const x = await run(ff, { alone: false });
-  assert.ok(!ff.pageStorageData.isolationAtStart);
-  x.b.runtime.reload = () => {};
-  await x.js("moveOver")();
-  assert.equal(JSON.parse(ff.pageStorageData.isolationAtStart).guard, true);
-  x.kill();
-  const y = ff.boot();
-  assert.equal(y.b.webRequest.onBeforeRequest.ls.length, 1, "on the page's first tick");
-  await wait(300);
-  assert.equal(y.b.webRequest.onBeforeRequest.ls.length, 1, "and it stays, since the setting is on now");
-  y.kill();
 });
 
 // --- A space's network ---------------------------------------------------------------
@@ -731,17 +702,16 @@ test("an ordinary tab of a remembered space brings it back too, and one nobody r
   x.kill();
 });
 
-test("nothing is made when nothing is gone, when containers are off, for a rule nobody remembers, or with the setting off", async () => {
+test("nothing is made when nothing is gone, when containers are off, or for a rule nobody remembers", async () => {
   for (const [name, set] of Object.entries({
     fine: ff => { ff.store.essentials = [{ key: "e", url: "https://e.example/", cookieStoreId: A, title: "E", icon: "x" }]; },
     off: ff => { ff.containersOff = true; ff.store.essentials = [{ key: "e", url: "https://e.example/", cookieStoreId: "firefox-container-7", title: "E", icon: "x" }]; },
     forgottenRule: ff => { ff.store.rules = [{ url: "x", space: "firefox-container-7" }]; },
-    settingOff: ff => { ff.settingOff = true; ff.store.essentials = [{ key: "e", url: "https://e.example/", cookieStoreId: "firefox-container-7", title: "E", icon: "x" }]; },
   })) {
     const ff = new FakeFirefox();
     set(ff);
     aWindow(ff);
-    const x = await run(ff, { alone: !ff.settingOff });
+    const x = await run(ff);
     assert.ok(![...ff.containers].some(c => Number(c.split("-").pop()) > 7), name);
     assert.equal(ff.containers.has("firefox-container-7"), false, name);
     assert.equal(ff.containers.size, 4, name);

@@ -23,9 +23,8 @@ async function run(ff) {
 
 // One window, on a tab of no space, with the given tabs live in it: [key, address, the
 // record's fields, the tab's own fields].
-async function session(tabs, { alone = true, more } = {}) {
+async function session(tabs, { more } = {}) {
   const ff = new FakeFirefox();
-  if (alone) ff.managed = { tidierAlone: true };
   ff.store.archiveSince = 1;
   ff.store.syncedTabs = Object.fromEntries(tabs.map(([key, url, props]) => [key, entry(url, props)]));
   more?.(ff);
@@ -310,16 +309,13 @@ test("a placeholder stays when the list cannot take it: it has no other way back
   x.kill();
 });
 
-test("a tab that went while Tidier was not running lands in the list, and only with the setting on", async () => {
-  for (const alone of [true, false]) {
-    const { x, ff } = await session([["here", "https://here.example/"]], { alone, more: f => {
-      f.store.syncedTabs.gone = entry("https://gone.example/", { title: "Gone" });
-    } });
-    assert.ok(!(await x.js("getSynced()")).gone, "the record goes either way");
-    assert.deepEqual((await listed(x, C1)).map(r => [r.url, r.title, r.why]), alone ? [["https://gone.example/", "Gone", "closed"]] : []);
-    if (!alone) assert.equal(ff.store.archivedTabs, undefined);
-    x.kill();
-  }
+test("a tab that went while Tidier was not running lands in the list", async () => {
+  const { x } = await session([["here", "https://here.example/"]], { more: f => {
+    f.store.syncedTabs.gone = entry("https://gone.example/", { title: "Gone" });
+  } });
+  assert.ok(!(await x.js("getSynced()")).gone, "the record goes");
+  assert.deepEqual((await listed(x, C1)).map(r => [r.url, r.title, r.why]), [["https://gone.example/", "Gone", "closed"]]);
+  x.kill();
 });
 
 test("a list holding something it should not does not stop a close, in any window", async () => {
@@ -331,24 +327,6 @@ test("a list holding something it should not does not stop a close, in any windo
   await wait(1000);
   assert.ok(!ff.tabs.has(ghost.id), "closed everywhere");
   assert.ok(!(await x.js("getSynced()")).a);
-  x.kill();
-});
-
-test("with the setting off, a placeholder is kept, and nothing is listed or written", async () => {
-  const { x, ff, w, ids } = await session([
-    ["held", "https://held.example/", {}, placeholder("held")],
-    ["real", "https://real.example/"],
-    ["closing", "https://closing.example/", {}, { lastAccessed: Date.now() }],
-  ], { alone: false });
-  const r = await archive(x, ["held", "real"]);
-  assert.equal(r.kept.held, "placeholder");
-  assert.equal((await x.js("getSynced()")).held.placeholderSince, undefined);
-  assert.deepEqual([...r.archived], ["https://real.example/"]);
-  ff.rm(ids.closing);
-  await wait(1000);
-  assert.deepEqual(await listed(x), []);
-  assert.equal(await x.send({ type: "reopenArchived", item: { space: C1, url: "https://real.example/" }, windowId: w.id }), false);
-  assert.equal(ff.store.archivedTabs, undefined);
   x.kill();
 });
 

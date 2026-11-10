@@ -9,7 +9,6 @@ const C1 = "firefox-container-1", C2 = "firefox-container-2";
 const entry = (url, more = {}) => ({ url, title: url, cookieStoreId: C1, parentKey: null, group: false, added: 1, ...more });
 
 async function start(ff) {
-  ff.managed ??= { tidierAlone: true };
   const x = ff.boot();
   x.b.runtime.onStartup.fire();
   await wait(1200);
@@ -432,24 +431,6 @@ test("with Firefox itself in the background, what is selected stays seen: nothin
   x.quiet();
   x.title(home.id, "Home, with new words");
   assert.deepEqual(x.marked(), []);
-  x.kill();
-});
-
-test("with the setting off nothing is marked or remembered", async () => {
-  const ff = new FakeFirefox();
-  ff.managed = {};
-  const { w, chat } = oneWindow(ff);
-  const x = await start(ff);
-  x.quiet();
-  x.title(chat.id, "Anna wrote");
-  assert.deepEqual(x.marked(), []);
-  assert.equal(x.js("newsSeen.size"), 0);
-  // Going to another window asks Firefox nothing more than it did before news.js.
-  let asked = 0;
-  ff.hooks.query = q => { if (q.active && q.windowId === undefined) asked++; };
-  x.b.windows.onFocusChanged.fire(w.id);
-  await wait(100);
-  assert.equal(asked, 0);
   x.kill();
 });
 

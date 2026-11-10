@@ -34,7 +34,7 @@ function keepEntry() {
   keysEntry = next;
   if (keysEntry) keysEntry.tabIndex = 0;
 }
-port.onMessage.addListener(() => { if (view?.alone) keepEntry(); }); // after render: the selected tab may be another
+port.onMessage.addListener(() => { if (view) keepEntry(); }); // after render: the selected tab may be another
 
 // Tabbed to a button, or clicked elsewhere: the keyboard is there now. (Not the menu, which
 // is about the cursor's row, and gives the focus back when it closes: menu.js.) A click on
@@ -46,12 +46,12 @@ addEventListener("focusin", e => {
   if (cursor && e.target !== cursor && !e.target.closest?.("#menu")) moveCursor(null);
   // Tabbed into the list, onto its entry: the cursor shows where you are at once. (Not for a
   // click, which focuses what it lands on too.)
-  if (view?.alone && e.target !== cursor && e.target.matches?.(".tile:focus-visible, #tabs .head:focus-visible, #tabs .tab:focus-visible")) moveCursor(e.target);
+  if (view && e.target !== cursor && e.target.matches?.(".tile:focus-visible, #tabs .head:focus-visible, #tabs .tab:focus-visible")) moveCursor(e.target);
 });
 
 // The first key starts at the tab you are on, not at the top of the sidebar. (Also after
 // the cursor's row has gone, or the sidebar lost the focus: stayput.js.)
-const startOfKeys = (all = reachable()) => (view?.alone && all.find(r => r.classList.contains("active"))) || all[0];
+const startOfKeys = (all = reachable()) => (view && all.find(r => r.classList.contains("active"))) || all[0];
 
 // The essentials are a grid. Its rows by where they are drawn: the grid's width decides.
 function gridStep(all, from, by) {
@@ -98,7 +98,7 @@ addEventListener("keydown", e => {
   if (e.defaultPrevented || e.target.closest?.("input, #menu")) return;
   const plain = !e.metaKey && !e.ctrlKey && !e.altKey;
   const menuKey = e.key === "ContextMenu" || (e.key === "F10" && e.shiftKey && plain) || (e.key === "Enter" && e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey);
-  if (menuKey && view?.alone) {
+  if (menuKey && view) {
     const on = cursor ?? e.target.closest?.("#spaces .space, #tabs");
     if (!on) return;
     openMenuOf(on);
@@ -111,7 +111,7 @@ addEventListener("keydown", e => {
   const all = reachable(), at = all.indexOf(cursor);
   // Its row has gone, or is out of sight in a folder folded since: Enter and ⌫ must not act
   // on a tab you cannot see.
-  if (at < 0 && view?.alone) moveCursor(null);
+  if (at < 0 && view) moveCursor(null);
   const tab = cursor?.dataset.tab && Number(cursor.dataset.tab);
   const fold = closed => { if (cursor?.dataset.folderHead && cursor.parentElement.classList.contains("collapsed") !== closed) cursor.click(); };
   const inGrid = cursor?.classList.contains("tile");
@@ -142,7 +142,7 @@ addEventListener("keydown", e => {
       cursor.click();
       break;
     case "F2":
-      if (!cursor || !view?.alone || e.shiftKey) return;
+      if (!cursor || !view || e.shiftKey) return;
       renameByKey(cursor);
       break;
     case "Backspace": case "Delete":

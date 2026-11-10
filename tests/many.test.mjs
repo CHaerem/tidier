@@ -22,7 +22,6 @@ async function start(ff, event = "onStartup") {
 }
 
 async function alone(ff) {
-  ff.managed = { tidierAlone: true };
   return start(ff);
 }
 
@@ -107,7 +106,7 @@ test("every way a key's tab appears or goes keeps the index right", async () => 
   x.kill();
 });
 
-test("a start with Tidier alone reads each tab's values once", async () => {
+test("a start reads each tab's values once", async () => {
   const ff = new FakeFirefox();
   const w = manyTabs(ff, 5);
   const read = new Map();
@@ -131,16 +130,14 @@ test("a view asks only for the tabs of the space it shows", async () => {
   x.kill();
 });
 
-test("with declared spaces, or with the setting off, the bar still sees every tab of the window", async () => {
-  for (const managed of [{ tidierAlone: true, spaces: [C1] }, {}]) {
-    const ff = new FakeFirefox();
-    const w = manyTabs(ff, 4);
-    ff.managed = managed;
-    const x = await start(ff);
-    const view = await x.js("viewFor")(w.id);
-    assert.deepEqual(plain(view.spaces.map(s => s.id)).sort(), [C1, C2], "a space in use is listed");
-    x.kill();
-  }
+test("with declared spaces, the bar still sees every tab of the window", async () => {
+  const ff = new FakeFirefox();
+  const w = manyTabs(ff, 4);
+  ff.managed = { spaces: [C1] };
+  const x = await start(ff);
+  const view = await x.js("viewFor")(w.id);
+  assert.deepEqual(plain(view.spaces.map(s => s.id)).sort(), [C1, C2], "a space in use is listed");
+  x.kill();
 });
 
 test("a space that no longer exists falls back to the selected tab's, also without a whole window", async () => {
@@ -195,7 +192,7 @@ test("a window closing hands its tabs over without a list of every tab per tab",
   x.kill();
 });
 
-test("with Tidier alone a placeholder is made without a page, an essential too, and pinned", async () => {
+test("a placeholder is made without a page, an essential too, and pinned", async () => {
   const ff = new FakeFirefox();
   ff.store.essentials = [{ key: "e", url: "https://e.example/", cookieStoreId: C1, title: "Mail", icon: "https://e.example/i.png" }];
   const w = manyTabs(ff, 2), other = ff.addWindow();
@@ -207,16 +204,6 @@ test("with Tidier alone a placeholder is made without a page, an essential too, 
   assert.equal(essential.title, "Mail");
   assert.equal(essential.url, GHOST("essential", "e"));
   assert.equal(copies.find(t => !t.pinned).title, "https://a.example/0");
-  x.kill();
-});
-
-test("with the setting off a placeholder still loads its page, since Sidebery draws the tab", async () => {
-  const ff = new FakeFirefox();
-  const w = manyTabs(ff, 2), other = ff.addWindow();
-  const x = await start(ff);
-  const copies = ff.list(other.id);
-  assert.equal(copies.length, 2);
-  for (const t of copies) assert.ok(!t.discarded, `${t.url} is not made unloaded`);
   x.kill();
 });
 
@@ -335,26 +322,6 @@ test("the sidebar asks for an icon only near the view, once, and what it remembe
   assert.ok(page("iconsLoaded.size") <= 1000, String(page("iconsLoaded.size")));
   for (let n = 0; n < 3000; n++) icon({ icon: `https://d.example/${n}.png`, title: "D" }).onerror();
   assert.ok(page("iconsFailed.size") <= 1000, String(page("iconsFailed.size")));
-});
-
-test("after moving back, placeholders without an icon load their page, once", async () => {
-  const ff = new FakeFirefox();
-  ff.store.syncedTabs = { a: entry("https://a.example/") };
-  ff.store.placeholdersNeedPages = true;
-  const w = ff.addWindow({ focused: true });
-  ff.addTab(w.id, { url: "https://a.example/", active: true, cookieStoreId: C1 }, { syncKey: "a", syncRole: "live" });
-  const other = ff.addWindow();
-  // (With its title: one without is loaded once to get it back, titlesBack.)
-  const bare = ff.addTab(other.id, { url: GHOST("ghost", "a"), discarded: true, cookieStoreId: C1, title: "A" }, { syncKey: "a", syncRole: "ghost" });
-  const x = await start(ff);
-  assert.ok(ff.log.some(l => l[0] === "update-url" && l[1] === bare.id), "the placeholder loads");
-  assert.equal(ff.store.placeholdersNeedPages, undefined, "and only this once");
-  x.kill();
-  ff.log.length = 0;
-  Object.assign(ff.tabs.get(bare.id), { discarded: true, title: "A" }); // unloaded again by its page, with the title it set
-  const y = await start(ff);
-  assert.ok(!ff.log.some(l => l[0] === "update-url"), "an ordinary start loads nothing");
-  y.kill();
 });
 
 test("a page in another space builds no view, a page in this one does", async () => {
@@ -931,7 +898,7 @@ test("a tab gone when Tidier looks over its record is not remembered for a refre
   x.kill();
 });
 
-test("a tab event with Tidier alone schedules no work that only Sidebery needs", async () => {
+test("a tab moved schedules little work: one look at the window's order, and the next tab after the selected one", async () => {
   const ff = new FakeFirefox();
   const w = manyTabs(ff, 4);
   const x = await alone(ff);
@@ -943,10 +910,8 @@ test("a tab event with Tidier alone schedules no work that only Sidebery needs",
   });
   // The window's order is looked at once, for placing a closed tab, and nothing else.
   assert.ok(asked.filter(wholeWindow).length <= 1, JSON.stringify(asked));
-  // One job at most: with Tidier alone, the look at which tab comes after the selected one
-  // (successorSoon, spaces.js) follows a move. Sidebery's own work would be more.
+  // One job at most: the look at which tab comes after the selected one (successorSoon,
+  // spaces.js) follows a move.
   assert.ok(x.js("work.jobs") - jobs <= 1, "nor is anything else queued");
-  assert.equal(x.js("movedTabs").size, 0);
-  assert.equal(x.js("foldersTimers").size, 0);
   x.kill();
 });

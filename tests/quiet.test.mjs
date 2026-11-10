@@ -10,8 +10,7 @@ const entry = (url, more = {}) => ({ url, title: url, cookieStoreId: C1, parentK
 const folder = (name, rank, more = {}) => ({ group: true, own: true, name, cookieStoreId: C1, parentKey: null, rank, added: 1, ...more });
 const addr = k => `https://${k}.example/`;
 
-async function alone(ff, { on = true } = {}) {
-  if (on) ff.managed = { tidierAlone: true };
+async function alone(ff) {
   closedList(ff);
   const x = ff.boot();
   x.b.runtime.onStartup.fire({ reason: "update" });
@@ -615,31 +614,6 @@ test("a folder gone in the meantime leaves its tab an ordinary tab", async () =>
   await wait(500);
   assert.equal(ff.synced.s.parentKey, null);
   assert.equal(ff.synced.s.saved, undefined);
-  x.kill();
-});
-
-test("with the setting off, a close only closes and nothing is said or remembered", async () => {
-  const ff = new FakeFirefox();
-  const { w } = twoWindows(ff, ["a", "b", "c"]);
-  const x = await alone(ff, { on: false });
-  assert.equal(x.js("tidierAlone"), false);
-  const port = sidebar(x, w.id);
-  for (const k of ["b", "c"]) {
-    port.send({ type: "close", tabId: tabOf(ff, w.id, k).id });
-    assert.equal(x.js("closeGroups").size, 0, "not even a lookup: nothing is taken together");
-  }
-  await wait(1000);
-  x.js("say")(w.id, "Nothing to see");
-  await realSleep(1);
-  assert.equal(x.js("closeGroups").size, 0);
-  assert.equal(x.js("quietNotes").size, 0);
-  assert.deepEqual(said(port), []);
-  assert.equal(ff.list(w.id).filter(t => t.id && ff.values.get(t.id)?.syncKey === "b").length, 0, "closed as before");
-  // And the actions behind the setting do nothing.
-  const left = ff.list(w.id).length;
-  port.send({ type: "clearSpace", space: C1 });
-  await wait(500);
-  assert.equal(ff.list(w.id).length, left);
   x.kill();
 });
 

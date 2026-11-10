@@ -10,7 +10,6 @@ const PROXY = { type: "http", host: "proxy.example", port: 8080 };
 const WORK = "https://work.example/x";
 
 async function run(ff) {
-  ff.managed = { tidierAlone: true };
   ff.granted ??= new Set(GUARD);
   const x = ff.boot();
   x.b.runtime.onStartup.fire({ reason: "update" });

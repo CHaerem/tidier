@@ -117,7 +117,7 @@ function fitArchived() {
 // `space`: whose list, without going there: a look at another space's tabs should not
 // select and load one of them. Opening one of its rows then takes you there.
 async function openArchived(space = view?.space) {
-  if (!view?.alone || !space) return;
+  if (!view || !space) return;
   closeMenu();
   archivedSpace = space;
   archivedFrom = view.space;

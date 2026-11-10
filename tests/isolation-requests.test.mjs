@@ -10,7 +10,6 @@ const GUARD = ["webRequest", "webRequestBlocking", "<all_urls>"];
 const DEAD = "firefox-container-9";
 
 async function run(ff) {
-  ff.managed = { tidierAlone: true };
   ff.granted ??= new Set(GUARD);
   const x = ff.boot();
   x.b.runtime.onStartup.fire({ reason: "update" });

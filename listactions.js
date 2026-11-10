@@ -1,4 +1,4 @@
-// What acts on a part of the list at once (Tidier alone): today's tabs or a folder sorted,
+// What acts on a part of the list at once: today's tabs or a folder sorted,
 // the tabs around one closed, or the duplicates among today's tabs, tabs moved to the top,
 // the bottom or one place along, a whole folder or space reloaded or muted, and going back
 // and forward through the tabs used recently. Nothing here is on screen until wanted: it is

@@ -4,7 +4,7 @@
     nice -n 19 taskpolicy -b tools/shoot.py FOLDER                     # everything, two minutes (one without taskpolicy)
     nice -n 19 taskpolicy -b tools/shoot.py FOLDER --only hover,menu   # only names with these words in them
 
-It starts the test Firefox with Tidier alone (tests/testfirefox.py: headless, a
+It starts the test Firefox (tests/testfirefox.py: headless, a
 throwaway profile, never your own Firefox) from the folder this file is in, so a
 worktree shoots its own code. It fills it with made-up tabs, none of them yours,
 and writes PNGs at twice the size, as on a Retina screen:
@@ -147,7 +147,7 @@ SPACES = [
 ]
 EMPTY = {"ctx": 4, "slug": "travel", "name": "Travel"}  # nothing in it, until the pictures of empty spaces
 
-testfirefox.SEED_TABS_ALONE = "return 1;"  # no test tabs: the ones above
+testfirefox.SEED_TABS = "return 1;"  # no test tabs: the ones above
 
 
 # --- Scripts in the chrome and in the sidebar's page ---------------------------------
@@ -962,21 +962,18 @@ def icons_that_vanish(cam):
     cam.shoot("state-black-and-white-icons")
 
 
-# What the page shows only now and then, with made-up words: a notice, the move to Tidier
-# alone and back, what a report says, a copy to take in.
+# What the page shows only now and then, with made-up words: a notice, the line after a move
+# from Sidebery, what its export brought, a copy to take in.
 SETTINGS_IN_FULL = """
   const $ = id => document.getElementById(id), add = (parent, tag, cls, text) => { const e = document.createElement(tag); e.className = cls; e.textContent = text; parent.append(e); return e; };
   add($("notices"), "p", "notice", "Tidier could not read the record of its folders, and is working from the copy made this morning.");
-  $("allow-hiding").hidden = $("move").hidden = $("move-back").hidden = $("merge").hidden = $("import-alone").hidden = false;
+  $("allow-hiding").hidden = $("merge").hidden = false;
   // Right after moving over (aftermove.js), in a window that came over without the sidebar.
-  $("moved").hidden = $("moved-ask").hidden = $("windows-without").hidden = $("show-sidebar").hidden = false;
-  $("windows-without-text").textContent = "This window has no sidebar yet, so no list of tabs.";
-  $("alone-state").textContent = "This browser uses Sidebery for its tab list, spaces and folders.";
-  for (const text of ["Moved: 5 folders and 23 tabs are Tidier's own now, 2 of the folders closed, as in Sidebery.", "Going back is below."]) add($("moved"), "span", "note-line", text);
+  $("moved-section").hidden = $("moved").hidden = $("moved-ask").hidden = $("windows-without").hidden = $("show-sidebar").hidden = false;
+  $("windows-without-text").textContent = "This window does not show Tidier's sidebar yet, so not its list of tabs.";
+  for (const text of ["Tidier now does what Sidebery did here, with its own sidebar, spaces and folders: 5 folders and 23 tabs came over, 2 of the folders closed, as in Sidebery. A copy of everything was taken first.",
+                      "Sidebery is no longer needed: turn it off or remove it in about:addons."]) add($("moved"), "span", "note-line", text);
   $("sidebery-result").textContent = "Took in 2 rules and the order of 3 spaces.";
-  $("step-export").classList.add("done"); $("step-allow").classList.add("done");
-  $("sidebery-state").textContent = "Sidebery is on."; $("sidebery-state").classList.add("wrong");
-  $("back-report").textContent = "5 folders get their page in Sidebery again, with their tabs. Essentials, tabs and rules stay as they are.";
   for (const [name, on] of [["Personal: 7 essentials, 3 folders, 12 saved tabs", true], ["Work: 12 essentials, 2 folders, 30 saved tabs", false]]) {
     const line = add($("merge-spaces"), "label", "line", "");
     const box = document.createElement("input");
@@ -1154,7 +1151,7 @@ def main():
         # for a moment when a list changes size, and the blink of a caret.
         "ui.scrollbarFadeBeginDelay": 0, "ui.scrollbarFadeDuration": 0, "ui.caretBlinkTime": 0,
     })
-    with TestFirefox(port=port, alone=True) as m:
+    with TestFirefox(port=port) as m:
         m.cmd("WebDriver:SetWindowRect", {"width": WINDOW[0], "height": WINDOW[1]})
         fill(m)
         filled = time.time()

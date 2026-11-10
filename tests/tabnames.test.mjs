@@ -10,8 +10,7 @@ const entry = (url, more = {}) => ({ url, title: url, cookieStoreId: C1, parentK
 const folder = name => ({ group: true, own: true, name, cookieStoreId: C1, parentKey: null, rank: 1, added: 1 });
 const savedEntry = (url, title, more = {}) => entry(url, { title, parentKey: "F", saved: { url, title }, ...more });
 
-async function start(ff, { tidierAlone = true } = {}) {
-  ff.managed = { tidierAlone };
+async function start(ff) {
   const x = ff.boot();
   x.b.runtime.onStartup.fire();
   await wait(1200);
@@ -296,12 +295,3 @@ test("names travel with a copy", async () => {
   x.kill();
 });
 
-test("with the setting off, a rename does nothing", async () => {
-  const ff = new FakeFirefox();
-  const { x, one, liveSaved } = await twoWindows(ff, { tidierAlone: false });
-  const a = sidebar(x, one.id);
-  await a.send({ type: "renameTab", tabId: liveSaved.id, name: "Sprint board" });
-  await wait(100);
-  assert.ok(!("name" in (await x.js("getSynced()")).s));
-  x.kill();
-});

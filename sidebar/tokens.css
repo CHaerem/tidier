@@ -150,7 +150,5 @@
 ::selection { background: color-mix(in srgb, var(--accent) 32%, transparent); }
 
 @media (prefers-reduced-motion: reduce) {
-  /* (Not in the sidebar beside Sidebery, which stays as it was: there sidebar.css does this
-   * with Tidier alone.) */
-  html:not(:has(#tabs)), html:not(:has(#tabs)) :is(*, ::before, ::after) { transition: none !important; animation: none !important; }
+  html, html :is(*, ::before, ::after) { transition: none !important; animation: none !important; }
 }

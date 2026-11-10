@@ -1,4 +1,4 @@
-// One place for new tabs (Tidier alone), as in Arc: the top of today's tabs, right
+// One place for new tabs, as in Arc: the top of today's tabs, right
 // under the folders, for the new tab button, ⌘T and links from other apps. Firefox
 // itself would add them at the end of the window, out of sight below a long list.
 // A link opened from a tab in today's list is different: it stays next to that tab, where
@@ -30,11 +30,9 @@ async function topOfToday(windowId, space) {
 // a link on its way. An empty one you have left is a tab like any other, and stays listed.)
 const EMPTY_NEW_TAB = new Set(["about:newtab", "about:home"]);
 async function newTabInSpace(windowId, space) {
-  if (tidierAlone) {
-    const [on] = await browser.tabs.query({ windowId, active: true });
-    if (on && on.cookieStoreId === space && !on.pinned && EMPTY_NEW_TAB.has(on.url) && on.status === "complete") return;
-  }
-  await createTab({ windowId, cookieStoreId: space, index: tidierAlone ? await topOfToday(windowId, space) : undefined }).catch(ifGone); // common.js
+  const [on] = await browser.tabs.query({ windowId, active: true });
+  if (on && on.cookieStoreId === space && !on.pinned && EMPTY_NEW_TAB.has(on.url) && on.status === "complete") return;
+  await createTab({ windowId, cookieStoreId: space, index: await topOfToday(windowId, space) }).catch(ifGone); // common.js
 }
 
 // Whether the tab that opened `tab` is in today's list of `space`, so that next to it means
@@ -59,7 +57,7 @@ async function toTopOfToday(tab, space) {
 // of sight, since a tab moved into a folder lies last in the window. Moved at once, before the
 // view is drawn (VIEW_DEBOUNCE_MS), so there is no jump to see unless the queue is busy.
 browser.tabs.onCreated.addListener(tab => {
-  if (!tidierAlone || !started || tab.pinned || tab.incognito || tab.openerTabId == null || tab.cookieStoreId === NO_CONTAINER) return;
+  if (!started || tab.pinned || tab.incognito || tab.openerTabId == null || tab.cookieStoreId === NO_CONTAINER) return;
   serial(async () => {
     if (await besideOpener(tab, tab.cookieStoreId)) return;
     const now = await browser.tabs.get(tab.id).catch(() => null);

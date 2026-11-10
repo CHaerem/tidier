@@ -38,7 +38,6 @@ const showLook = look => {
   const root = document.documentElement;
   if (root.style.getPropertyValue("--accent") !== look.accent) root.style.setProperty("--accent", look.accent);
   if (root.getAttribute("data-space") !== look.space) root.setAttribute("data-space", look.space);
-  if (root.classList.contains("alone") !== !!look.alone) root.classList.toggle("alone", !!look.alone);
 };
 const keptLook = readLook();
 let cssShown = null, viewShown = false;
@@ -64,10 +63,6 @@ async function keepWindowLook(look) {
 
 let view = null;
 const send = msg => port.postMessage(msg);
-// Folds with Sidebery's folder pages are kept for this sidebar only; Tidier's own
-// folders keep theirs in the record.
-const collapsed = new Set();
-
 const el = (tag, cls, text) => {
   const e = document.createElement(tag);
   if (cls) e.className = cls;
@@ -193,11 +188,11 @@ function tile(item) {
     const t = el("div");
     t.dataset.tab = item.id;
     t.setAttribute("role", "option"); // the essentials are a list to choose from (sidebar.html)
-    t.draggable = !!view?.alone;
+    t.draggable = true;
     t.onclick = () => { showSelected(t); send({ type: "select", tabId: item.id }); };
     t.onmousedown = noAutoscroll;
     t.onauxclick = e => { if (e.button === 1) send({ type: "close", tabId: item.id }); };
-    t.oncontextmenu = e => { if (view?.alone) openTabMenu(e, item.id); else browser.menus.overrideContext({ context: "tab", tabId: item.id }); };
+    t.oncontextmenu = e => openTabMenu(e, item.id);
     t.ondragstart = e => startDrag(e, { kind: "essential", tabId: item.id });
     return t;
   }, { ...item, tip: undefined }, t => {
@@ -205,7 +200,7 @@ function tile(item) {
     // Named by its title alone: the tooltip with the address is its description.
     t.setAttribute("aria-label", item.title || "");
     t.setAttribute("aria-selected", String(!!item.active));
-    t.replaceChildren(icon(item), ...(view.alone ? soundMark(item) : []));
+    t.replaceChildren(icon(item), ...soundMark(item));
   });
   setIf(e, "title", item.tip || item.title);
   return e;
@@ -217,12 +212,12 @@ function row(item, folderKey) {
     const e = el("div");
     e.dataset.tab = item.id;
     e.setAttribute("role", "treeitem"); // a flat tree, by level: folders' heads and loose tabs 1, their tabs 2
-    e.draggable = !!view?.alone;
+    e.draggable = true;
     e.onclick = ev => { if (byHand(ev)) pickedByHand = true; showSelected(e); send({ type: "select", tabId: item.id }); };
     e.onmousedown = noAutoscroll;
     e.onmouseleave = () => { if (stillDim.delete(e.dataset.tab)) e.classList.remove("still-dim"); };
     e.onauxclick = secondClick.acts(ev => { if (ev.button === 1) closeByPointer(item.id, ev); });
-    e.oncontextmenu = ev => { if (view?.alone) openTabMenu(ev, item.id); else browser.menus.overrideContext({ context: "tab", tabId: item.id }); };
+    e.oncontextmenu = ev => openTabMenu(ev, item.id);
     e.ondragstart = ev => startDrag(ev, { kind: "tab", tabId: item.id });
     return e;
   }, { ...item, tip: undefined, folderKey: folderKey ?? null }, e => { // a tooltip is not drawn: some pages change their address as you scroll, and a row drawn again can lose a click or a drag
@@ -257,7 +252,7 @@ function row(item, folderKey) {
 // What × does says itself, as it is not the same on every row (closeAction, common.js): a
 // saved tab that is loaded only unloads, in its place, and a second click would remove it.
 // (A live folder's pull requests are not saved: the search decides what is in them.)
-const savedIn = folderKey => !!folderKey && !!view?.alone && !view.folders.find(f => f.key === folderKey)?.live;
+const savedIn = folderKey => !!folderKey && !!view && !view.folders.find(f => f.key === folderKey)?.live;
 const closeTitle = (item, folderKey) => (!savedIn(folderKey) ? "Close" : item.loaded ? "Unload (it stays in the folder)" : "Remove from the folder");
 
 // --- A row you close keeps its room -----------------------------------------------
@@ -285,7 +280,7 @@ function closeByPointer(id, e) {
 // tab closed while loaded becomes a new placeholder in its place (unloadSaved, tabsync.js),
 // and stays dim if it was to.
 function withRooms(parent, nodes) {
-  if (!holding() || !view?.alone) return nodes;
+  if (!holding() || !view) return nodes;
   const wanted = new Set(nodes), out = [...nodes];
   let at = 0;
   for (const child of [...parent.children]) {
@@ -331,7 +326,7 @@ const DOUBLE_CLICK_MS = 500; // the longest a second click usually takes (a Mac'
 const FOLD_SHOWS_MS = 250; // most double clicks have their second click by then
 const foldsWaiting = new Map(); // folder key -> whether a click closed it, while it waits for a second click
 function folder(f) {
-  const closed = view.alone ? foldsWaiting.get(f.key) ?? f.collapsed : collapsed.has(f.key);
+  const closed = foldsWaiting.get(f.key) ?? f.collapsed;
   const box = keep("folder:" + f.key, () => {
     const b = el("div", "folder");
     b.setAttribute("role", "none");
@@ -358,27 +353,21 @@ function folder(f) {
     const undoShown = () => { if (foldsWaiting.has(f.key)) show(!foldsWaiting.get(f.key)); foldsWaiting.delete(f.key); };
     head.onclick = e => {
       if (b.classList.contains("renaming")) return;
-      if (view.alone) {
-        wait();
-        const closing = !(foldsWaiting.get(f.key) ?? b.classList.contains("collapsed"));
-        const fold = () => { foldsWaiting.delete(f.key); send({ type: "foldFolder", key: f.key, collapsed: closing }); };
-        if (!e.detail) { show(closing); return fold(); }
-        if (e.detail > 1) return undoShown(); // the second of a double click, which renames
-        foldSoon = setTimeout(fold, DOUBLE_CLICK_MS);
-        showSoon = setTimeout(() => { foldsWaiting.set(f.key, closing); show(closing); }, FOLD_SHOWS_MS);
-      } else {
-        if (collapsed.has(f.key)) collapsed.delete(f.key); else collapsed.add(f.key);
-        b.classList.toggle("collapsed");
-        head.setAttribute("aria-expanded", String(!collapsed.has(f.key)));
-      }
+      wait();
+      const closing = !(foldsWaiting.get(f.key) ?? b.classList.contains("collapsed"));
+      const fold = () => { foldsWaiting.delete(f.key); send({ type: "foldFolder", key: f.key, collapsed: closing }); };
+      if (!e.detail) { show(closing); return fold(); }
+      if (e.detail > 1) return undoShown(); // the second of a double click, which renames
+      foldSoon = setTimeout(fold, DOUBLE_CLICK_MS);
+      showSoon = setTimeout(() => { foldsWaiting.set(f.key, closing); show(closing); }, FOLD_SHOWS_MS);
     };
     head.ondblclick = () => {
       wait();
       undoShown();
-      if (view.alone && !f.live) rename(f.key);
+      if (!f.live) rename(f.key);
     };
-    head.oncontextmenu = e => { if (view.alone) openFolderMenu(e, f.key, f.live); }; // menu.js: with More, and marked as a row and a dot are
-    head.draggable = !!view?.alone;
+    head.oncontextmenu = e => openFolderMenu(e, f.key, f.live); // menu.js: with More, and marked as a row and a dot are
+    head.draggable = true;
     head.ondragstart = e => startDrag(e, { kind: "folder", key: f.key });
     const children = el("div", "children");
     children.setAttribute("role", "none");
@@ -438,7 +427,7 @@ function render(next) {
   drawn = new Set();
   const space = view.spaces.find(s => s.id === view.space), root = document.documentElement;
   if (view.space !== roomsInSpace) { roomsInSpace = view.space; letRoomsGo(); } // another list: nothing in it was where you pointed
-  const look = { space: view.space || "", accent: space?.color || "#7a7a80", alone: !!view.alone };
+  const look = { space: view.space || "", accent: space?.color || "#7a7a80" };
   // A space comes in as one piece: a folder drawn for it now does not fade in on its own,
   // after everything else (sidebar.css, html.space-arriving), as a folder that appears does.
   // The class goes once what is new has its style, also when drawing stops half way (a
@@ -468,7 +457,7 @@ function render(next) {
   else if (!problem.hidden && !problem.classList.contains("going")) problem.hidden = true;
 
   place(document.getElementById("essentials"), view.essentials.map(tile));
-  textIf(document.getElementById("space-name"), view.alone ? space?.name || "" : "");
+  textIf(document.getElementById("space-name"), space?.name || "");
 
   const list = view.folders.map(folder);
   if (view.folders.length && view.tabs.length) list.push(keep("divider", () => { const d = el("div", "divider"); d.setAttribute("role", "none"); return d; }, 0, () => {}));
@@ -510,7 +499,7 @@ function render(next) {
 document.getElementById("new-tab").onclick = () => send({ type: "newTab", space: view?.space });
 document.getElementById("new-folder").onclick = () => { renameNext = true; send({ type: "newFolder", space: view?.space }); };
 document.getElementById("tabs").oncontextmenu = e => {
-  if (view?.alone && e.target.id === "tabs") openMenu(e, listMenu());
+  if (view && e.target.id === "tabs") openMenu(e, listMenu());
 };
 // Asking needs your click, so it is here and not in the background.
 document.getElementById("allow-hiding").onclick = () => browser.permissions.request({ permissions: ["tabHide"] });

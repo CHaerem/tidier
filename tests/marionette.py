@@ -1,11 +1,8 @@
 # Minimal Marionette client (Firefox's built-in remote control). The tests use
-# it with their own headless Firefox (testfirefox.py). The helpers below
-# restart *your* Firefox with remote control; only tools/fix_spaces.py uses
-# them, since it has to change your own Sidebery.
+# it with their own headless Firefox (testfirefox.py), never yours.
 import json
 import os
 import socket
-import subprocess
 import time
 
 # Which Firefox: TIDIER_FIREFOX (the program, or a .app), default the one in /Applications.
@@ -78,35 +75,3 @@ class Marionette:
             self.cmd("Marionette:Quit", {"flags": ["eAttemptQuit"]})
         except Exception:
             pass
-
-
-def firefox_running():
-    return subprocess.run(["pgrep", "-x", "firefox"], capture_output=True).returncode == 0
-
-
-def wait_until_closed(timeout=60):
-    for _ in range(timeout):
-        if not firefox_running():
-            return
-        time.sleep(1)
-    raise RuntimeError("Firefox did not quit")
-
-
-def start_with_marionette():
-    """Quit Firefox (keeping the session) and start it with Marionette enabled."""
-    if firefox_running():
-        subprocess.run(["osascript", "-e", 'quit app "Firefox"'], capture_output=True)
-        wait_until_closed()
-    # System access lets Marionette script the browser UI, not only web pages.
-    subprocess.Popen([FIREFOX, "--marionette"], env={**os.environ, "MOZ_REMOTE_ALLOW_SYSTEM_ACCESS": "1"},
-                     start_new_session=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    m = Marionette()
-    time.sleep(5)  # let the session restore and Sidebery start
-    return m
-
-
-def restart_normally(m):
-    """Quit the remote-controlled Firefox and start it the normal way."""
-    m.quit()
-    wait_until_closed()
-    subprocess.run(["open", "-a", "Firefox"], check=True)

@@ -1,4 +1,4 @@
-// --- More: what Sidebery does beyond the common items -------------------------------
+// --- More: what a tab list does beyond the common items ------------------------------
 // One "More" at the end of the tab menu, a folder's menu and a space's menu, holding what is
 // wanted now and then (sorting, closing around a tab, a whole folder or space at once), so
 // that the menus stay short. It opens in place, with a row back, as the menu's other lists

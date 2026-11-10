@@ -65,7 +65,7 @@
     const tab = e.target.closest?.("[data-tab]") ?? null;
     if (tab === underPointer) return;
     underPointer = tab;
-    if (tab && view?.alone && !tab.matches(".active, .unloaded")) send({ type: "warmup", tabId: Number(tab.dataset.tab) });
+    if (tab && view && !tab.matches(".active, .unloaded")) send({ type: "warmup", tabId: Number(tab.dataset.tab) });
   }, true);
   addEventListener("mouseout", e => { if (!e.relatedTarget) underPointer = null; }, true);
 }

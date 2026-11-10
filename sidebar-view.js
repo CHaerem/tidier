@@ -7,8 +7,8 @@
 // A space is a Firefox container (spaces.js): its name, colour and icon are the
 // container's own (Firefox's settings, or the container menu).
 //
-// The order shown is the window's tab order. Folders are Tidier's own with Tidier
-// alone (ownfolders.js), else Sidebery's folder pages, read from tab sync's record.
+// The order shown is the window's tab order. Folders are Tidier's own (ownfolders.js),
+// read from tab sync's record.
 
 const sidebarPorts = new Map(); // windowId -> Set of ports (a window has one sidebar; a reload may briefly add a second)
 const viewTimers = new Map(); // windowId -> { timer, first }: the next view, and when it was first asked for
@@ -42,15 +42,15 @@ const tabIsLoading = t => t.status === "loading" && !t.discarded && !isGhostUrl(
 
 // What the sidebar shows of a tab. A placeholder's own title and icon are the
 // page's (see ghost.js); an essential or a saved tab shows its name if it has one (tabnames.js).
-// With Tidier alone a placeholder has no page (createRep, tabsync.js), and Firefox drops a
-// tab's icon when a new page comes in, so the record's comes next, before a letter
-// (iconForView, isolation.js; recordIcon below).
+// A placeholder has no page (createRep, tabsync.js), and Firefox drops a tab's icon when a
+// new page comes in, so the record's comes next, before a letter (iconForView,
+// isolation.js; recordIcon below).
 const tabItem = (t, title, entry) => ({
   id: t.id, title: title || t.title || t.url,
   icon: iconForView(t, entry), // isolation.js
-  tip: tidierAlone ? tabTip(t, entry) : undefined,
+  tip: tabTip(t, entry),
   active: t.active, loaded: !t.discarded && !isGhostUrl(t.url), audible: !!t.audible, muted: !!t.mutedInfo?.muted,
-  sound: ownSound(t), soundTabId: t.id, // what a row shows; with Tidier alone, the real page's (addSounds)
+  sound: ownSound(t), soundTabId: t.id, // what a row shows: the real page's (addSounds)
   news: hasNews(t.id),
   page: isWeb(t.url) || isGhostUrl(t.url), // else a new tab page or the like, which only has a place among the tabs (drag.js)
   blank: NEW_TAB_PAGES.has(t.url) || undefined, // an empty new tab: no page yet, so no letter of a name that is not one (sidebar.js icon)
@@ -69,8 +69,6 @@ function recordIcon(entry) {
   if (viewableIcon(entry.icon)) return entry.icon;
   try { return isWeb(entry.url) ? new URL(entry.url).origin + "/favicon.ico" : null; } catch { return null; }
 }
-
-const folderName = url => decodeURIComponent((url.split("#")[1] || "").replace(/~!.*!~$/, "")) || "Folder";
 
 // A tab you close with ⌘W (or Firefox's own ways) plays a short animation first, and all that
 // time Firefox still lists it (tabs.query goes by the tab strip, which holds it until the
@@ -91,12 +89,11 @@ async function viewFor(windowId) {
   // Read first: a view that has it was built entirely after that drop was carried out, so the
   // sidebar can stop putting the row where it was dropped itself (sidebar/drag.js).
   const landed = landedIn.get(windowId) ?? null;
-  await aloneRead;
   const list = await getList();
   // Firefox builds a full description of every tab it is asked for, so a view asks only
   // for the space it shows, unless the bar itself depends on the other tabs (spaceList).
-  const whole = !tidierAlone || Array.isArray(await declaredSpaces()) ? await queryShown({ windowId }) : null;
-  // Spaces in use: a container with essentials or tabs (with Tidier alone, also the empty ones).
+  const whole = Array.isArray(await declaredSpaces()) ? await queryShown({ windowId }) : null;
+  // Spaces in use: a container with essentials or tabs (also the empty ones are shown).
   const used = new Set(whole ? [...list.map(e => e.cookieStoreId), ...whole.map(t => t.cookieStoreId)] : []);
   const spaces = await spaceList(used);
   const space = await spaceOf(windowId, whole, spaces);
@@ -119,16 +116,14 @@ async function viewFor(windowId) {
   // A tab without a container (a new tab) belongs to the space you are in.
   const all = await getSynced();
   const here = tabs.filter(t => !t.pinned && shownInSpace(t, space) && !reopening.has(t.id)); // hiddenspaces.js
-  const folders = tidierAlone
-    ? foldersOf(all, space).map(f => ({ key: f.key, name: f.name, collapsed: !!f.collapsed, live: f.live || null, tabs: [] }))
-    : here.filter(t => isSideberyGroup(t.url)).map(t => ({ key: syncKeyByTab.get(t.id), id: t.id, name: folderName(t.url), tabs: [] }));
+  const folders = foldersOf(all, space).map(f => ({ key: f.key, name: f.name, collapsed: !!f.collapsed, live: f.live || null, tabs: [] }));
   const byKey = new Map(folders.map(f => [f.key, f]));
   const rowKey = await rowKeys(here);
-  const standIns = tidierAlone && started ? await restoredInPlace(here, all) : new Map();
+  const standIns = started ? await restoredInPlace(here, all) : new Map();
   const replaced = new Set(standIns.values());
   const loose = [];
   for (const t of here) {
-    if (isSideberyGroup(t.url) || replaced.has(t.id)) continue;
+    if (replaced.has(t.id)) continue;
     const key = rowKey.get(t.id) ?? (standIns.has(t.id) ? restoredKeys.get(t.id) : undefined);
     // A new tab made in a folder has no record until it has a page (comingIntoFolder, listactions.js).
     const folder = byKey.get(folderKeyOf(all, key) ?? (key === undefined ? comingIntoFolder.get(t.id) : null));
@@ -136,11 +131,11 @@ async function viewFor(windowId) {
     (folder ? folder.tabs : loose).push(tabItem(t, record?.name || record?.title, record));
   }
   for (const f of folders) f.news = f.tabs.some(t => t.news);
-  if (tidierAlone) await addSounds({ essentials, folders, tabs: loose, spaces, space }, windowId);
+  await addSounds({ essentials, folders, tabs: loose, spaces, space }, windowId);
   // Tabs still loading go apart from their rows: a row is drawn again when anything in it
   // changes, and a load starting and ending must not replace its icon (sidebar/touches.js).
-  const loading = tidierAlone ? tabs.filter(tabIsLoading).map(t => t.id) : [];
-  return { alone: tidierAlone, needsHiding: tidierAlone && !browser.tabs.hide, askHiding: tidierAlone && askHidingLine, problem: [...notices.values()][0] ?? null, note: noteFor(windowId), spaces, space, essentials, folders, tabs: loose, loading, little: await littleRows(spaces), landed };
+  const loading = tabs.filter(tabIsLoading).map(t => t.id);
+  return { needsHiding: !browser.tabs.hide, askHiding: askHidingLine, problem: [...notices.values()][0] ?? null, note: noteFor(windowId), spaces, space, essentials, folders, tabs: loose, loading, little: await littleRows(spaces), landed };
 }
 const landedIn = new Map(); // windowId -> the name of the last drop carried out there
 
@@ -180,7 +175,7 @@ async function restoredInPlace(tabs, all) {
 const earlyKeys = new Map(); // tabId -> its key, until Tidier has started
 browser.tabs.onRemoved.addListener(tabId => earlyKeys.delete(tabId)); // also with no view to clear it after the start
 async function rowKeys(tabs) {
-  if (started || !tidierAlone) { earlyKeys.clear(); return syncKeyByTab; }
+  if (started) { earlyKeys.clear(); return syncKeyByTab; }
   // (Not for a tab closed meanwhile: nothing would take it out again.)
   await Promise.all(tabs.filter(t => !earlyKeys.has(t.id)).map(t => browser.sessions.getTabValue(t.id, SYNC_KEY).then(key => earlyKeys.set(t.id, key), () => {})));
   return earlyKeys;
@@ -254,8 +249,8 @@ browser.runtime.onConnect.addListener(port => {
       await goToSound(windowId, msg.tabId); // sounds.js; like select, not behind what the queue is doing
     } else if (msg.type === "warmup") {
       // Not a sidebarAction: this changes nothing you can see, so it neither waits in the queue nor asks for a new view.
-      if (tidierAlone) await browser.tabs.warmup(msg.tabId).catch(() => {});
-    } else if (tidierAlone) {
+      await browser.tabs.warmup(msg.tabId).catch(() => {});
+    } else {
       // Rows are drawn before Tidier has started; what you do with them waits for that,
       // since a move before the roles are read would act on a row, not on its tab.
       for (let i = 0; i < 300 && !started; i++) await sleep(100);
@@ -272,7 +267,7 @@ browser.runtime.onConnect.addListener(port => {
   });
 });
 
-// What you do in the sidebar with Tidier alone (ownfolders.js). A drop the sidebar shows in
+// What you do in the sidebar (ownfolders.js). A drop the sidebar shows in
 // its new place before it is done has a name (`landing`), given back with the views built after it.
 async function sidebarAction(windowId, msg) {
   try {
@@ -343,14 +338,8 @@ async function moveEssential(windowId, tabId, beforeId) {
 }
 
 // The toolbar button shows or hides the sidebar: without a sidebar, a window has
-// no list of tabs at all (the tab bar is hidden in userChrome.css). On Sidebery the sidebar
-// is Sidebery's, and Firefox's Extensions menu invites a click on Tidier: that click would
-// swap Sidebery out for Tidier's sidebar, so there it opens the settings page instead, where
-// moving over is. (Both in the click itself, which Firefox requires of them.)
-browser.browserAction.onClicked.addListener(() => { if (tidierAlone) browser.sidebarAction.toggle(); else browser.runtime.openOptionsPage(); });
-// On Sidebery, Tidier's own sidebar (chosen in Firefox's sidebar menu, or still open after going
-// back) only says where the tab list is: it is made for Tidier alone, and half of it would work.
-aloneRead.then(() => { if (!tidierAlone) browser.sidebarAction.setPanel({ panel: "sidebar/sidebery.html" }).catch(noteError); });
+// no list of tabs at all (the tab bar is hidden in userChrome.css).
+browser.browserAction.onClicked.addListener(() => browser.sidebarAction.toggle());
 for (const event of ["onCreated", "onMoved", "onAttached", "onDetached"]) {
   browser.tabs[event].addListener((tabOrId, info) => viewSoon(tabOrId.windowId ?? info?.windowId ?? info?.newWindowId ?? info?.oldWindowId));
 }

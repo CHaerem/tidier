@@ -4,8 +4,6 @@
 // One line per space, with its icon and name. What is rarely wanted is behind a small
 // "More": colour, icon, proxy, user agent, signing out, deleting. The two things that
 // cannot be undone ask first, in place: never a dialog.
-//
-// With Sidebery in use the line is only the name, as it always was.
 
 const isolation = (what, more) => browser.runtime.sendMessage({ type: "isolation:" + what, ...more });
 // Must be called right in your click, or Firefox refuses to ask.
@@ -27,10 +25,6 @@ function spaceIcon(iconUrl, color) {
 // are typing in it: that would take the text from under your hands.
 async function drawSpaces(force) {
   if (!force && document.activeElement?.closest?.("#spaces")) return;
-  if (!state.report.alone) {
-    $("spaces").replaceChildren(...state.spaces.map(s => el("div", { className: "line" }, el("span", { className: "dot", ariaHidden: "true", style: `color:${s.color}` }), nameField(s))));
-    return;
-  }
   isolated = await isolation("get");
   // Asked while you came into the list (a space made here, say, and its name given the keyboard).
   if (!force && document.activeElement?.closest?.("#spaces")) return;

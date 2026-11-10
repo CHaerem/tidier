@@ -10,9 +10,8 @@ import { FakeFirefox, wait, GHOST } from "./fake_firefox.mjs";
 const C1 = "firefox-container-1";
 
 // Tidier started on one window with the given tabs: [props, values] each.
-async function started(tabs, { alone = true, store = {} } = {}) {
+async function started(tabs, { store = {} } = {}) {
   const ff = new FakeFirefox();
-  if (alone) ff.managed = { tidierAlone: true };
   Object.assign(ff.store, store);
   const w = ff.addWindow({ focused: true });
   const made = tabs.map(([props, values]) => ff.addTab(w.id, { cookieStoreId: C1, ...props }, values));
@@ -71,15 +70,12 @@ test("a huge address is cut, since every view would carry it", async () => {
   x.kill();
 });
 
-test("rows and tiles carry the tooltip; with the setting off they do not", async () => {
+test("rows and tiles carry the tooltip", async () => {
   const store = { syncedTabs: { a: { url: "https://a.example/p?x", title: "Row", cookieStoreId: C1, parentKey: null, group: false, added: 1 } } };
   const tabs = [[{ url: GHOST("ghost", "a"), title: "Row", discarded: true }, { syncKey: "a", syncRole: "ghost" }], [{ url: "https://site.example/", active: true }]];
-  let { x, w } = await started(tabs, { store });
+  const { x, w } = await started(tabs, { store });
   const row = flat(await viewOf(x, w)).find(i => i.title === "Row");
   assert.equal(row.tip, "Row\nhttps://a.example/p");
-  x.kill();
-  ({ x, w } = await started(tabs, { store, alone: false }));
-  for (const item of flat(await viewOf(x, w))) assert.equal(item.tip, undefined);
   x.kill();
 });
 
@@ -98,14 +94,10 @@ test("a tab's own icon first, then the record's, then none for the letter; also 
     [{ url: "https://kept.example/", title: "Kept" }, { syncKey: "kept", syncRole: "live" }],
     [{ url: "https://none.example/", title: "None" }, { syncKey: "none", syncRole: "live" }],
   ];
-  let { x, w } = await started(tabs, { store: { essentials: list, syncedTabs: record } });
+  const { x, w } = await started(tabs, { store: { essentials: list, syncedTabs: record } });
   const view = await viewOf(x, w);
   const named = Object.fromEntries(flat(view).map(i => [i.title, i.icon]));
   assert.deepEqual(named, { Essential: icon("essential"), Own: icon("own"), Kept: icon("record"), None: null });
-  x.kill();
-  ({ x, w } = await started(tabs, { store: { essentials: list, syncedTabs: record }, alone: false }));
-  const off = Object.fromEntries(flat(await viewOf(x, w)).map(i => [i.title, i.icon]));
-  assert.equal(off.Kept, null, "with the setting off, nothing changes");
   x.kill();
 });
 
@@ -126,7 +118,7 @@ test("a page with no icon keeps the record's on the same site, and has none of a
   const iconNow = async (x, w) => flat(await viewOf(x, w))[0].icon;
   const go = async (ff, t, url, title) => { delete t.favIconUrl; ff.navigate(t.id, url, title); await wait(1000); };
 
-  let { ff, x, w, made } = await started(tabs, { store: store() });
+  const { ff, x, w, made } = await started(tabs, { store: store() });
   await go(ff, made[0], "https://www.a.example/page", "Same site");
   assert.equal(await iconNow(x, w), icon, "the same site, as far as a person can tell");
   // As Firefox does it: the new page's first title comes while the tab still has the old icon.
@@ -142,12 +134,6 @@ test("a page with no icon keeps the record's on the same site, and has none of a
   await wait(1000);
   assert.equal(await iconNow(x, w), made[0].favIconUrl);
   assert.equal((await x.js("getSynced()")).k.icon, made[0].favIconUrl);
-  x.kill();
-
-  // With the setting off the record is left as it always was.
-  ({ ff, x, w, made } = await started(tabs, { store: store(), alone: false }));
-  await go(ff, made[0], "https://b.example/", "Another site");
-  assert.equal((await x.js("getSynced()")).k.icon, icon);
   x.kill();
 });
 
@@ -179,7 +165,7 @@ test("a load is told apart from the rows, so that it never redraws one", async (
     [{ url: "https://slow.example/", status: "loading", title: "Slow" }],
     [{ url: GHOST("ghost", "k"), status: "loading", title: "Placeholder" }],
   ];
-  let { x, w, made } = await started(tabs);
+  const { x, w, made } = await started(tabs);
   const before = await viewOf(x, w);
   assert.deepEqual(before.loading, [made[1].id]);
   const state = i => JSON.stringify(i);
@@ -188,9 +174,6 @@ test("a load is told apart from the rows, so that it never redraws one", async (
   const after = await viewOf(x, w);
   assert.deepEqual(after.loading, []);
   assert.equal(state(flat(after).find(i => i.id === made[1].id)), state(row), "the row's state is the same");
-  x.kill();
-  ({ x, w } = await started(tabs, { alone: false }));
-  assert.deepEqual((await viewOf(x, w)).loading, [], "with the setting off, nothing");
   x.kill();
 });
 
@@ -211,18 +194,9 @@ test("a warm-up reaches Firefox, without the queue or a new view, and a refusal 
   x.kill();
 });
 
-test("with the setting off, a warm-up does nothing", async () => {
-  const { ff, x, w, made } = await started([[{ url: "https://site.example/", active: true }], [{ url: "https://a.example/" }]], { alone: false });
-  const bar = sidebar(x, w.id);
-  await bar.ready;
-  await bar.send({ type: "warmup", tabId: made[1].id });
-  assert.equal(ff.log.filter(l => l[0] === "warmup").length, 0);
-  x.kill();
-});
-
 // --- touches.js ---------------------------------------------------------------------------
 // A pretend page: timers run when told, and each icon says what was done to it.
-function page({ alone = true, reduced = false } = {}) {
+function page({ reduced = false } = {}) {
   const classes = () => { const s = new Set(); return { add: c => s.add(c), remove: c => s.delete(c), contains: c => s.has(c) }; };
   const newIcon = () => ({ classList: classes(), animation: { startTime: null }, faded: [], opacity: "0.6",
     getAnimations() { return this.classList.contains("slow-load") ? [this.animation] : []; }, animate(k, ms) { this.faded.push([k.opacity, ms]); } });
@@ -235,7 +209,7 @@ function page({ alone = true, reduced = false } = {}) {
   let now = 0, listen = null, id = 0;
   const timers = new Map(), on = {}, sent = [];
   const ctx = vm.createContext({
-    kept, send: m => sent.push(m), view: { alone },
+    kept, send: m => sent.push(m), view: {},
     port: { onMessage: { addListener: f => { listen = f; } } },
     document: { timeline: { get currentTime() { return now; } } },
     setTimeout: (f, ms) => { timers.set(++id, { f, at: now + ms }); return id; },
@@ -338,12 +312,13 @@ test("a tile shows the sign too", () => {
   assert.equal(icon.classList.contains("slow-load"), true);
 });
 
-// Also what a page asks for by itself: with the setting off this sidebar is as it was.
-test("what stands still for less motion does so only with Tidier alone", () => {
-  const css = readFileSync(new URL("../sidebar/sidebar.css", import.meta.url), "utf8");
-  const block = css.match(/@media \(prefers-reduced-motion: reduce\) \{([^}]*\})/)[1];
-  const selector = block.slice(0, block.indexOf("{")).trim();
-  for (const one of selector.split(",")) assert.match(one.trim(), /^\.alone\b/, one);
+// Also what a page asks for by itself: everything stands still on every page (tokens.css),
+// and the sidebar's own rule for less motion only dims a slow load.
+test("what stands still for less motion: everything, and a slow load is only dimmed", () => {
+  const read = f => readFileSync(new URL("../sidebar/" + f, import.meta.url), "utf8");
+  assert.match(read("tokens.css"), /prefers-reduced-motion: reduce\) \{\s*html, html :is\(\*, ::before, ::after\) \{ transition: none !important; animation: none !important; \}/);
+  const block = read("sidebar.css").match(/@media \(prefers-reduced-motion: reduce\) \{([^}]*\})/)[1];
+  assert.equal(block.slice(0, block.indexOf("{")).trim(), ".slow-load");
 });
 
 test("with less motion asked for, the sign goes without a fade", () => {
@@ -385,8 +360,3 @@ test("a warm-up once for each time the pointer comes to a tab, only a loaded one
   assert.ok(p.sent.every(m => m.type === "warmup"));
 });
 
-test("with the setting off, the pointer warms nothing", () => {
-  const p = page({ alone: false });
-  p.on.mouseover({ target: p.tab(1) });
-  assert.deepEqual(p.sent, []);
-});

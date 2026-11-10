@@ -107,7 +107,7 @@ export class FakeFirefox {
       query: async (q = {}) => { if (ff.hooks.query) await ff.hooks.query(q); let out = [...ff.wins.values()].flatMap(w => ff.list(w.id));
         for (const k of ["windowId", "pinned", "active", "discarded", "hidden", "cookieStoreId", "audible"]) if (q[k] !== undefined) out = out.filter(t => [q[k]].flat().includes(t[k]));
         if (q.muted !== undefined) out = out.filter(t => !!t.mutedInfo?.muted === q.muted);
-        if (q.currentWindow) out = out.filter(t => t.windowId === ff.focused);
+        if (q.currentWindow || q.lastFocusedWindow) out = out.filter(t => t.windowId === ff.focused);
         return out; },
       get: id => { if (!Number.isInteger(id)) throw new Error("Incorrect argument types for tabs.get."); return (async () => ff.snap(need(id)))(); }, // as Firefox: at once, not as a refusal
       create: async p => {
@@ -224,7 +224,12 @@ export class FakeFirefox {
     } };
     b.alarms = { create() {}, onAlarm: ev() };
     b.runtime = { id: "tidier", getPlatformInfo: async () => ({ os: "mac" }), getManifest: () => ({ version: "1.6" }), getURL: p => "moz-extension://tidier/" + p, onMessage: ev(), onStartup: ev(), onInstalled: ev(), onConnect: ev(),
-      sendNativeMessage: () => reject("no host"), sendMessage: () => reject("Could not establish connection. Receiving end does not exist."), openOptionsPage: async () => {} };
+      sendNativeMessage: () => reject("no host"), sendMessage: () => reject("Could not establish connection. Receiving end does not exist."), 
+      // As Firefox, with a settings page that opens in a tab: the one there is selected, else a new one in the window in front.
+      openOptionsPage: async () => {
+        const url = b.runtime.getURL("settings/settings.html"), there = [...ff.wins.values()].flatMap(w => ff.list(w.id)).find(t => t.url === url);
+        if (there) await b.tabs.update(there.id, { active: true }); else await b.tabs.create({ url, windowId: ff.focused, active: true });
+      } };
     const identity = c => ({ cookieStoreId: c, name: c, colorCode: "#000", color: "blue", icon: "circle", ...ff.identities?.[c] }); // ff.identities: names and looks other than the id
     b.contextualIdentities = { query: async () => [...ff.containers].filter(c => c !== "firefox-default").map(identity), onCreated: ev(), onUpdated: ev(), onRemoved: ev(),
       get: async id => { if (id === "firefox-default" || !ff.containers.has(id)) throw new Error(`Invalid contextual identity: ${id}`); return identity(id); },
@@ -304,14 +309,6 @@ function addIsolationApis(ff, b) {
   const apis = () => {
     if (ff.granted.has("webRequest")) b.webRequest ??= { onBeforeRequest: ev(), onBeforeSendHeaders: ev() };
     if (ff.granted.has("proxy")) b.proxy ??= { onRequest: ev() };
-    // Sidebery as Firefox's management API sees it, once Tidier may: ff.sidebery is "on", "off" or "missing".
-    if (ff.granted.has("management")) b.management ??= {
-      get: async id => {
-        if (id !== "{3c078156-979c-498b-8990-85f7987dd929}" || (ff.sidebery ?? "missing") === "missing") throw new Error(`No such addon ${id}`);
-        return { id, name: "Sidebery", enabled: ff.sidebery === "on", optionsUrl: "moz-extension://sb/page.setup/setup.html" };
-      },
-      onEnabled: ev(), onDisabled: ev(), onInstalled: ev(), onUninstalled: ev(),
-    };
     if (ff.granted.has("browsingData")) b.browsingData ??= { remove: async (o, kinds) => { ff.log.push(["browsingData", o, kinds]); ff.cookies = ff.cookies.filter(c => c.storeId !== o.cookieStoreId); } };
   };
   apis();

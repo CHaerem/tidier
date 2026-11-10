@@ -12,7 +12,6 @@ const entry = (url, more = {}) => ({ url, title: url, cookieStoreId: C1, parentK
 const folder = (name, rank, more = {}) => ({ group: true, own: true, name, cookieStoreId: C1, parentKey: null, rank, added: 1, ...more });
 
 async function alone(ff) {
-  ff.managed = { ...ff.managed, tidierAlone: true };
   const x = ff.boot();
   x.b.runtime.onStartup.fire({});
   await wait(1200);
@@ -258,32 +257,6 @@ test("a private window's tab cannot be made an essential by a key", async () => 
   x.kill();
 });
 
-test("with the setting off, the new keys do nothing, and copying the address still does", async () => {
-  const ff = new FakeFirefox();
-  const w = ff.addWindow({ focused: true });
-  const a = ff.addTab(w.id, { url: "https://a.example/", active: true, cookieStoreId: C1 }, { syncKey: "a", syncRole: "live" });
-  const b = ff.addTab(w.id, { url: "https://b.example/", cookieStoreId: C1 }, { syncKey: "b", syncRole: "live" });
-  ff.store.syncedTabs = { a: entry("https://a.example/"), b: entry("https://b.example/") };
-  const x = ff.boot();
-  x.b.runtime.onStartup.fire({});
-  await wait(1500);
-  for (let i = 0; i < 300 && !x.started(); i++) await wait(1000);
-  const copied = [];
-  x.ctx.navigator.clipboard = { writeText: async t => { copied.push(t); } };
-  for (const name of ["next-tab", "tab-2", "next-space", "toggle-essential", "new-folder"]) x.b.commands.onCommand.fire(name, ff.snap(a));
-  await wait(300);
-  assert.equal(ff.tabs.get(a.id).active, true);
-  assert.equal(ff.tabs.get(b.id).active, false);
-  assert.equal(ff.tabs.get(a.id).pinned, false);
-  assert.ok(!Object.values(ff.synced).some(e => e.group));
-  assert.equal(ff.commandsSet, undefined, "and no key is given");
-  x.b.commands.onCommand.fire("copy-url", ff.snap(a));
-  await wait(100);
-  assert.deepEqual(copied, ["https://a.example/"]);
-  assert.equal(x.js("quietNotes").size, 0, "with Sidebery it says nothing: there is no line of Tidier's to say it in");
-  x.kill();
-});
-
 // --- The keys -----------------------------------------------------------------------
 const manifest = JSON.parse(readFileSync(new URL("../manifest.json", import.meta.url), "utf8"));
 const commandsOf = (over = {}) => Object.entries(manifest.commands).map(([name, c]) => ({ name, description: c.description, shortcut: over[name] ?? c.suggested_key?.default ?? "" }));
@@ -292,8 +265,7 @@ test("the table and the manifest agree, and no new command has a suggested key",
   const { x } = await aWindow();
   const table = x.js("COMMANDS");
   // Firefox's shortcuts page lists them in the daily browser on Sidebery too, where only copying the address works.
-  for (const c of table) if (c.key !== undefined) assert.equal(c.label + (c.always ? "" : " (with Tidier alone)"), manifest.commands[c.name]?.description, c.name);
-  for (const [name, c] of Object.entries(manifest.commands)) if (name !== "copy-url") assert.match(c.description, /\(with Tidier alone[,)]/, name);
+  for (const c of table) if (c.key !== undefined) assert.equal(c.label, manifest.commands[c.name]?.description, c.name);
   for (const name of Object.keys(manifest.commands)) assert.ok(table.some(c => c.name === name), name);
   for (const [name, c] of Object.entries(manifest.commands)) if (name !== "copy-url") assert.equal(c.suggested_key, undefined, name);
   x.kill();
@@ -336,7 +308,7 @@ test("a key you changed or removed stays after a start, and a new command still 
   x.kill();
 });
 
-test("a machine already on Tidier alone keeps its keys, and a key someone else has is not doubled", async () => {
+test("a machine that has its keys keeps them, and a key someone else has is not doubled", async () => {
   const { x } = await aWindow();
   const keysToGive = x.js("keysToGive"), table = x.js("COMMANDS");
   const give = keysToGive(table, commandsOf({ "space-1": "Alt+Shift+1", "new-folder": "Ctrl+1" }), [], "mac").map(g => g.name);
@@ -351,55 +323,9 @@ test("a machine already on Tidier alone keeps its keys, and a key someone else h
   x.kill();
 });
 
-test("going back to Sidebery takes every key back, and moving over again gives them anew", async () => {
-  const ff = new FakeFirefox();
-  ff.commands = commandsOf();
-  const w = ff.addWindow({ focused: true });
-  ff.addTab(w.id, { url: "https://a.example/", active: true, cookieStoreId: C1 });
-  const x = await alone(ff);
-  const reset = [];
-  x.b.commands.reset = async name => { reset.push(name); };
-  await x.js("takeKeysBack")();
-  assert.ok(reset.includes("tab-1") && reset.includes("space-1") && reset.includes("_execute_sidebar_action"));
-  assert.ok(!reset.includes("copy-url"), "that one is the browser's with Sidebery too, and yours if you changed it");
-  assert.deepEqual(ff.store.keysGiven, []);
-  x.kill();
-  ff.commands = commandsOf();
-  ff.commandsSet = {};
-  const again = await alone(ff);
-  assert.equal(ff.commandsSet["tab-1"], "Ctrl+1");
-  assert.equal(ff.commandsSet["next-tab"], "Ctrl+MacCtrl+Down");
-  again.kill();
-});
-
-test("keys left behind when Tidier alone ended without moving back are taken back, once", async () => {
-  const ff = new FakeFirefox();
-  ff.commands = commandsOf();
-  const w = ff.addWindow({ focused: true });
-  ff.addTab(w.id, { url: "https://a.example/", active: true, cookieStoreId: C1 });
-  const offStart = async () => {
-    const x = ff.boot(), reset = [];
-    x.b.commands.reset = async name => { reset.push(name); };
-    x.b.runtime.onStartup.fire({});
-    await wait(1500);
-    for (let i = 0; i < 300 && !x.started(); i++) await wait(1000);
-    await wait(100);
-    x.kill();
-    return reset;
-  };
-  assert.deepEqual(await offStart(), [], "a browser that never gave them has nothing to take back");
-  ff.store.keysGiven = ["tab-1", "next-tab"];
-  const reset = await offStart();
-  assert.ok(reset.includes("tab-1") && reset.includes("next-tab") && reset.includes("toggle-essential"));
-  assert.ok(!reset.includes("copy-url"));
-  assert.deepEqual(ff.store.keysGiven, []);
-  assert.deepEqual(await offStart(), [], "and nothing at the next start");
-});
-
 test("a key that could not be given is tried again at the next start, and only that one", async () => {
   const ff = new FakeFirefox();
   ff.commands = commandsOf();
-  ff.managed = { tidierAlone: true };
   const w = ff.addWindow({ focused: true });
   ff.addTab(w.id, { url: "https://a.example/", active: true, cookieStoreId: C1 });
   const x = ff.boot();
@@ -556,10 +482,10 @@ test("commands that start with no key are listed apart, get none, and lose one y
 });
 
 // The settings page's own part, on its real file, with what it needs from the page faked.
-function settingsKeys(alone) {
+function settingsKeys() {
   const called = [], parts = {};
   const ctx = vm.createContext({
-    ask: async what => { called.push(what); return alone ? [] : null; },
+    ask: async what => { called.push(what); return []; },
     $: id => (parts[id] ??= { hidden: true, replaceChildren() {} }), el: () => ({}), browser: { runtime: { getPlatformInfo: async () => ({ os: "mac" }) }, commands: {} }, document: { querySelector() {} },
   });
   vm.runInContext(readFileSync(new URL("../settings/keys.js", import.meta.url), "utf8"), ctx);
@@ -567,7 +493,7 @@ function settingsKeys(alone) {
 }
 
 test("a key pressed on the settings page reads as Firefox writes it", () => {
-  const { shortcutOf } = settingsKeys(false).ctx;
+  const { shortcutOf } = settingsKeys().ctx;
   const press = o => ({ which: 0, code: "", key: "", metaKey: false, ctrlKey: false, altKey: false, shiftKey: false, ...o });
   const digit = press({ which: 49, code: "Digit1", key: "1", metaKey: true });
   assert.equal(shortcutOf(digit, true), "Command+1");
@@ -582,18 +508,8 @@ test("a key pressed on the settings page reads as Firefox writes it", () => {
   assert.equal(shortcutOf(press({ which: 18, code: "AltLeft", key: "Alt", altKey: true }), true), "", "only modifiers so far");
 });
 
-test("without Tidier alone the settings page has no Keys section", async () => {
-  const off = settingsKeys(false);
-  await new Promise(r => setTimeout(r, 10));
-  assert.equal(off.parts["keys-section"].hidden, true);
-  assert.deepEqual(off.called, ["keys"], "and asks for nothing more");
-  const on = settingsKeys(true);
-  await new Promise(r => setTimeout(r, 10));
-  assert.equal(on.parts["keys-section"].hidden, false);
-});
-
 test("the numbered keys share a line, and a space's or a tab's other commands have their own", () => {
-  const keyGroup = vm.runInContext("keyGroup", settingsKeys(false).ctx);
+  const keyGroup = vm.runInContext("keyGroup", settingsKeys().ctx);
   assert.equal(keyGroup("space-3"), "Go to a space");
   assert.equal(keyGroup("tab-9"), "Go to a tab of this space");
   assert.equal(keyGroup("space-reload"), null);

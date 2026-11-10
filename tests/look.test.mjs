@@ -167,7 +167,7 @@ test("a class the sidebar puts on the whole page is no element's own class", () 
   const files = ["sidebar/sidebar.html", ...[...read("sidebar/sidebar.html").matchAll(/<script src="([^"]+)"/g)].map(m => "sidebar/" + m[1])];
   const code = files.map(read).join("\n");
   const onPage = new Set([...code.matchAll(/(?:root|documentElement)\.classList\.(?:add|toggle|remove)\("([\w-]+)"/g)].map(m => m[1]));
-  assert.ok(onPage.has("alone") && onPage.has("space-arriving"), [...onPage].join());
+  assert.ok(onPage.has("carrying") && onPage.has("space-arriving"), [...onPage].join());
   // Classes given to elements: el("tag", "a b"), class="a b", className = "a b", classList.add("a") on anything else.
   const given = [
     ...[...code.matchAll(/\bel\("\w+", "([\w -]+)"/g)].map(m => m[1]),

@@ -57,31 +57,16 @@ function trace(what) {
 }
 
 // How much Tidier does, for the smoke test (the "stats" message, tabsync.js):
-// jobs run in the queue and how long they held it (waits for Sidebery
-// included), tab lookups made outside it (noteOrder, tabsync.js), the timed
+// jobs run in the queue and how long they held it, tab lookups made outside it (noteOrder, tabsync.js), the timed
 // checks (archiving, live folders), the only work with nothing happening, and
 // the sidebar's views: how many were built and how long that took.
 const work = { jobs: 0, queueMs: 0, longestJobMs: 0, lookups: 0, alarms: 0, errors: 0, views: 0, viewMs: 0, longestViewMs: 0 };
 browser.alarms.onAlarm.addListener(() => { work.alarms++; });
 
-// Tidier alone: Tidier's own sidebar, spaces and folders, with no Sidebery. Off by
-// default, since Sidebery and Tidier would fight over the same tabs: every commit
-// reaches the daily browser, which runs Sidebery until it is moved over (PLAN.md).
-// Set in the extension's storage, or declared for a machine in managed storage.
-// Everything that exists only because of Sidebery is skipped when it is on.
-let tidierAlone = false;
-async function readAlone() {
-  const managed = await browser.storage.managed.get("tidierAlone").catch(() => ({}));
-  const local = await browser.storage.local.get("tidierAlone");
-  tidierAlone = !!(managed.tidierAlone ?? local.tidierAlone);
-}
-// Read at once too, and not only when Tidier starts (tabsync.js), seconds later: a sidebar
-// open when Firefox starts asks for its first view long before that. Drawn without the
-// setting, its rows could not be dragged until it was closed, and its folders, tabs and
-// spaces all moved when the setting came (viewFor, sidebar-view.js). And first in the
-// queue: Tidier starts a moment after its page loads, and a job in that moment (a tab you
-// pinned, say) would otherwise work as if Sidebery were there. (serial notes an error.)
-const aloneRead = serial(readAlone).catch(() => {});
+// Tidier once ran beside Sidebery, with its own sidebar, spaces and folders behind a
+// setting, `tidierAlone`. Every browser is Tidier alone now: a browser that had the setting
+// keeps it in its storage (or a machine in managed storage), and nothing reads it. One that
+// never moved over is moved at its first start (moveover.js).
 
 // Something you should know and would otherwise not see, such as a live folder that
 // has stopped: shown on Tidier's button (in the Extensions menu) and in its sidebar.
@@ -157,8 +142,6 @@ const isWeb = url => /^https?:/i.test(url || "");
 const sameSite = (a, b) => {
   try { const h = u => new URL(u).hostname.replace(/^www\./, ""); return h(a) === h(b); } catch (e) { return false; }
 };
-// Sidebery folders are "group" pages served by Sidebery itself.
-const isSideberyGroup = url => /^moz-extension:\/\/[^/]+\/sidebery\/group\.html/.test(url || "");
 
 // Placeholder page for ghosts and essential copies (see ghost.js). Asked for once:
 // it never changes while Tidier runs, and this is looked at for every tab in a view.
@@ -178,7 +161,8 @@ const placeholderOf = url => {
 // should be there, so they are forgotten. A loaded tab reaches Recently Closed
 // a moment after it is closed (Firefox saves its state first), so each is
 // looked for again whenever that list changes, for FORGET_MS. (An essential
-// copy's address may end in "&placed=N", see essentials.js.)
+// copy made beside Sidebery has an address that ends in "&placed=N": it was
+// loaded again so that Sidebery would see it. Such copies stay until they close.)
 //
 // The same goes for a real page Tidier closed because it is open elsewhere (opened again in
 // its space, say). That is looked for only until it is found, and not for long: a moment
@@ -215,7 +199,7 @@ async function forgetClosedNow() {
   if (!toForget.size) return;
   forgetBusy = true;
   const t0 = performance.now();
-  // (An essential copy's address may end in "&placed=N", see essentials.js.)
+  // (An essential copy made beside Sidebery has "&placed=N" after it, see above.)
   const ours = url => toForget.has(url) ? url : [...toForget.keys()].find(p => url?.startsWith(p + "&"));
   try {
     const closed = await browser.sessions.getRecentlyClosed().catch(() => []);
@@ -235,75 +219,8 @@ async function forgetClosedNow() {
 }
 browser.sessions.onChanged.addListener(() => { forgetClosedNow(); });
 
-// Sidebery's tree, and how to change tab order without breaking it.
-//
-// Sidebery rebuilds its whole tree after every single tab move it did not make
-// itself. A tab whose parent is further up, with other tabs in between, takes
-// all those tabs into the parent (Sidebery's updateTabsTree, 5.6). So a folder
-// that is apart from its tabs for even one move swallows every tab between
-// them, also tabs from other spaces; and a tab moved above its parent loses
-// it. Tabs are therefore only ever put in an order where each tab comes right
-// after its parent or the tab before it in the same folder (treeOrder), and
-// moved one at a time, never a tab that has tabs in it (placeInOrder).
-
+// A tab with no container: Firefox's own, outside every space.
 const NO_CONTAINER = "firefox-default";
-
-// The order of `items` ({ id, parent, space, folder }, given in their current
-// order) that Sidebery can show as it is: each space one run, the spaces in
-// the order they mostly have now, folders first in each space (as in Zen and
-// Arc), and every tab right after its parent, its folder's tabs in their
-// current order. A tab without a container belongs to the space it sits in.
-function treeOrder(items) {
-  const byId = new Map(items.map(x => [x.id, x]));
-  const kids = new Map(), roots = [];
-  for (const x of items) {
-    const p = byId.get(x.parent);
-    if (p && p !== x) (kids.get(p.id) ?? kids.set(p.id, []).get(p.id)).push(x);
-    else roots.push(x);
-  }
-  const run = new Map();
-  let last = null;
-  for (const r of roots) { if (r.space !== NO_CONTAINER) last = r.space; run.set(r, r.space !== NO_CONTAINER ? r.space : last); }
-  let next = null;
-  for (const r of [...roots].reverse()) { if (run.get(r) !== null) next = run.get(r); else run.set(r, next); }
-  const where = new Map();
-  roots.forEach((r, i) => (where.get(run.get(r)) ?? where.set(run.get(r), []).get(run.get(r))).push(i));
-  const median = list => list[list.length >> 1];
-  const spaces = [...where.keys()].sort((a, b) => median(where.get(a)) - median(where.get(b)));
-  const out = [], seen = new Set();
-  const visit = x => {
-    if (seen.has(x.id)) return;
-    seen.add(x.id);
-    out.push(x.id);
-    for (const c of kids.get(x.id) || []) visit(c);
-  };
-  for (const s of spaces) {
-    const here = roots.filter(r => run.get(r) === s);
-    for (const r of [...here.filter(r => r.folder), ...here.filter(r => !r.folder)]) visit(r);
-  }
-  for (const x of items) visit(x); // left over: tabs whose parents point at each other
-  return out;
-}
-
-// Move a window's tabs towards `ids` order (tab IDs), one tab at a time, each
-// right after the tab that should come before it. A tab with tabs in it is
-// left where it is; its tabs then follow it there. `mark(id)` is called before
-// each move, so listeners can ignore our own moves.
-async function placeInOrder(windowId, ids, mark) {
-  let tabs = await browser.tabs.query({ windowId });
-  const firstUnpinned = tabs.filter(t => t.pinned).length;
-  ids = ids.filter(id => tabs.some(t => t.id === id && !t.pinned));
-  for (let i = 0; i < ids.length; i++) {
-    const byId = new Map(tabs.map(t => [t.id, t]));
-    const tab = byId.get(ids[i]), prev = i ? byId.get(ids[i - 1]) : null;
-    if (!tab || tabs.some(t => treeParent(t, byId) === tab)) continue;
-    const index = !prev ? firstUnpinned : tab.index < prev.index ? prev.index : prev.index + 1;
-    if (tab.index === index) continue;
-    mark(tab.id);
-    await browser.tabs.move(tab.id, { windowId, index }).catch(() => {});
-    tabs = await browser.tabs.query({ windowId });
-  }
-}
 
 async function normalWindows() {
   return (await browser.windows.getAll({ windowTypes: ["normal"] })).filter(w => !w.incognito);
@@ -318,51 +235,19 @@ async function refusedInWindow(windowId, err) {
   return true;
 }
 
-// Timing for filling a new window, measured with Sidebery 5.6 on Firefox 159:
-// - the window is filled shortly after it opens (tabs appear within ~0.7 s);
-// - tabs can be created back to back;
-// - Sidebery needs ~1.5 s to finish placing them before any tab it put
-//   elsewhere is moved into place (see sortWindow). Sorting sooner puts tabs
-//   in the wrong panel.
-// - Essentials added to an existing window are created unpinned and pinned
-//   PIN_SETTLE_MS later (see createEssentials): Sidebery puts a new tab in its
-//   container's panel, and a pinned tab keeps its panel; pinned too soon,
-//   Sidebery gives it the active panel instead. Seen on a slower machine
-//   (GitHub's), not on a fast Mac.
+// A new window is filled NEW_WINDOW_DELAY_MS after Firefox announces it, once its
+// first tab is there; a reopened window can get its tabs' values RESTORED_LATE_MS later
+// (see windows.onCreated in tabsync.js).
 const NEW_WINDOW_DELAY_MS = 200;
-const RESTORED_LATE_MS = 3000; // see windows.onCreated in tabsync.js
-const CREATE_GAP_MS = 0;
-const SORT_SETTLE_MS = 1500;
-const PIN_SETTLE_MS = 800;
-// In a new window, essentials are pinned only after Sidebery's sidebar there
-// has started (see fillWindow and pinEssentialCopies): it waits at most
-// SIDEBAR_WAIT_MS for that, probing every PROBE_MS (see sidebarStarted), and
-// RULE_SETTLE_MS for Sidebery to move each copy to its own space before
-// pinning it.
-const SIDEBAR_WAIT_MS = 4000;
-const RULE_SETTLE_MS = 600;
-const PROBE_MS = 500;
-// A tab moved into or out of a folder is moved the same way in the other
-// windows MOVE_SETTLE_MS later, once Sidebery has set its new parent (see
-// applyMoves); the new ghost there gets NEW_TAB_SETTLE_MS for Sidebery to
-// place it before it is put in its place. Moves of a tab in its first
-// NEW_TAB_QUIET_MS are Sidebery placing it.
-const MOVE_SETTLE_MS = 800;
-const NEW_TAB_SETTLE_MS = 500;
-const NEW_TAB_QUIET_MS = 5000;
-// Folders are moved first in their space FOLDERS_SETTLE_MS after a change
-// (see folders.js), before the move is copied to the other windows.
-const FOLDERS_SETTLE_MS = 400;
-// A saved tab you closed is handled FOLDER_CLOSE_SETTLE_MS later, once a
-// folder closed with it is gone too (see onSyncedClosed in tabsync.js).
-const FOLDER_CLOSE_SETTLE_MS = 300;
+const RESTORED_LATE_MS = 3000;
 
-// A folder of Tidier's own (Tidier alone): only an entry in the tab record, with no
-// tab of its own, so no tab event can delete it (ownfolders.js).
+// A folder: only an entry in the tab record, with no tab of its own, so no tab event can
+// delete it (ownfolders.js). Every folder is one (`own`); a folder of Sidebery's had a
+// page, and a browser that had those is moved over at its first start (moveover.js).
 const isOwnFolder = entry => !!entry?.group && !!entry.own;
 
 // --- Saved tabs --------------------------------------------------------------
-// A tab in a Sidebery folder (at any depth) is *saved*, like a tab in Arc's
+// A tab in a folder (at any depth) is *saved*, like a tab in Arc's
 // pinned section: ⌘W unloads it instead of closing it, and it goes back to the
 // address it had when it came into the folder (`saved` in its synced entry).
 // Closing it while it is unloaded removes it; so does dragging it out of the
@@ -394,16 +279,10 @@ function noteSaved(all, keys = Object.keys(all)) {
 }
 
 // What closing a synced tab (not by closing its window) means:
-//   "copy"   a folder copy: only its own window (tabsync.js)
-//   "leave"  a tab in a folder that was closed in that window with it: the
-//            other windows keep it (Sidebery closes a folded folder's tabs)
 //   "unload" a saved tab you closed while it was loaded
 //   "close"  everything else: closed in every window
-function closeAction({ role, inFolder, liveFolder, unloaded, folderHere }) {
-  if (role === "copy") return "copy";
-  if (inFolder && !folderHere) return "leave";
-  if (inFolder && !liveFolder && !unloaded) return "unload";
-  return "close";
+function closeAction({ inFolder, liveFolder, unloaded }) {
+  return inFolder && !liveFolder && !unloaded ? "unload" : "close";
 }
 
 // The focused window, tracked here so tab events need no round trip to ask.
@@ -452,29 +331,3 @@ function storedValue(storageKey, empty) {
 }
 
 const flushWrites = () => Promise.all([...unwritten].map(write => write()));
-
-// A tab's parent in Sidebery's tree, from openerTabId, which Sidebery keeps
-// equal to the parent. Sidebery counts a parent only before its children, and
-// cannot clear openerTabId when it makes a tab a root (Firefox keeps the old
-// opener), so a tab once seen with its opener after it is a root, also after
-// the opener has moved up again (folders first), until its opener changes.
-// (Dragged back into the same folder, it still counts as a root: Sidebery
-// then sets the same opener again, which cannot be seen.)
-const staleOpener = new Map(); // tabId -> the opener it had when it became a root
-function treeParent(tab, byId) {
-  const p = byId.get(tab.openerTabId);
-  if (!p || p.id === tab.id || p.windowId !== tab.windowId) return undefined;
-  if (p.index > tab.index) { staleOpener.set(tab.id, p.id); return undefined; }
-  if (staleOpener.get(tab.id) === p.id) return undefined;
-  staleOpener.delete(tab.id);
-  return p;
-}
-// Seen at once when a tab moves, before folders first moves its old parent up. (With
-// Tidier alone there is no such tree, and this would ask for every tab at every move.)
-browser.tabs.onMoved.addListener(async (tabId, { windowId }) => {
-  if (tidierAlone) return;
-  const tabs = await browser.tabs.query({ windowId }).catch(() => []);
-  const byId = new Map(tabs.map(t => [t.id, t])), tab = byId.get(tabId);
-  if (tab) treeParent(tab, byId);
-});
-browser.tabs.onRemoved.addListener(tabId => staleOpener.delete(tabId));

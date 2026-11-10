@@ -1,21 +1,21 @@
-// Right after moving over (moveover.js), at the first start alone: Firefox's question about
+// Right after moving over from Sidebery (moveOverOnce, moveover.js): Firefox's question about
 // hidden tabs, and the windows that came over without Tidier's sidebar.
 //
 // Firefox asks about hidden tabs at the first tab Tidier hides, and again at every one until
 // it is answered: a note that hangs from the toolbar over the top of the sidebar and takes the
 // keyboard, with "Disable Extension" just where "New tab" is. One click or Enter there turns
-// Tidier off, and with Sidebery off too the window has no list of tabs at all. Firefox forgets
-// the answer whenever the add-on is disabled (ext-tabs.js, onDisable), and starting again
-// (runtime.reload) is a disable, so the question cannot be had before the move. So at that
-// start no tab is hidden (hidingHeld, spaces.js) until the settings page is back in front and
-// says what to choose (afterMoving, moveover.js); Firefox then asks in that window, over the
-// page you are reading. Until the first switch of space the sidebar says it too, in one line:
-// the note may have been closed without an answer, and then it comes back at the next hide.
+// Tidier off. A browser that ran Tidier beside Sidebery has never been asked: there Sidebery
+// hid the tabs. And the move happens by itself, at the start after an update, so nobody is
+// expecting a question. So at that start no tab is hidden (hidingHeld, spaces.js) until the
+// settings page is in front and says what came over and what to choose (afterMoving,
+// moveover.js); Firefox then asks in that window, over the page you are reading. Until the
+// first switch of space the sidebar says it too, in one line: the note may have been closed
+// without an answer, and then it comes back at the next hide.
 //
-// Firefox opens Tidier's sidebar again only in a window where it was the last one open: the
-// one you clicked Move in (settings.js). With Sidebery off, another window has no list of tabs
-// at all. It gets the settings page too, with a button that opens the sidebar there (a click
-// in a page of Tidier's is what lets it), and the first key of Tidier's pressed there opens it.
+// And Firefox does not open Tidier's sidebar because Tidier was updated: each window still
+// shows the sidebar it had, which is Sidebery's or none. So every window without Tidier's
+// sidebar gets the settings page, with a button that opens the sidebar there (a click in a
+// page of Tidier's is what lets it), and the first key of Tidier's pressed there opens it.
 
 const HOLD_HIDING_MS = 10000; // the page never said it was drawn: hidden anyway
 let askHidingLine = false; // the sidebar's line (viewFor, sidebar-view.js)
@@ -25,7 +25,7 @@ const wantsSidebar = new Set(); // windowIds, until the sidebar is there (sideba
 // Early in the start, before anything is hidden.
 async function holdHidingAfterMove() {
   const { movedNote } = await browser.storage.local.get("movedNote");
-  if (!tidierAlone || movedNote?.kind !== "over" || movedNote.opened) return;
+  if (movedNote?.kind !== "over" || movedNote.opened) return;
   hidingHeld = true;
   askHidingLine = true;
 }

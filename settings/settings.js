@@ -3,11 +3,6 @@ const ask = (what, more) => browser.runtime.sendMessage({ type: "settings:" + wh
 const $ = id => document.getElementById(id);
 const el = (tag, props = {}, ...kids) => { const e = Object.assign(document.createElement(tag), props); e.append(...kids); return e; };
 
-// What moving over needs, asked for in one click (the same as MOVE_PERMISSIONS in moveover.js):
-// hiding tabs, stopping a page before it loads in the wrong space, and seeing whether Sidebery is on.
-const MOVE_PERMISSIONS = { permissions: ["tabHide", "webRequest", "webRequestBlocking", "management"], origins: ["*://*/*"] };
-const SIDEBERY_ADDON_ID = "{3c078156-979c-498b-8990-85f7987dd929}";
-
 let state = null;
 // Spaces listed on this page come in the bar's order (state.order, from the background), as on the
 // bar itself; one that is not on it (hidden here, say) after them, in Firefox's order.
@@ -15,17 +10,18 @@ const inBarOrder = list => {
   const rank = new Map((state?.order ?? []).map((id, i) => [id, i]));
   return [...list].sort((a, b) => (rank.get(a.id) ?? Infinity) - (rank.get(b.id) ?? Infinity));
 };
-let movedNote = null; // what the last move over or back did: said once, and kept on this page
+let movedNote = null; // what the move from Sidebery did: said once, and kept on this page
 
 async function refresh() {
   state = await ask("get");
   // Firefox can bring this page back before Tidier has started (a restart with the page open), and
-  // then the background may not know yet whether this browser is on Tidier alone. Asked again until
-  // it has started, and the page is drawn afresh then, with every part of it.
+  // then the background does not have everything read yet. Asked again until it has started, and
+  // the page is drawn afresh then, with every part of it.
   if (!state.started) waitForStart();
   if (state.moved) movedNote = state.moved;
   $("notices").replaceChildren(...state.notices.map(noticeLine));
-  drawMoving();
+  $("allow-hiding").hidden = state.hiding;
+  drawMovedNote();
   drawSpaces();
   if (document.activeElement?.closest?.("#rules") == null && !rulesUnsaved()) drawRules();
   if (document.activeElement !== $("archive-hours")) $("archive-hours").value = state.archiveHours;
@@ -60,99 +56,39 @@ async function waitForStart() {
   }
 }
 
-// --- Moving over and back -----------------------------------------------------------
+// --- After the move from Sidebery ------------------------------------------------------
 const counted = (n, one, many = one + "s") => `${n} ${n === 1 ? one : many}`;
 const andList = parts => parts.length < 2 ? parts.join("") : `${parts.slice(0, -1).join(", ")} and ${parts.at(-1)}`;
-const step = (id, done) => { $(id).classList.toggle("done", !!done); };
-const SIDEBERY_SAYS = {
-  on: "Sidebery is on.", off: "Sidebery is off: ready to move.", missing: "Sidebery is not installed: nothing of it to take over.",
-  null: "Whether Sidebery is on shows once step 2 is done.",
-};
 
-function drawMoving() {
-  const r = state.report;
-  $("alone-title").textContent = r.alone ? "Tidier alone" : "Moving to Tidier alone";
-  $("alone-state").textContent = r.alone ? "Tidier is on its own here: no Sidebery needed."
-    : "This browser uses Sidebery for its tab list, spaces and folders. Tidier can do all of it itself, with its own sidebar, spaces and folders. Nothing is closed until the record of it is written, and you can go back.";
-  $("allow-hiding").hidden = !r.alone || state.hiding;
-  $("move").hidden = r.alone;
-  $("move-back").hidden = !(r.alone && r.canMoveBack && !r.declared);
-  $("import-alone").hidden = !r.alone;
-  drawMovedNote();
-  if (!r.alone) {
-    const folders = r.folders.length ? `: ${r.folders.map(f => `${f.name} (${f.tabs})`).join(", ")}` : "";
-    $("report").replaceChildren(
-      el("li", { textContent: `${counted(r.essentials, "essential")} and ${counted(r.tabs, "tab")} stay as they are.` }),
-      el("li", { textContent: `${counted(r.folders.length, "folder")} ${r.folders.length === 1 ? "becomes" : "become"} Tidier's own${folders}.` }),
-      el("li", { textContent: r.imported ? (r.rules ? `${counted(r.rules, "rule")}, Sidebery's own among them.` : "No rules, here or in Sidebery's export.") : `${counted(r.rules, "rule")} here so far. Sidebery's own rules come with its export, in step 1.` }),
-    );
-    step("step-export", r.imported);
-    if (r.imported && !$("sidebery-result").textContent) $("sidebery-result").textContent = `Taken in on ${new Date(r.imported).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })}. Choosing it again takes in what is new.`;
-    step("step-allow", r.allowed);
-    $("allow-move").hidden = r.allowed;
-    $("allow-result").textContent = r.allowed ? "Allowed." : "";
-    const off = r.sidebery === "off" || r.sidebery === "missing";
-    step("step-off", r.allowed && off);
-    $("sidebery-state").textContent = SIDEBERY_SAYS[r.sidebery];
-    $("sidebery-state").classList.toggle("wrong", r.sidebery === "on");
-    // Moving with Sidebery on would have both at work on every tab: the button waits for it.
-    $("move-over").disabled = !(r.allowed && off);
-    if (!$("move-result").dataset.said) {
-      $("move-result").textContent = !r.allowed ? "Step 2 first." : !off ? "Turn Sidebery off first (step 3)."
-        : !r.imported ? "Without step 1, Sidebery's rules and which folders are closed stay behind." : "";
-    }
-  } else if (!$("move-back").hidden) {
-    const b = r.back;
-    const what = [
-      `${counted(b.folders, "folder")} ${b.folders === 1 ? "gets its" : "get their"} page in Sidebery again, with ${b.folders === 1 ? "its" : "their"} tabs`,
-      b.made && `${b.made} of them made here`, b.renamed && `${b.renamed} with ${b.renamed === 1 ? "its" : "their"} new name`,
-    ].filter(Boolean).join(", ");
-    $("back-report").textContent = [
-      `${what}.`,
-      b.closed && `${b.closed === 1 ? "The closed folder comes" : `The ${b.closed} closed folders come`} back open: Sidebery keeps that itself.`,
-      b.lost.length && `${andList(b.lost)} ${b.lost.length === 1 ? "has" : "have"} no page Sidebery knows, so ${b.lost.length === 1 ? "its" : "their"} tabs become ordinary tabs.`,
-      "Essentials, tabs and rules stay as they are.",
-    ].filter(Boolean).join(" ");
-    const off = r.sidebery === "off";
-    step("step-back-off", off);
-    $("back-state").textContent = r.sidebery === "on" ? "Sidebery is on: turn it off in about:addons first." : r.sidebery === "missing" ? "Sidebery is not installed: install it again, and keep it off."
-      : off ? "Sidebery is off." : "Whether Sidebery is on is asked for when you go back.";
-    $("back-state").classList.toggle("wrong", r.sidebery === "on" || r.sidebery === "missing");
-    $("do-move-back").disabled = r.sidebery === "on" || r.sidebery === "missing";
-  }
-}
-
-// After a move, once: what came over and what is left to do. Moving starts Tidier again, which
-// closes this page, so Tidier opens it again then (afterMoving, moveover.js).
+// After the move from Sidebery, once: what came over and what is left to do. Nobody asked for
+// the move, so Tidier opens this page then (afterMoving, moveover.js).
 let movedShownSaid = false;
 function drawMovedNote() {
   const n = movedNote;
+  $("moved-section").hidden = !n && !state.afterMove;
   $("moved").hidden = !n;
-  $("moved-ask").hidden = n?.kind !== "over";
+  $("moved-ask").hidden = !n || !state.hiding;
+  $("moved-allow").hidden = !n || state.hiding;
   sidebarsToOpen();
   if (!n) return;
   // One thing a line: what happened first, then what is left to do, so it reads at a glance.
-  const lines = n.kind === "over" ? [
-    `Moved: ${counted(n.folders, "folder")} and ${counted(n.tabs, "tab")} are Tidier's own now${n.closed ? `, ${n.closed} of the folders closed, as in Sidebery` : ""}.`,
+  const lines = [
+    `Tidier now does what Sidebery did here, with its own sidebar, spaces and folders: ${counted(n.folders, "folder")} and ${counted(n.tabs, "tab")} came over${n.closed ? `, ${n.closed} of the folders closed, as in Sidebery` : ""}. A copy of everything was taken first.`,
     n.hidden.length && `${andList(n.hidden)} had no space in Sidebery and ${n.hidden.length === 1 ? "is" : "are"} empty, so ${n.hidden.length === 1 ? "it is" : "they are"} hidden here: tick ${n.hidden.length === 1 ? "it" : "them"} under Shown on this machine to show ${n.hidden.length === 1 ? "it" : "them"}.`,
-    "Going back is below.",
-  ] : [
-    `Back on Sidebery: ${counted(n.folders, "folder")} ${n.folders === 1 ? "has its" : "have their"} page again, with ${n.folders === 1 ? "its" : "their"} tabs.`,
-    n.lost?.length && `${andList(n.lost)} became ordinary tabs.`,
-    state.report.sidebery === "on" ? "Sidebery is on: press ⌃E in each window where it does not show yet." : "Now turn Sidebery on in about:addons, then press ⌃E in each window to show it.",
+    "Sidebery is no longer needed: turn it off or remove it in about:addons. Its rules, the order of its spaces and which folders were closed can be read only from its export, so make that first (From Sidebery, below).",
   ];
   $("moved").replaceChildren(...lines.filter(Boolean).map(text => el("span", { className: "note-line", textContent: text })));
   // Drawn, with what to answer (#moved-ask): only now does Tidier hide tabs, and Firefox ask (aftermove.js).
-  if (n.kind === "over" && !movedShownSaid) { movedShownSaid = true; ask("movedShown"); }
+  if (!movedShownSaid) { movedShownSaid = true; ask("movedShown"); }
 }
 
-// Firefox opens a sidebar after Tidier starts again only in a window where it was the last one
-// open, so other windows have no tab list until you show it there. Each of them shows this page
-// too (aftermove.js), with a button: a click in a page of Tidier's is what lets it open the
-// sidebar in that window. Said, and taken back as you do it, until Firefox restarts.
+// Firefox opens no sidebar for an extension by itself, so after the move a window has no list
+// of tabs of Tidier's until you show it there. Each of them shows this page (aftermove.js),
+// with a button: a click in a page of Tidier's is what lets it open the sidebar in that
+// window. Said, and taken back as you do it, until Firefox restarts.
 const thisWindow = browser.windows.getCurrent().then(w => w.id, () => null);
 async function sidebarsToOpen() {
-  if (!state.afterMove && movedNote?.kind !== "over") { $("windows-without").hidden = true; return; }
+  if (!state.afterMove && !movedNote) { $("windows-without").hidden = true; return; }
   const windows = (await browser.windows.getAll({ windowTypes: ["normal"] })).filter(w => !w.incognito);
   const without = [];
   for (const w of windows) if (!(await browser.sidebarAction.isOpen({ windowId: w.id }).catch(() => true))) without.push(w.id);
@@ -160,65 +96,13 @@ async function sidebarsToOpen() {
   const key = state.afterMove?.sidebarKey || "the key for Tidier's sidebar";
   $("windows-without").hidden = !without.length;
   $("windows-without-text").textContent = [
-    here && "This window has no sidebar yet, so no list of tabs.",
-    others && `${others === 1 ? "Another window has" : `${others} other windows have`} ${here ? "none either" : "no sidebar yet"}: ${others === 1 ? "it shows" : "each shows"} this page too, with a button for it, or press ${key} there.`,
+    here && "This window does not show Tidier's sidebar yet, so not its list of tabs.",
+    others && `${others === 1 ? "Another window does" : `${others} other windows do`} not ${here ? "either" : "show Tidier's sidebar yet"}: ${others === 1 ? "it shows" : "each shows"} this page too, with a button for it, or press ${key} there.`,
   ].filter(Boolean).join(" ");
   $("show-sidebar").hidden = !here;
 }
 $("show-sidebar").onclick = () => { browser.sidebarAction.open().catch(() => {}); setTimeout(sidebarsToOpen, 500); };
 browser.windows.onFocusChanged.addListener(() => { if (state) sidebarsToOpen(); });
-
-// Sidebery turned on or off in about:addons: each step says so at once. Turned off in step 3, this
-// page comes to the front, since the window has no tab list to find it with until the move.
-// (browser.management is touched only once Tidier may: see sideberyState, moveover.js.)
-let watchingSidebery = false, checkingSidebery = false;
-async function watchSidebery() {
-  if (watchingSidebery || checkingSidebery) return;
-  checkingSidebery = true;
-  const may = await browser.permissions.contains({ permissions: ["management"] }).catch(() => false);
-  checkingSidebery = false;
-  if (!may || !browser.management?.onEnabled || watchingSidebery) return;
-  watchingSidebery = true;
-  const changed = async (info, off) => {
-    if (info.id !== SIDEBERY_ADDON_ID) return;
-    await refresh();
-    if (off && state && !state.report.alone) {
-      const me = await browser.tabs.getCurrent();
-      await browser.tabs.update(me.id, { active: true });
-      await browser.windows.update(me.windowId, { focused: true });
-    }
-  };
-  browser.management.onEnabled.addListener(info => changed(info, false));
-  browser.management.onDisabled.addListener(info => changed(info, true));
-  browser.management.onInstalled.addListener(info => changed(info, false));
-  browser.management.onUninstalled.addListener(info => changed(info, true));
-}
-
-$("allow-move").onclick = async () => {
-  // Asked here, in your click: Firefox asks only then. Without them nothing has changed.
-  const given = await browser.permissions.request(MOVE_PERMISSIONS).catch(() => false);
-  if (!given) $("allow-result").textContent = "Not allowed, so nothing has changed. Click again to be asked again.";
-  watchSidebery();
-  await refresh();
-};
-$("move-over").onclick = async () => {
-  // Also in your click: Firefox brings Tidier's sidebar back here once Tidier has started again.
-  browser.sidebarAction.open();
-  $("move-over").disabled = true;
-  $("move-result").dataset.said = "1";
-  $("move-result").textContent = "Moving…";
-  const r = await ask("moveOver").catch(() => null); // Tidier starting again closes this page: no answer is the usual one
-  if (r?.refused) { $("move-result").textContent = r.refused; delete $("move-result").dataset.said; await refresh(); }
-};
-$("do-move-back").onclick = async () => {
-  // Seeing whether Sidebery is on is asked for here if a move made before this was asked for did not give it.
-  await browser.permissions.request({ permissions: ["management"] }).catch(() => false);
-  watchSidebery();
-  $("do-move-back").disabled = true;
-  $("back-result").textContent = "Going back…";
-  const r = await ask("moveBack").catch(() => null);
-  if (r?.refused) { $("back-result").textContent = r.refused; await refresh(); }
-};
 
 // A file you chose, or null if it is no JSON at all. Emptied after reading, or choosing
 // the same file again (after making a new export, say) would do nothing.
@@ -236,13 +120,11 @@ const sideberyResult = r => {
 };
 // A background error says so here too, rather than leaving the page as it was.
 const orSay = (line, job) => job().catch(err => { line.textContent = `That did not work: ${err.message}`; });
-for (const [input, line] of [["sidebery-file", "sidebery-result"], ["sidebery-file-alone", "sidebery-result-alone"]]) {
-  $(input).onchange = e => orSay($(line), async () => {
-    const r = await ask("importSidebery", { backup: await readFile(e.target) });
-    $(line).textContent = r ? sideberyResult(r) : "This is not Sidebery's export.";
-    if (r) refresh();
-  });
-}
+$("sidebery-file").onchange = e => orSay($("sidebery-result"), async () => {
+  const r = await ask("importSidebery", { backup: await readFile(e.target) });
+  $("sidebery-result").textContent = r ? sideberyResult(r) : "This is not Sidebery's export.";
+  if (r) refresh();
+});
 
 // --- Rules --------------------------------------------------------------------------
 const saveRules = () => ask("rules", { rules: [...$("rules").children].map(l => ({ url: l.querySelector("input").value.trim(), space: l.querySelector("select").value })) });
@@ -368,17 +250,8 @@ $("merge-go").onclick = () => orSay($("merge-result"), async () => {
   refresh();
 });
 
-// What going back would give Sidebery follows folders made, renamed or deleted in the sidebar
-// meanwhile, with this page in front: a second later, once the record has settled. A page out of
-// sight is drawn again when it is looked at, so with nothing to see nothing is done.
-let recordSoon = null;
-browser.storage.onChanged.addListener((changes, area) => {
-  if (area !== "local" || !("syncedTabs" in changes) || document.hidden) return;
-  clearTimeout(recordSoon);
-  recordSoon = setTimeout(refresh, 1000);
-});
+// A page out of sight is drawn again when it is looked at.
 document.addEventListener("visibilitychange", () => { if (!document.hidden) refresh(); });
-browser.permissions.onAdded.addListener(() => { watchSidebery(); refresh(); });
+browser.permissions.onAdded.addListener(refresh);
 browser.permissions.onRemoved.addListener(refresh);
-watchSidebery();
 refresh();
