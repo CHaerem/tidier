@@ -8037,9 +8037,22 @@ def alone_drag_details(m):
 
         def rate():  # how far the list goes in a while, with the pointer resting
             return here("""const a = list.scrollTop, t = performance.now(); await wait(600); return (list.scrollTop - a) / (performance.now() - t);""")
-        pointer(to(at["x"], at["bottom"] - 35), pause)
+
+        # The pointer to a place in the list, and then the drag event a Firefox in use sends
+        # for it: at the pointer. The test Firefox's own, made from the move (EventUtils.js,
+        # _maybeSynthesizeDragOver), is aimed at the middle of the element under the pointer
+        # instead: half a row from it, and in the gap between two rows, where that element is
+        # the list itself, the middle of the list, far from either edge (seen: 551 for a
+        # pointer at 941). With that alone the list scrolled at the edge or not by which row
+        # happened to be there.
+        def rest(y, dx=0):
+            pointer(to(at["x"] + dx, y), pause)
+            here("""const x = AT_X, y = AT_Y, e = document.elementFromPoint(x, y) ?? list;
+              e.dispatchEvent(new DragEvent("dragover", {bubbles: true, cancelable: true, clientX: x, clientY: y, dataTransfer: new DataTransfer()})); return 1;"""
+                 .replace("AT_X", str(at["x"] + dx)).replace("AT_Y", str(y)))
+        rest(at["bottom"] - 35)
         slow = rate()
-        pointer(to(at["x"], at["bottom"] - 2), pause)
+        rest(at["bottom"] - 2)
         fast = rate()
         # (What is under the pointer there, should it not scroll: the list's own, or something over it.)
         hit = here("""const at = y => { const e = document.elementFromPoint(X, y); return e ? e.tagName + "#" + e.id + "." + [...e.classList].join(".") + (list.contains(e) ? " in list" : "") : null; };
@@ -8051,21 +8064,12 @@ def alone_drag_details(m):
         # More to scroll, with the pointer still there and no new dragover: nothing keeps it running at the end.
         r1b = here("""const a = list.scrollTop; list.style.paddingBottom = "600px"; await wait(500); const b = list.scrollTop; list.style.paddingBottom = ""; await wait(100); return [a, b];""")
         check("it reaches the end of the list, with a mark, and stops there", r1["marks"] == 1 and r1["top"] >= at["overflow"] - 2 and r1b[0] == r1b[1], f"{at} {r1} {r1b}")
-        pointer(to(at["x"], at["top"] + 6), pause)
+        rest(at["top"] + 6)
         back = here("""const a = list.scrollTop; await until(() => list.scrollTop < a - 100, 3000); return [a, list.scrollTop];""")
         check("at the top edge it scrolls back up", back[1] < back[0] - 100, str(back))
-        pointer(to(at["x"] + 1, at["bottom"] - 200), pause)
+        rest(at["bottom"] - 200, 1)
         r2 = here("""await wait(100); const a = list.scrollTop; await wait(500); return [a, list.scrollTop];""")
-        # Back at the edge. A test Firefox sends a drag event only when the pointer moves, and at
-        # times with a position from earlier on its way (seen: 555 for a pointer at 941), where a
-        # Mac keeps sending them while it rests: a move that starts nothing is made again, as a
-        # hand would.
-        for _ in range(3):
-            pointer(to(at["x"], at["bottom"] - 2), pause)
-            if here("""await until(() => list.scrollTop > WAS + 40, 1500); return list.scrollTop > WAS + 40;""".replace("WAS", str(r2[1]))):
-                break
-            pointer(to(at["x"] + 1, at["bottom"] - 200), pause)
-            time.sleep(0.3)
+        rest(at["bottom"] - 2)  # back at the edge
         r3 = here("""const a = WAS; await until(() => list.scrollTop > a + 40, 3000); const moving = list.scrollTop > a + 40;
           window.windowUtils.dragSession.endDragSession(true); await wait(300);
           const b = list.scrollTop; await wait(500); return {moving, session: !!window.windowUtils.dragSession, top: [b, list.scrollTop], marks: document.querySelectorAll(".drop-before, .drop-after").length};""".replace("WAS", str(r2[1])))

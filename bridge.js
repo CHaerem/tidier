@@ -29,7 +29,7 @@ const READ_PAGES = { origins: ["*://*/*"] }; // optional, asked for in the click
 const BRIDGE_RETRIES_MS = [1000, 5000, 20000]; // a host that goes away is started again a few times, then a notice says so
 const AGENT_QUIET_MS = 20000; // how long after its last action an agent still counts as active
 const AGENT_LOG = 50; // actions kept, in memory only, for the settings page
-const PAGE_WAIT_MS = 15000, PAGE_CALL_MS = 20000;
+const PAGE_WAIT_MS = 15000, PAGE_CALL_MS = 20000, LOAD_BEGINS_MS = 3000;
 const BRIDGE_CALL_MOST_MS = 55000; // more than wait_for's longest, less than the MCP server waits for an answer
 const READ_DEFAULT = 30000, READ_MOST = 100000, COPY_MOST = 200000; // characters
 const LIST_MOST = 200; // tabs in one answer
@@ -215,9 +215,30 @@ async function bridgeNavigate(ctx) {
     bridgeDriven.add(tab.id);
     return tab.id;
   });
-  await browser.tabs.update(id, { url });
+  const load = bridgeLoadBegins(id);
+  try { await browser.tabs.update(id, { url }); } catch (e) { load.stop(); throw e; }
+  await load.begun;
   bridgeCurrent = id;
   return { text: JSON.stringify({ tab: id }) };
+}
+
+// Firefox answers tabs.update before the tab has begun to go anywhere. An unloaded tab is
+// first given a browser of its own, an empty one, and the load starts when Firefox begins
+// to restore it, a moment later (its ext-tabs.js, on SSTabRestoring): until then the tab is
+// no longer unloaded, "complete", and still says its old address. A read right behind
+// navigate took that for the loaded page, and Firefox refused the script ("Missing host
+// permission for the tab"; seen once in a hundred times on a busy machine). So navigate
+// answers when the load has begun, and what comes after it waits for the page
+// (bridgeLoaded). By event, and bounded: an address may load nothing at all.
+function bridgeLoadBegins(tabId, ms = LOAD_BEGINS_MS) {
+  let stop;
+  const begun = new Promise(resolve => {
+    const changed = (id, change) => { if (id === tabId && (change.status === "loading" || change.url)) stop(); };
+    const limit = setTimeout(() => stop(), ms);
+    stop = () => { clearTimeout(limit); browser.tabs.onUpdated.removeListener(changed); resolve(); };
+    browser.tabs.onUpdated.addListener(changed, { tabId, properties: ["status", "url"] });
+  });
+  return { begun, stop };
 }
 
 // The tab the next tools work on. It comes to the front only where you are looking at

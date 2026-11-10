@@ -6,7 +6,7 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url"; // a URL's pathname keeps %20 for a space in the folder name
-import { FakeFirefox, wait, realSleep } from "./fake_firefox.mjs";
+import { FakeFirefox, wait, realSleep, SCALE } from "./fake_firefox.mjs";
 
 const AGENT = "firefox-container-9", WORK = "firefox-container-1", HOME = "firefox-container-2", OTHER = "firefox-container-3";
 const SETTINGS = { url: "moz-extension://tidier/settings/settings.html" };
@@ -999,6 +999,32 @@ test("a placeholder with no page loaded anywhere is not loaded behind your back,
   assert.ok((await host.call("navigate", { tab: ghost.id, url: "https://there.example/" })).ok);
   assert.equal(x.js(`syncRoleByTab.get(${ghost.id})`), "live");
   assert.equal(ff.tabs.get(ghost.id).url, "https://there.example/");
+  x.kill();
+});
+
+// Firefox answers tabs.update before the tab has begun to load, and an unloaded tab is for
+// a moment a loaded one at its old address: a read right behind navigate was refused.
+test("navigate answers when the tab has begun to load, not before", async () => {
+  const ff = new FakeFirefox();
+  alone(ff);
+  ff.store.claude = { bridge: true, agentSpace: AGENT, agentName: "Agent" };
+  ff.containers.add(AGENT);
+  ff.named = "Agent";
+  const x = await start(ff);
+  await settle();
+  const host = x.hosts[0];
+  const { tab } = JSON.parse((await host.call("open_tab", { url: "https://a.example/" })).text);
+  let begins = 500, began = false;
+  x.b.tabs.update = async (id, p) => {
+    if (begins !== null) setTimeout(() => { began = true; ff.navigate(id, p.url); }, begins / SCALE);
+    return ff.snap(ff.tabs.get(id));
+  };
+  assert.ok((await host.call("navigate", { tab, url: "https://b.example/" })).ok);
+  assert.ok(began, "the load had begun when navigate answered");
+  assert.equal(ff.tabs.get(tab).url, "https://b.example/", "so what is read next is the new page");
+  // An address that loads nothing (a file to download): answered all the same, in time.
+  begins = null;
+  assert.ok((await host.call("navigate", { tab, url: "https://b.example/file.zip" })).ok, "bounded");
   x.kill();
 });
 
