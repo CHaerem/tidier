@@ -9172,12 +9172,20 @@ def alone_stay_put(m):
       // A click on one at the very top of what is shown: the list does not move, though the tab does.
       const c = g[0], was = c.dataset.tab, page1 = await pageOf(c);
       await scrollTo(list.scrollTop + fromTop(c));
-      const y = list.scrollTop, moves = [];
-      list.addEventListener("scroll", () => moves.push(list.scrollTop));
+      // What may not move is the row under the pointer: the placeholder while it is there, then
+      // the page's row. The list's own position can change and change back without anything
+      // moving on screen: the page's row comes in above the placeholder's, and Firefox keeps
+      // what you see in place by scrolling one row down, until the placeholder's row is gone.
+      // A busy machine draws that state in between; a quick one gets both changes in one view.
+      const y = list.scrollTop, places = [];
+      let watching = true;
+      list.addEventListener("scroll", () => { const r = doc.querySelector(`#tabs .tab[data-tab="${was}"]`) ?? activeRow(); if (watching && r) places.push(fromTop(r)); });
       c.click();
       out.clickPulled = await pulled(was, page1);
       await wait(400);
-      out.click = {moved: list.scrollTop - y, events: moves.length, top: fromTop(activeRow())};
+      watching = false;
+      out.click = {moved: list.scrollTop - y, off: places.filter(t => t !== 0), top: fromTop(activeRow())};
+      out.clickScrolls = places.length;
       // One out of view, selected from outside the list: it comes in, and stays in while the tab arrives.
       g = await ghosts();
       const f = g.at(-1), fWas = f.dataset.tab, page2 = await pageOf(f);
@@ -9204,7 +9212,7 @@ def alone_stay_put(m):
       await select(before);
       await select(onTab);
       return {...out, before: id(before), onTab: id(onTab)};""", folder_key)
-    check("clicking a placeholder at the top of the list does not move it", r.get("placeholders", 0) >= 3 and r.get("clickPulled") and r.get("click") == {"moved": 0, "events": 0, "top": 0}, str(r))
+    check("clicking a placeholder at the top of the list does not move it", r.get("placeholders", 0) >= 3 and r.get("clickPulled") and r.get("click") == {"moved": 0, "off": [], "top": 0}, str(r))
     check("selecting a placeholder out of view brings it in, and it stays in while its tab arrives", r.get("farPulled") and r.get("farInView"), str(r))
     check("a placeholder in a closed folder shows while selected, and only it, with the folder closed", r.get("closedPulled") and r.get("closed") == {"only": True, "closed": True, "inView": True, "stored": True}, str(r))
     m.js(H + """other().gBrowser.addTrustedTab("https://example.org/?smoke-stay-later", {userContextId: args[0], inBackground: true}); await wait(2500); main().focus(); await wait(300); return 1;""", int(space.split("-")[-1]))
