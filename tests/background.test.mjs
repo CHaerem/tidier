@@ -474,6 +474,28 @@ test("a copy can be made, and a failure to is shown", async () => {
   x.b.runtime.sendNativeMessage = async () => { throw new Error("no host"); };
   await x.js("makeCopy()");
   assert.equal(ff.badge, "!");
+  assert.equal(x.js("notices").get("copy"), "No copy of your essentials and folders is being kept: Error: no host (native/install.sh)");
+  // With no helper on the machine, in plain words and not in Firefox's.
+  x.b.runtime.sendNativeMessage = async () => { throw new Error("No such native application tidier_github"); };
+  await x.js("makeCopy()");
+  assert.equal(x.js("notices").get("copy"), "No copy of your essentials and folders is being kept: its helper is not installed on this machine (native/install.sh)");
+  x.kill();
+});
+
+test("with no essentials and no folders yet, a copy that cannot be made is no notice", async () => {
+  // A Firefox Tidier has just been installed in: only open tabs, which Firefox keeps itself.
+  const ff = new FakeFirefox();
+  ff.store.syncedTabs = { a: entry("https://a.example/") };
+  emptySession(ff);
+  const x = await run(ff);
+  x.b.runtime.sendNativeMessage = async () => { throw new Error("No such native application tidier_github"); };
+  await x.js("makeCopy()");
+  assert.equal(x.js("notices").get("copy"), undefined);
+  assert.ok(!ff.badge, "nothing on Tidier's button");
+  // The first folder (or essential, or live folder): now there is something to lose.
+  await x.js("saveSynced")({ ...ff.store.syncedTabs, F: { group: true, own: true, name: "F", cookieStoreId: "firefox-container-1", parentKey: null, rank: 1 } });
+  await x.js("makeCopy()");
+  assert.match(x.js("notices").get("copy"), /its helper is not installed on this machine/);
   x.kill();
 });
 

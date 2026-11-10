@@ -23,13 +23,23 @@ async function theCopy() {
   };
 }
 
+// Why no copy was made, in plain words. A Firefox with Tidier and nothing else has no
+// helper, and Firefox's own words for that ("Error: No such native application
+// tidier_github") say nothing to the one reading them in the sidebar.
+const copyTrouble = error => /No such native application/.test(error ?? "") ? "its helper is not installed on this machine" : String(error || "its helper does not answer").slice(0, 300);
+// What the notice is about. With neither, as in a Firefox Tidier has just been installed in,
+// it would be a warning about nothing, two minutes after the first start; the open tabs,
+// which the record also holds, are kept by Firefox's own session.
+const hasWhatACopyKeeps = data => (Array.isArray(data.essentials) && data.essentials.length > 0) || Object.values(data.syncedTabs ?? {}).some(e => e?.group) || Object.keys(data.liveFolders ?? {}).length > 0;
+
 async function makeCopy() {
-  const res = await browser.runtime.sendNativeMessage(NATIVE_HOST, { backup: await theCopy() }).catch(err => ({ error: String(err) }));
+  const copy = await theCopy();
+  const res = await browser.runtime.sendNativeMessage(NATIVE_HOST, { backup: copy }).catch(err => ({ error: String(err) }));
   if (res?.saved) {
     await browser.storage.local.set({ lastCopy: Date.now() });
     setNotice("copy", null);
   } else {
-    setNotice("copy", `No copy of your essentials and folders is being kept: ${res?.error || "no answer"} (native/install.sh)`);
+    setNotice("copy", hasWhatACopyKeeps(copy.data) ? `No copy of your essentials and folders is being kept: ${copyTrouble(res?.error)} (native/install.sh)` : null);
   }
   return res;
 }
