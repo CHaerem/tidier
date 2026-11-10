@@ -9208,10 +9208,16 @@ def alone_stay_put(m):
       out.secondBack = list.scrollTop;
       await switchTo(home);
       out.homeAgain = list.scrollTop;
-      // Back and forth faster than the views come: only the last one counts, with nothing mixed up.
-      for (const id of [second, short, home, second, home]) { doc.querySelector(`#spaces .space[data-space="${id}"]`).click(); await wait(10); }
-      await until(() => spaces().find(s => s.active).id === home);
-      await wait(600);
+      // Back and forth faster than the views come: nothing is mixed up. The last click is on
+      // the one space not clicked before it: Tidier takes the clicks one at a time, so that
+      // space showing says they are all done. (A space clicked earlier shows on the way too,
+      // and home showed before the first click: on a busy machine the list was read there,
+      // in the middle of it all.)
+      for (const id of [second, home, second, home, short]) { doc.querySelector(`#spaces .space[data-space="${id}"]`).click(); await wait(10); }
+      await until(() => spaces().find(s => s.active).id === short && doc.querySelector(".tab.active, .tile.active"));
+      await wait(300);
+      out.shortQuick = list.scrollTop;
+      await switchTo(home);
       out.homeQuick = list.scrollTop;
       await switchTo(second);
       out.secondQuick = list.scrollTop;
@@ -9248,7 +9254,7 @@ def alone_stay_put(m):
     sidebar_page(m, STAY_PUT + """await switchTo(args[0]); await page.browser.contextualIdentities.remove(args[1]); await wait(600); return 1;""", home, short)
     check("each space keeps its place in the list", r.get("home") and r["homeBack"] == r["home"] and r["homeAgain"] == r["home"] and r["secondBack"] == r["second"], str(r))
     check("a space too short to scroll does not change another's place", r.get("short") == 0 and r["home"] != r["second"], str(r))
-    check("switching back and forth quickly mixes up no place", r.get("homeQuick") == r.get("home") and r.get("secondQuick") == r.get("second"), str(r))
+    check("switching back and forth quickly mixes up no place", r.get("homeQuick") == r.get("home") and r.get("secondQuick") == r.get("second") and r.get("shortQuick") == 0, str(r))
     check("a selected tab you scrolled away from comes back by the least distance from your place", r.get("away") and r["restoredThenShown"]["top"] == 0, str(r))
     if bars.get("bar") and not bars.get("shortBar"):
         check("with scroll bars that take room, a space keeps its place too", bars.get("partly") and bars["homeBack"] == bars["home"], str(bars))
@@ -9320,6 +9326,7 @@ def alone_stay_put(m):
       head.click();
       await until(() => folder.classList.contains("collapsed") && shown().length < 3);
       await until(async () => (await stored()) === true);
+      await until(() => inView(b), 3000);  // the list follows the fold a moment later on a busy machine
       out.foldedHere = {shown: shown(), want: [b.dataset.tab], stored: await stored(), inView: inView(b)};
       await select(rows()[0]);
       await wait(150);
@@ -9494,6 +9501,10 @@ def alone_stay_put(m):
       await until(() => !folders().some(f => f.name === name));
       // Ready for a real ⌃Tab from outside the sidebar, whichever way Firefox orders it: to the
       // tab after this one or the tab used before it, the same one here, below what is shown.
+      // Firefox has caught up first: the tab of the folder just deleted is shown again, and
+      // its tabs are in the list's order, which is what "the tab after this one" goes by.
+      const inFirefox = async () => (await tabs.query(obj({windowId: (await page.browser.windows.getCurrent()).id, hidden: false}))).map(t => String(t.id));
+      out.caughtUp = await until(async () => { const ids = rows().map(r => r.dataset.tab); return (await inFirefox()).filter(t => ids.includes(t)).join() === ids.join(); });
       await select(rows().at(-1));
       await select(rows().at(-2));
       await scrollTo(0);
@@ -9512,8 +9523,9 @@ def alone_stay_put(m):
     k = sidebar_page(m, STAY_PUT + """
       await until(() => activeRow()?.dataset.tab === args[0]);
       await wait(100);
-      return {selected: activeRow()?.dataset.tab === args[0], bottom: activeRow() && fromBottom(activeRow())};""", r.get("target"))
-    check("⌃Tab to a tab below the list brings it in at the bottom edge", k == {"selected": True, "bottom": 0}, str(k))
+      const rows = (await mine())(), on = activeRow();
+      return {selected: on?.dataset.tab === args[0], bottom: on && fromBottom(on), on: on ? rows.indexOf(on) + " of " + rows.length : "an essential", caughtUp: args[1]};""", r.get("target"), r.get("caughtUp"))
+    check("⌃Tab to a tab below the list brings it in at the bottom edge", k.get("selected") is True and k.get("bottom") == 0, str(k))
 
     # The same for real: the wheel, clicks on the bar and on a row, and keys.
     at = m.js(SIDEBAR_AT)
@@ -9580,42 +9592,50 @@ def alone_stay_put(m):
       for (let i = 0; i < 5; i++) { o.gBrowser.addTrustedTab("https://example.org/?smoke-stay-far-" + i, {userContextId: context, inBackground: true}); await wait(80); }
       await wait(2500); main().focus(); await wait(500); return 1;""", int(space.split("-")[-1]))
     r = sidebar_page(m, STAY_PUT + """
-      const out = {}, id = r => Number(r.dataset.tab), folderKey = args[0], title = r => r.querySelector(".title").textContent;
+      const out = {}, id = r => Number(r.dataset.tab), folderKey = args[0];
       // Placeholders of the tabs just opened in the other window, found by their record: a
       // group before can leave others (a saved tab is one, with no page anywhere to pull in).
       const all = (await page.browser.storage.local.get("syncedTabs")).syncedTabs ?? {};
-      const farOnes = u => { const k = new URL(u).searchParams.get("key"); return u.includes("ghost.html") && !!all[k]?.url?.includes("smoke-stay-far"); };
-      const ghosts = async () => { const g = []; for (const r of plainTabs()) if (farOnes((await tabs.get(id(r))).url)) g.push(r); return g; };
-      const pulled = (was, name) => until(() => activeRow() && activeRow().dataset.tab !== was && title(activeRow()) === name && !activeRow().classList.contains("unloaded"));
+      const farOnes = u => { if (!u) return false; const k = new URL(u).searchParams.get("key"); return u.includes("ghost.html") && !!all[k]?.url?.includes("smoke-stay-far"); };
+      // (A row's tab can be gone when it is asked about: a placeholder being made or pulled in
+      // is another tab a moment later, and its row follows with the next view.)
+      const ghosts = async () => { const g = []; for (const r of plainTabs()) if (farOnes(await tabs.get(id(r)).then(t => t.url, () => ""))) g.push(r); return g; };
+      // Pulled in: the selected row is the page itself, and the placeholder's row is gone. (By
+      // its address: the pages here share one title, and on the way the selection can rest on
+      // another of them for a moment, which read as pulled in before it was.)
+      const pageOf = async r => all[new URL((await tabs.get(id(r))).url).searchParams.get("key")].url;
+      const pulled = (was, url) => until(async () => { const a = activeRow();
+        return !!a && a.dataset.tab !== was && !a.classList.contains("unloaded") && !doc.querySelector(`#tabs .tab[data-tab="${was}"]`) && (await tabs.get(id(a)).then(t => t.url, () => "")) === url; });
+      await until(async () => (await ghosts()).length >= 5);  // one for each tab opened there, when Tidier has got to them
       let g = await ghosts();
       out.placeholders = g.length;
       // A click on one at the very top of what is shown: the list does not move, though the tab does.
-      const c = g[0], was = c.dataset.tab, name = title(c);
+      const c = g[0], was = c.dataset.tab, page1 = await pageOf(c);
       await scrollTo(list.scrollTop + fromTop(c));
       const y = list.scrollTop, moves = [];
       list.addEventListener("scroll", () => moves.push(list.scrollTop));
       c.click();
-      out.clickPulled = await pulled(was, name);
+      out.clickPulled = await pulled(was, page1);
       await wait(400);
       out.click = {moved: list.scrollTop - y, events: moves.length, top: fromTop(activeRow())};
       // One out of view, selected from outside the list: it comes in, and stays in while the tab arrives.
       g = await ghosts();
-      const f = g.at(-1), fWas = f.dataset.tab, fName = title(f);
+      const f = g.at(-1), fWas = f.dataset.tab, page2 = await pageOf(f);
       await scrollTo(0);
       await tabs.update(id(f), obj({active: true}));
-      out.farPulled = await pulled(fWas, fName);
+      out.farPulled = await pulled(fWas, page2);
       await wait(400);
       out.farInView = inView(activeRow());
       // One in a closed folder: its row shows, it stays the only one when the tab arrives, and the folder stays closed.
       const folder = doc.querySelector(`.folder[data-key="${folderKey}"]`), inside = () => [...folder.querySelectorAll(".tab")];
       const shown = () => inside().filter(r => r.offsetParent !== null);
       g = await ghosts();
-      const p = g[0], pName = title(p);
+      const p = g[0], page3 = await pageOf(p);
       send({type: "moveTab", tabId: id(p), folder: folderKey, before: null});
       await until(() => inside().some(r => r === p));
       const pWas = p.dataset.tab;
       await tabs.update(id(p), obj({active: true}));
-      out.closedPulled = await pulled(pWas, pName);
+      out.closedPulled = await pulled(pWas, page3);
       await wait(400);
       out.closed = {only: shown().length === 1 && shown()[0] === activeRow(), closed: folder.classList.contains("collapsed"), inView: inView(activeRow()), stored: (await page.browser.storage.local.get("syncedTabs")).syncedTabs[folderKey].collapsed};
       // Ready for closing: a loaded tab used just before this one, and then a placeholder made.
@@ -9656,7 +9676,9 @@ def alone_stay_put(m):
       await scrollTo(0); await select(rows()[3]);
       for (let i = 0; i < 8 && fromBottom(activeRow()) > 6; i++) { list.style.height = (list.clientHeight - 10) + "px"; await wait(120); }
       const before = {inView: inView(activeRow()), fromBottom: fromBottom(activeRow())};
-      list.style.height = (list.clientHeight - 40) + "px"; await wait(400);
+      // Firefox tells the list of its new size when it gets to it: half a second later on a
+      // busy machine, so the row is waited for, not read after a set time.
+      list.style.height = (list.clientHeight - 40) + "px"; await until(() => inView(activeRow()), 5000);
       const after = {inView: inView(activeRow()), fromBottom: fromBottom(activeRow())};
       list.style.cssText = "flex:none;height:160px"; await wait(200);
       return {before, after};""")
