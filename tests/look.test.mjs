@@ -133,7 +133,7 @@ test("Clear has room from the rows on both sides of its line, also from a select
 function sidebarPage() {
   const element = () => ({ dataset: {}, style: { setProperty() {} }, classList: { toggle() {}, add() {}, remove() {}, contains: () => false }, append() {}, replaceWith() {}, replaceChildren() {}, addEventListener() {}, setAttribute() {}, matches: () => false });
   const ctx = vm.createContext({
-    browser: { runtime: { connect: () => ({ onMessage: { addListener() {} }, postMessage() {} }) }, windows: { getCurrent: async () => ({ id: 1 }) }, storage: { managed: { get: async () => ({}) } } },
+    browser: { runtime: { connect: () => ({ onMessage: { addListener() {} }, postMessage() {} }) }, windows: { getCurrent: async () => ({ id: 1 }) }, tabs: { onActivated: { addListener() {} } }, storage: { managed: { get: async () => ({}) } } },
     document: { createElement: element, getElementById: element, documentElement: element(), head: element(), addEventListener() {} },
     addEventListener() {},
     secondClick: { acts: f => f, acted() {} }, // sidebar/secondclick.js, loaded before it

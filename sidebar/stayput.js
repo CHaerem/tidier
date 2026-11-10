@@ -32,15 +32,18 @@
       shown = next.space;
       list.scrollTop = positions.get(shown) ?? 0;
     }
-    // Restored first, so a row in view at the place you left is not moved to. An
-    // essential's tile is always in view, so only rows count. A row in a closed folder
-    // is drawn while selected (sidebar.css), so it can be measured here.
+    // Restored first, so a row in view at the place you left is not moved to.
+    follow();
+  });
+  // An essential's tile is always in view, so only rows count. A row in a closed folder
+  // is drawn while selected (sidebar.css), so it can be measured here.
+  function follow() {
     const row = list.querySelector(".tab.active"), id = row?.dataset.tab;
     if (id !== selected) {
       selected = id;
       if (row && outOfView(row)) row.scrollIntoView({ block: "nearest" });
     }
-  });
+  }
 
   // A sidebar made narrower wraps the lines above the list onto more lines, and a notice
   // above the list (or one that now takes two lines) makes it shorter: the list shows less,
@@ -61,6 +64,9 @@
   const notice = () => { const row = list.querySelector(".tab.active"); selectedInView = !!row && !outOfView(row); };
   list.addEventListener("scroll", notice, { passive: true });
   port.onMessage.addListener(notice);
+  // A tab selected with a key is marked before its view comes (sidebar.js): the list goes
+  // to it then, not a moment after its mark has left the part in view.
+  list.addEventListener("selectedshown", () => { follow(); notice(); });
   // The room's part is told apart by its height: the list and the room together keep theirs
   // when only the room comes or goes, also when something else changes in the same moment.
   // The width is the list's with its scroll bar: where a scroll bar takes room (a Mac with

@@ -181,6 +181,22 @@ function showSelected(e) {
   e.classList.add("active");
   delete e.dataset.state;
 }
+// So does a tab selected any other way: a key (⌃⌘↓), a tab closing, Firefox's own tab
+// strip. Firefox tells this page itself; the view that draws it comes a moment later, after
+// Tidier's queue, a pause for more events and a timer of the background part's, which runs
+// late when Firefox is not the app in front (0.07 to 0.25 s from the key to the view,
+// measured on a Mac; the tab itself is selected in 0.02 to 0.04 s). A tab with no row here,
+// another space's, waits for the view that brings its space. The list follows it
+// (stayput.js).
+let ownWindow = null; // not `await sidebarWindow` at each event: the mark must be there before anything else runs
+sidebarWindow.then(id => { ownWindow = id; });
+browser.tabs.onActivated.addListener(({ tabId, windowId }) => {
+  if (windowId !== ownWindow) return;
+  const e = document.querySelector(`#essentials [data-tab="${Number(tabId)}"], #tabs [data-tab="${Number(tabId)}"]`);
+  if (!e) return;
+  showSelected(e);
+  tabsList.dispatchEvent(new Event("selectedshown"));
+});
 
 // --- Essentials ----------------------------------------------------------------
 function tile(item) {

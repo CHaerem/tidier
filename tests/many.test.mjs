@@ -269,7 +269,7 @@ test("an address in the record that cannot be read does not stop the sidebar, an
 function sidebarPage() {
   const element = () => ({ dataset: {}, style: { setProperty() {} }, classList: { toggle() {}, add() {}, remove() {}, contains: () => false }, append() {}, replaceWith() {}, replaceChildren() {}, addEventListener() {} });
   const ctx = vm.createContext({
-    browser: { runtime: { connect: () => ({ onMessage: { addListener() {} }, postMessage() {} }) }, windows: { getCurrent: async () => ({ id: 1 }) }, storage: { managed: { get: async () => ({}) } } },
+    browser: { runtime: { connect: () => ({ onMessage: { addListener() {} }, postMessage() {} }) }, windows: { getCurrent: async () => ({ id: 1 }) }, tabs: { onActivated: { addListener() {} } }, storage: { managed: { get: async () => ({}) } } },
     document: { createElement: element, getElementById: element, documentElement: element(), head: element(), addEventListener() {} },
     addEventListener() {},
     secondClick: { acts: f => f, acted() {} }, // sidebar/secondclick.js, loaded before it
@@ -283,7 +283,7 @@ test("the sidebar asks for its view only once every script of its page is there"
   // stopped at a part of a later one, and the list stayed undrawn.
   const posted = [], loaded = [];
   const ctx = vm.createContext({
-    browser: { runtime: { connect: () => ({ onMessage: { addListener() {} }, postMessage: m => posted.push(m) }) }, windows: { getCurrent: async () => ({ id: 1 }) }, storage: { managed: { get: async () => ({}) } } },
+    browser: { runtime: { connect: () => ({ onMessage: { addListener() {} }, postMessage: m => posted.push(m) }) }, windows: { getCurrent: async () => ({ id: 1 }) }, tabs: { onActivated: { addListener() {} } }, storage: { managed: { get: async () => ({}) } } },
     document: { readyState: "loading", getElementById: () => ({ style: {}, dataset: {}, addEventListener() {}, append() {} }), documentElement: { dataset: {} }, head: {}, createElement: () => ({ dataset: {}, style: {}, classList: { add() {} }, append() {}, addEventListener() {} }), addEventListener() {} },
     addEventListener: (type, f) => { if (type === "DOMContentLoaded") loaded.push(f); },
     secondClick: { acts: f => f, acted() {} },
@@ -295,6 +295,39 @@ test("the sidebar asks for its view only once every script of its page is there"
   loaded[0]();
   await realSleep(10);
   assert.deepEqual(posted.map(m => m.type), ["hello"]);
+});
+
+test("a tab selected by a key is marked in the sidebar at once, in its own window, and the list is told", async () => {
+  // The view that draws it comes after the queue, a pause and a timer; the mark must not wait for it.
+  const classes = () => { const set = new Set(); return { set, add: c => set.add(c), remove: c => set.delete(c), contains: c => set.has(c), toggle() {} }; };
+  const row = id => ({ id, dataset: { state: "drawn" }, classList: classes() });
+  const was = row(1), next = row(2), told = [], asked = [];
+  was.classList.add("active");
+  let activated;
+  const element = () => ({ dataset: {}, style: { setProperty() {} }, classList: classes(), append() {}, replaceWith() {}, replaceChildren() {}, addEventListener() {}, dispatchEvent: e => told.push(e.type) });
+  const ctx = vm.createContext({
+    browser: { runtime: { connect: () => ({ onMessage: { addListener() {} }, postMessage() {} }) }, windows: { getCurrent: async () => ({ id: 7 }) }, tabs: { onActivated: { addListener: f => { activated = f; } } }, storage: { managed: { get: async () => ({}) } } },
+    document: { createElement: element, getElementById: element, documentElement: element(), head: element(), addEventListener() {},
+      querySelector: q => { asked.push(q); return q.includes('"2"') ? next : null; }, querySelectorAll: () => [was, next].filter(r => r.classList.contains("active")) },
+    addEventListener() {},
+    Event: class { constructor(type) { this.type = type; } },
+    secondClick: { acts: f => f, acted() {} },
+  });
+  vm.runInContext(readFileSync(new URL("../sidebar/sidebar.js", import.meta.url), "utf8"), ctx);
+  await realSleep(10); // the page knows its window
+
+  activated({ tabId: 2, windowId: 8 });
+  assert.ok(!next.classList.contains("active"), "another window's tab");
+  activated({ tabId: 3, windowId: 7 });
+  assert.ok(was.classList.contains("active"), "a tab with no row here (another space's) waits for its view");
+  assert.deepEqual(told, []);
+
+  activated({ tabId: 2, windowId: 7 });
+  assert.ok(next.classList.contains("active") && !was.classList.contains("active"), "marked before anything else runs");
+  assert.ok(was.classList.contains("was-active"));
+  assert.equal(next.dataset.state, undefined, "and drawn again from the view that follows");
+  assert.deepEqual(told, ["selectedshown"], "the list goes to it (stayput.js)");
+  assert.match(asked.at(-1), /^#essentials \[data-tab="2"\], #tabs \[data-tab="2"\]$/);
 });
 
 test("the sidebar asks for an icon only near the view, once, and what it remembers does not grow", () => {

@@ -1229,8 +1229,23 @@ def alone_spaces(m):
       // tab id (tabsync.js), so its row is a new one.
       const now = shown(), active = now.filter(e => e.classList.contains("active"));
       return {atOnce, title, after: active.length === 1 && now.indexOf(active[0]) === at && active[0].querySelector(".title").textContent === title};""")
-    m.js(H + "const w = main(); w.gBrowser.selectedTab = w.__selectedBefore; delete w.__selectedBefore; await wait(800); return 1;")  # back where it was, for what follows
     check("a clicked row shows as selected at once, and stays so", r["atOnce"] == {"next": True, "others": 1} and r["after"], str(r))
+    # So does a tab selected without the sidebar (a key, Firefox's own tab strip): marked when
+    # Firefox tells of it, not a view later. Read in a listener added after the sidebar's own,
+    # which Firefox calls right after it, before any view can have come.
+    r = sidebar_page(m, """
+      const shown = () => [...doc.querySelectorAll("#tabs .tab")].filter(e => e.offsetParent && e.querySelector(".title").textContent !== "Tidier");
+      const rows = shown(), next = rows.find(e => !e.classList.contains("active")), at = rows.indexOf(next), title = next.querySelector(".title").textContent, id = Number(next.dataset.tab);
+      let atOnce = null;
+      const heard = ({tabId}) => { if (tabId === id && !atOnce) atOnce = {next: next.classList.contains("active"), others: doc.querySelectorAll("#tabs .tab.active, #essentials .active").length}; };
+      page.browser.tabs.onActivated.addListener(heard);
+      await page.browser.tabs.update(id, page.JSON.parse('{"active": true}'));
+      await wait(1500);
+      page.browser.tabs.onActivated.removeListener(heard);
+      const now = shown(), active = now.filter(e => e.classList.contains("active"));
+      return {atOnce, title, after: active.length === 1 && now.indexOf(active[0]) === at && active[0].querySelector(".title").textContent === title};""")
+    m.js(H + "const w = main(); w.gBrowser.selectedTab = w.__selectedBefore; delete w.__selectedBefore; await wait(800); return 1;")  # back where it was, for what follows
+    check("a tab selected with a key shows as selected at once in the sidebar, and stays so", r.get("atOnce") == {"next": True, "others": 1} and r.get("after"), str(r))
     shown = m.js(H + """const w = main(), selected = w.gBrowser.selectedTab;
       return {space: selected.userContextId, shown: [...new Set(w.gBrowser.tabs.filter(t => !t.pinned && !t.hidden && t.userContextId).map(t => t.userContextId))],
               ctrlTab: w.gBrowser.visibleTabs.filter(t => !t.pinned && t.userContextId && t.userContextId !== selected.userContextId).length};""")
@@ -8291,7 +8306,13 @@ STAY_PUT = """
     const ids = new Set((await tabs.query(obj({windowId: (await page.browser.windows.getCurrent()).id}))).filter(t => t.url.includes("smoke-stay")).map(t => t.id));
     return () => plainTabs().filter(r => ids.has(Number(r.dataset.tab)));
   };
-  const select = async r => { const id = r.dataset.tab; await tabs.update(Number(id), obj({active: true})); await until(() => activeRow()?.dataset.tab === id); await wait(50); };
+  // The sidebar marks a selected tab's row before the view that draws it comes (sidebar.js),
+  // so the mark alone does not say the list is up to date: a row a view has drawn says so
+  // itself (keep(), sidebar.js), and a closed tab's row is gone only with its view.
+  const drawn = r => !!r && r.dataset.state !== undefined;
+  const rowOf = id => doc.querySelector(`#tabs .tab[data-tab="${id}"]`);
+  const select = async r => { const id = r.dataset.tab; await tabs.update(Number(id), obj({active: true})); await until(() => activeRow()?.dataset.tab === id && drawn(activeRow())); await wait(50); };
+  const landedAfter = id => until(() => drawn(activeRow()) && activeRow().dataset.tab !== String(id) && !rowOf(id));
   const scrollTo = y => new Promise(done => {
     const was = list.scrollTop;
     list.addEventListener("scroll", () => done(), {once: true});
@@ -8926,7 +8947,7 @@ def alone_stay_put(m):
       out.unloaded = (await tabs.get(u)).discarded;
       out.toldLoaded = await told(s, l);
       await tabs.remove(s);
-      await until(() => activeRow() && activeRow().dataset.tab !== String(s));
+      await landedAfter(s);
       out.afterUnloaded = {selected: id(activeRow()), want: l};
       // Used just before, in a folder you then close while on another tab.
       const f = inFolder()[0], t = rows().at(-1);
@@ -8938,7 +8959,7 @@ def alone_stay_put(m):
       out.toldOutside = await until(async () => { const n = (await tabs.get(id(t))).successorTabId; return n !== id(f) && n !== undefined; });
       const tId = id(t);
       await tabs.remove(tId);
-      await until(() => activeRow() && activeRow().dataset.tab !== String(tId));
+      await landedAfter(tId);
       out.afterFolded = {outside: !folder.contains(activeRow()), closed: folder.classList.contains("collapsed")};
       // Closing the selected tab inside a closed folder: a tab in a folder only unloads, in its
       // place, so nothing is lost; you land outside, and its row goes with the folder still closed.
@@ -8947,7 +8968,7 @@ def alone_stay_put(m):
       await until(() => !kept.classList.contains("unloaded")); // only a loaded tab that closes stays, unloaded: an unloaded one you close is gone
       out.toldOut = await until(async () => { const n = (await tabs.get(keptId)).successorTabId; return n !== undefined && !inFolder().some(r => id(r) === n); });
       await tabs.remove(keptId);
-      await until(() => activeRow() && activeRow().dataset.tab !== String(keptId) && inFolder().length === count && !inFolder().some(r => id(r) === keptId));
+      await until(() => drawn(activeRow()) && activeRow().dataset.tab !== String(keptId) && inFolder().length === count && !inFolder().some(r => id(r) === keptId));
       await wait(200);
       out.counted = [count, inFolder().length];
       out.closedInside = {landedOutside: !folder.contains(activeRow()), kept: inFolder().length === count, hidden: inFolder().every(r => r.offsetParent === null), closed: folder.classList.contains("collapsed")};
@@ -8988,7 +9009,7 @@ def alone_stay_put(m):
       out.besideUnloaded = (await tabs.get(beside)).discarded;
       out.told = await until(async () => (await tabs.get(robots)).successorTabId === id(used));
       await tabs.remove(robots);
-      await until(() => activeRow() && activeRow().dataset.tab !== String(robots));
+      await landedAfter(robots);
       await wait(200);
       out.landed = activeRow()?.dataset.tab === String(id(used));
       return out;""")
@@ -9223,7 +9244,7 @@ def alone_stay_put(m):
       out.placeholderLater = all.some(t => t.url.includes("ghost.html") && t.lastAccessed > used);
       out.told = await until(async () => (await tabs.get(onTab)).successorTabId === before);
       await tabs.remove(onTab);
-      await until(() => activeRow() && activeRow().dataset.tab !== String(onTab));
+      await landedAfter(onTab);
       await wait(300);
       out.landed = activeRow()?.dataset.tab === String(before);
       return out;""", r.get("before"), r.get("onTab"))
