@@ -27,21 +27,35 @@ function shortcutOf(e, mac) {
 const keyNotes = new Map(); // command -> text
 
 // Numbered commands share a line: twenty-two lines would be a wall.
-const keyGroup = name => name.startsWith("space-") ? "Go to a space" : name.startsWith("tab-") ? "Go to a tab of this space" : null;
+const keyGroup = name => /^space-\d$/.test(name) ? "Go to a space" : /^tab-\d$/.test(name) ? "Go to a tab of this space" : null;
 
-async function drawKeys(focus) {
-  const commands = await ask("keys");
-  $("keys-section").hidden = !commands; // no list without Tidier alone: then Sidebery has the keys
-  if (!commands) return;
+// The commands that start with no key (sorting, closing around a tab, …) are many and each
+// seldom wanted, so they wait under More until you ask for them.
+let keysMoreOpen = false;
+
+function keyLines(commands) {
   const lines = [];
   for (const c of commands) {
     const group = keyGroup(c.name), last = lines.at(-1);
     if (group && last?.label === group) last.commands.push(c);
     else lines.push({ label: group ?? c.label, commands: [c] });
   }
-  $("keys").replaceChildren(...lines.map(keyLine));
+  return lines.map(keyLine);
+}
+
+async function drawKeys(focus) {
+  const commands = await ask("keys");
+  $("keys-section").hidden = !commands; // no list without Tidier alone: then Sidebery has the keys
+  if (!commands) return;
+  const more = commands.filter(c => c.more);
+  $("keys").replaceChildren(...keyLines(commands.filter(c => !c.more)));
+  $("keys-extra").replaceChildren(...keyLines(more));
+  $("keys-extra").hidden = !keysMoreOpen;
+  $("keys-more").hidden = !more.length;
+  $("keys-more").textContent = keysMoreOpen ? "Fewer commands" : "More commands";
+  $("keys-more").ariaExpanded = String(keysMoreOpen);
   $("keys-back").hidden = !commands.some(c => c.changed);
-  if (focus) $("keys").querySelector(`[data-command="${focus}"]`)?.focus();
+  if (focus) $("keys-section").querySelector(`[data-command="${focus}"]`)?.focus();
 }
 
 async function chooseKey(name, shortcut) {
@@ -98,6 +112,7 @@ async function startKeys() {
   keysMac = (await browser.runtime.getPlatformInfo()).os === "mac";
   // The button goes once nothing is changed, and the keyboard goes to the first key, not nowhere.
   $("keys-back").onclick = async () => { keyNotes.clear(); await ask("keysBack"); await drawKeys($("keys").querySelector("[data-command]")?.dataset.command); };
+  $("keys-more").onclick = () => { keysMoreOpen = !keysMoreOpen; drawKeys(); };
   await drawKeys();
   // Changed on Firefox's own page meanwhile, and by what is above.
   browser.commands.onChanged?.addListener(() => { if (!document.querySelector(".key.recording")) drawKeys(); });

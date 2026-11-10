@@ -167,11 +167,15 @@ test("with the setting off a space's messages do nothing, and with it on they do
 // --- What it offers ---------------------------------------------------------------
 // The sidebar's own scripts, with the little of a page that they need. Text-only, as a
 // menu is: what is drawn is for the smoke test.
-function sidebar({ alone = true, active = C1, tabs = [{ id: 1, active: true }, { id: 2 }] } = {}) {
-  const listeners = {}, sent = [], menus = [], options = [];
+// `facts`: what the background says of the space when its menu opens (spaceFacts, listactions.js).
+function sidebar({ alone = true, active = C1, tabs = [{ id: 1, active: true }, { id: 2 }], facts = { loaded: 0, unmuted: 0, muted: 0, duplicates: 0 } } = {}) {
+  const listeners = {}, sent = [], menus = [], options = [], asked = [];
   const box = { hidden: true, style: {}, offsetHeight: 90, getBoundingClientRect: () => ({ top: 500 }), addEventListener() {}, setAttribute() {} };
   const ctx = vm.createContext({
-    browser: { runtime: { openOptionsPage: async () => { options.push(1); } }, menus: { overrideContext() {} } },
+    browser: {
+      runtime: { openOptionsPage: async () => { options.push(1); }, sendMessage: async msg => { asked.push({ ...msg }); return facts; } },
+      menus: { overrideContext() {} }, windows: { getCurrent: async () => ({ id: 7 }) },
+    },
     document: { getElementById: () => box, querySelector: () => null, querySelectorAll: () => [] },
     addEventListener: (type, f, capture) => { (listeners[type] ??= []).push({ f, capture }); },
     port: { onMessage: { addListener() {} } },
@@ -179,45 +183,76 @@ function sidebar({ alone = true, active = C1, tabs = [{ id: 1, active: true }, {
     renameNext: false, innerWidth: 300, innerHeight: 600,
     el() {},
   });
+  ctx.window = ctx;
   const REPO = new URL("../", import.meta.url);
   vm.runInContext(`let view = ${JSON.stringify({ alone, space: active, tabs, spaces: [{ id: C1, name: "One", color: "#000" }, { id: C2, name: "Two", color: "#000" }] })};`, ctx);
-  for (const f of ["sidebar/menu.js", "sidebar/spacemenu.js"]) vm.runInContext(readFileSync(new URL(f, REPO), "utf8"), ctx, { filename: f });
-  vm.runInContext("var openMenu = (e, items) => { e.preventDefault(); __opened(items); }", Object.assign(ctx, { __opened: items => menus.push(items) }));
-  const rightClick = (selector, dataset) => {
+  for (const f of ["sidebar/menu.js", "sidebar/tabmenu.js", "sidebar/spacemenu.js", "sidebar/moremenu.js"]) vm.runInContext(readFileSync(new URL(f, REPO), "utf8"), ctx, { filename: f });
+  vm.runInContext("var showMenu = items => __opened(items)", Object.assign(ctx, { __opened: items => menus.push(items) }));
+  // Firefox's own menu is held back in the click; Tidier's comes once the background has answered.
+  const rightClick = async (selector, dataset) => {
     const prevented = [];
     const target = { closest: s => (s === selector ? { dataset, classList: { add() {}, remove() {} } } : null), id: selector === "#space-name" ? "space-name" : "" };
     for (const { f, capture } of listeners.contextmenu) if (capture) f({ target, preventDefault: () => prevented.push(1), stopPropagation() {} });
+    await new Promise(r => setTimeout(r, 5));
     return prevented.length > 0;
   };
   // (Arrays of another realm.) A line is "|", the quiet first line its name in brackets.
   const labels = items => Array.from(items, i => (i === null ? "|" : i.heading !== undefined ? `(${i.heading})` : i[0]));
-  return { ctx, sent, menus, options, rightClick, labels, list: () => vm.runInContext("listMenu()", ctx) };
+  return { ctx, sent, menus, options, asked, rightClick, labels, list: () => vm.runInContext("listMenu()", ctx) };
 }
 
 // A space is only a dot on the bar, so its menu says which one it is first; Clear, which
-// closes tabs, is apart at the end, as Close is in the tab menu.
-const OWN = ["(One)", "Rename", "Unload this space", "Archived tabs", "|", "Settings", "|", "Clear today's tabs"];
-test("a space's menu: its name first, then in groups; Clear apart, only for the space you are in, and only with something to clear", () => {
+// closes tabs, is apart after the rest, as Close is in the tab menu, and More comes last, as
+// it does there (the space you see has tabs to sort, so it has More).
+const OWN = ["(One)", "Rename", "Unload this space", "Archived tabs", "|", "Settings", "|", "Clear today's tabs", "|", "More"];
+test("a space's menu: its name first, then in groups; Clear apart, only for the space you are in, and only with something to clear", async () => {
   const s = sidebar();
-  assert.ok(s.rightClick("#spaces .space", { space: C1 }));
+  assert.ok(await s.rightClick("#spaces .space", { space: C1 }));
   assert.deepEqual(s.labels(s.menus.at(-1)), OWN);
-  assert.ok(s.rightClick("#spaces .space", { space: C2 }));
+  assert.ok(await s.rightClick("#spaces .space", { space: C2 }));
   assert.deepEqual(s.labels(s.menus.at(-1)), ["(Two)", "Rename", "Unload this space", "Archived tabs", "|", "Settings"]);
   assert.equal(s.menus.at(-1)[0].color, "#000", "with its dot's colour");
   const lone = sidebar({ tabs: [{ id: 1, active: true }] });
-  lone.rightClick("#spaces .space", { space: C1 });
+  await lone.rightClick("#spaces .space", { space: C1 });
   assert.deepEqual(lone.labels(lone.menus.at(-1)), ["(One)", "Rename", "Unload this space", "Archived tabs", "|", "Settings"]);
 });
 
-test("the name above the list has the same menu, for the space you are in", () => {
+test("the name above the list has the same menu, for the space you are in", async () => {
   const s = sidebar();
-  assert.ok(s.rightClick("#space-name"));
+  assert.ok(await s.rightClick("#space-name"));
   assert.deepEqual(s.labels(s.menus.at(-1)), OWN);
+  assert.deepEqual(s.asked, [{ type: "spaceFacts", space: C1, windowId: 7 }]);
 });
 
-test("the items send what the background knows, and Settings needs no message", () => {
+// More, at the end (sidebar/moremenu.js): what the background said, and sorting and
+// duplicates only for the space you see.
+test("More holds what applies: sorting and duplicates here, a whole space reloaded or muted anywhere", async () => {
+  const facts = { loaded: 2, unmuted: 1, muted: 1, duplicates: 2 };
+  const s = sidebar({ facts });
+  await s.rightClick("#spaces .space", { space: C1 });
+  const items = s.menus.at(-1);
+  assert.deepEqual(s.labels(items).slice(-2), ["|", "More"]);
+  const more = items.at(-1)[1];
+  assert.deepEqual(s.labels(more), ["Sort today's tabs", "Close 2 duplicates", "|", "Reload this space", "Mute this space", "Unmute this space"]);
+  assert.deepEqual(s.labels(more[0][1]), ["By name", "By site", "By last use"]);
+  more[0][1][2][1]();
+  more[1][1]();
+  more[3][1]();
+  assert.deepEqual(JSON.parse(JSON.stringify(s.sent)), [
+    { type: "tabAction", action: "sort", tabIds: [1, 2], by: "used" },
+    { type: "tabAction", action: "closeDuplicates", tabIds: [1, 2] },
+    { type: "spaceAction", action: "reload", space: C1 },
+  ]);
+  await s.rightClick("#spaces .space", { space: C2 });
+  assert.deepEqual(s.labels(s.menus.at(-1).at(-1)[1]), ["Reload this space", "Mute this space", "Unmute this space"], "another space's list is not in front of you");
+  const quiet = sidebar({ tabs: [{ id: 1, active: true }] });
+  await quiet.rightClick("#spaces .space", { space: C2 });
+  assert.ok(!quiet.labels(quiet.menus.at(-1)).includes("More"), "nothing to do: no More");
+});
+
+test("the items send what the background knows, and Settings needs no message", async () => {
   const s = sidebar();
-  s.rightClick("#spaces .space", { space: C1 });
+  await s.rightClick("#spaces .space", { space: C1 });
   const item = name => s.menus.at(-1).find(i => i?.[0] === name)[1];
   item("Unload this space")();
   item("Clear today's tabs")();
@@ -226,18 +261,18 @@ test("the items send what the background knows, and Settings needs no message", 
   assert.equal(s.options.length, 1);
 });
 
-test("Archived tabs in a space's menu is that space's list, also of a space you are not in", () => {
+test("Archived tabs in a space's menu is that space's list, also of a space you are not in", async () => {
   const s = sidebar();
   const asked = [];
   s.ctx.openArchived = space => asked.push(space);
-  s.rightClick("#spaces .space", { space: C2 });
+  await s.rightClick("#spaces .space", { space: C2 });
   s.menus.at(-1).find(i => i?.[0] === "Archived tabs")[1]();
   assert.deepEqual(asked, [C2]);
 });
 
-test("Clear acts on the space it was offered for, wherever the window is by the time of the click", () => {
+test("Clear acts on the space it was offered for, wherever the window is by the time of the click", async () => {
   const s = sidebar();
-  s.rightClick("#spaces .space", { space: C1 });
+  await s.rightClick("#spaces .space", { space: C1 });
   const fromDot = s.menus.at(-1).find(i => i?.[0] === "Clear today's tabs")[1], fromList = s.list()[1][1];
   vm.runInContext(`view.space = ${JSON.stringify(C2)}`, s.ctx);
   fromDot();
@@ -256,10 +291,10 @@ test("the list's menu is New folder, Clear today's tabs, Archived tabs, Settings
   assert.deepEqual(lone.labels(lone.list()), ["New folder", "Archived tabs", "Settings"]);
 });
 
-test("without Tidier alone a right click on a dot is Firefox's, as today", () => {
+test("without Tidier alone a right click on a dot is Firefox's, as today", async () => {
   const s = sidebar({ alone: false });
-  assert.equal(s.rightClick("#spaces .space", { space: C1 }), false);
-  assert.equal(s.rightClick("#space-name"), false);
+  assert.equal(await s.rightClick("#spaces .space", { space: C1 }), false);
+  assert.equal(await s.rightClick("#space-name"), false);
   assert.equal(s.menus.length, 0);
 });
 

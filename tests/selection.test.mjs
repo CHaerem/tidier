@@ -211,6 +211,58 @@ test("Esc goes back one step at a time: menu, selection, cursor", async () => {
   assert.equal(s.fire("keydown", body, { key: "Escape" }).prevented, false, "nothing left to cancel");
 });
 
+test("⌘A takes every row the list shows, or every essential from one; Firefox's own select all does not happen", async () => {
+  const s = await sidebar();
+  const body = { closest: () => null };
+  const all = s.fire("keydown", body, { key: "a", metaKey: true });
+  assert.ok(all.prevented && all.stopped);
+  assert.deepEqual(s.picked(), [1, 2, 3, 4, 5]);
+  s.fire("keydown", body, { key: "Escape" });
+  s.ctx.cursor = s.el(9);
+  s.fire("keydown", body, { key: "a", metaKey: true });
+  assert.deepEqual(s.picked(), [8, 9]);
+  const linux = await sidebar({ os: "linux" });
+  linux.fire("keydown", body, { key: "a", ctrlKey: true });
+  assert.deepEqual(linux.picked(), [1, 2, 3, 4, 5], "Ctrl+A elsewhere");
+  assert.equal(linux.fire("keydown", body, { key: "a", metaKey: true }).prevented, false);
+  assert.equal(s.fire("keydown", { closest: sel => (sel === "input" ? {} : null) }, { key: "a", metaKey: true }).prevented, false, "in a name being typed, it is the text's");
+});
+
+test("⇧↓ and ⇧↑ take the next row too, from the tab you are on or the cursor, as a ⇧-click would", async () => {
+  const s = await sidebar();
+  const body = { closest: () => null }, key = (k, more = {}) => s.fire("keydown", body, { key: k, shiftKey: true, ...more });
+  assert.equal(key("ArrowDown").stopped, true, "not on to keys.js, which would only move the cursor");
+  assert.deepEqual(s.picked(), [1, 2]);
+  assert.equal(s.ctx.cursor, s.el(2));
+  key("ArrowDown");
+  assert.deepEqual(s.picked(), [1, 2, 3]);
+  key("ArrowUp");
+  assert.deepEqual(s.picked(), [1, 2]);
+  key("ArrowUp");
+  key("ArrowUp");
+  assert.deepEqual(s.picked(), [1], "back to where it began, and no further than the top");
+  const fromCursor = await sidebar();
+  fromCursor.ctx.cursor = fromCursor.el(4);
+  fromCursor.fire("keydown", body, { key: "ArrowUp", shiftKey: true });
+  assert.deepEqual(fromCursor.picked(), [3, 4]);
+});
+
+test("⌥↑ and ⌥↓ move the selection, else the cursor's row, else the tab you are on, in the background", async () => {
+  const s = await sidebar();
+  const body = { closest: () => null }, key = k => s.fire("keydown", body, { key: k, altKey: true });
+  assert.ok(key("ArrowDown").prevented);
+  s.ctx.cursor = s.el(4);
+  key("ArrowUp");
+  s.add(2);
+  s.add(3);
+  key("ArrowDown");
+  assert.deepEqual(s.sentCopy(), [
+    { type: "tabAction", action: "step", tabIds: [1], by: 1 },
+    { type: "tabAction", action: "step", tabIds: [4], by: -1 },
+    { type: "tabAction", action: "step", tabIds: [1, 2, 3], by: 1 },
+  ]);
+});
+
 test("× on a picked row, ⌫ and a middle click close them all, the selected tab last", async () => {
   const closes = async act => {
     const s = await sidebar();

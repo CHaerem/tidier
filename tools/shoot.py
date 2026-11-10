@@ -537,6 +537,20 @@ def menus(cam):
         cam.mouse_away()
 
 
+def more_menus(cam):
+    """More, opened in place: on a tab, its Sort in it, on a folder and on a space's dot."""
+    select(cam.m, on_tab(PERSONAL), PERSONAL["ctx"])
+    into = """for (const label of args) { const b = [...doc.querySelectorAll("#menu .item:not(.back)")].find(i => i.textContent.startsWith(label)); if (!b) return false; b.click(); await sleep(80); } return true;"""
+    for name, selector, labels in (("menu-more-tab", ROW, ["More"]), ("menu-more-sort", ROW, ["More", "Sort"]),
+                                   ("menu-more-folder", FOLDER_HEAD, ["More"]), ("menu-more-space", "#spaces .space.active", ["More"])):
+        at = cam.wanted(name) and cam.point_at(selector)
+        if at and cam.right_click(*at) and in_sidebar(cam.m, into, *labels):
+            cam.mouse_away()
+            cam.shoot(name)
+        cam.close_menus()
+        cam.mouse_away()
+
+
 def folders_closed(cam):
     """Every folder closed, with the selected tab in one of them."""
     select(cam.m, on_tab(PERSONAL), PERSONAL["ctx"])
@@ -970,6 +984,7 @@ SETTINGS_IN_FULL = """
     line.append(box, name);
   }
   $("merge-result").textContent = "Took in 7 essentials, 3 folders and 12 saved tabs. Nothing here was removed.";
+  if ($("keys-extra").hidden) $("keys-more").click(); // the commands with no key, shown
   return 1;
 """
 
@@ -1085,7 +1100,7 @@ def placeholder_on_show(cam):
         cam.write(f"window-placeholder-{scheme}", png)
 
 
-STEPS = (space_by_space, hover, hover_more, menus, folders_closed, live_closed, folder_rename, marks, keyboard, agent_note, notices, space_rename, quiet_lines, picked, bar_marks,
+STEPS = (space_by_space, hover, hover_more, menus, more_menus, folders_closed, live_closed, folder_rename, marks, keyboard, agent_note, notices, space_rename, quiet_lines, picked, bar_marks,
          little_window, little_window_real, command_bar, window_edges, archived, scrolled, under_the_hand, empty_spaces, few_essentials, icons_that_vanish, settings,
          moved, no_space, placeholder_on_show)
 

@@ -292,7 +292,7 @@ test("the table and the manifest agree, and no new command has a suggested key",
   const { x } = await aWindow();
   const table = x.js("COMMANDS");
   // Firefox's shortcuts page lists them in the daily browser on Sidebery too, where only copying the address works.
-  for (const c of table) if (c.key) assert.equal(c.label + (c.always ? "" : " (with Tidier alone)"), manifest.commands[c.name]?.description, c.name);
+  for (const c of table) if (c.key !== undefined) assert.equal(c.label + (c.always ? "" : " (with Tidier alone)"), manifest.commands[c.name]?.description, c.name);
   for (const [name, c] of Object.entries(manifest.commands)) if (name !== "copy-url") assert.match(c.description, /\(with Tidier alone[,)]/, name);
   for (const name of Object.keys(manifest.commands)) assert.ok(table.some(c => c.name === name), name);
   for (const [name, c] of Object.entries(manifest.commands)) if (name !== "copy-url") assert.equal(c.suggested_key, undefined, name);
@@ -534,6 +534,27 @@ test("Copy for Claude's keys are in the same list once it is on, with no key of 
   x.kill();
 });
 
+test("commands that start with no key are listed apart, get none, and lose one you gave when keys go back", async () => {
+  const ff = new FakeFirefox();
+  ff.commands = commandsOf();
+  const w = ff.addWindow({ focused: true });
+  ff.addTab(w.id, { url: "https://a.example/", active: true, cookieStoreId: C1 });
+  const x = await alone(ff);
+  assert.equal(ff.commandsSet["sort-name"], undefined, "none is given");
+  ff.commands = commandsOf({ ...ff.commandsSet, "close-others": "Alt+Shift+W" });
+  const list = await x.js("commandKeys")();
+  const of = name => list.find(c => c.name === name);
+  assert.equal(of("sort-name").more, true);
+  assert.equal(of("sort-name").pretty, "");
+  assert.equal(of("sort-name").changed, false);
+  assert.equal(of("close-others").pretty, "⌥⇧W");
+  assert.equal(of("close-others").changed, true, "so Back to the usual keys shows");
+  assert.equal(of("next-tab").more, undefined);
+  await x.js("keysBackToFirst")();
+  assert.equal(ff.commandsSet["close-others"], "");
+  x.kill();
+});
+
 // The settings page's own part, on its real file, with what it needs from the page faked.
 function settingsKeys(alone) {
   const called = [], parts = {};
@@ -569,6 +590,14 @@ test("without Tidier alone the settings page has no Keys section", async () => {
   const on = settingsKeys(true);
   await new Promise(r => setTimeout(r, 10));
   assert.equal(on.parts["keys-section"].hidden, false);
+});
+
+test("the numbered keys share a line, and a space's or a tab's other commands have their own", () => {
+  const keyGroup = vm.runInContext("keyGroup", settingsKeys(false).ctx);
+  assert.equal(keyGroup("space-3"), "Go to a space");
+  assert.equal(keyGroup("tab-9"), "Go to a tab of this space");
+  assert.equal(keyGroup("space-reload"), null);
+  assert.equal(keyGroup("space-unload"), null);
 });
 
 test("Firefox's lists are written the way keys are compared", async () => {

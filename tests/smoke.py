@@ -2461,7 +2461,7 @@ MENU_TABS = H + """
   const entriesOf = (all, text) => Object.entries(all).filter(([, e]) => e.url?.includes(text));
 """ % EXT_ID
 
-ROW_MENU = ["Reload", "Mute", "Unload", "|", "Duplicate", "Copy address", "|", "Make essential", "Move to folder", "Move to space", "Open a copy in space", "Always open this site here", "|", "Close"]
+ROW_MENU = ["Reload", "Mute", "Unload", "|", "Duplicate", "Copy address", "|", "Make essential", "Move to folder", "Move to space", "Open a copy in space", "Always open this site here", "|", "Close", "|", "More"]
 
 
 def no_cookies_item(labels):
@@ -2522,7 +2522,7 @@ def alone_tab_menu(m):
         check("a right click on a row shows Tidier's menu, in its order", no_cookies_item(r["labels"]) == ROW_MENU, str(r))
         check("the menu marks the row it is about, and Esc closes it", r["about"] and r["closed"] and not r["left"], str(r))
         k = r["keys"]
-        check("the arrow keys go through the menu, and into a list and back", k["inMenu"] and k["first"] == "Reload" and k["last"] == "Close" and k["sub"]["top"] == "Move to space"
+        check("the arrow keys go through the menu, and into a list and back", k["inMenu"] and k["first"] == "Reload" and k["last"] == "More" and k["sub"]["top"] == "Move to space"
               and not k["sub"]["focus"] and k["sub"]["at"] and k["back"] == 0, str(k))
         check("a click outside the menu only closes it", r["outside"] == {"closed": True, "selected": True}, str(r["outside"]))
         # (No Close on a tile: an essential closed comes back unloaded, which Unload does.)
@@ -2546,7 +2546,7 @@ def alone_tab_menu(m):
               at["row"] and at["marked"] and at["list"] == {"left": True, "top": True, "width": True}, str(at))
         check("on a tile and a folder's head it stands clear of them too, and marks them", at["tile"] and at["tileMarked"] and at.get("head", True), str(at))
         tile_rest = ["Duplicate", "Copy address", "|", "Remove from essentials", "Open a copy in space"]
-        check("a right click on a tile offers no folder, move to a space, rule or close", no_cookies_item(r["tileLabels"]) in (tile_rest, ["Reload", "Mute", "Unload", "|", *tile_rest]), str(r))
+        check("a right click on a tile offers no folder, move to a space, rule or close", no_cookies_item(r["tileLabels"]) in ([*tile_rest, "|", "More"], ["Reload", "Mute", "Unload", "|", *tile_rest, "|", "More"]), str(r))
         r = sidebar_page(m, MENU_PAGE + """const row = rowOf(args[0]), opts = o => page.JSON.parse(JSON.stringify(o));
           // A redraw of its row (here: the sound mark) resets the row's classes.
           await rightClick(row);
@@ -2621,7 +2621,7 @@ def alone_tab_menu(m):
           return 1;""", b)
         r = sidebar_page(m, MENU_PAGE + """const head = [...doc.querySelectorAll("#tabs .folder .head")].find(h => h.querySelector(".title").textContent === "Menu kept");
           await rightClick(head); const folder = shown(), list = await rightClick(doc.getElementById("tabs")); menu.hidden = true; return {folder, list};""")
-        check("a folder and the empty list keep their own short menus", r["folder"] == ["Rename", "Delete folder (its tabs stay)", "Move to space"] and r["list"][0] == "New folder" and "Reload" not in r["list"], str(r))
+        check("a folder and the empty list keep their own short menus", r["folder"] == ["New tab here", "|", "Rename", "Delete folder (its tabs stay)", "Move to space", "|", "More"] and r["list"][0] == "New folder" and "Reload" not in r["list"], str(r))
         # Rename on a tile and on a saved tab's row opens the box, ready for typing. (What you
         # then do in it is for alone_tab_names.) Esc leaves everything as it was.
         r = sidebar_page(m, MENU_PAGE + """const named = async el => {
@@ -2867,7 +2867,7 @@ def alone_tab_menu(m):
 
         sidebar_page(m, MENU_PAGE + "await until(() => rowOf(args[0])); rowOf(args[0]).click(); return 1;", s2)
         m.js(MENU_TABS + "await until(() => idOf(main().gBrowser.selectedTab) === args[0]); await wait(500); return 1;", s2)
-        many = ["Reload 3 tabs", "Mute 3 tabs", "Unload 3 tabs", "|", "Copy 3 addresses", "|", "Make 3 tabs essential", "Move 3 tabs to folder", "Move 3 tabs to space", "Open copies of 3 tabs in space", "|", "Close 3 tabs"]
+        many = ["Reload 3 tabs", "Mute 3 tabs", "Unload 3 tabs", "|", "Copy 3 addresses", "|", "Make 3 tabs essential", "Move 3 tabs to folder", "Move 3 tabs to space", "Open copies of 3 tabs in space", "|", "Close 3 tabs", "|", "More"]
         m.js(clipboard + 'Cc["@mozilla.org/widget/clipboardhelper;1"].getService(Ci.nsIClipboardHelper).copyString("before"); return 1;')
         r = several("""const labels = await rightClick(rowOf(picked[0])), marks = picked.filter(id => rowOf(id).classList.contains("menu-for")).length;
           choose("Copy 3 addresses"); return {labels, marks};""")
@@ -8482,13 +8482,14 @@ def alone_space_menu(m):
       await wait(1000); return 1;""", [[here, "here"], [there, "there"]])
 
     # What it offers.
-    # Clear, which closes tabs, comes last, on its own (spacemenu.js).
-    ELSEWHERE, IN_SPACE = ["Rename", "Unload this space", "Archived tabs", "New space", "Settings"], ["Rename", "Unload this space", "Archived tabs", "New space", "Settings", "Clear today's tabs"]
+    # Clear, which closes tabs, comes on its own after the rest (spacemenu.js), and More last,
+    # as in a tab's menu (both spaces have pages loaded, so both have it).
+    ELSEWHERE, IN_SPACE = ["Rename", "Unload this space", "Archived tabs", "New space", "Settings", "More"], ["Rename", "Unload this space", "Archived tabs", "New space", "Settings", "Clear today's tabs", "More"]
     r = menu_on(m, f"dot({json.dumps(there)})", ELSEWHERE)
     place = in_sidebar(m, """(id) => ({menuBottom: doc.getElementById("menu").getBoundingClientRect().bottom, bar: doc.getElementById("spaces").getBoundingClientRect().top, marked: dot(id).classList.contains("menu-for"), active: doc.querySelector("#spaces .space.active").dataset.space,
       heading: doc.querySelector("#menu .heading")?.textContent, name: dot(id).title, lines: doc.querySelectorAll("#menu .line").length})""", there)
     check("a right click on another space's dot opens its menu", r == ELSEWHERE, str(r))
-    check("which starts with that space's name, and has its groups", place["heading"] == place["name"] and place["lines"] == 1, str(place))
+    check("which starts with that space's name, and has its groups", place["heading"] == place["name"] and place["lines"] == 2, str(place))
     check("the menu opens above the bar, and its dot is marked", place["menuBottom"] <= place["bar"] and place["marked"] and place["active"] == here, str(place))
     sidebar_key(m, ESC)
     closed = sidebar_until(m, """(id) => !labels().length && !dot(id).classList.contains("menu-for")""", there)
@@ -8949,6 +8950,222 @@ def sidebar_setting_off(m):
     check("with the setting off, the first arrow key starts at the top, and the cursor stays", r.get("keyAtTop") is True and r.get("cursorStays") is True, str(r))
     m.js(H + """const w = main(); for (const t of [...w.gBrowser.tabs]) if (url(t).includes("/sidebar/sidebar.html")) w.gBrowser.removeTab(t);
       await wait(300); return 1;""")
+
+
+def alone_more(m):
+    # More in a tab's, a folder's and a space's menu, the keys of the selection, and a dragged
+    # tab held over a closed folder or another space (listactions.js, sidebar/moremenu.js), in
+    # the real sidebar page with real events. What each does in detail is in the unit tests.
+    space = sidebar_page(m, "return spaces().find(s => s.active).id;")
+    ctx = int(space.split("-")[-1])
+    other = next(s["id"] for s in sidebar_page(m, "return spaces();") if s["id"] != space and s["id"] != "firefox-container-4")
+
+    def open_tab(name):
+        return m.js(MENU_TABS + """const w = main(), t = w.gBrowser.addTrustedTab(args[0], {userContextId: args[1], inBackground: true});
+          await until(() => role(w, t) === "live" && t.linkedPanel); return idOf(t);""", f"https://example.org/?smoke-more-{name}", ctx)
+
+    def now_id(name):
+        """Its row's id now: a tab brought back by Undo is a new tab."""
+        return m.js(MENU_TABS + """const t = main().gBrowser.tabs.find(t => !t.pinned && url(t).includes("smoke-more-" + args[0])); return t ? idOf(t) : null;""", name)
+
+    def record_of(name):
+        return m.js(MENU_TABS + """const all = await record(); const [k, e] = entriesOf(all, "smoke-more-" + args[0])[0] ?? [];
+          return e ? {key: k, space: e.cookieStoreId, folder: e.parentKey, saved: !!e.saved} : null;""", name)
+
+    f1, f2, f3 = open_tab("f1"), open_tab("f2"), open_tab("f3")
+    t1, t2, t3 = open_tab("t1"), open_tab("t2"), open_tab("t3")
+    try:
+        # A folder of three saved tabs, named so that a sort by name has something to do.
+        r = sidebar_page(m, MENU_PAGE + """
+          send({type: "newFolder", space: args[0], name: "More test"});
+          const head = () => [...doc.querySelectorAll("#tabs .folder .head")].find(h => h.querySelector(".title").textContent === "More test");
+          await until(() => head());
+          for (const id of args.slice(1)) send({type: "moveTab", tabId: id, folder: head().dataset.folderHead, before: null});
+          await until(() => head().parentElement.querySelectorAll(".tab").length === 3);
+          for (const [id, name] of [[args[1], "Charlie"], [args[2], "Alpha"], [args[3], "Bravo"]]) send({type: "renameTab", tabId: id, name});
+          await until(() => folders().find(f => f.name === "More test")?.tabs.join() === "Charlie,Alpha,Bravo");
+          const labels = await rightClick(head());
+          const more = shown().at(-1);
+          choose("More");
+          const inMore = shown();
+          choose("Sort this folder");
+          const sortBy = shown();
+          choose("By name");
+          await until(() => folders().find(f => f.name === "More test")?.tabs.join() === "Alpha,Bravo,Charlie");
+          const sorted = folders().find(f => f.name === "More test").tabs;
+          const line = await until(() => doc.querySelector("#note .text")?.textContent === "Sorted by name" && doc.querySelector("#note .text").textContent);
+          doc.querySelector("#note .act").click();
+          await until(() => folders().find(f => f.name === "More test")?.tabs.join() === "Charlie,Alpha,Bravo");
+          return {labels, more, inMore, sortBy, sorted, line, back: folders().find(f => f.name === "More test").tabs, key: head().dataset.folderHead};""", space, f1, f2, f3)
+        folder = r.get("key")
+        check("a folder's menu has New tab here and More at its end", r.get("labels", [])[:1] == ["New tab here"] and r.get("more") == "More", str(r))
+        check("More opens in place, with a row back, and a list in it does too",
+              (r.get("inMore") or [None])[0] == "More" and "Copy addresses" in r.get("inMore", []) and "Close all its tabs" in r.get("inMore", [])
+              and r.get("sortBy") == ["Sort this folder", "|", "By name", "By site", "By last use"], str(r))
+        check("Sort by name sorts the folder, says so, and Undo puts it back", r.get("sorted") == ["Alpha", "Bravo", "Charlie"] and r.get("line") == "Sorted by name" and r.get("back") == ["Charlie", "Alpha", "Bravo"], str(r))
+
+        # The tab menu's More: close the tabs below one, and take them back.
+        r = sidebar_page(m, MENU_PAGE + """
+          await until(() => rowOf(args[0]) && rowOf(args[2]));
+          const today = () => [...doc.querySelectorAll("#tabs > .tab")].map(t => Number(t.dataset.tab));
+          const below = today().slice(today().indexOf(args[0]) + 1);
+          const labels = await rightClick(rowOf(args[0]));
+          choose("More");
+          const inMore = shown();
+          choose("Close tabs below");
+          await until(() => below.every(id => !rowOf(id)));
+          const gone = below.filter(id => !rowOf(id)).length;
+          const line = await until(() => doc.querySelector("#note .text")?.textContent);
+          doc.querySelector("#note .act").click();
+          await until(() => today().length === below.length + today().indexOf(args[0]) + 1, 15000);
+          await wait(500);
+          return {last: labels.at(-1), inMore, below: below.length, gone, line, back: today().slice(today().indexOf(args[0]) + 1).length};""", t1, t2, t3)
+        check("a row's menu ends with More, which offers what applies to it", r.get("last") == "More" and "Close tabs below" in r.get("inMore", []) and "Sort today's tabs" in r.get("inMore", []) and "Copy as Markdown link" in r.get("inMore", []), str(r))
+        check("Close tabs below closes them, with one line, and Undo brings them back", r.get("below", 0) >= 2 and r.get("gone") == r.get("below") and r.get("line") == f"{r.get('below')} tabs closed" and r.get("back") == r.get("below"), str(r))
+
+        # A duplicate, from the space's menu.
+        dupe = m.js(MENU_TABS + """const w = main(), t = w.gBrowser.addTrustedTab("https://example.org/?smoke-more-t1", {userContextId: args[0], inBackground: true});
+          await until(() => role(w, t) === "live"); await wait(500); return idOf(t);""", ctx)
+        r = sidebar_page(m, MENU_PAGE + """
+          await until(() => rowOf(args[0]));
+          await rightClick(doc.getElementById("space-name"));
+          choose("More");
+          const inMore = shown(), item = inMore.find(x => /^Close \\d+ duplicates?$/.test(x));
+          if (item) choose(item);
+          await until(() => !rowOf(args[0]));
+          const out = {inMore, item, gone: !rowOf(args[0]), kept: !!doc.querySelector(`[data-tab="${args[1]}"]`)};
+          // Others' duplicates may have gone with it: they come back, for the groups after this one.
+          (await until(() => doc.querySelector("#note .act")))?.click();
+          await wait(1500);
+          return out;""", dupe, t1)
+        check("a space's More closes today's duplicates, and the first stays", bool(r.get("item")) and r.get("gone") and r.get("kept") and "Reload this space" in r.get("inMore", []), str(r))
+
+        # The keys of the selection, in the sidebar: ⌥↓ moves the tab you are on one place along, in
+        # every window; ⇧↓ takes the next row too; ⌘A every row.
+        sidebar_page(m, MENU_PAGE + "await until(() => rowOf(args[0])); rowOf(args[0]).click(); return 1;", t1)
+        m.js(MENU_TABS + "await until(() => idOf(main().gBrowser.selectedTab) === args[0]); await wait(500); return 1;", t1)
+        # By the record's key: an unloaded placeholder in the other window has no address to go by.
+        ORDER = MENU_TABS + """return wins().map(w => [...args].map(k => w.gBrowser.tabs.findIndex(t => !t.pinned && key(w, t) === JSON.stringify(k))));"""
+        pair = [record_of("t1")["key"], record_of("t2")["key"]]
+        before = m.js(ORDER, *pair)
+        r = sidebar_page(m, MENU_PAGE + """
+          const key = (k, more = {}) => page.dispatchEvent(new page.KeyboardEvent("keydown", page.JSON.parse(JSON.stringify({key: k, bubbles: true, cancelable: true, ...more}))));
+          const today = () => [...doc.querySelectorAll("#tabs > .tab")].map(t => Number(t.dataset.tab));
+          const at = () => today().indexOf(args[0]);
+          const was = at();
+          // The keys act on the row the keyboard is on before the tab you are on, and it is on a
+          // row here: the Undo above was clicked without a pointer, which is how a key presses
+          // it, and that leaves the keyboard in the list (note.js). Esc takes it out again.
+          if (doc.querySelector(".cursor")) key("Escape");
+          key("ArrowDown", {altKey: true});
+          await until(() => at() === was + 1);
+          const moved = at() - was;
+          key("ArrowDown", {shiftKey: true});
+          const two = doc.querySelectorAll("#tabs .tab.picked").length;
+          key("Escape");
+          key("a", {metaKey: true});
+          const all = doc.querySelectorAll("#tabs .tab.picked").length, drawn = [...doc.querySelectorAll("#tabs .tab")].filter(t => t.offsetParent).length;
+          key("Escape");
+          return {moved, two, all, drawn, left: doc.querySelectorAll(".picked").length};""", t1)
+        after = m.js(ORDER, *pair)
+        check("⌥↓ in the sidebar moves the tab one place down, in every window", r.get("moved") == 1 and all(0 <= b[0] < b[1] for b in before) and all(a[0] > a[1] >= 0 for a in after), f"{r} {before} -> {after}")
+        check("⇧↓ takes the next row too, and ⌘A every row shown", r.get("two") == 2 and r.get("all") == r.get("drawn") > 2 and r.get("left") == 0, str(r))
+
+        # Held over a closed folder, a dragged tab opens it; over another space's dot, goes there,
+        # and a drop in that space's list moves it there.
+        r = sidebar_page(m, MENU_PAGE + """
+          const head = () => doc.querySelector(`[data-folder-head="${args[1]}"]`);
+          send({type: "foldFolder", key: args[1], collapsed: true});
+          await until(() => head()?.parentElement.classList.contains("collapsed"));
+          const data = new page.DataTransfer();
+          const at = el => { const b = el.getBoundingClientRect(); return page.JSON.parse(JSON.stringify({bubbles: true, cancelable: true, clientX: b.left + 5, clientY: b.top + b.height / 2})); };
+          const ev = (type, el) => { const e = new page.DragEvent(type, {...at(el), dataTransfer: data}); el.dispatchEvent(e); return e; };
+          const row = rowOf(args[0]), id = args[0];
+          ev("dragstart", row);
+          ev("dragover", head());
+          const opened = !!(await until(() => !head().parentElement.classList.contains("collapsed"), 3000));
+          ev("drop", head());
+          ev("dragend", row);
+          const intoIt = await until(() => inFolder(id) === "More test", 5000);
+          // Another space, held over its dot; then dropped into its list.
+          const dot = doc.querySelector(`#spaces .space[data-space="${args[2]}"]`), drag = rowOf(args[3]);
+          ev("dragstart", drag);
+          ev("dragover", dot);
+          const went = !!(await until(() => doc.querySelector("#spaces .space.active")?.dataset.space === args[2], 3000));
+          await wait(800);
+          const list = doc.getElementById("tabs");
+          const over = ev("dragover", list), dropped = ev("drop", list);
+          ev("dragend", drag);
+          await wait(300);
+          return {opened, inFolder: !!intoIt, went, accepted: over.defaultPrevented, dropped: dropped.defaultPrevented};""", now_id("t2"), folder, other, now_id("t3"))
+        moved = None
+        for _ in range(100):
+            moved = record_of("t3")
+            if moved and moved["space"] == other:
+                break
+            time.sleep(0.1)
+        check("a tab held over a closed folder opens it, and a drop puts it in", r.get("opened") is True and r.get("inFolder") is True and (record_of("t2") or {}).get("folder") == folder, str(r))
+        check("held over another space's dot it goes there, and a drop in that list moves the tab there", r.get("went") is True and r.get("accepted") is True and r.get("dropped") is True and (moved or {}).get("space") == other, f"{r} {moved}")
+        sidebar_page(m, """send({type: "space", space: args[0]}); await wait(1000); return 1;""", space)
+
+        # New tab here: in the folder at once, and saved there once it has a page.
+        r = sidebar_page(m, MENU_PAGE + """
+          const head = () => doc.querySelector(`[data-folder-head="${args[0]}"]`);
+          const count = () => head().parentElement.querySelectorAll(".tab").length, n = count();
+          await rightClick(head());
+          choose("New tab here");
+          await until(() => count() === n + 1);
+          return {added: count() - n, active: !!head().parentElement.querySelector(".tab.active")};""", folder)
+        m.js(H + """const t = main().gBrowser.selectedTab; t.linkedBrowser.loadURI(Services.io.newURI("https://example.org/?smoke-more-new"), {triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal()}); await wait(500); return 1;""")
+        made = None
+        for _ in range(100):
+            made = record_of("new")
+            if made and made["folder"]:
+                break
+            time.sleep(0.1)
+        check("New tab here makes a tab in the folder, which keeps it once it has a page", r.get("added") == 1 and r.get("active") and (made or {}).get("folder") == folder and (made or {}).get("saved"), f"{r} {made}")
+
+        # Close all its tabs, from the folder's More while on one of them: the selection goes to a
+        # tab that stays, not to one about to close, and one line takes them all back.
+        r = sidebar_page(m, MENU_PAGE + """
+          const head = () => doc.querySelector(`[data-folder-head="${args[0]}"]`);
+          const rows = () => [...head().parentElement.querySelectorAll(".tab")].map(t => Number(t.dataset.tab));
+          const was = rows();
+          await until(() => head().parentElement.querySelector(".tab.active"));
+          await rightClick(head());
+          choose("More");
+          choose("Close all its tabs");
+          await until(() => rows().length === 0);
+          const on = Number(doc.querySelector("#tabs .tab.active, #essentials .tile.active")?.dataset.tab);
+          const line = await until(() => doc.querySelector("#note .text")?.textContent);
+          doc.querySelector("#note .act").click();
+          await until(() => rows().length === was.length, 15000);
+          return {was: was.length, onOther: !!on && !was.includes(on), line, back: rows().length};""", folder)
+        check("Close all its tabs in a folder's More goes to a tab that stays, and Undo brings them back",
+              r.get("was", 0) >= 4 and r.get("onOther") and r.get("line") == f"{r.get('was')} tabs closed" and r.get("back") == r.get("was"), str(r))
+
+        # The command bar has them by name, and the settings page lists their keys under More.
+        bar_open(m)
+        bar_keys(m, "markdown")
+        rows = bar_rows_until(m, lambda rows: any(x["title"].startswith("Copy as Markdown") for x in rows))
+        bar_keys(m, [ESC])
+        wait_for_bar(m, False)
+        check("the command bar finds Copy as Markdown link by its name", any(x["title"].startswith("Copy as Markdown") for x in rows), str(rows[:4]))
+        r = ext_page(m, "/settings/settings.html", """
+          const more = doc.getElementById("keys-more");
+          for (let i = 0; i < 50 && more.hidden; i++) await wait(100);
+          const hiddenFirst = doc.getElementById("keys-extra").hidden;
+          more.click();
+          await wait(300);
+          return {button: !more.hidden, hiddenFirst, lines: [...doc.querySelectorAll("#keys-extra .key-label")].map(l => l.textContent)};""")
+        check("the settings page keeps the commands with no key under More commands", r.get("button") and r.get("hiddenFirst") and "Sort today's tabs or this folder by name" in r.get("lines", [])
+              and "Reload this space" in r.get("lines", []) and "Close this folder's tabs" in r.get("lines", []), str(r))
+    finally:
+        m.chrome()  # a script that failed in a page leaves Marionette there
+        sidebar_page(m, """if (args[0]) send({type: "deleteFolder", key: args[0]}); await wait(800); return 1;""", locals().get("folder"))
+        m.js(H + """for (const w of wins()) for (const t of [...w.gBrowser.tabs]) if (url(t).includes("smoke-more-")) w.gBrowser.removeTab(t, {skipPermitUnload: true});
+          for (const w of wins()) for (const t of [...w.gBrowser.tabs]) if (/sidebar\\/sidebar\\.html|settings\\/settings\\.html/.test(url(t))) w.gBrowser.removeTab(t);
+          await wait(1500); return 1;""")
 
 
 def alone_stay_put(m):
@@ -10691,6 +10908,7 @@ ALONE_GROUPS = (alone_setup, alone_second_window, alone_spaces, alone_keys, alon
                 alone_selection,
                 alone_space_menu,
                 alone_look,
+                alone_more,
                 alone_stay_put,
                 alone_hand,
                 alone_new_tab,
@@ -10718,10 +10936,11 @@ ALONE_GROUPS = (alone_setup, alone_second_window, alone_spaces, alone_keys, alon
 # only after forty minutes of other groups is slow to find and slow to check again.
 # Each part ends with nothing happening (alone_idle) and no problems (alone_end); the
 # last one also has the update and the restarts, after the groups those look back at.
-# About equally long: 10 to 14 minutes each on a Mac.
+# About equally long: 10 to 14 minutes each on a Mac. (alone_more is in the first: that one
+# has the second window, which its keys are checked in too.)
 ALONE_SHARDS = (
     (alone_setup, alone_second_window, alone_spaces, alone_keys, alone_folders, alone_moves, alone_drag, alone_archive, alone_live_folders,
-     alone_drag_details, alone_settings, alone_copy, alone_copy_and_import, alone_safe_moves, alone_idle, alone_end),
+     alone_drag_details, alone_settings, alone_copy, alone_copy_and_import, alone_safe_moves, alone_more, alone_idle, alone_end),
     (alone_setup, alone_quiet_undo, alone_tab_menu, alone_tab_names, alone_selection, alone_space_menu, alone_look, alone_stay_put, alone_idle, alone_end),
     (alone_setup, alone_hand, alone_new_tab, alone_sound, alone_news, alone_touches, alone_little_window, alone_isolation, alone_idle, alone_end),
     (alone_setup, alone_requests, alone_crossing, alone_archived, alone_command_bar, alone_bar_edges, alone_shortcuts, alone_keyboard, alone_idle, alone_end),

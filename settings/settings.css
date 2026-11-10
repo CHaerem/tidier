@@ -202,3 +202,4 @@ h3 { margin: 14px 0 6px; font-size: var(--size); line-height: 20px; font-weight:
 .key.recording { border-color: var(--accent-line); background: var(--selected); }
 .key-note { margin: 0 0 6px; color: var(--muted); font-size: var(--size); }
 #keys-back { margin-top: 10px; }
+#keys-more { display: block; margin: 6px 0 4px -6px; } /* its text in line with the commands' names */

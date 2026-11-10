@@ -43,9 +43,14 @@ async function realOf(tabId) {
 
 // What the menu needs to know, asked for when it opens: whether a page is loaded or
 // muted can change in a window this sidebar gets no view for, so a view cannot say.
+//
+// `duplicates`, the same on each: how many of today's tabs in the window of the first
+// repeat one drawn before them (doublesIn, listactions.js), for More's Close duplicates.
 async function tabMenuFacts(tabIds) {
   const all = await getSynced(), rules = await rulesList.get();
   const reals = (await Promise.all(tabIds.map(realOf))).filter(Boolean);
+  const view = reals.length ? await viewFor(reals[0].own.windowId).catch(() => null) : null;
+  const duplicates = view ? doublesIn(view, all).length : 0;
   return reals.map(r => ({
     id: r.own.id,
     tile: r.own.pinned,
@@ -58,6 +63,7 @@ async function tabMenuFacts(tabIds) {
     liveFolder: !!r.entry?.liveFolder,
     space: r.space,
     ruled: !!r.address && rules.find(rule => ruleMatches(rule.url, r.address))?.space === r.space,
+    duplicates,
   }));
 }
 browser.runtime.onMessage.addListener((msg, sender) => {
@@ -81,9 +87,9 @@ async function tabAction(windowId, { action, tabIds, ...more }) {
 }
 
 const TAB_ACTIONS = {
-  reload: async (windowId, reals) => {
-    for (const r of reals) if (r.loaded) await browser.tabs.reload(r.tab.id).catch(() => {});
-  },
+  // A few at a time, outside the queue (reloadGently, listactions.js): a whole folder at once
+  // would load every page together.
+  reload: (windowId, reals) => { reloadGently(reals.filter(r => r.loaded).map(r => r.tab.id)); },
   mute: (windowId, reals) => setRealsMuted(reals, true),
   unmute: (windowId, reals) => setRealsMuted(reals, false),
   unload: unloadReals,
@@ -112,11 +118,35 @@ const TAB_ACTIONS = {
   folder: async (windowId, reals, { folder }) => {
     if (!folder || isOwnFolder((await getSynced())[folder])) await moveRealsTo(windowId, reals, folder ?? null);
   },
+  // Only what a folder can keep: the menu offers it for those alone, but a key or the command
+  // bar can be pressed on an essential or a live folder's tab.
   newFolder: async (windowId, reals, { space }) => {
-    await moveRealsTo(windowId, reals, await createFolder(folderNameFor(reals), space));
+    const movable = reals.filter(r => !r.own.pinned && r.address && !r.entry?.liveFolder);
+    if (movable.length && space) await moveRealsTo(windowId, movable, await createFolder(folderNameFor(movable), space));
   },
-  space: (windowId, reals, { space, newSpace }) => moveRealsToSpace(windowId, reals, space, { newSpace }),
+  // Out of the folder they are in, to the end of today's tabs, as Move to folder's No folder.
+  // A tab in no folder stays where it is.
+  takeOut: async (windowId, reals) => {
+    const all = await getSynced();
+    await moveRealsTo(windowId, reals.filter(r => !r.own.pinned && !r.entry?.liveFolder && folderKeyOf(all, r.key)), null);
+  },
+  space: (windowId, reals, { space, newSpace, at }) => moveRealsToSpace(windowId, reals, space, { newSpace, at }),
   rule: (windowId, reals) => alwaysOpenHere(windowId, reals[0]),
+  // What More holds, the folder's and the space's menus, the command bar and the keys
+  // (listactions.js). They go by the rows: what is drawn where, and in which order.
+  sort: (windowId, reals, { by }) => sortTabs(windowId, reals.map(r => r.own.id), by),
+  top: (windowId, reals) => moveAlong(windowId, reals.map(r => r.own.id), "top"),
+  bottom: (windowId, reals) => moveAlong(windowId, reals.map(r => r.own.id), "bottom"),
+  step: (windowId, reals, { by }) => moveAlong(windowId, reals.map(r => r.own.id), by < 0 ? -1 : 1),
+  closeOthers: (windowId, reals) => closeAround(windowId, reals.map(r => r.own.id), "others"),
+  closeAbove: (windowId, reals) => closeAround(windowId, reals.map(r => r.own.id), "above"),
+  closeBelow: (windowId, reals) => closeAround(windowId, reals.map(r => r.own.id), "below"),
+  closeDuplicates: (windowId, reals) => closeAround(windowId, reals.map(r => r.own.id), "duplicates"),
+  // A folder's tabs, closed for good with one line to take them back: closing a saved tab
+  // one by one would only unload it.
+  closeAll: (windowId, reals) => closeRows(windowId, reals.map(r => r.own.id)),
+  copy: (windowId, reals) => copyText(reals.filter(r => r.address).map(r => r.address).join("\n")),
+  copyMarkdown: (windowId, reals) => copyText(reals.filter(r => r.address).map(r => markdownLink(r.title, r.address)).join("\n")),
 };
 
 async function setRealsMuted(reals, muted) {
@@ -134,7 +164,11 @@ async function setRealsMuted(reals, muted) {
 // and to its place there, with its saved address and its name, as if it had never left.
 const MOVE_FIELDS = ["parentKey", "saved", "name", "added", "liveFolder", "liveUrl"];
 const copyOf = value => (value && typeof value === "object" ? { ...value } : value); // a saved address is the one object among them
-async function moveRealsToSpace(windowId, reals, space, { newSpace = false } = {}) {
+//
+// `at` ({ before, folder }): a place in that space's list, where a drag that went to the space
+// put the tab down (drag.js). Each is put there once it has arrived, as a drop in its own
+// space would put it, so in every window; without it they land at the end of today's tabs.
+async function moveRealsToSpace(windowId, reals, space, { newSpace = false, at = null } = {}) {
   const leaving = reals.flatMap(r => [r.own.id, r.tab.id]);
   const order = await tabsNow(windowId); // quiet.js: where each was, to put it back
   const moved = [];
@@ -144,6 +178,10 @@ async function moveRealsToSpace(windowId, reals, space, { newSpace = false } = {
     const key = syncKeyByTab.get(r.own.id), entry = key ? (await getSynced())[key] : undefined;
     const was = entry ? { key, from: entry.cookieStoreId, fields: Object.fromEntries(MOVE_FIELDS.map(f => [f, copyOf(entry[f])])) } : null;
     const result = await moveToSpace(r.own.id, space, leaving, { quiet: true });
+    if (result === "moved" && was && at) {
+      const there = repMap(await browser.tabs.query({ windowId })).get(key);
+      if (there !== undefined) await moveTab(windowId, there, at.before ?? null, at.folder ?? null).catch(noteError);
+    }
     if (result === "moved" && was) moved.push(was);
     else if (result === "stayed") stayed++;
     else if (result === "gone") gone++;

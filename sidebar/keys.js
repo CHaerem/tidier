@@ -70,10 +70,9 @@ function gridStep(all, from, by) {
 function openMenuOf(target) {
   const r = target.getBoundingClientRect(), x = r.left + 8, y = r.bottom - 4;
   if (target.matches("#spaces .space")) {
-    showMenu(spaceMenu(target.dataset.space), x, y, document.getElementById("spaces"), true); // spacemenu.js: above the bar, clear of it
-    markSpaceDot(target);
+    openSpaceMenuAt(target.dataset.space, x, y, true, true); // spacemenu.js: above the bar, clear of it
   } else if (target.dataset.folderHead) {
-    showMenu(folderMenu(target.dataset.folderHead, target.parentElement.classList.contains("live")), x, y, target, true);
+    openFolderMenuAt(target.dataset.folderHead, target.parentElement.classList.contains("live"), x, y, true); // menu.js
   } else if (target.dataset.tab) {
     openTabMenuAt(Number(target.dataset.tab), x, y, true, target); // tabmenu.js
   } else {

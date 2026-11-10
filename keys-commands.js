@@ -105,7 +105,7 @@ const firstKeys = os => new Map(keysToGive(COMMANDS, COMMANDS.map(({ name }) => 
 // Back to Sidebery: the keys are the manifest's again, and a move over later gives them anew.
 // Not the key to copy an address, which is the one command Sidebery's browser has too.
 async function takeKeysBack() {
-  for (const { name, key, always } of COMMANDS) if (key && !always) await browser.commands.reset(name).catch(() => {});
+  for (const { name, key, always } of COMMANDS) if (key !== undefined && !always) await browser.commands.reset(name).catch(() => {});
   await browser.storage.local.set({ [KEYS_GIVEN]: [] });
 }
 
@@ -191,15 +191,18 @@ async function workingShortcuts(commands, os) {
 // What the settings page lists: every command with a key to give, and that key now. Copy
 // for Claude's three too, once that is on (bridge.js): they come with no key, so every key is
 // still set in one place. One you gave them is yours, and not "changed" from a usual one.
+// Those that start with none of their own (`key: ""`) are `more`: the page keeps them out of
+// sight until asked, and a key you gave one of them is "changed", and goes when keys go back.
 async function commandKeys() {
   if (!tidierAlone) return null;
   const { os } = await browser.runtime.getPlatformInfo();
   const have = await browser.commands.getAll(), first = firstKeys(os);
-  const listed = COMMANDS.filter(c => c.key || (claudeCopyOn && c.name.startsWith("claude-")));
+  const listed = COMMANDS.filter(c => c.key !== undefined || (claudeCopyOn && c.name.startsWith("claude-")));
   return Promise.all(listed.map(async ({ name, label, key }) => {
     const shortcut = have.find(x => x.name === name)?.shortcut ?? "";
     const firefox = (await firefoxHasKey(shortcut, os)) ? firefoxKeyNote(shortcut, os) : null;
-    return { name, label: label.replace(/ \(once turned on in Tidier's settings\)$/, ""), pretty: prettyKey(shortcut, os), changed: !!key && keyId(shortcut, os) !== keyId(first.get(name), os), firefox };
+    return { name, label: label.replace(/ \(once turned on in Tidier's settings\)$/, ""), pretty: prettyKey(shortcut, os),
+      changed: key !== undefined && keyId(shortcut, os) !== keyId(first.get(name), os), firefox, ...(key === "" ? { more: true } : {}) };
   }));
 }
 
@@ -225,5 +228,5 @@ async function setCommandKey(name, shortcut) {
 // other's way, as they would be one by one through setCommandKey.
 async function keysBackToFirst() {
   const first = firstKeys((await browser.runtime.getPlatformInfo()).os);
-  for (const { name, key } of COMMANDS) if (key) await browser.commands.update({ name, shortcut: first.get(name) ?? "" }).catch(noteError);
+  for (const { name, key } of COMMANDS) if (key !== undefined) await browser.commands.update({ name, shortcut: first.get(name) ?? "" }).catch(noteError);
 }

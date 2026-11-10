@@ -353,6 +353,23 @@ extension can see them. A window made in advance and only shown would close that
 cannot be hidden: Firefox keeps every window an extension places or moves on a screen, and a
 minimised one goes into the Dock and comes back out of it slowly.
 
+What Sidebery does beyond that, with nothing new on screen and no settings
+(`listactions.js`, `sidebar/moremenu.js`): one **More** at the end of a tab's, a folder's
+and a space's menu, opening in place. It sorts today's tabs or a folder by name, by site or
+by last use (with Undo), moves tabs to the top or the bottom of their list, takes them out of
+a folder, copies them as Markdown links, closes the duplicates among today's tabs (by the
+record's address, the one you are on stays) or the tabs above, below or around one, and
+reloads, mutes or unloads a whole folder or space, a few pages at a time. A folder's menu
+also has New tab here, and Close all its tabs. Whatever closes goes through the quiet line,
+with Undo. Each is a command in the bar, found by its name, and in the Keys section under
+More commands, with no key until you give one: what a tab's More does acts on the selection,
+else the tab; a folder's on the folder of the selection, else of the tab; a space's on the
+space you see. So are Back and Forward through the tabs used recently in this space (by each
+page's real last use, as the list draws them). In the
+sidebar ⌘A selects every row, ⇧↑ and ⇧↓ take one more, ⌥↑ and ⌥↓ move the selection (else
+the tab) one place along, in every window. A tab dragged and held over a closed folder opens
+it, and over another space's dot goes to that space, where a drop in the list puts it.
+
 ## The same on every machine, and spaces hidden on one
 
 Both only with Tidier alone (`sync.js`, `syncmerge.js`, `hiddenspaces.js`).
@@ -763,6 +780,9 @@ Not guaranteed:
 - `ownfolders.js` – Tidier's own folders, moving tabs.
 - `tabactions.js` – what the menu on a tab does (the menu itself: `sidebar/tabmenu.js`;
   the small menu Tidier draws: `sidebar/menu.js`).
+- `listactions.js`, `sidebar/moremenu.js` – More: what acts on a part of the list at once
+  (sorting, closing around a tab and duplicates, a whole folder or space), and Back and
+  Forward through the tabs used recently.
 - `sidebar-view.js`, `sidebar/` – Tidier's own sidebar; among its parts `selection.js`
   (several tabs), `drag.js`, `stayput.js` (the list shows where you are) and `touches.js`
   (the slow-load sign and warming up a tab). `sidebar/tokens.css` holds the colours and

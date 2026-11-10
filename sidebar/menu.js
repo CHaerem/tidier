@@ -1,9 +1,37 @@
 // --- A small menu, drawn by Tidier ---------------------------------------------------
 function folderMenu(key, live) {
   return live ? [["Delete folder", () => send({ type: "deleteFolder", key })]] : [
+    ["New tab here", () => send({ type: "newTabInFolder", key })],
+    null,
     ["Rename", () => rename(key)],
     ["Delete folder (its tabs stay)", () => send({ type: "deleteFolder", key })],
   ];
+}
+
+// A folder's menu, with More at its end (moremenu.js), which needs to know what its tabs'
+// pages are doing: a row here is often a placeholder of a page loaded in another window. So,
+// as the tab menu, it is shown once the background has said, a few milliseconds later; Firefox's
+// own menu is held back in the click itself.
+let folderMenuAsked = 0;
+function openFolderMenu(e, key, live) {
+  holdMenu(e);
+  openFolderMenuAt(key, live, e.clientX, e.clientY);
+}
+// From the keys too (keys.js), where there is no click to hold Firefox's own menu back in. It
+// opens clear of the folder's head, which is marked for as long as it is open, as a row is
+// (openTabMenuAt, tabmenu.js); what the keyboard goes back to is kept over showMenu, which
+// closes the menu before it.
+function openFolderMenuAt(key, live, x, y, byKey = false) {
+  const asked = ++folderMenuAsked;
+  const ids = view.folders.find(f => f.key === key)?.tabs.map(t => t.id) ?? [];
+  (ids.length ? browser.runtime.sendMessage({ type: "tabMenu", tabIds: ids }) : Promise.resolve([])).then(facts => {
+    if (asked !== folderMenuAsked || !view.folders.some(f => f.key === key)) return; // a newer click, or the folder is gone
+    const more = folderMore(key, live, facts ?? []); // moremenu.js
+    const head = `[data-folder-head="${key}"]`, back = menuReturn;
+    showMenu([...folderMenu(key, live), ...(more.length ? [null, ["More", more]] : [])], x, y, document.querySelector(head), byKey);
+    menuReturn = back;
+    markMenuAbout([head]);
+  }, err => console.error("Tidier: folder menu", err));
 }
 const listMenu = () => [
   ["New folder", () => { renameNext = true; send({ type: "newFolder", space: view.space }); }],
@@ -48,7 +76,7 @@ const MENU_SHORTEST = 120; // less room than this beside what it is about: it ma
 function drawMenu(items, back = null, byKey = false) {
   const menu = document.getElementById("menu");
   const inPlace = !menu.hidden && menu.childElementCount > 0;
-  const was = inPlace ? { left: parseFloat(menu.style.left) || 0, top: parseFloat(menu.style.top) || 0, width: menu.offsetWidth } : null;
+  const was = inPlace ? { left: parseFloat(menu.style.left) || 0, top: parseFloat(menu.style.top) || 0, width: menu.offsetWidth, height: menu.offsetHeight } : null;
   const rows = items.map(item => {
     if (!item) {
       const line = el("div", "line");
@@ -81,7 +109,7 @@ function drawMenu(items, back = null, byKey = false) {
     if (Array.isArray(act)) {
       b.classList.add("more");
       b.setAttribute("aria-haspopup", "menu");
-      b.onclick = secondClick.acts(ev => drawMenu(act, { label, items }, !ev.detail));
+      b.onclick = secondClick.acts(ev => drawMenu(act, { label, items, back }, !ev.detail)); // a list in a list goes back one step at a time
     } else {
       b.onclick = secondClick.acts(() => { closeMenu(); send({ type: "trace", what: `menu: ${label}` }); act(); });
     }
@@ -94,7 +122,7 @@ function drawMenu(items, back = null, byKey = false) {
     const b = el("button", "item back");
     b.setAttribute("role", "menuitem");
     b.append(el("span", "label", back.label));
-    b.onclick = secondClick.acts(ev => drawMenu(back.items, null, !ev.detail));
+    b.onclick = secondClick.acts(ev => drawMenu(back.items, back.back ?? null, !ev.detail));
     rows.unshift(b, el("div", "line"));
   }
   menu.replaceChildren(...rows);
@@ -105,7 +133,12 @@ function drawMenu(items, back = null, byKey = false) {
     menu.style.minWidth = was.width + "px";
     menu.style.maxHeight = "";
     menu.style.left = Math.max(MENU_EDGE, Math.min(was.left, innerWidth - menu.offsetWidth - MENU_EDGE)) + "px";
-    menu.style.top = Math.max(MENU_EDGE, Math.min(was.top, innerHeight - menu.offsetHeight - MENU_EDGE)) + "px";
+    let top = Math.max(MENU_EDGE, Math.min(was.top, innerHeight - menu.offsetHeight - MENU_EDGE));
+    // A menu that stood above what it is about (a space's, above the bar) grows upward when a
+    // longer list takes its place (More), so that the dot it is for stays in sight.
+    const { about } = menuAt;
+    if (about && was.top + was.height <= about.top && top + menu.offsetHeight > about.top - MENU_GAP) top = Math.max(MENU_EDGE, about.top - MENU_GAP - menu.offsetHeight);
+    menu.style.top = top + "px";
   } else {
     placeMenu(menu);
   }

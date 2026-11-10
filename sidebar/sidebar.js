@@ -377,11 +377,7 @@ function folder(f) {
       undoShown();
       if (view.alone && !f.live) rename(f.key);
     };
-    head.oncontextmenu = e => {
-      if (!view.alone) return;
-      openMenu(e, folderMenu(f.key, f.live));
-      markMenuAbout([`[data-folder-head="${f.key}"]`]); // menu.js: as a row's and a dot's are
-    };
+    head.oncontextmenu = e => { if (view.alone) openFolderMenu(e, f.key, f.live); }; // menu.js: with More, and marked as a row and a dot are
     head.draggable = !!view?.alone;
     head.ondragstart = e => startDrag(e, { kind: "folder", key: f.key });
     const children = el("div", "children");

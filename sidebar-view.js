@@ -130,7 +130,8 @@ async function viewFor(windowId) {
   for (const t of here) {
     if (isSideberyGroup(t.url) || replaced.has(t.id)) continue;
     const key = rowKey.get(t.id) ?? (standIns.has(t.id) ? restoredKeys.get(t.id) : undefined);
-    const folder = byKey.get(folderKeyOf(all, key));
+    // A new tab made in a folder has no record until it has a page (comingIntoFolder, listactions.js).
+    const folder = byKey.get(folderKeyOf(all, key) ?? (key === undefined ? comingIntoFolder.get(t.id) : null));
     const record = all[key];
     (folder ? folder.tabs : loose).push(tabItem(t, record?.name || record?.title, record));
   }
@@ -289,12 +290,14 @@ async function sidebarActionNow(windowId, msg) {
   else if (msg.type === "clearSpace") await clearSpace(windowId, msg.space); // quiet.js
   else if (msg.type === "moveFolder") await moveFolder(msg.key, msg.before ?? null);
   else if (msg.type === "moveTab") await moveTab(windowId, msg.tabId, msg.before ?? null, msg.folder);
-  else if (msg.type === "moveToSpace") await tabAction(windowId, { action: "space", tabIds: [msg.tabId], space: msg.space }); // tabactions.js: with its line
+  else if (msg.type === "moveToSpace") await tabAction(windowId, { action: "space", tabIds: [msg.tabId], space: msg.space, at: msg.at }); // tabactions.js: with its line
   else if (msg.type === "pin") await pinFromSidebar(windowId, msg.tabId, msg.pinned, msg.before, msg.folder);
   else if (msg.type === "moveEssential") await moveEssential(windowId, msg.tabId, msg.before ?? null);
   else if (msg.type === "tabAction") await tabAction(windowId, msg); // tabactions.js
   else if (msg.type === "renameTab") await renameTab(msg.tabId, msg.name);
   else if (msg.type === "unloadSpace") await unloadSpace(msg.space, windowId);
+  else if (msg.type === "spaceAction") await spaceAction(windowId, msg); // listactions.js
+  else if (msg.type === "newTabInFolder") await newTabInFolder(windowId, msg.key);
   else if (msg.type === "renameSpace") await renameSpace(msg.space, msg.name);
   else if (msg.type.startsWith("little:")) await littleAction(windowId, msg); // littlewindow.js
   else if (msg.type === "askHidingSeen") askHidingSeen(); // aftermove.js
