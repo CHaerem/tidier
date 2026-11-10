@@ -2549,7 +2549,7 @@ def alone_tab_menu(m):
     no_problems(m, "after the tab menu")
 
 
-# --- The sidebar under your hand (Tidier alone) -------------------------------------------
+# --- The sidebar under your hand ----------------------------------------------------------
 # Real pointer and keys, from Firefox's own input, on the real sidebar in the window: what a
 # double click, a middle click or a click a little late does, as a hand does them.
 def hand(m, *acts):
@@ -10508,7 +10508,7 @@ ALONE_SHARDS = (
     (alone_setup, alone_folds_rest, alone_sync_hide, alone_bridge, alone_many, alone_chaos,
      alone_idle, alone_update, alone_folds_rest_kept, alone_end, alone_restart, alone_folds_rest_kept, alone_isolation_start, alone_little_restart),
 )
-assert {g for shard in ALONE_SHARDS for g in shard} == set(ALONE_GROUPS), "every Tidier-alone group is in a part"
+assert {g for shard in ALONE_SHARDS for g in shard} == set(ALONE_GROUPS), "every group of the chain is in a part"
 
 
 # The core of tab sync, essentials and saved tabs, each group on its own, in test Firefoxes
