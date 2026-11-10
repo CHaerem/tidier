@@ -9389,6 +9389,17 @@ def bar_rows_until(m, test, tries=50):
     return rows
 
 
+def bar_field_until(m, test, tries=50):
+    """The bar's field, once `test(field)` holds: a key reaches the bar's page a moment after it is sent."""
+    field = {}
+    for _ in range(tries):
+        field = bar_page(m, """return {value: doc.getElementById("field").value, focused: doc.activeElement?.id === "field"};""") or {}
+        if field and test(field):
+            return field
+        time.sleep(0.05)
+    return field
+
+
 def alone_command_bar(m):
     start = m.js(H + """const w = main(); w.focus(); await wait(300); const space = w.gBrowser.selectedTab.userContextId;
       const others = [1, 2, 3].filter(c => c !== space);
@@ -9427,12 +9438,25 @@ def alone_command_bar(m):
       for (let i = 0; i < 100 && (!key(w, t) || t.linkedBrowser.webProgress?.isLoadingDocument); i++) await wait(100);
       await wait(500); w.gBrowser.selectedBrowser.focus(); await wait(200); return had;""", EXT_ID, m.pages)
     typed = "smoke typed"
+    # Where Firefox sends each of them. Until the bar's window is the active one and its page's
+    # place in it has the focus, the keys still go to the page you were in. From then on Firefox
+    # sends them to the bar's page, also in the 10 to 20 ms before that page is there, and what
+    # is typed then is lost: no extension sees it. A hand types one key in that time at the
+    # most, but these come within a few milliseconds, and so do or do not land in it together
+    # (seven of them did, on GitHub and here). So the check is exact about Tidier's part: every
+    # key that went to the page you were in is in the bar, and those lost are the first ones
+    # sent to the bar's window, and no other.
+    m.js(H + """const w = main(), sent = w.smokeBarKeys = [];
+      w.smokeBarKeysOn = e => { if ([...e.key].length === 1 && !e.metaKey) sent.push({key: e.key, toBar: Services.focus.activeWindow !== w && !!Services.focus.focusedElement}); };
+      w.addEventListener("keydown", w.smokeBarKeysOn, true); return 1;""")
     acts = [{"type": "keyDown", "value": k} for k in (CMD, SHIFT, "k")] + [{"type": "keyUp", "value": k} for k in ("k", SHIFT, CMD)]
     for k in typed:
         acts += [{"type": "keyDown", "value": k}, {"type": "keyUp", "value": k}]
     m.cmd("WebDriver:PerformActions", {"actions": [{"type": "key", "id": "kb", "actions": acts}]})
     m.cmd("WebDriver:ReleaseActions")
     wait_for_bar(m)
+    sent = m.js(H + """const w = main(); w.removeEventListener("keydown", w.smokeBarKeysOn, true); return w.smokeBarKeys;""")
+    to_page = next((i for i, k in enumerate(sent) if k["toBar"]), len(sent))  # so many went to the page you were in
     field = ""
     for _ in range(50):
         field = bar_page(m, """return doc.getElementById("field").value;""") or ""
@@ -9442,13 +9466,11 @@ def alone_command_bar(m):
     into_page(m, "smoke-bar-typed")
     box = m.cmd("WebDriver:ExecuteScript", {"script": "return document.getElementById('box').value;", "args": []})
     m.chrome()
-    in_order = iter(typed)
-    lost = len(typed) - len(field)
-    # (Firefox can drop a key in the moment its new window takes the keyboard, before the
-    # page in it is there: no extension sees that one.)
-    check("keys typed at once after the key go to the bar, none to the page", box == "" and field and all(c in in_order for c in field) and lost <= 1, f"page {box!r}, bar {field!r}")
-    if lost:
-        print(f"INFO  the bar got {field!r} of {typed!r}", flush=True)
+    check("keys typed at once after the key go to the bar, none to the page",
+          box == "" and "".join(k["key"] for k in sent) == typed and to_page > 0 and field.startswith(typed[:to_page]) and typed[to_page:].endswith(field[to_page:]),
+          f"page {box!r}, bar {field!r}, sent to the page {typed[:to_page]!r}, to the bar's window {typed[to_page:]!r}")
+    if field != typed:
+        print(f"INFO  the bar got {field!r} of {typed!r}: Firefox sent {typed[to_page:]!r} to its window, the first of them before its page was there", flush=True)
     bar_keys(m, [ESC])
     wait_for_bar(m, False)
     m.js(H + """await removeWhere((w, t) => url(t).includes("smoke-bar-typed"));
@@ -9558,8 +9580,8 @@ def alone_command_bar(m):
     bar_keys(m, "smoke-bar-address")
     bar_rows_until(m, lambda rows: rows and rows[0]["kind"] == "tab")
     bar_keys(m, [TAB])
-    field = bar_page(m, """return {value: doc.getElementById("field").value, focused: doc.activeElement?.id === "field"};""")
-    check("⇥ completes to the address of the row, and stays in the field", field["value"] == "example.org/?smoke-bar-address" and field["focused"], str(field))
+    field = bar_field_until(m, lambda f: f["value"] != "smoke-bar-address")
+    check("⇥ completes to the address of the row, and stays in the field", field.get("value") == "example.org/?smoke-bar-address" and field["focused"], str(field))
     to_bar_page(m)
     row = m.cmd("WebDriver:FindElement", {"using": "css selector", "value": ".row[data-kind=tab]"})
     m.cmd("WebDriver:ElementClick", {"id": next(iter(row.values()))})
@@ -9588,7 +9610,7 @@ def alone_command_bar(m):
     bar_keys(m, [ENTER])
     time.sleep(0.2)
     bar_keys(m, [ESC])
-    still = bar_page(m, """return doc.getElementById("field").value;""")
+    still = bar_field_until(m, lambda f: f["value"]).get("value")
     check("Esc in a question goes back one step", still == "new folder", repr(still))
     bar_keys(m, [ENTER])
     time.sleep(0.2)
