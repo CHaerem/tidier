@@ -86,7 +86,7 @@ import urllib.parse
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from mcp_client import Mcp  # noqa: E402
-from testfirefox import EXT_DIR, EXT_ID, PORT, TestFirefox  # noqa: E402
+from testfirefox import DOTFILES, EXT_DIR, EXT_ID, PORT, TestFirefox  # noqa: E402
 
 CMD, SHIFT, CTRL, ESC = "", "", "", ""
 
@@ -725,20 +725,40 @@ def look(m):
     low, high = widths["min"], widths["max"]
     check("the toolbar follows the sidebar's width, from its narrowest to its widest", 150 < low < 360 < high < 900 and widths["out"] == [[360, 360], [low, low], [high, high]], str(widths))
     # Where 🧩 is (beside the address bar, or on the top row) is the dotfiles' choice; what must
-    # hold in a narrow sidebar is that nothing lies over anything else or outside the panel.
+    # hold in a narrow sidebar is that nothing lies over anything else or outside the panel:
+    # also with every button there, as forward is once you have gone back and downloads once
+    # something has been downloaded (the second round).
     rows = m.js(H + """const d = main().document, box = d.getElementById("sidebar-box"), before = box.style.width, out = [];
       const r = id => d.getElementById(id).getBoundingClientRect();
-      for (const px of [args[0], 300, 480]) {
-        box.style.width = px + "px"; await wait(400);
-        const row1 = ["back-button", "stop-reload-button", "PanelUI-button"].map(r), bar = r("urlbar-container");
-        const all = ["back-button", "forward-button", "stop-reload-button", "PanelUI-button", "urlbar-container", "unified-extensions-button"].map(r).filter(x => x.width);
-        const one = rs => rs.every(x => Math.abs(x.top - rs[0].top) < 8);
-        const over = (a, b) => a.left < b.right - 0.5 && b.left < a.right - 0.5 && a.top < b.bottom - 0.5 && b.top < a.bottom - 0.5;
-        out.push(!d.getElementById("nav-bar").hasAttribute("overflowing") && one(row1) && bar.top > row1[0].top && bar.width > px * 0.75
-                 && all.every((a, i) => all.every((b, j) => j <= i || !over(a, b))) && all.every(x => x.left >= 0 && x.right <= px + 0.5));
+      const forward = d.getElementById("forward-button"), downloads = d.getElementById("downloads-button");
+      const was = [forward.hasAttribute("disabled"), downloads.hidden];
+      for (const every of [false, true]) {
+        if (every) { forward.removeAttribute("disabled"); downloads.hidden = false; }
+        for (const px of [args[0], 300, 480]) {
+          box.style.width = px + "px"; await wait(400);
+          const row1 = ["back-button", "stop-reload-button", "PanelUI-button"].map(r), bar = r("urlbar-container");
+          const all = ["back-button", "forward-button", "stop-reload-button", "downloads-button", "PanelUI-button", "urlbar-container", "unified-extensions-button"].map(r).filter(x => x.width);
+          const one = rs => rs.every(x => Math.abs(x.top - rs[0].top) < 8);
+          const over = (a, b) => a.left < b.right - 0.5 && b.left < a.right - 0.5 && a.top < b.bottom - 0.5 && b.top < a.bottom - 0.5;
+          out.push(!d.getElementById("nav-bar").hasAttribute("overflowing") && one(row1) && bar.top > row1[0].top && bar.width > px * 0.75
+                   && all.length >= (every ? 7 : 5) && all.every(x => x.width >= 16)  // an icon is 16 px
+                   && all.every((a, i) => all.every((b, j) => j <= i || !over(a, b))) && all.every(x => x.left >= 0 && x.right <= px + 0.5));
+        }
       }
+      if (was[0]) forward.setAttribute("disabled", "true");
+      downloads.hidden = was[1];
       box.style.width = before; await wait(300); return out;""", low)
-    check("the top row is back, reload and ☰, with the address bar below, and nothing over anything else, from the narrowest to 480 px (nothing behind »)", all(rows), str(rows))
+    check("the top row is back, reload and ☰, with the address bar below, and nothing over anything else, from the narrowest to 480 px (nothing behind »), also with forward and downloads there", len(rows) == 6 and all(rows), str(rows))
+    # A later Firefox that renames a part of its toolbar leaves a rule in the dotfiles' stylesheet
+    # with nothing to act on, and nothing says so: the look just changes (as the address field's
+    # did, when its background lost its ID). So every part the stylesheet names by ID or class
+    # is looked for; Developer Edition, a version ahead, is tested too.
+    sheet = re.sub(r"/\*.*?\*/", "", open(f"{DOTFILES}/userChrome.css").read(), flags=re.S)
+    ids = sorted({i for i in re.findall(r"#([A-Za-z][\w-]*)", sheet) if not re.fullmatch(r"[0-9a-fA-F]{3,8}", i)})  # not a colour
+    classes = sorted(set(re.findall(r"(?<![\w)])\.([A-Za-z][\w-]*)", sheet)))  # not a number, as in .15s
+    gone = m.js(H + """const d = main().document;
+      return [...args[0].filter(id => !d.getElementById(id)).map(id => "#" + id), ...args[1].filter(c => !d.querySelector("." + c)).map(c => "." + c)];""", ids, classes)
+    check("every part of Firefox the dotfiles' stylesheet names is in this Firefox", len(ids) > 20 and not gone, f"{gone} of {len(ids)} IDs and {len(classes)} classes")
     full = m.js(H + """const w = main(), d = w.document, root = d.documentElement;
       root.setAttribute("inDOMFullscreen", true); await wait(400);  // as Firefox marks a fullscreen video
       const b = d.getElementById("tabbrowser-tabbox").getBoundingClientRect(), side = d.getElementById("sidebar-box").getBoundingClientRect();

@@ -26,6 +26,13 @@ on:
   schedule:
     - cron: "17 6 * * 1"
   workflow_dispatch:
+    inputs:
+      # A change to the dotfiles is in the daily Firefox at its next start once it is on
+      # their main (the test Firefox gets its layout from them, as the daily one does). So it
+      # is tried here first, on a branch of theirs, in both Firefoxes.
+      dotfiles:
+        description: The branch of the dotfiles to test with
+        default: main
 
 permissions:
   contents: read
@@ -74,10 +81,11 @@ jobs:
         with:
           path: tidier
           persist-credentials: false
-      - name: Check out dotfiles (main)
+      - name: Check out dotfiles (main, or the branch asked for)
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: CHaerem/dotfiles
+          ref: ${{ inputs.dotfiles || 'main' }}
           ssh-key: ${{ secrets.DOTFILES_DEPLOY_KEY }}
           path: dotfiles
           persist-credentials: false
