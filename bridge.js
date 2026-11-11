@@ -288,9 +288,9 @@ async function bridgeScreenshot(ctx) {
   const tab = await bridgeLoaded(ctx);
   await bridgeCanRead(tab);
   // Firefox has this function only for an extension given "<all_urls>" itself (its schema says
-  // so). Tidier asks for every website as "*://*/*" (READ_PAGES), which keeps "Access local
-  // files" out of Firefox's list, so as installed it is not there: said, not a crash.
-  if (typeof browser.tabs.captureTab !== "function") throw bridgeRefusal("Firefox gives Tidier no pictures of pages with the access it has. Read the page instead (read_page, find).");
+  // so). Tidier asks for every website as "*://*/*" (READ_PAGES), and for that only where you
+  // allow pictures on the settings page, so as installed it is not there: said, not a crash.
+  if (typeof browser.tabs.captureTab !== "function") throw bridgeRefusal("Firefox gives Tidier no pictures of pages until they are allowed on Tidier's settings page (Pictures of pages). Read the page instead (read_page, find).");
   let shot = await browser.tabs.captureTab(tab.id, { format: "jpeg", quality: 70 });
   if (shot.length > SHOT_MOST) shot = await browser.tabs.captureTab(tab.id, { format: "jpeg", quality: 40, scale: 0.5 });
   if (shot.length > SHOT_MOST) throw bridgeRefusal("The picture is too big.");

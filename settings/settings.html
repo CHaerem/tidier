@@ -76,6 +76,12 @@
     <button id="peek-allow" hidden>Allow access to all websites</button>
   </section>
 
+  <section id="pictures-section">
+    <h2>Pictures of pages</h2>
+    <p class="hint" id="pictures-state"></p>
+    <button id="pictures-allow" hidden>Allow pictures of pages</button>
+  </section>
+
   <section>
     <h2>A copy of your essentials and folders</h2>
     <p class="hint">They are kept nowhere else, so Tidier makes a copy once a day, and keeps those of the last two weeks in <code>~/.config/tidier/copies</code> (its helper does that: <code>native/install.sh</code>). Taking one in adds what is missing here, and removes nothing; it can also bring another machine's spaces here.</p>
@@ -107,6 +113,7 @@
   <script src="spaces.js"></script>
   <script src="settings.js"></script>
   <script src="littlewindow.js"></script>
+  <script src="pictures.js"></script>
   <script src="keys.js"></script>
   <script src="sync.js"></script>
   <script src="bridge.js"></script>

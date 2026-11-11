@@ -125,17 +125,18 @@ test("the manifest asks for no new permission that would hold updates", () => {
   assert.deepEqual(manifest.permissions.filter(p => !allowed.includes(p)), []);
 });
 
-test("access to websites is asked for as every website, never with local files", () => {
-  // "<all_urls>" also lists "Access local files on your computer" in about:addons, which
-  // nothing here uses. Asked for or looked at, it is "*://*/*"
+test("access to websites is asked for as every website, with local files only for pictures of pages", () => {
+  // "<all_urls>" also lists "Access local files on your computer" in about:addons. Firefox
+  // gives pictures of pages with nothing less, so the settings page asks for it for those, in
+  // its own click, and nothing else does: asked for or looked at, access is "*://*/*"
   // (http, https and their web sockets); a filter of events may still say "<all_urls>".
   const manifest = JSON.parse(readFileSync(new URL("../manifest.json", import.meta.url), "utf8"));
-  assert.ok(manifest.optional_permissions.includes("*://*/*") && !manifest.optional_permissions.includes("<all_urls>"));
+  assert.ok(manifest.optional_permissions.includes("*://*/*") && manifest.optional_permissions.includes("<all_urls>") && !manifest.permissions.includes("<all_urls>"));
   const files = readdirSync(new URL("..", import.meta.url), { recursive: true }).filter(f => f.endsWith(".js") && !/^(tests|node_modules|\.git|\.claude)\b/.test(f));
   assert.ok(files.includes("isolation.js") && files.some(f => f.startsWith("settings")));
   for (const file of files) {
     const text = readFileSync(new URL("../" + file, import.meta.url), "utf8");
-    assert.ok(!/origins:\s*\[[^\]]*<all_urls>/.test(text), `${file} asks for <all_urls>`);
+    assert.equal(/origins:\s*\[[^\]]*<all_urls>/.test(text), file === "settings/pictures.js", `${file} and <all_urls>`);
   }
 });
 

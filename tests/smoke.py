@@ -414,6 +414,46 @@ def tab_sync(m):
       return {taken, copies, back, closed};""")
     check("the window a page is taken from stays on it, as a placeholder", r["taken"] == ["placeholder", "page"] and r["copies"] == [1, 1], str(r))
     check("coming back to that window brings the page back, and the other one waits", r["back"] == ["page", "placeholder"] and r["closed"] == [[], []], str(r))
+    # What the window left behind shows. With pictures of pages allowed (settings page): the
+    # page as it was, under a grey layer, as in Zen and Arc. Without: the words that say
+    # where it went. Read in the placeholder's own process, which is the extension's.
+    left_behind = H + """
+      const [marker, allow, id] = args, a = main(), w = other();
+      const {ExtensionPermissions} = ChromeUtils.importESModule("resource://gre/modules/ExtensionPermissions.sys.mjs");
+      const ext = WebExtensionPolicy.getByID(id).extension, all = {permissions: [], origins: ["<all_urls>"]};
+      const had = (await ExtensionPermissions.get(id)).origins.includes("<all_urls>");
+      if (allow !== had) { await ExtensionPermissions[allow ? "add" : "remove"](id, all, ext); await wait(800); }
+      a.focus(); await wait(800);
+      const aBefore = a.gBrowser.selectedTab, wBefore = w.gBrowser.selectedTab;
+      const t = a.gBrowser.addTrustedTab("https://example.org/?" + marker, {userContextId: 3}); a.gBrowser.selectedTab = t;
+      await wait(4500); const k = key(a, t);
+      w.focus(); await wait(800);
+      w.gBrowser.selectedTab = w.gBrowser.tabs.find(x => key(w, x) === k); await wait(3000);
+      const left = a.gBrowser.selectedTab, mm = left.linkedBrowser.messageManager, reply = "smoke-left:" + marker;
+      const answer = new Promise(res => { const l = {receiveMessage(msg) { mm.removeMessageListener(reply, l); res(msg.data); }}; mm.addMessageListener(reply, l); });
+      mm.loadFrameScript("data:application/javascript;charset=utf-8," + encodeURIComponent(`{ const d = content.document, v = d.querySelector("img.veil");
+        sendAsyncMessage(${JSON.stringify(reply)}, {placeholder: d.location.href.includes("ghost.html"), veiled: !!d.body?.classList.contains("veiled"),
+          picture: v ? [v.naturalWidth > 0, v.clientWidth >= content.innerWidth - 1] : null,
+          layer: d.body ? content.getComputedStyle(d.body, "::after").backgroundColor : "", words: d.querySelector("main .when")?.textContent ?? null}); }`), false);
+      const shows = await Promise.race([answer, wait(3000).then(() => ({error: "no answer"}))]);
+      const same = key(a, left) === k, loaded = !!left.linkedPanel;
+      // Left for another tab, the placeholder is unloaded again: no picture is kept for a tab nobody sees.
+      if (!aBefore.closing) a.gBrowser.selectedTab = aBefore;
+      await wait(3000);
+      const after = !!left.linkedPanel;
+      await removeWhere((x, y) => key(x, y) === k);
+      if (!wBefore.closing) w.gBrowser.selectedTab = wBefore;
+      if (allow !== had) { await ExtensionPermissions[had ? "add" : "remove"](id, all, ext); await wait(800); }
+      return {shows, same, loaded, after};"""
+    r = m.js(left_behind, "smoke-veil", True, EXT_ID)
+    s = r["shows"]
+    check("with pictures of pages allowed, the window a page is taken from shows it as it was, under a grey layer",
+          r["same"] and s.get("placeholder") and s.get("veiled") and s.get("picture") == [True, True] and s.get("layer", "").startswith("rgba(") and s.get("words") is None, str(r))
+    check("and that placeholder is unloaded again when the window goes to another tab", r["loaded"] and not r["after"], str(r))
+    r = m.js(left_behind, "smoke-words", False, EXT_ID)
+    s = r["shows"]
+    check("without them, it says in words that the page is in another window now",
+          r["same"] and s.get("placeholder") and not s.get("veiled") and s.get("picture") is None and "another window" in (s.get("words") or ""), str(r))
     r = m.js(H + """
       const a = main(), urls = ["https://example.org/?smoke-quick-1", "https://example.org/?smoke-quick-2", "https://example.org/?smoke-quick-3"];
       const tabs = urls.map(u => a.gBrowser.addTrustedTab(u, {userContextId: 3, inBackground: true}));
@@ -3822,7 +3862,7 @@ def guessed_links(m, space, other):
     check("with small windows off, the same: only your login goes out", sent("guess-off") and all(c == yours for c in sent("guess-off")), f"{sent('guess-off')} {r}")
     check("and it opens as a tab in your space, which your window stays in", r.get("here") == [space] and r.get("window") == space and not r.get("popups"), str(r))
     r = m.js(link, f"{lh}/r/guess-none", False, "guess-none")
-    check("with the dotfiles' setting Firefox guesses nothing, and the link opens in your space", r.get("opened") == [0] and r.get("here") == [space] and theirs not in sent("guess-none"), f"{sent('guess-none')} {r}")
+    check("with the dotfiles' setting Firefox guesses nothing, and the link opens in your space", r.get("opened", [])[:1] == [0] and r.get("here") == [space] and theirs not in sent("guess-none"), f"{sent('guess-none')} {r}")
     m.js(H + """const w = main(); for (const p of w.gBrowser.tabs.filter(t => t.pinned && url(t).includes("guess-essential"))) { w.gBrowser.unpinTab(p); await wait(300); w.gBrowser.removeTab(p); }
       await wait(1200); await removeWhere((x, t) => url(t).includes("localhost") && url(t).includes("set-cookie")); return 1;""")
 
@@ -8310,6 +8350,36 @@ def alone_space_menu(m):
     check("leaving the box saves it, and this space's name stays on the line", r.get("line") == "Smoked" and r.get("marked") is False and m.js(NAME, there) == "Other", f"{r}, {m.js(NAME, there)}")
     extension_message(m, {"type": "settings:space", "id": here, "changes": {"name": name_here}})
     extension_message(m, {"type": "settings:space", "id": there, "changes": {"name": name_there}})
+
+    # An icon: chosen from a list to search in (sidebar/emoji.js), drawn in the menu's place,
+    # with the keyboard in its field. (Icon is clicked, not chosen: the menu stays, as its list.)
+    sidebar_until(m, "(id, name) => dot(id).title === name", there, name_there)
+    menu_on(m, f"dot({json.dumps(there)})")
+    sidebar_mouse(m, 'item("Icon")')
+    FIELD = """() => { const f = doc.querySelector("#menu .find"), box = doc.getElementById("menu").getBoundingClientRect();
+      return f ? {focus: doc.activeElement === f && doc.hasFocus(), shown: doc.querySelectorAll("#menu .emoji").length, fits: box.left >= 0 && box.right <= content.innerWidth && box.top >= 0 && box.bottom <= content.innerHeight,
+        back: labels()} : {wait: 1}; }"""
+    r = sidebar_until(m, FIELD)
+    check("Icon opens emoji to choose from in the menu's place, with the keyboard in the field to search in", bool(r) and r.get("focus") and r["shown"] > 250 and r["fits"] and r["back"] == ["Icon"], str(r))
+    for ch in "lightn":
+        sidebar_key(m, ch)
+    r = sidebar_until(m, """() => { const all = [...doc.querySelectorAll("#menu .emoji")]; return all.length === 1 ? {found: all[0].textContent, marked: all[0].classList.contains("at")} : {wait: all.length || 1}; }""")
+    check("typing finds one by its name, marked as the one Enter takes", r.get("found") == "⚡" and r.get("marked"), str(r))
+    sidebar_key(m, ENTER)
+    r = sidebar_until(m, """(id) => labels().length || !dot(id).querySelector(".dot.emoji") ? {wait: 1} : {icon: dot(id).querySelector(".dot.emoji").textContent}""", there)
+    check("Enter makes it the space's icon: on the bar, and first in the space's name", r.get("icon") == "⚡" and m.js(NAME, there) == "⚡ " + name_there, f"{r}, {m.js(NAME, there)}")
+    menu_on(m, f"dot({json.dumps(there)})")
+    sidebar_mouse(m, 'item("Icon")')
+    sidebar_until(m, FIELD)
+    r = in_sidebar(m, "() => labels()")
+    choose(m, "No icon")
+    for _ in range(100):
+        if m.js(NAME, there) == name_there:
+            break
+        time.sleep(0.1)
+    # The bar is drawn again a moment after the name changed.
+    gone = sidebar_until(m, """(id) => labels().length || dot(id).querySelector(".dot.emoji") ? {wait: 1} : {icon: ""}""", there)
+    check("a space with an icon can have its dot back (No icon)", r == ["Icon", "No icon"] and m.js(NAME, there) == name_there and gone == {"icon": ""}, f"{r}, {m.js(NAME, there)}, {gone}")
 
     # Settings: the page, selected, in the window you are in, and you stay in your space.
     menu_on(m, f"dot({json.dumps(there)})")

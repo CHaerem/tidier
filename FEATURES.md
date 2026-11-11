@@ -49,7 +49,7 @@ part C).
 | Feature | From | Status | Notes |
 |---|---|---|---|
 | Spaces, one per container (own logins) | Z A S | Done | checked |
-| Space bar at the bottom with icons | Z A S | Done | checked: a coloured dot, or the emoji its name starts with (Icon in the space's menu); the name above the list |
+| Space bar at the bottom with icons | Z A S | Done | checked: a coloured dot, or the emoji its name starts with (Icon in the space's menu: a list to search in, or type one); the name above the list |
 | Only the active space's tabs shown (⌃Tab too) | Z A S | Done | checked. Other spaces' essentials stay in ⌃Tab: Firefox cannot hide a pinned tab |
 | Switch with ⌃1/2/3 | Z A S | Done | checked: back to the tab you selected last in that space, in any window (not one opened in the background, moved there or resting in a closed folder, nor one another window is showing) |
 | Switch by swiping sideways on the trackpad | Z A | Later | tried with Sidebery and left out: vertical swipes switched space by mistake; to try again in Tidier's own sidebar |

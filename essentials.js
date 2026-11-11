@@ -509,15 +509,18 @@ async function essentialShown(tab) {
   let left;
   if (loaded.active || !others.some(t => t.id !== loaded.id)) {
     const entry = (await getList()).find(e => e.key === key);
+    const picture = loaded.active ? await pictureFor(loaded.id) : null; // while it is still shown there
     await createEssentials(loaded.windowId, [{ entry, index: loaded.index + 1 }]);
     left = loaded.active && (await copiesOf(key)).find(t => t.windowId === loaded.windowId && t.id !== loaded.id);
-    if (left) await browser.tabs.update(left.id, { active: true }).catch(() => {});
+    if (left) {
+      await veilFirst(loaded.windowId, left.id, picture); // tabsync.js: drawn before it is selected
+      await browser.tabs.update(left.id, { active: true }).catch(() => {});
+    }
   }
   // Moved into the placeholder's place; onDetached gives the old window one.
   // Refused if you have just closed it: this placeholder then opens the page itself.
-  if (await browser.tabs.move(loaded.id, { windowId: tab.windowId, index: tab.index }).then(() => false, err => { ifGone(err); return true; })) return true;
+  if (await browser.tabs.move(loaded.id, { windowId: tab.windowId, index: tab.index }).then(() => false, err => { ifGone(err); return true; })) { dropVeil(loaded.windowId); return true; }
   await browser.tabs.update(loaded.id, { active: true }).catch(() => {});
-  if (left) veilPictures.set(loaded.windowId, { tabId: left.id, picture: pictureFor(loaded.id) });
   await dropDoubleCopies(loaded.id, tab.windowId); // here, in case its arrival was not looked at
   return false;
 }

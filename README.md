@@ -110,8 +110,9 @@ be done, in order, is in [PLAN.md](PLAN.md).
    unloaded *ghost* in the others (same URL, title and container). Selecting a ghost
    moves the live tab into your window and leaves a ghost behind, so each page is only
    ever loaded once. The window the page is taken from stays on that tab, as Zen and Arc
-   do: its placeholder names the page and says it is in another window now, and the page
-   comes back when you use that window again. Opening a tab adds it everywhere; closing it closes it everywhere;
+   do: with *Pictures of pages* allowed on the settings page it keeps showing the page as
+   it was, under a grey layer (without, its placeholder names the page and says it is in
+   another window now), and the page comes back when you use that window again. Opening a tab adds it everywhere; closing it closes it everywhere;
    moving it into or out of a folder is the same in every window, since a folder is
    Tidier's own data; closing a window hands its tabs over to another window.
 3. **Folders** (`ownfolders.js`): each space has its folders first, then today's tabs, as
@@ -271,10 +272,10 @@ using it. A note an agent leaves you can have been steered by a page as well. A
 screenshot shows what the page shows, also a name typed in a field, and a rich text box
 that is part of a page (not a form field) is read as the page's text.
 
-Reading pages and screenshots need access to all websites, which is optional and asked
-for in the click that turns these on. (A screenshot is refused in words for now: Firefox
-gives pictures of pages only to an extension that asks for `<all_urls>`, which adds
-access to local files, and Tidier asks for websites only.) Without it an agent can still see tabs and addresses,
+Reading pages needs access to all websites, which is optional and asked for in the click
+that turns these on. A screenshot needs *Pictures of pages* allowed on the settings page as
+well (Firefox gives pictures of pages only to an extension given `<all_urls>`, which adds
+access to local files); until then it is refused in words. Without either an agent can still see tabs and addresses,
 and a copy holds the title and address. A click in the sidebar does not give a page's
 `activeTab` in Firefox (only its own menus, keys and toolbar button do), so that is not used.
 It can be taken back in `about:addons`.
@@ -522,6 +523,7 @@ list to the manifest, both ways.
 | `webRequest` | Seeing a page's address before it loads, to keep spaces apart (Isolation, below). |
 | `webRequestBlocking` | Stopping that page before it loads in the wrong space. |
 | `*://*/*` | Every website, for the two above, for reading a page when you ask (Copy for Claude, the bridge), ⌥-click on a link, and the keys typed right after the command bar's key. |
+| `<all_urls>` | Pictures of pages, when you allow them on the settings page: a window whose page another window has taken keeps showing it under a grey layer, and the bridge's screenshot. Firefox gives pictures with nothing less. |
 | `proxy` | A space's own proxy, when you give it one. |
 | `browsingData` | Signing out of everything in one space, when you ask. |
 | `search` | Searching with your search engine from the command bar. |
@@ -564,8 +566,9 @@ test stops that). Everything works without them, as it says here:
   in the command bar.
 
 "Access to all websites" is `*://*/*` (http, https and their web sockets), not `<all_urls>`,
-which would also list *Access local files on your computer* in about:addons. One given
-earlier as `<all_urls>` still counts. Firefox's Extensions menu still says Tidier "needs
+which also lists *Access local files on your computer* in about:addons. Only *Pictures of
+pages* on the settings page asks for `<all_urls>`, as Firefox gives pictures with nothing
+less, and Tidier reads no file with it. One given as `<all_urls>` counts as all websites too. Firefox's Extensions menu still says Tidier "needs
 permission" on a website while this is not given: it says that of any extension that may
 ask for a site.
 

@@ -32,16 +32,13 @@ function spaceIcon(name) {
   const m = SPACE_ICON.exec(name ?? "");
   return m ? { icon: m[1], rest: name.slice(m[0].length) } : { icon: "", rest: name ?? "" };
 }
-// A few to choose from, as not everybody knows where the system keeps its emoji; any other
-// can be typed (on a Mac: fn E opens the system's list).
-const SPACE_ICONS = ["🏠", "💼", "🧪", "🛠️", "📚", "🎵", "🎮", "💬", "🛒", "✈️", "💰", "🌱"];
+// Chosen from a list to search in (emoji.js), drawn in the menu's place; below it, the way
+// back to the plain dot, for a space that has an icon.
 function spaceIconMenu(space) {
   const has = spaceIcon(view.spaces.find(x => x.id === space)?.name).icon;
   return [
-    ...SPACE_ICONS.map(icon => [icon, () => setSpaceIcon(space, icon)]),
-    null,
-    ["Another", () => openSpaceBox(space, true)],
-    ...(has ? [["No icon", () => setSpaceIcon(space, "")]] : []),
+    { part: () => emojiPicker(space) },
+    ...(has ? [null, ["No icon", () => setSpaceIcon(space, "")]] : []),
   ];
 }
 function setSpaceIcon(space, icon) {
@@ -109,19 +106,16 @@ function markSpaceDot(dot) {
 // whatever the font: a line's height is the system's, and differs per machine.
 let spaceBox = null;
 
-// The same box takes the space's icon (`forIcon`, spaceIconMenu above): an emoji typed there,
-// or nothing for the plain dot. Anything else typed is not an icon, and changes nothing.
-function openSpaceBox(space, forIcon = false) {
+function openSpaceBox(space) {
   const line = document.getElementById("space-name"), s = view.spaces.find(x => x.id === space);
   if (spaceBox || !s) return;
   const input = el("input", "space-box");
-  input.value = forIcon ? spaceIcon(s.name).icon : s.name;
-  if (forIcon) input.placeholder = "An emoji";
+  input.value = s.name;
   // In the colour of the space it names, which need not be the one you are in. (--accent-line
   // is worked out where it is defined, from the page's --accent, so it is given here too.)
   input.style.setProperty("--accent", s.color);
   input.style.setProperty("--accent-line", `color-mix(in srgb, ${s.color} 62%, transparent)`);
-  input.setAttribute("aria-label", forIcon ? "Icon of this space: an emoji" : "Name of this space");
+  input.setAttribute("aria-label", "Name of this space");
   const room = line.getBoundingClientRect().height;
   line.hidden = true;
   line.after(input);
@@ -136,7 +130,6 @@ function openSpaceBox(space, forIcon = false) {
     line.hidden = false;
     input.remove();
     markSpaceDot(null);
-    if (forIcon) { if (save && (!name || spaceIcon(name).icon)) setSpaceIcon(space, spaceIcon(name).icon); return; }
     if (!save || !name || name === s.name) return;
     if (space === view.space) line.textContent = name; // at once: the view with it comes a moment later
     send({ type: "renameSpace", space, name });

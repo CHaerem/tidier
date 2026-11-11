@@ -44,6 +44,8 @@ const listMenu = () => [
 // that says what the menu is about, or null for a line. Instead of what it does an item can
 // have a list of items, which replaces the menu's contents in place, with a row back: a
 // narrow sidebar has no room for a menu beside a menu.
+// { part } is a part that draws itself (the icons to choose from, emoji.js); the keyboard is
+// its field's, if it has one.
 //
 // The menu stays clear of what it is about (`about`, found from the click if not given): a
 // row, a tile or a folder's head stays in sight, so you can see which one it is for, which
@@ -93,6 +95,7 @@ function drawMenu(items, back = null, byKey = false) {
       }
       return heading;
     }
+    if (item.part) return item.part();
     const [label, act, { color, plus } = {}] = item;
     const b = el("button", "item");
     b.setAttribute("role", "menuitem");
@@ -144,7 +147,7 @@ function drawMenu(items, back = null, byKey = false) {
   }
   menu.scrollTop = 0;
   // In the menu, so the arrow keys are for it (keys.js leaves them alone there).
-  (byKey ? menu.querySelector(".item:not(.back)") : menu).focus({ preventScroll: true });
+  (menu.querySelector("input") ?? (byKey ? menu.querySelector(".item:not(.back)") : menu)).focus({ preventScroll: true });
 }
 // Just below what it is about, from the pointer's side, or just above it if it does not fit
 // below; on the side with more room, scrolling, if it fits on neither. With nothing it is
@@ -222,8 +225,11 @@ addEventListener("wheel", e => { if (outsideMenu(e)) closeMenu(); }, { passive: 
   menu.tabIndex = -1;
   menu.setAttribute("role", "menu");
   menu.oncontextmenu = e => e.preventDefault();
-  menu.addEventListener("mouseover", e => e.target.closest?.(".item")?.focus({ preventScroll: true }));
-  menu.addEventListener("mouseleave", () => menu.focus({ preventScroll: true }));
+  // (Not from a field you type in, the icons' search: the pointer passing an item on its way
+  // would take the typing with it. An item under the pointer is marked there all the same.)
+  const typing = () => document.activeElement?.matches?.("#menu input");
+  menu.addEventListener("mouseover", e => { if (!typing()) e.target.closest?.(".item")?.focus({ preventScroll: true }); });
+  menu.addEventListener("mouseleave", () => { if (!typing()) menu.focus({ preventScroll: true }); });
   menu.addEventListener("keydown", e => {
     const items = [...menu.querySelectorAll(".item")], at = items.indexOf(document.activeElement);
     if (e.key === "ArrowDown") items[(at + 1) % items.length]?.focus();

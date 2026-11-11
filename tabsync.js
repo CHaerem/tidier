@@ -572,20 +572,43 @@ async function openIfBlank(windowId) {
 }
 
 // What a page looked like as it left a window that stays on it: its placeholder there shows
-// it under a veil (ghost.js, face). Only where you have let Tidier see pages (the same
-// permission as the little window's, littlewindow.js): Firefox gives no picture of a page
-// without it, and the placeholder then says which page it is in words. Kept in memory only.
-// One for each window at most, of the tab it is on, and gone when that window goes to
-// another tab or closes: a picture nobody sees is only memory.
-const veilPictures = new Map(); // windowId -> { tabId: the placeholder it is for, picture: a promise of a data: address, or of null }
+// that picture under a grey layer (ghost.js), as Zen and Arc show a tab another window has.
+// Only where you have let Tidier take pictures of pages (the settings page asks; Firefox
+// gives an extension none without "<all_urls>"): the placeholder then says which page it is
+// in words. Kept in memory only. One for each window at most, of the tab it is on, and gone
+// when that window goes to another tab or closes: a picture nobody sees is only memory.
+const veilPictures = new Map(); // windowId -> { tabId: the placeholder it is for, picture: a data: address, drawn: called when the placeholder shows it }
 browser.tabs.onActivated.addListener(({ tabId, windowId }) => { if (veilPictures.has(windowId) && veilPictures.get(windowId).tabId !== tabId) veilPictures.delete(windowId); });
 browser.windows.onRemoved.addListener(windowId => veilPictures.delete(windowId));
+const VEIL_WAIT_MS = 300; // for the picture, and then for its placeholder to draw it: the window you use waits no longer for its page
+
+// Taken while the page is still shown where it is (about 30 ms): once it has left, Firefox
+// draws it at the size of the window it came to.
 async function pictureFor(tabId) {
   // Firefox has the function only for an extension given "<all_urls>" itself (its schema says
-  // so); with every website given as "*://*/*", as Tidier asks, it is not there at all.
+  // so), and from the moment it is given; with every website given as "*://*/*" it is not there.
   if (typeof browser.tabs.captureTab !== "function") return null;
-  if (!(await browser.permissions.contains(ALL_SITES).catch(() => false))) return null;
-  return browser.tabs.captureTab(tabId, { format: "jpeg", quality: 60, scale: 0.5 }).catch(() => null);
+  const picture = await Promise.race([browser.tabs.captureTab(tabId, { format: "jpeg", quality: 80 }).catch(() => null), sleep(VEIL_WAIT_MS)]);
+  return /^data:image\//.test(picture || "") ? picture : null;
+}
+
+// The placeholder `tabId` gets the picture before it is selected: a window that went from
+// its page to an empty one and then to the picture flickered, beside the window you use,
+// which is the opposite of calm. So it is loaded where it is, unseen (a placeholder is made
+// unloaded, createRep), and says when the picture is drawn (ghostDrawn).
+async function veilFirst(windowId, tabId, picture) {
+  if (!picture) return;
+  const drawn = new Promise(resolve => veilPictures.set(windowId, { tabId, picture, drawn: resolve }));
+  const tab = await browser.tabs.get(tabId).catch(() => null);
+  if (!tab) return;
+  await browser.tabs.update(tabId, { url: tab.url }).catch(() => {});
+  await Promise.race([drawn, sleep(VEIL_WAIT_MS)]);
+}
+const holdsVeil = tabId => [...veilPictures.values()].some(v => v.tabId === tabId);
+// The page stayed after all (closed meanwhile, say): its placeholder need not stay loaded.
+function dropVeil(windowId) {
+  const tabId = veilPictures.get(windowId)?.tabId;
+  if (veilPictures.delete(windowId)) browser.tabs.discard(tabId).catch(() => {});
 }
 
 // Pull the live tab for `ghostId` into the ghost's window. The part you see
@@ -623,9 +646,13 @@ async function pull(ghostId) {
     // another tab instead, that window changed under you, and no longer showed where the page
     // was. So it gets its placeholder first, selected before the page leaves: Firefox would
     // else choose a tab itself, and load it.
+    const picture = entryNow && live.active ? await pictureFor(live.id) : null;
     const leftBehind = entryNow && (live.active || !others.some(t => t.id !== live.id))
       ? await createRep(fromWindow, key, entryNow, fromIndex + 1) : null;
-    if (live.active && leftBehind) await browser.tabs.update(leftBehind.id, { active: true }).catch(() => {});
+    if (live.active && leftBehind) {
+      await veilFirst(fromWindow, leftBehind.id, picture);
+      await browser.tabs.update(leftBehind.id, { active: true }).catch(() => {});
+    }
     // Bookkeeping too. A tab moved before it was ever loaded (a live folder's pull
     // request) can arrive without its sessions values, so they are set again. Any of
     // it is refused if you close the tab or the window meanwhile: ⌘W right after a
@@ -636,8 +663,7 @@ async function pull(ghostId) {
       .finally(() => beingPulled.delete(live.id))
       .then(() => browser.tabs.update(live.id, { active: true }))
       .then(() => setRole(live.id, key, "live"), () => false);
-    if (!moved) return;
-    if (live.active && leftBehind) veilPictures.set(fromWindow, { tabId: leftBehind.id, picture: pictureFor(live.id) });
+    if (!moved) { dropVeil(fromWindow); return; }
     forget(ghostId);
     const all = await getSynced();
     const entry = all[key];
@@ -782,6 +808,7 @@ browser.runtime.onMessage.addListener((msg, sender) => {
   if (!tab || sender.id !== browser.runtime.id) return;
   if (msg.type === "ghostInfo") return ghostInfo(msg.kind, msg.key);
   if (msg.type === "ghostPicture") return Promise.resolve(veilPictures.get(tab.windowId)?.tabId === tab.id ? veilPictures.get(tab.windowId).picture : null);
+  if (msg.type === "ghostDrawn") { if (veilPictures.get(tab.windowId)?.tabId === tab.id) veilPictures.get(tab.windowId).drawn(); return; }
   if (msg.type === "ghostReady") { unloadWhenIconShown(tab.id, sender.url, msg.icon); return; }
   if (msg.type === "ghostOrphan") return serial(() => closeOrphan(tab.id, msg.kind, msg.key));
   // A ghost is being shown. It loads the real page itself only when there is
@@ -829,6 +856,8 @@ function unloadGhost(tabId) {
     // Selected right now: leaving it brings it back (below). Going through tabs quickly, a tab
     // passed in that moment never gets to hear it was left, and would stay loaded for good.
     if (t.active) return;
+    // About to be selected with a picture drawn in it (veilFirst): it must stay loaded for that.
+    if (holdsVeil(tabId)) return;
     // Not yet: the events below bring it back. A placeholder can take many seconds to
     // report its load finished, with a new window's tabs all loading.
     if (!waiting.overdue && (t.status !== "complete" || (waiting.hasIcon && !t.favIconUrl))) return;

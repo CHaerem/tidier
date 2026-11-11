@@ -183,7 +183,7 @@ function sidebar({ active = C1, tabs = [{ id: 1, active: true }, { id: 2 }], fac
   ctx.window = ctx;
   const REPO = new URL("../", import.meta.url);
   vm.runInContext(`let view = ${JSON.stringify({ space: active, tabs, spaces: [{ id: C1, name: "One", color: "#000" }, { id: C2, name: "Two", color: "#000" }] })};`, ctx);
-  for (const f of ["sidebar/menu.js", "sidebar/tabmenu.js", "sidebar/spacemenu.js", "sidebar/moremenu.js"]) vm.runInContext(readFileSync(new URL(f, REPO), "utf8"), ctx, { filename: f });
+  for (const f of ["sidebar/menu.js", "sidebar/tabmenu.js", "sidebar/spacemenu.js", "sidebar/emoji.js", "sidebar/moremenu.js"]) vm.runInContext(readFileSync(new URL(f, REPO), "utf8"), ctx, { filename: f });
   vm.runInContext("var showMenu = items => __opened(items)", Object.assign(ctx, { __opened: items => menus.push(items) }));
   // Firefox's own menu is held back in the click; Tidier's comes once the background has answered.
   const rightClick = async (selector, dataset) => {
@@ -227,17 +227,44 @@ test("a space's icon is the emoji its name starts with, and choosing one renames
   assert.deepEqual(icon("2024 plans"), ["", "2024 plans"], "a digit is no icon");
   await s.rightClick("#spaces .space", { space: C1 });
   const choices = s.menus.at(-1).find(i => i?.[0] === "Icon")[1];
-  assert.deepEqual(s.labels(choices).slice(-2), ["|", "Another"], "no icon yet: nothing to take away");
-  choices[0][1]();
+  assert.equal(choices.length, 1, "no icon yet: nothing to take away, only the ones to choose from");
+  assert.equal(typeof choices[0].part, "function", "which draw themselves (emojiPicker, emoji.js)");
+  const choose = icon => vm.runInContext(`setSpaceIcon("${C1}", ${JSON.stringify(icon)})`, s.ctx);
+  choose("🏠");
   assert.deepEqual({ ...s.sent.at(-1) }, { type: "renameSpace", space: C1, name: "🏠 One" });
   vm.runInContext(`view.spaces[0].name = "🏠 One"`, s.ctx);
+  choose("⚡");
+  assert.deepEqual({ ...s.sent.at(-1) }, { type: "renameSpace", space: C1, name: "⚡ One" }, "another icon takes the first one's place");
   await s.rightClick("#spaces .space", { space: C1 });
   const again = s.menus.at(-1).find(i => i?.[0] === "Icon")[1];
-  again[1][1]();
-  assert.deepEqual({ ...s.sent.at(-1) }, { type: "renameSpace", space: C1, name: "💼 One" }, "another icon takes the first one's place");
-  assert.equal(s.labels(again).at(-1), "No icon");
+  assert.deepEqual(s.labels(again).slice(1), ["|", "No icon"]);
   again.at(-1)[1]();
   assert.deepEqual({ ...s.sent.at(-1) }, { type: "renameSpace", space: C1, name: "One" });
+});
+
+// The ones to choose from are a list of Tidier's own, searched by English words. Each must be
+// an icon as a space's name has one, or choosing it would only add a sign to the name.
+test("the icons to choose from are each one whole emoji, found by its words", () => {
+  const s = sidebar();
+  const list = JSON.parse(vm.runInContext("JSON.stringify(emojiList())", s.ctx));
+  assert.ok(list.length > 250, `${list.length} to choose from`);
+  assert.equal(new Set(list.map(e => e.icon)).size, list.length, "none twice");
+  for (const { icon, words } of list) {
+    const r = vm.runInContext(`spaceIcon(${JSON.stringify(icon + " Name")})`, s.ctx);
+    assert.deepEqual([r.icon, r.rest], [icon, "Name"], `${icon} is one icon`);
+    // A sign like ✈ is text by itself: with the mark that makes it a picture, or drawn as one anyway.
+    assert.match(icon, /^(\p{Emoji_Presentation}|\p{Regional_Indicator})|\uFE0F/u, `${icon} is drawn as a picture`);
+    assert.ok(words.length && words.every(w => /^[a-z]+$/.test(w)), `${icon} has words to be found by`);
+  }
+  const found = text => JSON.parse(vm.runInContext(`JSON.stringify(emojiSearch(${JSON.stringify(text)}).map(e => e.icon))`, s.ctx));
+  assert.equal(found("").length, list.length, "nothing typed: all of them");
+  assert.equal(found("lightning")[0], "⚡");
+  assert.equal(found("Lightn")[0], "⚡", "the start of a word, in any case");
+  assert.deepEqual(found("chart up"), ["📈"], "every word typed");
+  assert.deepEqual(found("fire").slice(0, 2), ["🔥", "🦊"], "the whole word before the start of one");
+  assert.deepEqual(found("⚡"), ["⚡"], "an emoji typed is the one found");
+  assert.deepEqual(found(" 🫠 "), ["🫠"], "also one that is not in the list");
+  assert.deepEqual(found("no such thing"), []);
 });
 
 test("the name above the list has the same menu, for the space you are in", async () => {

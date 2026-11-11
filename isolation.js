@@ -19,7 +19,8 @@
 // --- 1. No request in the wrong container ------------------------------------------
 // Every website (http, https and their web sockets), and no local files: "<all_urls>" would
 // also put "Access local files on your computer" in Firefox's list of what Tidier may do, where
-// none of it is used. One given before as "<all_urls>" still
+// none of it is used here. (Only pictures of pages need it in that form, and ask for it
+// themselves: settings/pictures.js.) One given as "<all_urls>" still
 // counts: Firefox finds this inside it, and keeps it over an update.
 const ISOLATION_PERMISSIONS = { permissions: ["webRequest", "webRequestBlocking"], origins: ["*://*/*"] };
 const AT_START = "isolationAtStart"; // localStorage: what must already work while Firefox starts, see below

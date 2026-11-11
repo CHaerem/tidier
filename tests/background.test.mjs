@@ -293,10 +293,24 @@ test("a ghost selected right after another is pulled in too", async () => {
 test("the window a page is taken from stays on it, as a placeholder with a picture of it", async () => {
   const ff = new FakeFirefox();
   const { x, home, here, liveA, liveB, ghostA } = await twoWindows(ff);
-  x.b.permissions.contains = async () => true;
-  x.b.tabs.captureTab = async id => "data:image/jpeg;base64," + id;
+  const taken = [];
+  x.b.tabs.captureTab = async id => { taken.push([ff.tabs.get(id).windowId, ff.tabs.get(id).active]); return "data:image/jpeg;base64," + id; };
+  // The placeholder left there says when it has drawn the picture, which it does before it is
+  // the tab shown; the page leaves only then.
+  const drawn = [];
+  const update = x.b.tabs.update;
+  x.b.tabs.update = async (id, props) => {
+    const tab = ff.tabs.get(id);
+    if (props.url && tab?.windowId === home.id && /ghost\.html/.test(props.url)) {
+      drawn.push([await x.send({ type: "ghostPicture" }, { tab: ff.snap(tab) }), tab.active, ff.tabs.get(liveA.id).windowId]);
+      x.send({ type: "ghostDrawn" }, { tab: ff.snap(tab) });
+    }
+    return update(id, props);
+  };
   ff.select(ghostA.id);
   await wait(1500);
+  assert.deepEqual(taken, [[home.id, true]], "the picture is taken while the page is still shown in the window it leaves");
+  assert.deepEqual(drawn, [["data:image/jpeg;base64," + liveA.id, false, home.id]], "and its placeholder has it before it is selected, with the page still there");
   assert.equal(ff.tabs.get(liveA.id).windowId, here.id, "the page came to the window you use");
   const left = ff.list(home.id).find(t => t.active);
   assert.deepEqual([ff.values.get(left.id)?.syncKey, ff.values.get(left.id)?.syncRole], ["a", "ghost"], "the window it left stays on it");
@@ -323,7 +337,6 @@ test("the window a page is taken from stays on it, as a placeholder with a pictu
 test("a page taken from a window that was on another tab leaves that window as it was", async () => {
   const ff = new FakeFirefox();
   const { x, home, here, liveA, liveB, ghostB } = await twoWindows(ff);
-  x.b.permissions.contains = async () => true;
   x.b.tabs.captureTab = async id => "data:image/jpeg;base64," + id;
   ff.select(ghostB.id);
   await wait(1500);

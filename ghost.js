@@ -24,11 +24,27 @@ function shown(info) {
   browser.runtime.sendMessage({ type }).then(r => { if (r?.load) location.replace(info.url); else face(info); });
 }
 
+// The page as it was when it left this window for the one you use: shown as it was, under a
+// grey layer, as Zen and Arc show a tab that another window has (pull, tabsync.js). Asked for
+// before anything else, and drawn while this tab is not yet the one shown, so that the window
+// goes from the page to its picture with nothing in between. None if Tidier may not take
+// pictures of pages, or if this placeholder is not one a page has just left.
+const veiled = browser.runtime.sendMessage({ type: "ghostPicture" }).then(async picture => {
+  if (!/^data:image\//.test(picture || "")) return false;
+  const img = Object.assign(new Image(), { className: "veil", alt: "", src: picture });
+  await img.decode().catch(() => {});
+  document.body.prepend(img);
+  document.body.classList.add("veiled");
+  browser.runtime.sendMessage({ type: "ghostDrawn" });
+  return true;
+}).catch(() => false);
+
 // Told to wait: in a window you are not using, the page stays where it is until you come
 // here (or it is on its way). Its name, site and icon say which page this is: a blank page
 // with "Extension (Tidier)" in the address bar, beside the window you use, looked broken.
-function face(info) {
-  if (document.querySelector("main") || !document.body) return;
+// Not over the picture of the page: that says it better, and words on top were one thing more.
+async function face(info) {
+  if (await veiled || document.querySelector("main") || !document.body) return;
   let site = "";
   try { site = new URL(info.url).host; } catch { /* no address to show */ }
   const main = document.createElement("main");
@@ -38,16 +54,6 @@ function face(info) {
   if (site && site !== info.title) main.append(Object.assign(document.createElement("div"), { className: "site", textContent: site }));
   main.append(Object.assign(document.createElement("div"), { className: "when", textContent: "In another window now. It comes here when you use this one." }));
   document.body.append(main);
-  // The page as it was when it left this window for the one you use, grey under a veil, as
-  // Zen and Arc show a tab that another window has (pull, tabsync.js). There at once, and
-  // the words with it: this window was showing the page a moment ago.
-  browser.runtime.sendMessage({ type: "ghostPicture" }).then(picture => {
-    if (!/^data:image\//.test(picture || "")) return;
-    const veil = Object.assign(document.createElement("div"), { className: "veil" });
-    veil.style.backgroundImage = `url("${picture}")`;
-    document.body.prepend(veil);
-    document.body.classList.add("veiled");
-  }).catch(() => {});
 }
 
 // The first icon that loads: the one saved for the page, else the site's

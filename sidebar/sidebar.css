@@ -21,20 +21,21 @@ button { font: inherit; letter-spacing: inherit; color: inherit; cursor: default
 
 /* --- Essentials ------------------------------------------------------------------
  * Generous tiles that fill their row, as in Arc. How many go in a row follows the sidebar's
- * width, as in Zen: a tile is never narrower than 50px, so a wider sidebar takes one more
- * (four at the usual width, three in the narrowest, eight in the widest). Their height
- * moves in whole steps, so an edge never lands between two pixels. */
+ * width, as in Zen: a tile is never narrower than 72px, so a wider sidebar takes one more
+ * (two in the narrowest, three from 244px, four from 322px, six in the widest). At 50px the
+ * narrowest sidebar still took three, squeezed, and no width gave the two of a narrow Zen or
+ * Arc. Their height moves in whole steps, so an edge never lands between two pixels. */
 #essentials {
   --tile-height: clamp(40px, round(13.5vw, 2px), 48px);
   --tile-gap: 6px;
   display: grid; gap: var(--tile-gap); margin: 4px 0 8px;
-  grid-template-columns: repeat(auto-fit, minmax(50px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(72px, 1fr));
   transition: background-color var(--quick), box-shadow var(--quick);
 }
 /* In a wide sidebar a few would be long empty bands, and a tile's size would jump from
  * space to space, so there they keep one size and leave the rest of the row free. */
 @media (min-width: 400px) {
-  #essentials { grid-template-columns: repeat(auto-fill, minmax(50px, 1fr)); }
+  #essentials { grid-template-columns: repeat(auto-fill, minmax(72px, 1fr)); }
 }
 #essentials:empty { display: none; }
 .tile {
@@ -403,6 +404,25 @@ html.space-arriving .folder > .children { transition: none; } /* a whole space c
   display: flex; align-items: center; gap: 8px; height: 24px; padding: 0 9px;
   color: var(--muted); font-size: var(--size-small); white-space: nowrap;
 }
+/* The icons to choose from (emoji.js): a field to search in, and the ones found, which scroll
+ * on their own so that the field and the way back stay in sight. As wide as eight of them,
+ * or the sidebar; the field is the name's box (.space-box), in the menu's width. */
+#menu .picker { width: 248px; max-width: 100%; }
+#menu .find {
+  display: block; box-sizing: border-box; width: 100%; height: 24px; margin: 2px 0 6px; padding: 0 6px;
+  font: inherit; font-size: var(--size-small); color: var(--text); background: var(--selected);
+  border: 0; border-radius: var(--radius-sm); box-shadow: 0 0 0 1.5px var(--accent-line); outline: none; user-select: text;
+}
+#menu .found {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(var(--row), 1fr));
+  max-height: calc(var(--row) * 7); overflow-y: auto; scrollbar-width: thin;
+}
+#menu .emoji {
+  height: var(--row); padding: 0; border: 0; border-radius: var(--radius-sm); background: none;
+  font-size: calc(var(--size) * 1.35); line-height: 1; cursor: default; outline: none;
+}
+#menu .emoji:is(:hover, .at) { background: var(--hover); }
+#menu .found .none { grid-column: 1 / -1; padding: 6px var(--pad); color: var(--muted); font-size: var(--size-small); }
 /* A new one, in a list of things with dots: a + where their dots are, as wide as one. */
 #menu .dot.plus { border-radius: 0; background: var(--muted); mask: var(--icon-plus) center / 12px no-repeat; overflow: visible; }
 .menu-for { background: var(--hover); }

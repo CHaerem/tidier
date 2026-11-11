@@ -354,8 +354,8 @@ test("where Firefox has no picture function for Tidier, a screenshot is refused 
   await x.settings("on", { on: true });
   const host = x.hosts[0];
   const { tab } = JSON.parse((await host.call("open_tab", { url: "https://a.example/" })).text);
-  delete x.b.tabs.captureTab; // as with every website given as "*://*/*", which is all Tidier asks for
-  assert.match((await host.call("screenshot", { tab })).error, /no pictures of pages.*read_page/);
+  delete x.b.tabs.captureTab; // as with every website given as "*://*/*": pictures are allowed on the settings page
+  assert.match((await host.call("screenshot", { tab })).error, /no pictures of pages.*settings page.*read_page/);
   assert.ok((await host.call("read_page", { tab })).ok);
   x.kill();
 });
