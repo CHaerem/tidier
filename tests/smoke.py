@@ -2800,11 +2800,29 @@ def alone_hand(m):
     # ⌘Z in the sidebar, while the line offers Undo.
     said = close_two("hand-8", "hand-9")
     n = len(hands())
+    look_in_sidebar(m, """async () => { const bg = page.browser.extension.getBackgroundPage(); bg.smokeStale = await bg.viewFor((await page.browser.windows.getCurrent()).id); }""")  # the view as it is now, for below
     m.js(FOCUS_SIDEBAR)
     press(m, "z", CMD)
     back = m.js(H + """const w = main(); for (let i = 0; i < 50 && w.gBrowser.tabs.filter(t => /^hand-[89]$/.test(t.label)).length < 2; i++) await wait(100);
       return w.gBrowser.tabs.filter(t => /^hand-[89]$/.test(t.label)).length;""")
     check("⌘Z in the sidebar undoes what the line offers", back == 2 and len(hands()) == n + 2 and not in_sidebar(m, """() => doc.getElementById("note").classList.contains("shown")"""), f"{back} {n} {hands()}, the line: {said!r}")
+
+    # A view made before the background heard of Undo, and drawn after it: the line stays gone.
+    # (The two cross on their way on a busy machine; here that view is sent again, by hand.)
+    r = look_in_sidebar(m, """async () => {
+      const bg = page.browser.extension.getBackgroundPage(), win = (await page.browser.windows.getCurrent()).id;
+      const note = doc.getElementById("note"), stale = bg.smokeStale, real = bg.viewFor; let shown = 0;
+      const o = new content.MutationObserver(() => { if (note.classList.contains("shown")) shown++; });
+      o.observe(note, {attributes: true, attributeFilter: ["class"]});
+      bg.viewFor = Components.utils.exportFunction(w => w === win ? bg.Promise.resolve(stale) : real.call(bg, w), bg);
+      bg.viewSoon(win);
+      await sleep(600);
+      bg.viewFor = real; delete bg.smokeStale; o.disconnect();
+      bg.viewSoon(win);
+      await sleep(600);
+      return {stale: !!stale?.note?.undo, shown, now: note.classList.contains("shown"), rows: [...doc.querySelectorAll("#tabs .tab .title")].filter(e => /^hand-[89]$/.test(e.textContent)).length};
+    }""")
+    check("a view made before Undo was heard does not bring the line back", r.get("stale") and r.get("shown") == 0 and not r.get("now") and r.get("rows") == 2, str(r))
 
     # ⌘W, with Firefox's closing animation: the row goes at once and does not come back.
     gone = m.js(H + IN_SIDEBAR + """const w = main(); Services.prefs.setIntPref("ui.prefersReducedMotion", 0); await wait(200);
@@ -3649,7 +3667,11 @@ def alone_touches(m):
         const id = Number(record.dataset.tab);
         await page.browser.tabs.update(id, {url: pages + "/no-icon"});
         await until(async () => record.querySelector(".title")?.textContent === "No icon" && await status(id) === "complete");
-        await wait(500);
+        // Asked once the record has followed the page: the background takes what a page says in
+        // its own queue, and on a busy machine that was more than half a second behind.
+        const t0 = Date.now(), entries = async () => Object.values((await page.browser.storage.local.get("syncedTabs")).syncedTabs).filter(e => e.url?.includes("/no-icon"));
+        out.recordFollowed = await until(async () => (await entries()).length) ? Date.now() - t0 : null;
+        await until(() => record.querySelector(icon), 3000);
         out.record = {own: (await page.browser.tabs.get(id)).favIconUrl ?? null, image: !!record.querySelector(icon), letter: !!record.querySelector(".letter")};
         out.recordEntry = Object.values((await page.browser.storage.local.get("syncedTabs")).syncedTabs).filter(e => e.url?.includes("/no-icon")).map(e => String(e.icon).slice(0, 60)); // (for the detail, when this fails)
       }

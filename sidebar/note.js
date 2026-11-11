@@ -93,10 +93,12 @@
 
   // The line goes at once: the tabs take a moment to come back. Its room stays as always,
   // and a double click's second click lands on nothing (secondclick.js).
+  let undone = null; // the note Undo was last used on
   const undo = e => {
     const note = shown ?? going;
     if (!note?.undo) return false;
     send({ type: "undo", note: note.id });
+    undone = note.id;
     drawNote(null);
     going = null;
     // From the keys, the keyboard stays in the sidebar, on the tab you are on (keys.js).
@@ -134,8 +136,10 @@
     divider.firstChild.hidden = !clearableHere(); // spacemenu.js, as are the menus' Clear
   };
 
+  // A view made before the background heard of Undo still brings the note it was used on
+  // (the two cross on their way): drawn, the line would be back for a moment, Undo and all.
   port.onMessage.addListener(next => {
-    drawNote(next.note ?? null);
+    drawNote(next.note && next.note.id !== undone ? next.note : null);
     drawClear();
   });
 }
