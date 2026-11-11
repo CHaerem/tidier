@@ -33,15 +33,19 @@
 
   // When the room goes, the list grows into it. Scrolled to its end, Firefox would then
   // move every row down to fill the list: instead, with the pointer in the list, the list
-  // keeps that much room at its end until the pointer has left it (letRoomsGo, sidebar.js),
-  // so nothing moves under the pointer. (With the pointer elsewhere nothing is under it.)
+  // keeps that much room at its end until the pointer has left it or rested there a while
+  // (letRoomsGo, heldFromNow, sidebar.js), so nothing moves under the pointer. (With the
+  // pointer elsewhere nothing is under it.)
   const closeRoom = () => {
     roomTimer = null;
     if (box.matches(":hover")) { roomDue = true; return; }
     roomDue = false;
     const spare = tabsList.scrollHeight - tabsList.scrollTop - tabsList.clientHeight;
     const room = box.offsetHeight; // the room's height is sidebar.css's (#note.in-room)
-    if (tabsList.scrollTop > 0 && spare < room && tabsList.matches(":hover")) tabsList.style.setProperty("--held", room - spare + "px");
+    if (tabsList.scrollTop > 0 && spare < room && tabsList.matches(":hover")) {
+      tabsList.style.setProperty("--held", room - spare + "px");
+      heldFromNow();
+    }
     box.classList.remove("in-room");
   };
   box.addEventListener("mouseleave", () => { if (roomDue) closeRoom(); });

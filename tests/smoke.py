@@ -2731,6 +2731,32 @@ def alone_hand(m):
     come_down = later["aboveTop"] - p["aboveTop"] >= 32 and later["top"] >= p["top"]
     check("the row below stays under the pointer while it is in the list, and moves when it leaves", after["top"] == p["top"] and after["room"] and (comes_up or come_down) and not later["room"], f"{p} {after} {later}")
 
+    # The room is for the next click, not for good: Firefox does not always say that the pointer
+    # has left the list (another app taken with the keyboard, a menu over it), and the room then
+    # stayed as a hole where the tab had been. With the pointer still in the list, it goes a few
+    # seconds after the pointer last moved there, and not while it still moves. (A tab of its own:
+    # every other one here has its check.)
+    m.js(H + """const w = main(), [pages, ctx] = args; w.gBrowser.addTrustedTab(pages + "/titled?hand-held", {userContextId: ctx, inBackground: true});
+      for (let i = 0; i < 100 && !w.gBrowser.tabs.some(t => t.label === "hand-held"); i++) await wait(100); return 1;""", m.pages, int(here.split("-")[-1]))
+    sidebar_until(m, """() => [...doc.querySelectorAll("#tabs .tab")].some(r => r.title.split("\\n")[0] === "hand-held")""")
+    p = hand_spot(m, """const r = row("hand-held"); r.scrollIntoView({block: "center"}); const list = doc.getElementById("tabs"), at = doc.documentElement.dataset;
+      delete at.heldRoom; delete at.heldMove; delete at.heldGone;
+      list.addEventListener("mousemove", () => { if (at.heldRoom && !at.heldGone) at.heldMove = Date.now(); });
+      new content.MutationObserver(() => { const room = !!list.querySelector(".room");
+        if (room && !at.heldRoom) at.heldRoom = Date.now(); else if (!room && at.heldRoom && !at.heldGone) at.heldGone = Date.now(); }).observe(list, {childList: true, subtree: true});
+      return box(r.querySelector(".close"));""")
+    hand(m, hand_to(p), hand_pause(300), *hand_click())
+    sidebar_until(m, """() => doc.documentElement.dataset.heldRoom""")
+    time.sleep(1.5)
+    hand(m, hand_to(p, -40, 2))
+    r = sidebar_until(m, """() => { const at = doc.documentElement.dataset; return at.heldGone && {room: Number(at.heldRoom), move: Number(at.heldMove), gone: Number(at.heldGone),
+      pointed: doc.getElementById("tabs").matches(":hover"), rooms: doc.querySelectorAll("#tabs .room").length}; }""", timeout=10)
+    left = hands()
+    hand(m, hand_to(away))
+    time.sleep(0.3)
+    check("a closed row's room goes by itself once the pointer has rested in the list, and not while it still moves there",
+          bool(r) and r["pointed"] and r["rooms"] == 0 and "hand-held" not in left and 2800 <= r["gone"] - r["move"] <= 5000 and r["gone"] - r["room"] >= 3800, f"{r} {left}")
+
     # A middle click closes, with Firefox's autoscroll on, and the next click works. (Firefox
     # starts it only in what can scroll, so the list gets room at its end for this.)
     p = hand_spot(m, """doc.getElementById("tabs").style.paddingBottom = "2000px"; const r = row("hand-5"); r.scrollIntoView({block: "center"}); return box(r);""")

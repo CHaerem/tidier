@@ -286,6 +286,13 @@ const closeTitle = (item, folderKey) => (!savedIn(folderKey) ? "Close" : item.lo
 // tab was selected (sidebar.css): you selected another, and it stays until you leave.
 // Nothing else is held: what you did not point at goes at once. (Only for the real mouse:
 // a key has no place in the list, and a script's click is no pointer.)
+//
+// What is held is held for your next click there, not for good. Firefox does not always say
+// that the pointer has left: another app taken with the keyboard, a menu opened over the
+// list, a window moved from under it, and the list still counts as pointed at. The rooms
+// then stayed, as holes in the list where closed tabs had been, until the pointer next came
+// and went. So they also go when the pointer has not moved in the list for a few seconds
+// (the moves are listened for only while something is held).
 const byHand = e => e.isTrusted && e.detail > 0;
 let pickedByHand = false; // the last row selected was clicked with the mouse
 const tabsList = document.getElementById("tabs");
@@ -294,8 +301,15 @@ const lingering = new Set(); // tab ids of rows a closed folder keeps showing fo
 const stillDim = new Set(); // tab ids of saved tabs just unloaded with their ×, until the mouse leaves them
 let roomsInSpace = null;
 const holding = () => tabsList.matches(":hover");
+const HELD_MS = 3000; // longer than the next click takes, shorter than a hole is looked at
+let heldTimer = null;
+function heldFromNow() {
+  if (!heldTimer) tabsList.addEventListener("mousemove", heldFromNow, { passive: true });
+  clearTimeout(heldTimer);
+  heldTimer = setTimeout(letRoomsGo, HELD_MS);
+}
 function closeByPointer(id, e) {
-  if (byHand(e) && holding()) keepsRoom.add(String(id));
+  if (byHand(e) && holding()) { keepsRoom.add(String(id)); heldFromNow(); }
   send({ type: "close", tabId: id });
 }
 // `nodes` for `parent`, with a room where a row has gone that is to keep one, after
@@ -330,6 +344,9 @@ function letRoomsGo() {
   lingering.clear();
   stillDim.clear();
   tabsList.style.removeProperty("--held"); // the end the quiet line's room left (note.js)
+  clearTimeout(heldTimer);
+  heldTimer = null;
+  tabsList.removeEventListener("mousemove", heldFromNow);
 }
 tabsList.addEventListener("mouseleave", letRoomsGo);
 // After a view: the row a closed folder showed for the selected tab, which is no longer
@@ -338,7 +355,7 @@ let selectedRow = null;
 function keepLingering() {
   const was = selectedRow;
   selectedRow = tabsList.querySelector(".tab.active")?.dataset.tab ?? null;
-  if (was && was !== selectedRow && pickedByHand && holding() && kept.get("tab:" + was)?.closest(".folder.collapsed")) lingering.add(was);
+  if (was && was !== selectedRow && pickedByHand && holding() && kept.get("tab:" + was)?.closest(".folder.collapsed")) { lingering.add(was); heldFromNow(); }
   if (was !== selectedRow) pickedByHand = false;
   for (const id of lingering) kept.get("tab:" + id)?.classList.add("lingers");
   for (const id of stillDim) kept.get("tab:" + id)?.classList.add("still-dim");
