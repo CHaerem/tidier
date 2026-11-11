@@ -728,8 +728,17 @@ def look(m):
     # hold in a narrow sidebar is that nothing lies over anything else or outside the panel:
     # also with every button there, as forward is once you have gone back and downloads once
     # something has been downloaded (the second round).
-    rows = m.js(H + """const d = main().document, box = d.getElementById("sidebar-box"), before = box.style.width, out = [];
+    #
+    # Two things a box's place does not tell. A button that is narrower than its icon's field
+    # (as all are in the narrowest panel, sharing the row) had the field, which is what lights up
+    # under the pointer, lying in over its neighbour: so every part of a button is within it.
+    # And the window's own buttons (red, yellow, green) are drawn by macOS in the box Firefox
+    # keeps for them, 60 px wide from macOS 26; a headless Firefox has no window to ask and
+    # keeps 54, so the 60 are counted here. Back begins after them, on their line.
+    rows = m.js(H + """const d = main().document, box = d.getElementById("sidebar-box"), before = box.style.width, out = [], fields = [], lights = [];
       const r = id => d.getElementById(id).getBoundingClientRect();
+      const parts = id => [...d.getElementById(id).querySelectorAll(".toolbarbutton-icon, .toolbarbutton-badge-stack, toolbarbutton")].map(e => e.getBoundingClientRect()).filter(x => x.width);
+      const middle = x => (x.top + x.bottom) / 2;
       const forward = d.getElementById("forward-button"), downloads = d.getElementById("downloads-button");
       const was = [forward.hasAttribute("disabled"), downloads.hidden];
       for (const every of [false, true]) {
@@ -743,12 +752,29 @@ def look(m):
           out.push(!d.getElementById("nav-bar").hasAttribute("overflowing") && one(row1) && bar.top > row1[0].top && bar.width > px * 0.75
                    && all.length >= (every ? 7 : 5) && all.every(x => x.width >= 16)  // an icon is 16 px
                    && all.every((a, i) => all.every((b, j) => j <= i || !over(a, b))) && all.every(x => x.left >= 0 && x.right <= px + 0.5));
+          const there = ["back-button", "forward-button", "stop-reload-button", "downloads-button", "unified-extensions-button", "PanelUI-button"].filter(id => r(id).width);
+          fields.push(there.length >= (every ? 6 : 3) && there.every(id =>
+            parts(id).length && parts(id).every(x => x.left >= r(id).left - 0.5 && x.right <= r(id).right + 0.5)));
+          const own = d.querySelector("#TabsToolbar .titlebar-buttonbox")?.getBoundingClientRect();
+          lights.push(!!own && row1[0].left >= own.left + 60 + 1 && Math.abs(middle(own) - middle(row1[0])) <= 1);
         }
       }
       if (was[0]) forward.setAttribute("disabled", "true");
       downloads.hidden = was[1];
-      box.style.width = before; await wait(300); return out;""", low)
-    check("the top row is back, reload and ☰, with the address bar below, and nothing over anything else, from the narrowest to 480 px (nothing behind »), also with forward and downloads there", len(rows) == 6 and all(rows), str(rows))
+      box.style.width = before; await wait(300); return {out, fields, lights};""", low)
+    check("the top row is back, reload and ☰, with the address bar below, and nothing over anything else, from the narrowest to 480 px (nothing behind »), also with forward and downloads there", len(rows["out"]) == 6 and all(rows["out"]), str(rows["out"]))
+    check("every button on the top row holds its own icon and field, also where the buttons are at their narrowest", len(rows["fields"]) == 6 and all(rows["fields"]), str(rows["fields"]))
+    if sys.platform == "darwin":
+        check("back begins after the window's own buttons, as wide as macOS 26 draws them, and on their line", len(rows["lights"]) == 6 and all(rows["lights"]), str(rows["lights"]))
+    # In its new sidebar Firefox heads an extension's panel with the extension's name and a ×
+    # that closes the sidebar, inside the panel's own document (not the window's, where the old
+    # header was). Tidier is the sidebar, not a panel to close by a slip: the dotfiles'
+    # stylesheet takes the header away, and Tidier begins right under the toolbar.
+    top = m.js(H + """const d = main().document, box = d.getElementById("sidebar-box"), side = d.getElementById("sidebar"), inner = side.contentDocument;
+      const page = inner.querySelector("browser");
+      return {panel: inner.documentURI.split("/").pop(), outer: Math.round(side.getBoundingClientRect().top - box.getBoundingClientRect().top - parseFloat(main().getComputedStyle(box).paddingTop)),
+              inner: page ? Math.round(page.getBoundingClientRect().top) : null};""")
+    check("nothing of Firefox's own (the extension's name, a × that closes the sidebar) lies between the toolbar and Tidier", top["outer"] == 0 and top["inner"] == 0, str(top))
     # A later Firefox that renames a part of its toolbar leaves a rule in the dotfiles' stylesheet
     # with nothing to act on, and nothing says so: the look just changes (as the address field's
     # did, when its background lost its ID). So every part the stylesheet names by ID or class
