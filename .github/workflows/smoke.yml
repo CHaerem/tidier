@@ -33,6 +33,12 @@ on:
       dotfiles:
         description: The branch of the dotfiles to test with
         default: main
+      # GitHub's Mac runners can be waited for longer than the test takes; its Linux ones
+      # start at once. Tidier is used on a Mac, so that is what a push is tested on; this is
+      # for finding out how much of the test holds on Linux.
+      runner:
+        description: The kind of runner to test on
+        default: macos-15
 
 permissions:
   contents: read
@@ -66,7 +72,7 @@ jobs:
     name: Firefox ${{ matrix.firefox }}, ${{ matrix.part }}
     needs: unit
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: macos-15
+    runs-on: ${{ inputs.runner || 'macos-15' }}
     # A part takes 10 to 15 minutes on a Mac, and GitHub's runner is slower; twice that
     # with the second try, and GitHub cancels silently at the limit.
     timeout-minutes: 90
