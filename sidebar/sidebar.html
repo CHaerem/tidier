@@ -9,13 +9,6 @@
   <link rel="stylesheet" href="agent.css">
 </head>
 <body>
-  <div id="ask-hiding" class="notice" role="status" hidden>
-    <span class="text">If Firefox asks about hidden tabs, choose Keep Tabs Hidden.</span>
-    <button id="ask-hiding-no" class="ask-no" title="Put away" aria-label="Put away">×</button>
-  </div>
-  <div id="hiding" class="notice" hidden>
-    <button id="allow-hiding">Let Tidier hide the other spaces' tabs</button>
-  </div>
   <section id="essentials" role="listbox" aria-label="Essentials"></section>
   <div id="space-name"></div>
   <div id="actions">
@@ -23,6 +16,15 @@
     <button id="new-folder" title="New folder" aria-label="New folder"></button>
   </div>
   <main id="tabs" role="tree" aria-label="Tabs" tabindex="-1"></main>
+  <!-- What Tidier asks or tells you is under the list, by the spaces: the top of the
+       sidebar is the essentials', and a question there stood over everything you use. -->
+  <div id="ask-hiding" class="notice" role="status" hidden>
+    <span class="text">If Firefox asks about hidden tabs, choose Keep Tabs Hidden.</span>
+    <button id="ask-hiding-no" class="ask-no" title="Put away" aria-label="Put away">×</button>
+  </div>
+  <div id="hiding" class="notice" hidden>
+    <button id="allow-hiding">Let Tidier hide the other spaces' tabs</button>
+  </div>
   <div id="problem" class="notice" hidden></div>
   <div id="note" role="status"></div>
   <nav id="spaces" aria-label="Spaces"></nav>

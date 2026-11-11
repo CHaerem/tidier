@@ -2495,6 +2495,31 @@ test("a page that finishes loading just after a pull still updates the record", 
   x.kill();
 });
 
+test("an icon that comes while Tidier is busy with the tab is kept in the record, a title is not", async () => {
+  const ff = new FakeFirefox();
+  ff.store.syncedTabs = { a: entry("https://a.example/") };
+  const home = ff.addWindow({ focused: true });
+  const live = ff.addTab(home.id, { url: "https://a.example/", title: "A", active: true, cookieStoreId: C1 }, { syncKey: "a", syncRole: "live" });
+  const x = await run(ff);
+  const before = ff.synced.a.title;
+  x.js(`syncBusy.add(${live.id})`); // as when Tidier has just moved it
+  live.title = "On its way back";
+  x.b.tabs.onUpdated.fire(live.id, { title: live.title }, ff.snap(live));
+  live.favIconUrl = "https://a.example/favicon.ico";
+  x.b.tabs.onUpdated.fire(live.id, { favIconUrl: live.favIconUrl }, ff.snap(live));
+  await wait(60000); // an icon alone is written when there is time (syncedList, common.js)
+  assert.equal(ff.synced.a.icon, "https://a.example/favicon.ico");
+  assert.equal(ff.synced.a.title, before);
+  // The page's next address has no icon: the record keeps the one it has.
+  x.js(`syncBusy.delete(${live.id})`);
+  live.favIconUrl = undefined;
+  ff.navigate(live.id, "https://a.example/next", "Next");
+  await wait(1000);
+  assert.equal(ff.synced.a.url, "https://a.example/next");
+  assert.equal(ff.synced.a.icon, "https://a.example/favicon.ico");
+  x.kill();
+});
+
 test("a link put in its space is not in Recently Closed, so ⌘⇧T does not open it twice", async () => {
   const ff = new FakeFirefox();
   const w = ff.addWindow({ focused: true });

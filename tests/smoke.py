@@ -46,7 +46,7 @@ that:
     (no placeholders) in Recently Closed;
   - ⌘⇧C copies the address; ⌘B leaves Tidier in the sidebar; ⌘S switches
     compact mode on and off;
-  - the toolbar follows the sidebar's width (220–480 px), and ⌘L opens the
+  - the toolbar follows the sidebar's width (its narrowest to its widest), and ⌘L opens the
     address bar centred with its results under it, also in compact mode;
   - a live folder (with a stand-in for the native host) has its pull requests
     unloaded in every window; a closed pull request stays closed, one that
@@ -716,22 +716,29 @@ def shortcuts(m):
 
 
 def look(m):
-    widths = m.js(H + """const d = main().document, box = d.getElementById("sidebar-box"), before = box.style.width, out = [];
+    # The narrowest and widest are the dotfiles' own (--zen-sidebar-min and -max), read from there.
+    widths = m.js(H + """const w = main(), d = w.document, box = d.getElementById("sidebar-box"), before = box.style.width, out = [];
       const width = id => Math.round(d.getElementById(id).getBoundingClientRect().width);
+      const edge = name => parseInt(w.getComputedStyle(d.documentElement).getPropertyValue(name));
       for (const px of [360, 150, 900]) { box.style.width = px + "px"; await wait(300); out.push([width("sidebar-box"), width("navigator-toolbox")]); }
-      box.style.width = before; await wait(300); return out;""")
-    check("the toolbar follows the sidebar's width (220–480 px)", widths == [[360, 360], [220, 220], [480, 480]], str(widths))
+      box.style.width = before; await wait(300); return {out, min: edge("--zen-sidebar-min"), max: edge("--zen-sidebar-max")};""")
+    low, high = widths["min"], widths["max"]
+    check("the toolbar follows the sidebar's width, from its narrowest to its widest", 150 < low < 360 < high < 900 and widths["out"] == [[360, 360], [low, low], [high, high]], str(widths))
+    # Where 🧩 is (beside the address bar, or on the top row) is the dotfiles' choice; what must
+    # hold in a narrow sidebar is that nothing lies over anything else or outside the panel.
     rows = m.js(H + """const d = main().document, box = d.getElementById("sidebar-box"), before = box.style.width, out = [];
       const r = id => d.getElementById(id).getBoundingClientRect();
-      for (const px of [220, 300, 480]) {
+      for (const px of [args[0], 300, 480]) {
         box.style.width = px + "px"; await wait(400);
-        const row1 = ["back-button", "forward-button", "stop-reload-button", "PanelUI-button"].map(r), row2 = ["urlbar-container", "unified-extensions-button"].map(r);
-        const one = rs => rs.every(x => Math.abs(x.top - rs[0].top) < 8), apart = rs => rs.every((x, i) => i === 0 || x.left >= rs[i - 1].right - 0.5);
-        out.push(!d.getElementById("nav-bar").hasAttribute("overflowing") && one(row1) && one(row2) && row2[0].top > row1[0].top
-                 && apart(row1) && apart(row2) && [...row1, ...row2].every(x => x.right <= px + 0.5));
+        const row1 = ["back-button", "stop-reload-button", "PanelUI-button"].map(r), bar = r("urlbar-container");
+        const all = ["back-button", "forward-button", "stop-reload-button", "PanelUI-button", "urlbar-container", "unified-extensions-button"].map(r).filter(x => x.width);
+        const one = rs => rs.every(x => Math.abs(x.top - rs[0].top) < 8);
+        const over = (a, b) => a.left < b.right - 0.5 && b.left < a.right - 0.5 && a.top < b.bottom - 0.5 && b.top < a.bottom - 0.5;
+        out.push(!d.getElementById("nav-bar").hasAttribute("overflowing") && one(row1) && bar.top > row1[0].top && bar.width > px * 0.75
+                 && all.every((a, i) => all.every((b, j) => j <= i || !over(a, b))) && all.every(x => x.left >= 0 && x.right <= px + 0.5));
       }
-      box.style.width = before; await wait(300); return out;""")
-    check("the top row is back, forward, reload and ☰, with the address bar and 🧩 below, at 220–480 px (nothing behind »)", all(rows), str(rows))
+      box.style.width = before; await wait(300); return out;""", low)
+    check("the top row is back, reload and ☰, with the address bar below, and nothing over anything else, from the narrowest to 480 px (nothing behind »)", all(rows), str(rows))
     full = m.js(H + """const w = main(), d = w.document, root = d.documentElement;
       root.setAttribute("inDOMFullscreen", true); await wait(400);  // as Firefox marks a fullscreen video
       const b = d.getElementById("tabbrowser-tabbox").getBoundingClientRect(), side = d.getElementById("sidebar-box").getBoundingClientRect();
@@ -2730,9 +2737,9 @@ def alone_hand(m):
     check("a click on a playing tab's speaker, where it was before the pointer came, mutes it", s == {"open": True, "muted": True} and over["x"] == rest["x"], f"{s} {rest} {over}")
     m.js(H + """const w = main(), t = w.gBrowser.tabs.find(x => x.label === "hand-6"); t.toggleAttribute("soundplaying", false); w.gBrowser._tabAttrModified(t, ["soundplaying"]); if (t.muted) t.toggleMuteAudio(); return 1;""")
 
-    # A notice dismissed with a double click on its ×: it fades where it is, so what is below it
-    # does not come up under the pointer, and the second click reaches nothing. Its room goes once
-    # the pointer has left it. (The line that asks for the isolation permission; where the test
+    # A notice dismissed with a double click on its ×: it fades where it is, so the list above it
+    # does not come down under the pointer, and the second click reaches nothing. Its room goes
+    # once the pointer has left it. (The line that asks for the isolation permission; where the test
     # Firefox has given it, it is taken away for a moment.)
     given = m.js("""return WebExtensionPolicy.getByID(args[0]).hasPermission("webRequestBlocking");""", EXT_ID)
     if given:
@@ -2741,20 +2748,20 @@ def alone_hand(m):
           await new Promise(r => ChromeUtils.importESModule("resource://gre/modules/Timer.sys.mjs").setTimeout(r, 800)); return 1;""", EXT_ID)
     hand(m, hand_to(away))
     sidebar_until(m, """() => !doc.querySelector(".ask-line").hidden""")
-    p = hand_spot(m, """return {...box(doc.querySelector(".ask-line .ask-no")), below: Math.round(doc.getElementById("space-name").getBoundingClientRect().top)};""")
+    p = hand_spot(m, """return {...box(doc.querySelector(".ask-line .ask-no")), list: Math.round(doc.getElementById("tabs").getBoundingClientRect().bottom)};""")
     picked = m.js(H + """return main().gBrowser.selectedTab.label;""")
     hand(m, hand_to(p), hand_pause(150), *hand_click(), hand_pause(60), *hand_click())
     time.sleep(0.8)
-    at = in_sidebar(m, """() => ({shown: !doc.querySelector(".ask-line").hidden, below: Math.round(doc.getElementById("space-name").getBoundingClientRect().top)})""")
+    at = in_sidebar(m, """() => ({shown: !doc.querySelector(".ask-line").hidden, list: Math.round(doc.getElementById("tabs").getBoundingClientRect().bottom)})""")
     still = m.js(H + """return main().gBrowser.selectedTab.label;""")
     hand(m, hand_to(away))
     time.sleep(0.5)
-    left = in_sidebar(m, """() => ({shown: !doc.querySelector(".ask-line").hidden, below: Math.round(doc.getElementById("space-name").getBoundingClientRect().top)})""")
+    left = in_sidebar(m, """() => ({shown: !doc.querySelector(".ask-line").hidden, list: Math.round(doc.getElementById("tabs").getBoundingClientRect().bottom)})""")
     in_sidebar(m, """() => { content.localStorage.removeItem("isolationDeclined"); return 1; }""")  # as it was: the line asks again
     if given:
         m.js(GIVE_PERMISSIONS, EXT_ID, ["webRequest", "webRequestBlocking"], ["<all_urls>"])
-    check("a double click on a notice's × fades it in place, and the second click reaches nothing", at["shown"] and at["below"] == p["below"] and still == picked, f"{p} {at} {picked} -> {still}")
-    check("and its room goes once the pointer has left it", not left["shown"] and left["below"] < p["below"], str(left))
+    check("a double click on a notice's × fades it in place, and the second click reaches nothing", at["shown"] and at["list"] == p["list"] and still == picked, f"{p} {at} {picked} -> {still}")
+    check("and its room goes once the pointer has left it", not left["shown"] and left["list"] > p["list"], str(left))
 
     def close_two(a, b):
         p = hand_spot(m, """const [a, b] = args; row(a).scrollIntoView({block: "center"}); return {...box(row(a).querySelector(".close")), second: box(row(b).querySelector(".close"))};""", a, b)
@@ -8535,8 +8542,9 @@ def alone_look(m):
           and r["hiding"]["inner"] == r["ask"]["inner"] == clear, str(r))
 
     # A lone essential keeps a tile's shape at every width: in the wide grid half a cell was a sliver.
+    # (150 px is less than the dotfiles allow: the sidebar is then as narrow as it gets.)
     shapes = {}
-    for px in (220, 300, 480):
+    for px in (150, 300, 480):
         sidebar_width(m, px)
         shapes[px] = look_in_sidebar(m, """() => {
           const grid = doc.getElementById("essentials"), others = [...grid.children].slice(1);
@@ -8583,7 +8591,7 @@ def alone_look(m):
 
     # A small window's row: Keep stands clear of where its × comes, at every width.
     keep = {}
-    for px in (220, 300, 480):
+    for px in (150, 300, 480):
         sidebar_width(m, px)
         keep[px] = look_in_sidebar(m, """() => {
           const row = page.littleRow(clone({id: -1, title: "A link from another app, with a long title", space: "A space with a long name"}));

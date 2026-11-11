@@ -46,7 +46,7 @@
   }
 
   // A sidebar made narrower wraps the lines above the list onto more lines, and a notice
-  // above the list (or one that now takes two lines) makes it shorter: the list shows less,
+  // under the list (or one that now takes two lines) makes it shorter: the list shows less,
   // and a selected tab that was in view would end up under the fade at its end, or below
   // it. So when the list's size changes, a selected row that was in view, even in part, is
   // brought wholly into view by the least distance (the list's scroll-padding keeps it clear

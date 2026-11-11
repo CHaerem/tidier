@@ -757,7 +757,19 @@ browser.tabs.onUpdated.addListener((tabId, change, tab) => {
       const title = ownTitle(entry, tab);
       const changed = entry.title !== title || newIcon;
       const moved = entry.url !== tab.url;
-      if ((!changed && !moved) || (busyNow && !moved)) return;
+      if (!changed && !moved) return;
+      // Busy, and on the address the record has: no new title (above), but the page's icon is
+      // taken when it comes. Firefox says it once, and a record without it shows a letter on
+      // the page's next address that has none, and on every placeholder.
+      if (busyNow && !moved) {
+        if (!newIcon || !tab.favIconUrl) return;
+        entry.icon = icon;
+        if (entry.saved?.url === tab.url) entry.saved.icon = icon;
+        noteSaved(all, [key]);
+        saveSynced(all, { lazy: true, space: entry.cookieStoreId });
+        refreshGhostsSoon(key);
+        return;
+      }
       Object.assign(entry, { url: tab.url, title, icon });
       // On its saved address, a saved tab's saved title and icon follow the page.
       if (entry.saved?.url === tab.url) Object.assign(entry.saved, { title: tab.title, icon: tab.favIconUrl || entry.saved.icon });
