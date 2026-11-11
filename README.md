@@ -470,14 +470,13 @@ on the same host, and then that tab's container, counting every window and every
 essentials (they are pinned, so always visible to it): the space with the most essentials
 on a site wins. With Tidier that guess counts for nothing, and its login never goes out
 (Isolation, below); the dotfiles' `browser.link.force_default_user_context_id_for_external_opens`
-turns it off in Firefox itself. Tidier opens the link in a small window of its own
-(`littlewindow.js`), in the rule's space or else the one you are in, to read and close, or
-to keep with one click; it can be turned off on the settings page, and then the link is an
-ordinary tab in the same space. A link to a page that is in your list already (a pull
-request in a live folder, say) goes to its row instead, in the window you have, with the
-small window on or off. The same link twice (a double click in the other app)
-brings its small window to the front. Closed, ⇧⌘T gives it back as a small window, with
-its row and Keep. Tidier cannot do this for addons.mozilla.org, which Firefox shields from
+turns it off in Firefox itself. The link opens as a tab in the window you use, in the
+rule's space or else the one you are in. A link to a page that is in your list already (a
+pull request in a live folder, say) goes to its row instead. Turned on on the settings page
+(it is off until you do), Tidier opens such a link in a small window of its own
+(`littlewindow.js`) instead, in the same space, to read and close, or to keep with one
+click. The same link twice (a double click in the other app) brings its small window to
+the front. Closed, ⇧⌘T gives it back as a small window, with its row and Keep. Tidier cannot do this for addons.mozilla.org, which Firefox shields from
 extensions.
 
 ## Known limitations

@@ -40,8 +40,11 @@
 
 const LITTLE_WIDTH = 900, LITTLE_HEIGHT = 700;
 const LITTLE_KEY = "little"; // sessions window value: this window is one of these, also after a restart
-const LITTLE_SETTING = "littleWindow"; // on unless you turned it off in the settings
-const littleSetting = storedValue(LITTLE_SETTING, () => true);
+// Off until you turn it on in the settings: a window of its own for every link was more than
+// most links need, and a link then opens as a tab in the window you use (in the right space
+// all the same, and at its row if the page is in your list: toListed).
+const LITTLE_SETTING = "littleWindow";
+const littleSetting = storedValue(LITTLE_SETTING, () => false);
 const littles = new Map(); // a small window's id -> the window it came from
 const newBlanks = new Map(); // new tabs on their first about:blank -> { fromOutside: Firefox marked it, space: the one you were in, held: see littleHolds, taken: on its way to a small window }
 

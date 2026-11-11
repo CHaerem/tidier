@@ -77,7 +77,9 @@ function withWindows(ff, x) {
   return x;
 }
 
+// With the small window turned on, as most of these are about it; it is off until you do.
 async function start(ff) {
+  ff.store.littleWindow ??= true;
   const x = withWindows(ff, ff.boot());
   x.b.runtime.onStartup.fire();
   await wait(1200);
@@ -383,6 +385,22 @@ test("off in the settings, a link is an ordinary tab", async () => {
   x.kill();
 });
 
+test("the small window is off until you turn it on: a link from another app is an ordinary tab", async () => {
+  const ff = new FakeFirefox();
+  const { w } = session(ff);
+  // Never set, as in a new profile and in one that never touched it.
+  const x = withWindows(ff, ff.boot());
+  x.b.runtime.onStartup.fire();
+  for (let i = 0; i < 300 && !x.started(); i++) await wait(1000);
+  await wait(1000);
+  assert.deepEqual({ ...await x.send({ type: "little:get" }) }, { on: false });
+  const t = linkFromOutside(ff, x, w.id, { url: "https://link.example/a" });
+  await wait(400);
+  assert.equal(popups(ff).length, 0);
+  assert.ok(ff.tabs.get(t.id), "the tab it came in stays");
+  x.kill();
+});
+
 test("the setting is read and written through the settings page", async () => {
   const ff = new FakeFirefox();
   session(ff);
@@ -473,7 +491,7 @@ test("only Tidier's own pages can change the setting", async () => {
   const x = await start(ff);
   assert.equal(x.send({ type: "little:set", on: false }, { url: "https://any.example/" }), undefined);
   await wait(500);
-  assert.equal(ff.store.littleWindow, undefined);
+  assert.equal(ff.store.littleWindow, true);
   x.kill();
 });
 

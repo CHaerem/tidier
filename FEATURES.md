@@ -116,7 +116,7 @@ part C).
 |---|---|---|---|
 | A new window gets every essential and tab | Z | Done | |
 | Closing a window hands its tabs over | Z | Done | a muted page stays muted; a window reopened with ⇧⌘N comes back in its own space, on its own tab (checked) |
-| A small window for links from other apps ("Little Arc") | A | Done | checked in the test Firefox; links from real apps and whether the window comes to the front are to be tried on a Mac |
+| A small window for links from other apps ("Little Arc") | A | Done | off until turned on in the settings; checked in the test Firefox; links from real apps and whether the window comes to the front are to be tried on a Mac |
 | Link preview in a floating window ("Glance", "Peek") | Z A | Done | checked: "Open link in" needs no access; ⌥-click needs the optional access to all websites |
 | Split view | Z A | No | Firefox has its own; Tidier stays out of its way, and it is checked with placeholders |
 

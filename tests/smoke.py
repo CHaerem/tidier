@@ -3811,6 +3811,7 @@ def guessed_links(m, space, other):
 
     def sent(part):
         return [x["cookie"] for x in seen(m, part)]
+    extension_message(m, {"type": "little:set", "on": True})  # off until you turn it on
     r = m.js(link, f"{lh}/r/guess-small", True, "guess-small")
     check("(Firefox guesses the space with more essentials on the site for a link from another app)", r.get("opened") == [other], str(r))
     check("a link Firefox puts in another space's container: none of that space's login goes out, only yours",
@@ -3820,9 +3821,8 @@ def guessed_links(m, space, other):
     r = m.js(link, f"{lh}/r/guess-off", True, "guess-off")
     check("with small windows off, the same: only your login goes out", sent("guess-off") and all(c == yours for c in sent("guess-off")), f"{sent('guess-off')} {r}")
     check("and it opens as a tab in your space, which your window stays in", r.get("here") == [space] and r.get("window") == space and not r.get("popups"), str(r))
-    extension_message(m, {"type": "little:set", "on": True})
     r = m.js(link, f"{lh}/r/guess-none", False, "guess-none")
-    check("with the dotfiles' setting Firefox guesses nothing, and the link opens in your space", r.get("opened") == [0] and r.get("small") == space and theirs not in sent("guess-none"), f"{sent('guess-none')} {r}")
+    check("with the dotfiles' setting Firefox guesses nothing, and the link opens in your space", r.get("opened") == [0] and r.get("here") == [space] and theirs not in sent("guess-none"), f"{sent('guess-none')} {r}")
     m.js(H + """const w = main(); for (const p of w.gBrowser.tabs.filter(t => t.pinned && url(t).includes("guess-essential"))) { w.gBrowser.unpinTab(p); await wait(300); w.gBrowser.removeTab(p); }
       await wait(1200); await removeWhere((x, t) => url(t).includes("localhost") && url(t).includes("set-cookie")); return 1;""")
 
@@ -4934,6 +4934,21 @@ def alone_little_window(m):
       for (let i = 0; i < 100 && !(w.gBrowser && w.gBrowser.tabs.filter(t => role(w, t)).length); i++) await wait(100);
       await wait(1500); main().focus(); await wait(300); return true;""")
 
+    # Off until you turn it on: a link from another app is an ordinary tab. Then on, with a
+    # real click on the settings page.
+    r = m.js(LITTLE + """const w = main(); await onSpaceTab();
+      external(args[0]); await wait(2500);
+      return {popups: popups().length, here: w.gBrowser.tabs.some(t => url(t).includes("little-default"))};""", base + "default")
+    check("the small window is off until you turn it on: a link from another app is an ordinary tab", r["popups"] == 0 and r["here"], str(r))
+    r = ext_page(m, "/settings/settings.html", """
+      const box = doc.getElementById("little-window");
+      for (let i = 0; i < 50 && doc.getElementById("little-section").hidden; i++) await wait(100);
+      const shown = !doc.getElementById("little-section").hidden, was = box.checked;
+      box.click(); await wait(400);
+      return {shown, was, now: box.checked};""")
+    check("the settings page has the on-off, off by default", r["shown"] and not r["was"] and r["now"], str(r))
+    m.js(LITTLE + """await removeWhere((x, y) => url(y).includes("little-default") || url(y).includes("settings/settings.html")); main().focus(); await wait(300); return 1;""")
+
     # A link from another app, with a space's tab selected.
     r = m.js(LITTLE + """const w = main(); const on = await onSpaceTab(), n = w.gBrowser.tabs.length;
       external(args[0]);
@@ -5220,12 +5235,11 @@ def alone_little_window(m):
       const shown = !doc.getElementById("little-section").hidden, was = box.checked;
       box.click(); await wait(400);
       return {shown, was, now: box.checked};""")
-    check("the settings page has the on-off, on by default", r["shown"] and r["was"] and not r["now"], str(r))
+    check("and it is turned off there again", r["shown"] and r["was"] and not r["now"], str(r))
     r = m.js(LITTLE + """const w = main(); await onSpaceTab();
       external(args[0]); await wait(2500);
       return {popups: popups().length, here: w.gBrowser.tabs.some(t => url(t).includes("little-off"))};""", base + "off")
     check("off, a link is an ordinary tab", r["popups"] == 0 and r["here"], str(r))
-    ext_page(m, "/settings/settings.html", """doc.getElementById("little-window").click(); await wait(400);""")
 
     m.js(LITTLE + """await removeWhere((x, y) => url(y).includes("little-") || url(y).includes("settings/settings.html")); main().focus(); await wait(300);
       if (args[0]) { other().close(); await wait(1500); } return 1;""", opened)
@@ -6386,6 +6400,7 @@ def alone_little_restart(m):
     if not m.can_restart:
         print("SKIP  alone_little_restart (needs Tidier installed for real: Developer Edition, or --xpi)", flush=True)
         return
+    extension_message(m, {"type": "little:set", "on": True})  # off until you turn it on
     m.js(LITTLE + """await onSpaceTab(); external(args[0]); const p = await until(() => popups()[0]); await until(() => url(p.gBrowser.selectedTab).includes("little-restart")); await wait(2500); return 1;""", m.pages + "/links?little-restart")
     m.restart()
     r = m.js(LITTLE + """const p = await until(() => popups()[0], 30000); await wait(12000);
