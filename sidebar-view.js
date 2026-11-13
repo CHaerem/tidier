@@ -138,7 +138,7 @@ async function viewFor(windowId, apart) {
   // Tabs still loading go apart from their rows: a row is drawn again when anything in it
   // changes, and a load starting and ending must not replace its icon (sidebar/touches.js).
   const loading = tabs.filter(tabIsLoading).map(t => t.id);
-  return { needsHiding: !browser.tabs.hide, askHiding: askHidingLine, problem: [...notices.values()][0] ?? null, note: noteFor(windowId), spaces, space, essentials, folders, tabs: loose, loading, little: await littleRows(spaces), landed };
+  return { needsHiding: !browser.tabs.hide, askHiding: askHidingLine, problem: [...notices.values()][0] ?? null, restart: restartLine(), note: noteFor(windowId), spaces, space, essentials, folders, tabs: loose, loading, little: await littleRows(spaces), landed };
 }
 const landedIn = new Map(); // windowId -> the name of the last drop carried out there
 
@@ -281,6 +281,10 @@ browser.runtime.onConnect.addListener(port => {
       // said here, where the page and the quiet line are, as ⇧⌘C says it (pagenote.js).
       const [tab] = await browser.tabs.query({ windowId, active: true });
       await sayDone(windowId, tab?.id, msg.text);
+    } else if (msg.type === "restartFirefox") {
+      await restartFirefox(windowId); // firefoxsetup.js: not behind what the queue is doing
+    } else if (msg.type === "restartSeen") {
+      restartLinePutAway();
     } else if (msg.type === "goToSound") {
       await goToSound(windowId, msg.tabId); // sounds.js; like select, not behind what the queue is doing
     } else if (msg.type === "warmup") {

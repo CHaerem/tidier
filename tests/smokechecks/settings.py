@@ -10,7 +10,7 @@ import tempfile
 import time
 from mcp_client import Mcp
 from testfirefox import EXT_DIR, EXT_ID, FIXTURES
-from smokechecks.base import CTRL, H, SHIFT, check, ext_page, extension_message, into_page, no_problems, press, sidebar_page, until
+from smokechecks.base import CTRL, H, SHIFT, check, ext_page, extension_message, in_sidebar, into_page, no_problems, press, sidebar_page, sidebar_until, until
 
 
 # A row of a web page: its tooltip is its title, then its address. (No backslash: the
@@ -473,6 +473,49 @@ def alone_settings(m):
     check("a key brings Tidier's sidebar back", r is False and after["open"] and "6844a953" in (after["id"] or ""), f"{r}, {after}")
     if not after["open"]:
         m.js(H + 'await main().SidebarController.show("_6844a953-9931-4334-9ff6-257c246485cb_-sidebar-action"); return 1;')
+
+
+def alone_setup_files(m):
+    # Firefox must be started again to read its setup files (firefoxsetup.js): the helper is
+    # the real one here (native/firefox_setup.py, through the test's stand-in host), asked
+    # about the test Firefox itself and the profile it runs on. (The restart itself is not
+    # done here: it would take the test's own connection with it. PLAN.md, part C.)
+    profile = os.path.dirname(m.config_home)
+    sheet, prefs = os.path.join(profile, "chrome", "userChrome.css"), os.path.join(profile, "user.js")
+    was = {path: os.stat(path) for path in (sheet, prefs)}
+    line = """() => { const n = doc.getElementById("restart"), b = doc.getElementById("restart-firefox"), list = doc.getElementById("tabs").getBoundingClientRect(), r = n.getBoundingClientRect();
+      return {shown: !n.hidden && !n.classList.contains("going"), words: b.textContent, tip: b.title, underList: r.top >= list.bottom - 1, aButton: b.tagName === "BUTTON" && !b.disabled,
+              away: !!n.querySelector(".ask-no"), wide: Math.round(r.width) > 100}; }"""
+    first = extension_message(m, {"type": "firefoxSetup:check"})
+    at_first = in_sidebar(m, line)
+    check("with Firefox's setup files as they were when it started, nothing is said", first is None and not at_first["shown"], f"{first} {at_first}")
+    try:
+        os.utime(sheet)
+        asked = extension_message(m, {"type": "firefoxSetup:check"})
+        sidebar_until(m, """() => !doc.getElementById("restart").hidden""")
+        r = in_sidebar(m, line)
+        check("a stylesheet changed since Firefox started: the sidebar has one line that is a button, under the list, naming the file",
+              asked == {"files": ["userChrome.css"]} and r["shown"] and r["words"] == "Restart Firefox to finish updating" and "userChrome.css" in r["tip"]
+              and r["underList"] and r["aButton"] and r["away"] and r["wide"], f"{asked} {r}")
+        in_sidebar(m, """() => { doc.querySelector("#restart .ask-no").click(); return 1; }""")
+        sidebar_until(m, """() => doc.getElementById("restart").hidden || doc.getElementById("restart").classList.contains("going")""")
+        again = extension_message(m, {"type": "firefoxSetup:check"})
+        time.sleep(0.5)
+        r = in_sidebar(m, line)
+        check("put away with its ×, it stays away for that file", again is None and not r["shown"], f"{again} {r}")
+        os.utime(prefs)
+        asked = extension_message(m, {"type": "firefoxSetup:check"})
+        sidebar_until(m, """() => !doc.getElementById("restart").hidden && !doc.getElementById("restart").classList.contains("going")""")
+        r = in_sidebar(m, line)
+        check("and comes back when another file has changed too", asked == {"files": ["user.js", "userChrome.css"]} and r["shown"] and "user.js and userChrome.css" in r["tip"], f"{asked} {r}")
+    finally:
+        # As they were, for the groups after this one: the line takes a row's room under the list.
+        for path, st in was.items():
+            os.utime(path, (st.st_atime, st.st_mtime))
+        after = extension_message(m, {"type": "firefoxSetup:check"})
+        sidebar_until(m, """() => doc.getElementById("restart").hidden""")
+    check("with the files as they were again, the line goes", after is None and in_sidebar(m, line)["shown"] is False, str(after))
+    no_problems(m, "after asking about Firefox's setup files")
 
 
 def alone_copy(m):

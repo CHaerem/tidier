@@ -139,6 +139,7 @@ part C).
 
 | Feature | From | Status | Notes |
 |---|---|---|---|
+| A line with a button when Firefox must be started again to read its setup | | Done | checked: the helper program sees that user.js or a stylesheet is newer than the Firefox, and the button quits and opens that one Firefox; the whole restart is tried by hand in the test Firefox |
 | ⇧⌘C copies the address | Z A | Done | checked: a word at the top of the page says so for a moment, as in Arc and Zen, also with the sidebar hidden; the sidebar's line says it where Firefox lets no extension into the page; the menus' and the bar's Copy address say the same |
 | A command bar: search tabs, essentials, history and commands | A Z | Done | checked: ⇧⌘K (⌘T once cleared in about:keyboard), floating in the middle of the window you are in (a panel of Firefox's, placed by the dotfiles' stylesheet); every space's tabs, essentials, folders, closed and archived tabs, and commands; history and bookmarks once allowed |
 | Next and previous tab as shown, the n-th tab of this space, next and previous space | A | Partly | checked: ⌃⌘ and an arrow. ⌘1 to ⌘9, ⌘D and ⌘T only once Firefox's own are cleared in about:keyboard, which the dotfiles do not do yet (README, Keys); until then the settings page marks them as Firefox's and the command bar leaves them out |

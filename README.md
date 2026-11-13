@@ -209,7 +209,28 @@ native/install.sh
 
 It writes `~/Library/Application Support/Mozilla/NativeMessagingHosts/tidier_github.json`,
 which only allows this extension to start the host. The `native/` folder is not
-part of the signed extension.
+part of the signed extension: Firefox does not update it, so a change to it reaches a
+machine when this folder is pulled there (`git pull`).
+
+## When Firefox must be started again
+
+Firefox reads `user.js` and its stylesheets (`userChrome.css`) only as it starts. The
+dotfiles change them by themselves, and nothing says that the Firefox you are in still runs
+on the old ones. So Tidier says it: one line under the list, *Restart Firefox to finish
+updating*, which is a button (`firefoxsetup.js`, `sidebar/restart.js`). It quits Firefox as
+⌘Q does and opens it again, and your tabs come back as after any quit. Its × puts it away
+until another of those files has changed.
+
+An extension can neither see those files nor start Firefox again (there is no call for
+it, and Firefox opens none of its own pages with such a button for an extension). The same
+native host can, since it is a program outside Firefox (`native/firefox_setup.py`): it
+compares the files of the profile with the moment its Firefox started, and to restart it
+asks that one Firefox, by its process id, to quit, waits until it has gone, and opens it
+again. It never acts on a Firefox by name, so no other one on the machine is touched; a
+Firefox that stays, because you said so in a question it asked, is left alone. It is asked
+a little after Tidier starts and each time the live folders are refreshed. Without the
+host, or with an older one, nothing is said. `customKeys.json` is left out: Firefox writes
+it itself when you change a key in about:keyboard, which needs no restart.
 
 ## Working with Claude and other agents
 
@@ -602,7 +623,7 @@ list to the manifest, both ways.
 | `storage` | Tidier's own record and settings, in this profile; through Firefox Sync only when you turn that on. |
 | `cookies` | Opening a tab in a container (a space); clearing a site's cookies in one space, when you ask. |
 | `contextualIdentities` | The spaces: Firefox's containers, made, renamed, coloured and removed. |
-| `nativeMessaging` | Two small programs on this machine, set up by the dotfiles: `tidier_github` (the pull request search and the daily copy) and `tidier_bridge` (the bridge for agents, when it is on). |
+| `nativeMessaging` | Two small programs on this machine, set up by `native/install.sh`: `tidier_github` (the pull request search, the daily copy, and starting Firefox again when its setup files have changed) and `tidier_bridge` (the bridge for agents, when it is on). |
 | `alarms` | Timing: archiving, the live folders' refresh, the daily copy. |
 | `clipboardWrite` | ⇧⌘C, Copy address in the menus, and Copy for Claude. |
 | `activeTab` | The page you pressed one of Tidier's keys in, for that moment: ⇧⌘C and the menus' Copy address say *Address copied* on the page itself. Firefox asks nothing for it and lists nothing. |
@@ -779,6 +800,8 @@ Not guaranteed:
 - `tabsync.js` – live/ghost tab sync. Roles and keys are stored per tab with
   `sessions.setTabValue`, so they survive a restart.
 - `livefolders.js` – live folders of GitHub pull requests (see above).
+- `firefoxsetup.js`, `sidebar/restart.js`, `native/firefox_setup.py` – the line that says Firefox
+  must be started again to read its setup files, and its button.
 - `ghost.html` / `ghost.js` – placeholder page for ghosts, essential copies and never-loaded live tabs.
 - `archive.js` – archiving of unused tabs.
 - `archivelist.js`, `sidebar/archived.js` – the list of archived and closed tabs, per space.

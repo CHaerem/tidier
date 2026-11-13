@@ -6,6 +6,10 @@ so the live folders are tested without your gh login or GitHub. It answers
 from the file in TIDIER_FAKE_PRS, which the test rewrites between refreshes:
 
     {"folders": [{"id", "name", "container"}], "items": {"<folder id>": [{url, title, number, repo}]}}
+
+What it is asked about Firefox itself ({"firefox": ...}) is answered by the real thing
+(native/firefox_setup.py): that acts only on the Firefox that started it, which here is the
+test Firefox.
 """
 import json
 import os
@@ -23,7 +27,11 @@ def main():
         data = json.load(open(os.environ["TIDIER_FAKE_PRS"]))
     except (KeyError, OSError, ValueError):
         data = {}
-    if "backup" in msg:
+    if "firefox" in msg:
+        sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "native"))
+        import firefox_setup
+        reply = firefox_setup.answer(msg)
+    elif "backup" in msg:
         json.dump(msg["backup"], open(os.environ["TIDIER_FAKE_PRS"] + ".copy", "w"))
         reply = {"saved": "copy"}
     elif msg.get("list"):

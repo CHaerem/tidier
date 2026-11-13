@@ -63,6 +63,7 @@
       "essentials.js",
       "tabsync.js",
       "livefolders.js",
+      "firefoxsetup.js",
       "rulematch.js",
       "spaces.js",
       "spaceactions.js",

@@ -289,6 +289,12 @@ Changed by saying so. All of them can be reversed.
   the small window, and so it is where Firefox cannot show the panel (the owner, the same
   day: after the update the key did nothing, in a Firefox still running on the stylesheet
   it had started with). Tidier must work without the dotfiles; they only place things. ⌘W stays Firefox's: with the bar open it closes the tab under it.
+- When Firefox must be started again to read its setup files, Tidier says so with one line
+  that is a button (the owner, 13 November 2026: "tidier burde ha en synlig restart firefox
+  knapp når ny versjon krever firefox restart"). The helper program does what an extension
+  cannot: it sees that the files are newer than the Firefox, and quits and opens that one
+  Firefox. Tried in the test Firefox from the click to the tabs being back; the first time
+  in the daily browser is still to come, and the helper reaches a machine by `git pull`.
 - A row that closes folds away at once, and the rows below come up into its place in one soft
   move, as in Zen and Arc (the owner, 13 November 2026: the room a closed row kept while the
   pointer was in the list left holes, which then filled late). A double click on × still closes

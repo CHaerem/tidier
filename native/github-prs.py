@@ -13,6 +13,9 @@
 # it cannot write files itself: kept next to the config, the last COPIES days. It
 # holds your addresses, so only you can read it.
 #
+# And it can be asked whether Firefox's setup files have changed since Firefox started, and
+# to start Firefox again ({"firefox": ...}, firefox_setup.py): an extension can do neither.
+#
 # Installed for Firefox by install.sh.
 import getpass
 import glob
@@ -114,6 +117,10 @@ def save_copy(copy):
 
 def main():
     msg = read_message()
+    if "firefox" in msg:
+        import firefox_setup  # beside this file; only when asked for
+        send(firefox_setup.answer(msg))
+        return
     if "backup" in msg:
         try:
             send({"saved": save_copy(msg["backup"])})
