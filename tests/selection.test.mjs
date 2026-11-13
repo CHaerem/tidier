@@ -31,7 +31,7 @@ async function sidebar({ os = "mac", rows = [1, 2, 3, 4, 5], tiles = [8, 9], act
   const kept = new Map(els.map(e => [`${e.classes.has("tile") ? "tile" : "tab"}:${e.id}`, e]));
   const listeners = {}, sent = [], viewListeners = [];
   const ctx = {
-    view: { space: "s" }, kept, send: m => sent.push(m), closeMenu() {}, cursor: null, moveCursor(c) { ctx.cursor = c || null; },
+    view: { space: "s" }, kept, send: m => sent.push(m), closeRow: id => sent.push({ type: "close", tabId: id }), closeMenu() {}, cursor: null, moveCursor(c) { ctx.cursor = c || null; },
     reachable: () => els, dragging: null, marks() {}, settleDrag() {}, dropAt: () => null, secondClick: { acted() {} },
     sendDrop: msgs => msgs.forEach(m => sent.push(m)), // drag.js: what it adds (shown at once, a name for the last) is its own to test
     nextTab: e => { const list = els.filter(x => x.classes.has("tab")); return list[list.indexOf(e) + 1] ?? null; },

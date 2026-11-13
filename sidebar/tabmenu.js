@@ -69,7 +69,7 @@ const TAB_MENU = [
   // placeholder in this list, whose real tab is then pulled in under another id while its
   // close is on the way.
   { id: "close", group: 5, many: true, label: n => tabsWord(n, "Close", "Close # tabs"),
-    when: eachTab(t => !t.tile), run: tabs => [...tabs].sort((a, b) => a.active - b.active).forEach(t => send({ type: "close", tabId: t.id })) },
+    when: eachTab(t => !t.tile), run: tabs => [...tabs].sort((a, b) => a.active - b.active).forEach(t => closeRow(t.id)) }, // sidebar.js: their rows fold away
 ];
 
 // The menu for these tabs, as openMenu takes it (null: a line).

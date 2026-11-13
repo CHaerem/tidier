@@ -293,69 +293,105 @@ function row(item, folderKey) {
 const savedIn = folderKey => !!folderKey && !!view && !view.folders.find(f => f.key === folderKey)?.live;
 const closeTitle = (item, folderKey) => (!savedIn(folderKey) ? "Close" : item.loaded ? "Unload (it stays in the folder)" : "Remove from the folder");
 
-// --- A row you close keeps its room -----------------------------------------------
-// A row closed with the mouse (its ×, a middle click) leaves an empty room of its own
-// height while the pointer is in the list, so the row below does not slide up under the
-// pointer, and at the end of a scrolled list the rows above do not slide down; it closes
-// once the pointer has left the list. So does a row that a closed folder shows because its
-// tab was selected (sidebar.css): you selected another, and it stays until you leave.
-// Nothing else is held: what you did not point at goes at once. (Only for the real mouse:
-// a key has no place in the list, and a script's click is no pointer.)
+// --- A row that closes folds away ---------------------------------------------------
+// A row you close folds away at once, and the rows below come up into its place in one soft
+// move, as in Zen and Arc. The click itself starts it, before the tab has closed, so the
+// list answers the hand and not the round trip; and a row that goes for any other reason (⌘W,
+// another window, archiving) leaves a room that folds the same way, from the height the row
+// had. It was not always so: a row closed with the mouse once left an empty room while the
+// pointer was in the list, so that nothing slid under the pointer. That left holes in the
+// list, which then filled late and all at once. A double click on × still closes one tab
+// only: the click that follows one that acted does nothing (secondclick.js).
 //
-// What is held is held for your next click there, not for good. Firefox does not always say
-// that the pointer has left: another app taken with the keyboard, a menu opened over the
-// list, a window moved from under it, and the list still counts as pointed at. The rooms
-// then stayed, as holes in the list where closed tabs had been, until the pointer next came
-// and went. So they also go when the pointer has not moved in the list for a few seconds
-// (the moves are listened for only while something is held).
+// A row whose tab did not close after all comes back: a page that asks before it closes and
+// that you keep, or anything else that refused.
+//
+// Two things are still held while the pointer is in the list, and let go when it leaves or
+// has rested there a few seconds (Firefox does not always say that the pointer has left:
+// another app taken with the keyboard, a menu opened over the list): the row a closed
+// folder shows because its tab was selected, when you select another (sidebar.css), and a
+// saved tab just unloaded with its ×, which stays as dim as it now is.
 const byHand = e => e.isTrusted && e.detail > 0;
 let pickedByHand = false; // the last row selected was clicked with the mouse
 const tabsList = document.getElementById("tabs");
-const keepsRoom = new Set(); // tab ids closed with the pointer, as strings like dataset.tab
 const lingering = new Set(); // tab ids of rows a closed folder keeps showing for now
 const stillDim = new Set(); // tab ids of saved tabs just unloaded with their ×, until the mouse leaves them
 let roomsInSpace = null;
+let foldsRows = false; // this view is of the list drawn before it: what has gone from it folds away
 const holding = () => tabsList.matches(":hover");
-const HELD_MS = 3000; // longer than the next click takes, shorter than a hole is looked at
+const HELD_MS = 3000; // longer than the next click takes, shorter than a row out of place is looked at
 let heldTimer = null;
 function heldFromNow() {
   if (!heldTimer) tabsList.addEventListener("mousemove", heldFromNow, { passive: true });
   clearTimeout(heldTimer);
   heldTimer = setTimeout(letRoomsGo, HELD_MS);
 }
-function closeByPointer(id, e) {
-  if (byHand(e) && holding()) { keepsRoom.add(String(id)); heldFromNow(); }
+
+const ROW_FOLD_MS = 180, ROW_FOLD_EASE = "cubic-bezier(.2, .7, .2, 1)"; // tokens.css's --soft, for the room; the row's own is sidebar.css
+const CLOSE_REFUSED_MS = 1500; // a tab that is still there by then did not close
+const lessMotion = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
+const closingRows = new Map(); // tab id, as dataset.tab -> the timer that lets its row back
+// What × does to a row is not the same on every row (closeTitle, below): a saved tab that is
+// loaded only unloads, in its place, and its row stays.
+const rowStays = row => savedIn(row.dataset.folder || null) && !row.classList.contains("unloaded");
+// Close a tab from its row, by the pointer or a key: the row folds away as it is asked.
+function closeRow(id) {
+  const row = kept.get("tab:" + id), key = String(id);
+  if (row?.isConnected && !rowStays(row)) {
+    row.classList.add("closing");
+    clearTimeout(closingRows.get(key));
+    closingRows.set(key, setTimeout(() => { closingRows.delete(key); kept.get("tab:" + id)?.classList.remove("closing"); }, CLOSE_REFUSED_MS));
+  }
   send({ type: "close", tabId: id });
 }
-// `nodes` for `parent`, with a room where a row has gone that is to keep one, after
-// whatever came before it. A row that comes in just there takes the room instead: a saved
-// tab closed while loaded becomes a new placeholder in its place (unloadSaved, tabsync.js),
-// and stays dim if it was to.
+function closeByPointer(id, e) {
+  if (byHand(e) && holding()) heldFromNow(); // for a row that stays dim (stillDim)
+  closeRow(id);
+}
+// A row drawn again has lost its classes: one still folding keeps folding.
+function keepClosing() {
+  for (const key of closingRows.keys()) kept.get("tab:" + key)?.classList.add("closing");
+}
+
+// The room a row leaves as it goes: as high as the row is at that moment (its own fold may
+// be half way), folding to nothing and then gone. None for a row that has folded already,
+// one that was not shown, or where less motion is asked for: the rows below are then
+// simply where they belong.
+function foldingRoom(row) {
+  if (!foldsRows || lessMotion()) return null;
+  const height = row.getBoundingClientRect().height;
+  if (height < 1) return null;
+  const style = getComputedStyle(row), full = parseFloat(style.getPropertyValue("--row")) || height;
+  const room = el("div", "room");
+  const fold = room.animate([{ height: `${height}px`, marginBottom: style.marginBottom }, { height: "0px", marginBottom: "0px" }],
+    { duration: Math.max(40, ROW_FOLD_MS * Math.min(1, height / full)), easing: ROW_FOLD_EASE });
+  fold.onfinish = fold.oncancel = () => room.remove();
+  return room;
+}
+
+// `nodes` for `parent`, with a folding room where a row has gone, after whatever came
+// before it. A row that comes in just there takes the place instead: a saved tab closed
+// while loaded becomes a new placeholder in its place (unloadSaved, tabsync.js), and stays
+// dim if it was to. A room still folding from the view before stays where it is.
 function withRooms(parent, nodes) {
-  if (!holding() || !view) return nodes;
+  if (!view) return nodes;
   const wanted = new Set(nodes), out = [...nodes];
   let at = 0;
   for (const child of [...parent.children]) {
     if (wanted.has(child)) { at = out.indexOf(child) + 1; continue; }
+    const comes = out[at], takesItsPlace = comes?.classList.contains("tab") && comes.parentNode !== parent;
     let room = child.classList.contains("room") ? child : null;
-    if (!room && keepsRoom.delete(child.dataset.tab)) {
-      room = el("div", "room");
-      if (stillDim.delete(child.dataset.tab)) room.dataset.dim = "1";
+    if (!room && child.classList.contains("tab")) {
+      if (takesItsPlace) { if (stillDim.delete(child.dataset.tab)) stillDim.add(comes.dataset.tab); continue; }
+      room = foldingRoom(child);
     }
-    if (!room) continue;
-    const comes = out[at];
-    if (comes?.classList.contains("tab") && comes.parentNode !== parent) {
-      if (room.dataset.dim) stillDim.add(comes.dataset.tab);
-      continue;
-    }
+    if (!room || takesItsPlace) continue;
     out.splice(at++, 0, room);
   }
   return out;
 }
 function letRoomsGo() {
-  for (const room of tabsList.querySelectorAll(".room")) room.remove();
   for (const row of tabsList.querySelectorAll(".lingers, .still-dim")) row.classList.remove("lingers", "still-dim");
-  keepsRoom.clear();
   lingering.clear();
   stillDim.clear();
   tabsList.style.removeProperty("--held"); // the end the quiet line's room left (note.js)
@@ -481,7 +517,8 @@ function render(next) {
   view = next;
   drawn = new Set();
   const space = view.spaces.find(s => s.id === view.space), root = document.documentElement;
-  if (view.space !== roomsInSpace) { roomsInSpace = view.space; letRoomsGo(); } // another list: nothing in it was where you pointed
+  foldsRows = view.space === roomsInSpace; // another space's list is not this one with rows gone
+  if (!foldsRows) { roomsInSpace = view.space; letRoomsGo(); } // another list: nothing in it was where you pointed
   const look = { space: view.space || "", accent: space?.color || "#7a7a80" };
   // A space comes in as one piece: a folder drawn for it now does not fade in on its own,
   // after everything else (sidebar.css, html.space-arriving), as a folder that appears does.
@@ -519,6 +556,7 @@ function render(next) {
   list.push(...view.tabs.map(t => row(t, null)));
   place(tabsList, withRooms(tabsList, list));
   keepLingering();
+  keepClosing();
 
   // (What another file put at the end of the bar stays there: the place to drop a tab for a new space, isolation.js.)
   const bar = document.getElementById("spaces");

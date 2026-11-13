@@ -197,9 +197,15 @@ img { filter: drop-shadow(0 0 .6px light-dark(rgb(40 30 20 / .3), rgb(255 255 25
  * can always see where you are. Nothing unfolds and nothing is stored: it goes when you
  * leave the tab. */
 .folder.collapsed > .children > .tab:not(.active, .lingers, .was-active) { display: none; }
-/* Where a row was, while the pointer is still in the list (sidebar.js): the rows around it
- * stay where they were. Events go through it to the list, as on its empty part. */
-:is(#tabs, #swipe .list) .room { height: var(--row); margin-bottom: var(--row-gap); pointer-events: none; }
+/* A row that closes folds away, and the rows below come up into its place in one soft move
+ * (sidebar.js): the row itself from the click, and where it was once it has gone, a room
+ * that goes on from the height the row had. Events go through both to the list, as on its
+ * empty part. */
+.row.tab.closing {
+  height: 0; margin-bottom: 0; opacity: 0; overflow: hidden; pointer-events: none;
+  transition: height var(--soft), margin-bottom var(--soft), opacity var(--quick);
+}
+:is(#tabs, #swipe .list) .room { height: 0; pointer-events: none; }
 .folder.collapsed > .children > .tab { scroll-margin-top: calc(var(--row) + var(--row-gap)); } /* scrolled into view, it brings its head along */
 .folder > .children { transition: opacity var(--soft); @starting-style { opacity: 0; } }
 html.space-arriving .folder > .children { transition: none; } /* a whole space comes in at once (sidebar.js) */

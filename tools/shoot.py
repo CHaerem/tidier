@@ -11,11 +11,10 @@ and writes PNGs at twice the size, as on a Retina screen:
 
     sidebar-SPACE-WIDTH-SCHEME   the sidebar per space, at 220, 300 and 480 px, light and dark
     window-SPACE-SCHEME          the whole window around it, with userChrome.css
-    hover-*, menu-*, state-*     one thing at a time, at 300 px, light and dark (state-closed-row-room and
-                                 state-saved-tab-unloaded with the mouse where it clicked)
-    hover-*, menu-*, state-*     one thing at a time, at 300 px, light and dark (state-swipe: a third of
-                                 the way through a swipe on the trackpad to the next space; -saved-tab-away:
-                                 a saved tab off the page it was saved on)
+    hover-*, menu-*, state-*     one thing at a time, at 300 px, light and dark (state-saved-tab-unloaded
+                                 with the mouse where it clicked; state-swipe: a third of the way through
+                                 a swipe on the trackpad to the next space; -saved-tab-away: a saved tab
+                                 off the page it was saved on)
     keys-*                       with the keyboard in the sidebar, for real: the cursor, a menu by key
     state-essentials-N-WIDTH     one, two and three essentials, at each width
     bar-empty-SCHEME, bar-typed-SCHEME   the command bar's page
@@ -735,7 +734,7 @@ def archived(cam):
 # The command bar is a panel of Firefox's in the window (commandbar.js), which Firefox draws
 # apart from the window: a picture of the window does not have it. Its page is drawn by
 # itself (bar-*), and laid over the window's picture where the panel stands (window-bar-*),
-# with the corners and the shadow the dotfiles' stylesheet gives the panel drawn by hand.
+# with the panel's corners and shadow drawn by hand.
 # Marionette cannot be pointed at a panel's page, nor do the keys it sends reach one: both
 # go through the page's own process.
 BAR_PANEL = CHROME + """
@@ -854,8 +853,9 @@ def bar_window(cam):
                 continue
             bar_scheme(m, scheme)
             window = m.js(WHOLE_WINDOW)
-            # The panel's corners and shadow are Firefox's to draw, from what the stylesheet
-            # says of them: read from the panel, and drawn here by hand.
+            # The panel's corners are Firefox's to draw, from what the stylesheet says of them,
+            # and its shadow is the Mac's own: the corners read from the panel, and both drawn
+            # here by hand.
             shot = m.js(BAR_PANEL + """const [window64] = args, scale = w.devicePixelRatio, {panel} = bar();
               const at = panel.getOuterScreenRect(), x = (at.x - w.mozInnerScreenX) * scale, y = (at.y - w.mozInnerScreenY) * scale;
               const style = w.getComputedStyle(panel), radius = (parseFloat(style.getPropertyValue("--panel-border-radius")) || 8) * scale;
@@ -948,9 +948,8 @@ def away(cam):
 
 
 def under_the_hand(cam):
-    """What a hand leaves for a moment: the quiet line in its room, the room a row closed with the
-    mouse keeps while the mouse is in the list, and a saved tab just unloaded under the mouse.
-    The row closed is closed for good."""
+    """What a hand leaves for a moment: the quiet line in its room, and a saved tab just unloaded
+    under the mouse. (A row that closes folds away in a moment: nothing of it stays to be shown.)"""
     m = cam.m
     select(m, on_tab(WORK), WORK["ctx"])
     if cam.wanted("state-quiet-line"):
@@ -970,14 +969,6 @@ def under_the_hand(cam):
         in_sidebar(m, """await until(() => doc.querySelector("#tabs .still-dim"), "the row unloaded");""")
         cam.mouse(*at)
         cam.shoot("state-saved-tab-unloaded")
-    cam.mouse_away()
-    at = cam.wanted("state-closed-row-room") and cam.point_at("#tabs > .row.tab:not(.active):not(.unloaded) .close")  # today's: a saved tab unloads in its place
-    if at:
-        cam.mouse(*at, {"type": "pointerDown", "button": 0}, {"type": "pointerUp", "button": 0})
-        cam.m.cmd("WebDriver:ReleaseActions")
-        in_sidebar(m, """await until(() => doc.querySelector("#tabs .room"), "the room");""")
-        cam.mouse(*at)
-        cam.shoot("state-closed-row-room")
     cam.mouse_away()
 
 

@@ -148,7 +148,7 @@ addEventListener("keydown", e => {
     case "Backspace": case "Delete":
       if (!tab) return; // (held down, it closes one tab: selection.js)
       moveCursor(all[at + 1] || all[at - 1]);
-      send({ type: "close", tabId: tab });
+      closeRow(tab); // sidebar.js: its row folds away
       break;
     default: return;
   }

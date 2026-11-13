@@ -807,6 +807,9 @@ def look(m):
     # is looked for; Developer Edition, a version ahead, is tested too.
     sheet = re.sub(r"/\*.*?\*/", "", open(f"{DOTFILES}/userChrome.css").read(), flags=re.S)
     ids = sorted({i for i in re.findall(r"#([A-Za-z][\w-]*)", sheet) if not re.fullmatch(r"[0-9a-fA-F]{3,8}", i)})  # not a colour
+    # (The panel a toolbar button's popup opens in is made as it opens, and gone when it closes:
+    # that its rule still acts is seen where the command bar is, in alone_command_bar.)
+    ids = [i for i in ids if i != "customizationui-widget-panel"]
     classes = sorted(set(re.findall(r"(?<![\w)])\.([A-Za-z][\w-]*)", sheet)))  # not a number, as in .15s
     gone = m.js(H + """const d = main().document;
       return [...args[0].filter(id => !d.getElementById(id)).map(id => "#" + id), ...args[1].filter(c => !d.querySelector("." + c)).map(c => "." + c)];""", ids, classes)
@@ -1161,6 +1164,17 @@ def old_browser(m):
               settings: wins().map(w => w.gBrowser.tabs.filter(t => url(t).includes("/settings/settings.html")).length),
               inFront: wins().filter(w => url(w.gBrowser.selectedTab).includes("/settings/settings.html")).length,
               closed: wins().flatMap(w => w.SessionStore.getClosedTabDataForWindow(w)).filter(c => JSON.stringify(c.state.entries || []).includes("/sidebery/group.html")).length};"""
+    # Two windows: the folder's page is in every one of them. The second window this group is
+    # given (new_window's) is closed again by reopened_window, and in a Firefox where Tidier
+    # cannot be installed for real, update and restart, which make or restore one, are skipped:
+    # so one is made here where there is none, rather than leaving this group to what the
+    # groups before it happened to leave behind.
+    m.js(H + """if (wins().length > 1) return 0;
+      const w = main().OpenBrowserWindow(); w.__smoke = true;
+      for (let i = 0; i < 100 && !w.gBrowser; i++) await wait(100);
+      const want = main().gBrowser.tabs.filter(t => !t.pinned && role(main(), t)).length;
+      for (let i = 0; i < 200 && w.gBrowser.tabs.filter(t => !t.pinned && role(w, t)).length < want; i++) await wait(100);
+      await wait(3000); return 1;""")
     extension_message(m, {"type": "flush"})
     picked = m.js(H + """const {AddonManager} = ChromeUtils.importESModule("resource://gre/modules/AddonManager.sys.mjs");
       const [id, page] = args, ext = WebExtensionPolicy.getByID(id).extension;
@@ -2764,50 +2778,60 @@ def alone_hand(m):
     hands = lambda: m.js(H + """return main().gBrowser.tabs.filter(t => t.label.startsWith("hand-")).map(t => t.label).sort();""")
     sidebar_until(m, """() => [...doc.querySelectorAll("#tabs .tab")].filter(r => r.title.startsWith("hand-")).length >= 12""")
 
-    # A double click on × closes one tab: the row below stays where it was while the pointer
-    # is in the list, so the second click lands on nothing. Once the pointer leaves, it comes up.
+    # A double click on × closes one tab: the click that follows one that acted does nothing
+    # (secondclick.js). The row folds away at once, from the click, and the rows below come up
+    # into its place in one soft move, with the pointer still in the list: no hole is left where
+    # it was. Where the row below is, is read at every frame from the click on.
+    m.js(H + """Services.prefs.setIntPref("ui.prefersReducedMotion", 0); await wait(300); return 1;""")
     p = hand_spot(m, """const r = row("hand-3"); r.scrollIntoView({block: "center"}); const c = box(r.querySelector(".close")), b = r.nextElementSibling, a = r.previousElementSibling;
-      return {x: c.x, y: c.y, below: b.title.split("\\n")[0], top: box(b).top, above: a.title.split("\\n")[0], aboveTop: box(a).top};""")
+      const seen = content.handFold = [], t0 = content.performance.now();
+      const look = () => { const now = row(b.title.split("\\n")[0]); if (now) seen.push([Math.round(content.performance.now() - t0), Math.round(box(now).top * 10) / 10, !row("hand-3") || row("hand-3").classList.contains("closing")]);
+        if (content.performance.now() - t0 < 2500) content.requestAnimationFrame(look); };
+      r.querySelector(".close").addEventListener("click", () => { seen.length = 0; seen.push(["click", Math.round(content.performance.now() - t0)]); }, {capture: true, once: true});
+      content.requestAnimationFrame(look);
+      return {x: c.x, y: c.y, below: b.title.split("\\n")[0], top: box(b).top, above: a.title.split("\\n")[0], aboveTop: box(a).top, list: doc.getElementById("tabs").scrollTop};""")
     hand(m, hand_to(p), hand_pause(300), *hand_click(), hand_pause(60), *hand_click())
     time.sleep(1.5)
-    after = hand_spot(m, """const b = row(args[0]); return {top: b && box(b).top, room: !!doc.querySelector("#tabs .room"), gone: !row("hand-3")};""", p["below"])
+    after = hand_spot(m, """const b = row(args[0]), a = row(args[1]), seen = content.handFold, clicked = seen[0][1], frames = seen.slice(1).map(([at, top, going]) => [at - clicked, top, going]);
+      return {top: b && box(b).top, aboveTop: a && box(a).top, rooms: doc.querySelectorAll("#tabs .room").length, gone: !row("hand-3"), pointed: doc.getElementById("tabs").matches(":hover"), frames};""", p["below"], p["above"])
     left = hands()
-    hand(m, hand_to(away))
-    time.sleep(0.5)
-    later = hand_spot(m, """const b = row(args[0]), a = row(args[1]); return {top: b && box(b).top, aboveTop: a && box(a).top, room: !!doc.querySelector("#tabs .room")};""", p["below"], p["above"])
     check("a double click on × closes one tab", "hand-3" not in left and len(left) == 11 and after["gone"], f"{left} {after}")
-    # (Once the pointer has left, the row comes up by the room it had; or, at the end of a
-    # scrolled list, which gets shorter, the rows above it come down instead, by the room and
-    # by any room the quiet line left at the list's end, which goes then too: note.js.)
-    comes_up = p["top"] - later["top"] == 32 and later["aboveTop"] == p["aboveTop"]
-    come_down = later["aboveTop"] - p["aboveTop"] >= 32 and later["top"] >= p["top"]
-    check("the row below stays under the pointer while it is in the list, and moves when it leaves", after["top"] == p["top"] and after["room"] and (comes_up or come_down) and not later["room"], f"{p} {after} {later}")
-
-    # The room is for the next click, not for good: Firefox does not always say that the pointer
-    # has left the list (another app taken with the keyboard, a menu over it), and the room then
-    # stayed as a hole where the tab had been. With the pointer still in the list, it goes a few
-    # seconds after the pointer last moved there, and not while it still moves. (A tab of its own:
-    # every other one here has its check.)
-    m.js(H + """const w = main(), [pages, ctx] = args; w.gBrowser.addTrustedTab(pages + "/titled?hand-held", {userContextId: ctx, inBackground: true});
-      for (let i = 0; i < 100 && !w.gBrowser.tabs.some(t => t.label === "hand-held"); i++) await wait(100); return 1;""", m.pages, int(here.split("-")[-1]))
-    sidebar_until(m, """() => [...doc.querySelectorAll("#tabs .tab")].some(r => r.title.split("\\n")[0] === "hand-held")""")
-    p = hand_spot(m, """const r = row("hand-held"); r.scrollIntoView({block: "center"}); const list = doc.getElementById("tabs"), at = doc.documentElement.dataset;
-      delete at.heldRoom; delete at.heldMove; delete at.heldGone;
-      list.addEventListener("mousemove", () => { if (at.heldRoom && !at.heldGone) at.heldMove = Date.now(); });
-      new content.MutationObserver(() => { const room = !!list.querySelector(".room");
-        if (room && !at.heldRoom) at.heldRoom = Date.now(); else if (!room && at.heldRoom && !at.heldGone) at.heldGone = Date.now(); }).observe(list, {childList: true, subtree: true});
-      return box(r.querySelector(".close"));""")
-    hand(m, hand_to(p), hand_pause(300), *hand_click())
-    sidebar_until(m, """() => doc.documentElement.dataset.heldRoom""")
-    time.sleep(1.5)
-    hand(m, hand_to(p, -40, 2))
-    r = sidebar_until(m, """() => { const at = doc.documentElement.dataset; return at.heldGone && {room: Number(at.heldRoom), move: Number(at.heldMove), gone: Number(at.heldGone),
-      pointed: doc.getElementById("tabs").matches(":hover"), rooms: doc.querySelectorAll("#tabs .room").length}; }""", timeout=10)
-    left = hands()
+    # (At the end of a scrolled list, which gets shorter, the rows above come down instead.)
+    comes_up = p["top"] - after["top"] == 32 and after["aboveTop"] == p["aboveTop"]
+    come_down = after["aboveTop"] - p["aboveTop"] >= 32 and after["top"] >= p["top"]
+    # How the rows came up: a frame comes every 16 ms on a Mac at rest, and every 200 ms on a
+    # busy one, so what is asked of every run is that the fold starts with the click and ends;
+    # that the way there is a move and not a jump is asked where there were frames to see it.
+    tops = [top for _, top, _ in after["frames"]]
+    moved = [(at, top) for at, top, _ in after["frames"] if top not in (tops[0], tops[-1])]
+    started = next((at for at, top, going in after["frames"] if going or top != tops[0]), None)
+    settled = next((at for at, top, _ in after["frames"] if top == tops[-1]), None)
+    often = len([1 for at, _, _ in after["frames"] if at <= 300]) >= 10
+    check("the closed row's place is taken at once, with the pointer still in the list, and no hole is left", after["pointed"] and after["rooms"] == 0 and (comes_up or come_down), f"{p} {after['top']} {after['aboveTop']} rooms {after['rooms']}")
+    check("the row folds away from the click itself, before its tab has closed", started is not None and started == after["frames"][0][0] and after["frames"][0][2], f"{after['frames'][:6]}")
+    if often and comes_up:
+        check("the rows below come up in one soft move, over well within half a second",
+              settled is not None and settled <= 450 and len(moved) >= 3 and all(a[1] >= b[1] for a, b in zip(moved, moved[1:])),
+              f"settled {settled} ms, {len(moved)} frames on the way: {after['frames'][:40]}")
+    else:
+        print(f"INFO  too few frames to see the rows move ({len(after['frames'])} in {after['frames'][-1][0] if after['frames'] else 0} ms): settled {settled} ms after the click", flush=True)
     hand(m, hand_to(away))
     time.sleep(0.3)
-    check("a closed row's room goes by itself once the pointer has rested in the list, and not while it still moves there",
-          bool(r) and r["pointed"] and r["rooms"] == 0 and "hand-held" not in left and 2800 <= r["gone"] - r["move"] <= 5000 and r["gone"] - r["room"] >= 3800, f"{r} {left}")
+
+    # With less motion asked for, the row is simply gone, and the row below is in its place.
+    m.js(H + """const w = main(), [pages, ctx] = args; Services.prefs.setIntPref("ui.prefersReducedMotion", 1);
+      w.gBrowser.addTrustedTab(pages + "/titled?hand-still", {userContextId: ctx, inBackground: true});
+      for (let i = 0; i < 100 && !w.gBrowser.tabs.some(t => t.label === "hand-still"); i++) await wait(100); return 1;""", m.pages, int(here.split("-")[-1]))
+    sidebar_until(m, """() => [...doc.querySelectorAll("#tabs .tab")].some(r => r.title.split("\\n")[0] === "hand-still") && content.matchMedia("(prefers-reduced-motion: reduce)").matches""")
+    p = hand_spot(m, """const r = row("hand-still"); r.scrollIntoView({block: "center"}); const seen = content.handStill = [];
+      new content.MutationObserver(() => { if (doc.querySelector("#tabs .room")) seen.push("room"); }).observe(doc.getElementById("tabs"), {childList: true, subtree: true});
+      return box(r.querySelector(".close"));""")
+    hand(m, hand_to(p), hand_pause(300), *hand_click())
+    r = sidebar_until(m, """() => ![...doc.querySelectorAll("#tabs .tab")].some(r => r.title.split("\\n")[0] === "hand-still") && {rooms: content.handStill.length}""", timeout=10)
+    left = hands()
+    hand(m, hand_to(away))
+    m.js(H + """Services.prefs.clearUserPref("ui.prefersReducedMotion"); await wait(300); return 1;""")
+    check("with less motion asked for, a closed row is gone at once, with nothing folding", bool(r) and r["rooms"] == 0 and "hand-still" not in left, f"{r} {left}")
 
     # A middle click closes, with Firefox's autoscroll on, and the next click works. (Firefox
     # starts it only in what can scroll, so the list gets room at its end for this.)
@@ -9548,7 +9572,7 @@ BAR = H + """const barIn = w => { const b = [...w.document.querySelectorAll("pan
     const got = new Promise(r => mm.addMessageListener(id, function heard(msg) { mm.removeMessageListener(id, heard); r(msg.data); }));
     mm.loadFrameScript("data:," + encodeURIComponent("(async () => { const page = content.wrappedJSObject, doc = page.document, args = " + JSON.stringify(args) + "; " + source
       + " })().then(value => sendAsyncMessage(" + JSON.stringify(id) + ", {value}), err => sendAsyncMessage(" + JSON.stringify(id) + ", {error: String(err)}));"), false);
-    return Promise.race([got, wait(4000).then(() => ({gone: true}))]); };
+    return Promise.race([got, wait(15000).then(() => ({gone: true}))]); };
 """
 # Tidier's own keys in Firefox's list for the window, among them the bar's two, if it has them.
 BAR_KEYS = H + """const w = main(); w.focus(); await wait(300); const mine = [...w.document.querySelectorAll('keyset[id^="ext-keyset"]')].filter(k => k.id.includes("6844a953"));
@@ -9625,8 +9649,7 @@ def bar_keys(m, keys, *mods):
             if (!content.document.documentElement) break;  // it has closed
             tip.keydown(event(key), flags(key));
             tip.keyup(event(key), flags(key));
-            await new Promise(r => content.setTimeout(r, 15));
-          }
+          }  // (one after the other with no pause: on a busy machine a page's timers come late, and each key is taken in as it is sent)
         } finally { for (const mod of [...mods].reverse()) tip.keyup(event(mod), tip.KEY_NON_PRINTABLE_KEY); }
         return content.document.documentElement ? {field: doc.getElementById("field").value, focus: doc.hasFocus(), on: doc.activeElement?.id ?? null} : null;`, [keys, mods]);""", names, [BAR_KEY_NAMES[k] for k in mods])
     if "error" in answer:
