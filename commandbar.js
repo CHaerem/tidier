@@ -2,12 +2,19 @@
 // Tabs of all spaces, essentials, folders, what was closed, history and bookmarks if
 // you allow it, and commands.
 //
-// An extension cannot draw over a page, so the bar is a small popup window of its own
-// (windows.create type popup), centred over the window you are in. Tab sync and
-// essentials only look at normal windows, so they leave it alone. A toolbar button's
-// popup would have no frame at all, but opens hanging from the button, and with
-// Tidier's button in the Extensions menu and the toolbar in the sidebar (or hidden, in
-// compact mode) that is not where you are looking.
+// An extension cannot draw over a page, but Firefox can for it: the bar is the popup of
+// Tidier's toolbar button, opened by the key (browserAction.openPopup). That is a panel
+// of Firefox's own, in the window you are in, with no frame and no title, which takes the
+// keyboard, gives it back to where it was, and goes when you click beside it. It was once a
+// small window of its own (windows.create type popup): that had a title bar, took a moment
+// longer, stood in Mission Control and ⌘`, and had to be placed, focused and forgotten by
+// Tidier. Firefox hangs the panel from the Extensions button, where Tidier's own button is. The
+// dotfiles' stylesheet puts it in the middle of the window, where the address bar floats:
+// only a stylesheet of the browser's own can say where a panel goes.
+//
+// The window is still there, for a Firefox that will not open the panel: then the bar is a
+// small window centred over the one you are in. Tab sync and essentials only look at normal
+// windows, so they leave it alone.
 //
 // This part gathers what can be found when the key is pressed, without waiting for the
 // queue, since the bar must open at once also when Tidier is busy, and carries out what
@@ -16,11 +23,16 @@
 // given, and it is short-lived enough that nothing has to keep that up to date.
 
 const BAR_PAGE = "commandbar/commandbar.html";
-// A field and eight rows of the sidebar's height, under a title bar on a Mac. It never
-// changes while the bar is open, so nothing jumps while you type. As wide as the window
-// allows, with some of it showing on both sides.
+// In the window: as wide as the dotfiles' floating address bar (760 px, or seven tenths of a
+// narrower window), so the two are one thing in two guises. Its height is the page's own
+// (commandbar.css): a field and eight rows. Firefox gives a panel 800 px at the most.
+const BAR_PANEL_WIDTH = 760, BAR_PANEL_SHARE = 0.7;
+// As a window: a field and eight rows of the sidebar's height, under a title bar on a Mac.
+// It never changes while the bar is open, so nothing jumps while you type. As wide as the
+// window allows, with some of it showing on both sides.
 const BAR_WIDTH = 640, BAR_MIN_WIDTH = 360, BAR_SIDES = 48, BAR_HEIGHT = 380;
-const BAR_OPEN_LIMIT_MS = 10000; // a window that never came must not take the key for good
+const BAR_OPEN_LIMIT_MS = 10000; // a bar that never came must not take the key for good
+const BAR_GONE_MS = 500; // a panel is gone a few milliseconds after its page is told; what you chose does not wait longer
 const BAR_FORGET_MS = 10000; // Firefox lists a closed window a moment after it has closed, once it has its last state
 // A sidebar answers in a few milliseconds, and with none open Firefox says so at once; only a
 // sidebar that is there but slow (a busy machine: 100 ms was too short there) waits this long,
@@ -30,10 +42,13 @@ const BAR_ASK_SIDEBAR_MS = 300;
 const CLOSED_LOOKED_AT = 25; // Firefox's list of closed tabs holds about this many anyway
 const BAR_ASKED = "commandBarAsked"; // storage: history and bookmarks have been asked for, so the row does not come back
 
-let commandBar = null; // the open bar: { id, from, pressedAt, snapshot (a promise), ctx, closeOnOpen, early (keys caught before it), port, caughtIn (the tab they were caught in) }
+let commandBar = null; // the open bar: { id (its window's, if it is one), from, pressedAt, snapshot (a promise), ctx, closeOnOpen, early (keys caught before it), port (once its page is there), caughtIn (the tab they were caught in), gone (called when its page has gone) }
 
 const barUses = storedValue("commandUses", () => ({})); // command name -> how often: "the most used"
 const barAccents = new Map(); // space -> its colour, as the last bar was given it
+
+// Open in the window itself, with its page there: the keyboard is the bar's (shortcuts.js).
+const barHasKeyboard = () => !!commandBar?.port && commandBar.id === null;
 
 // The window to open from: the one you are in. A sign-in popup or another bar is not a
 // window to open tabs in, so then any normal window.
@@ -45,17 +60,18 @@ async function barSourceWindow(tab) {
 
 // The key: opens the bar, or closes the one that is open.
 //
-// A window made in advance and only shown on the key would be quicker still, but cannot be
-// hidden: Firefox keeps every window an extension moves on the screen (windows.update), a
-// minimised one goes into the Dock and comes back out of it, slowly and with an animation,
-// and one kept behind the window you are in shows in Mission Control and ⌘`, and peeks out
-// when that window moves. So the window is made at each press, and what you type before it
-// has the keyboard is caught where it goes (barkeys.js) and handed to it.
+// The bar is made at each press: a panel is only there while it shows, and a window made in
+// advance could not be hidden (Firefox keeps every window an extension moves on the screen,
+// a minimised one goes into the Dock and comes back out of it slowly, and one kept behind
+// the window you are in shows in Mission Control and ⌘`). What you type before it has the
+// keyboard is caught where it goes (barkeys.js) and handed to it.
 async function toggleCommandBar(tab) {
-  if (commandBar?.id === null && Date.now() - commandBar.pressedAt > BAR_OPEN_LIMIT_MS) commandBar = null;
-  if (commandBar?.id === null) { commandBar.closeOnOpen = !commandBar.closeOnOpen; return; } // what the presses add up to is settled once it is there
+  // "There" is when its page has said so (the port): a panel has nothing else to go by.
+  const opening = commandBar && !commandBar.port && commandBar.id === null;
+  if (opening && Date.now() - commandBar.pressedAt > BAR_OPEN_LIMIT_MS) commandBar = null;
+  else if (opening) { commandBar.closeOnOpen = !commandBar.closeOnOpen; return; } // what the presses add up to is settled once it is there
   if (commandBar) return barClose(commandBar, true);
-  const bar = commandBar = { id: null, from: null, pressedAt: Date.now(), snapshot: null, ctx: null, closeOnOpen: false, early: null, port: null };
+  const bar = commandBar = { id: null, from: null, pressedAt: Date.now(), snapshot: null, ctx: null, closeOnOpen: false, early: null, port: null, gone: null };
   barCatchKeys(tab, bar); // first of all: the next key can be on its way already
   try {
     const from = await barSourceWindow(tab);
@@ -65,9 +81,10 @@ async function toggleCommandBar(tab) {
     // The space and its colour go along, so the page is in them from its first frame
     // (commandbar/first.js). Its colour as the bar last saw it: asking would hold the window up.
     const space = activeSpace.get(from.id), accent = barAccents.get(space);
-    const given = new URLSearchParams([...(space ? [["space", space]] : []), ...(accent ? [["accent", accent]] : [])]);
-    const url = `${BAR_PAGE}${given.size ? `?${given}` : ""}#${bar.pressedAt}`;
-    const win = await browser.windows.create({ type: "popup", url, allowScriptsToClose: true, ...barPlaceOver(from) });
+    const given = [...(space ? [["space", space]] : []), ...(accent ? [["accent", accent]] : [])];
+    const address = more => { const all = new URLSearchParams([...given, ...more]); return `${BAR_PAGE}${all.size ? `?${all}` : ""}#${bar.pressedAt}`; };
+    if (await barOpenInWindow(from, address([["panel", String(barPanelWidth(from))]]))) return; // closeOnOpen is settled when its page is there
+    const win = await browser.windows.create({ type: "popup", url: address([]), allowScriptsToClose: true, ...barPlaceOver(from) });
     bar.id = win.id;
     if (bar.closeOnOpen) await barClose(bar, true);
   } catch (err) {
@@ -76,7 +93,27 @@ async function toggleCommandBar(tab) {
   }
 }
 
-// In the middle of the window, a bit above the middle, where you look. A window with no
+// As the toolbar button's popup, in `from`. The button has no popup of its own (a click on it
+// shows or hides the sidebar, sidebar-view.js), so it is given this one for the moment of
+// opening only: Firefox reads it as it opens the panel. Returns whether Firefox opened it.
+async function barOpenInWindow(from, url) {
+  if (typeof browser.browserAction.openPopup !== "function") return false;
+  try {
+    await browser.browserAction.setPopup({ popup: url });
+    await browser.browserAction.openPopup({ windowId: from.id });
+    return true;
+  } catch (err) {
+    trace(`the bar could not open in the window: ${err?.message ?? err}`);
+    return false;
+  } finally {
+    await browser.browserAction.setPopup({ popup: null }).catch(() => {});
+  }
+}
+
+// The dotfiles' floating address bar is min(760px, 70vw); so is this, from the window's width.
+const barPanelWidth = win => Math.round(Math.max(BAR_MIN_WIDTH, Math.min(BAR_PANEL_WIDTH, Number.isFinite(win.width) ? win.width * BAR_PANEL_SHARE : BAR_PANEL_WIDTH)));
+
+// As a window: in the middle of the one you are in, a bit above the middle, where you look. A window with no
 // position to tell (a minimised one) leaves it to Firefox, which centres it on the screen.
 function barPlaceOver(win) {
   const known = [win.left, win.top, win.width, win.height].every(Number.isFinite);
@@ -128,6 +165,16 @@ browser.runtime.onMessage.addListener((msg, sender) => {
 
 async function barClose(bar, refocus) {
   if (commandBar === bar) commandBar = null;
+  if (bar.id == null) {
+    // In the window: its page closes it (only the page can), and Firefox gives the keyboard
+    // back to where it was. Waited for, since what you chose is carried out after this, and a
+    // tab selected under an open panel would not get the keyboard.
+    if (!bar.port) return;
+    const gone = new Promise(resolve => { bar.gone = resolve; });
+    try { bar.port.postMessage({ type: "close" }); } catch (e) { return; } // gone already
+    await Promise.race([gone, sleep(BAR_GONE_MS)]);
+    return;
+  }
   barForgetUntil = Date.now() + BAR_FORGET_MS;
   await browser.windows.remove(bar.id).catch(() => {});
   // Not after losing the focus: you clicked somewhere else, and that is where you want to be.
@@ -152,6 +199,14 @@ browser.windows.onRemoved.addListener(id => {
   if (commandBar?.id !== id) return;
   commandBar = null; // closed by something else than the bar itself: ⌘W, say
   barForgetUntil = Date.now() + BAR_FORGET_MS;
+});
+// In the window, the bar lies over the tab it was opened for, and its commands act on that
+// tab. Another tab coming to the front under it (⌘W is Firefox's own, and closes the tab you
+// are on also from a panel; a link from another app) leaves it over a tab it knows nothing
+// of: it goes. (What you chose is carried out after the bar has gone, so never under it.)
+browser.tabs.onActivated.addListener(({ tabId, windowId }) => {
+  const bar = commandBar;
+  if (bar && barHasKeyboard() && windowId === bar.from && bar.ctx?.tab && tabId !== bar.ctx.tab.id) barClose(bar, false).catch(noteError);
 });
 browser.commands.onCommand.addListener((name, tab) => {
   if ((name === "command-bar" || name === "command-bar-t") && started) toggleCommandBar(tab).catch(noteError);
@@ -259,7 +314,10 @@ const BAR_COMMANDS = [
   { name: "copy-url", label: ctx => barCount(ctx, "Copy address", "Copy # addresses"), when: ctx => ctx.addresses.length > 0,
     run: async ctx => { // and says so, as ⇧⌘C does (copyUrl, shortcuts.js)
       await navigator.clipboard.writeText(ctx.addresses.join("\n"));
-      say(ctx.windowId, ctx.addresses.length > 1 ? `${ctx.addresses.length} addresses copied` : "Address copied", { brief: true });
+      const copied = ctx.addresses.length > 1 ? `${ctx.addresses.length} addresses copied` : "Address copied";
+      // (Not waited for: the queue this runs in must not stand still for a page that is slow to take it.)
+      if (ctx.tab) sayDone(ctx.windowId, ctx.tab.id, copied).catch(noteError); // pagenote.js
+      else say(ctx.windowId, copied, { brief: true });
     } },
   { name: "rename-tab", label: "Rename this tab", when: ctx => barOnlyThisTab(ctx) && barIsKept(ctx),
     ask: ctx => ({ placeholder: "A name, or nothing for the page's title", value: barNameOf(ctx), heading: `Rename “${barShort(barNameOf(ctx))}”`, confirm: "Call it “#”", empty: "Use the page's own title" }),
@@ -594,24 +652,27 @@ async function barCarryOut(ctx, { row, inNewTab, value }) {
 // --- The bar's page ------------------------------------------------------------------
 browser.runtime.onConnect.addListener(port => {
   if (port.name !== "commandbar" || port.sender?.id !== browser.runtime.id) return;
-  const windowId = port.sender.tab?.windowId;
+  const windowId = port.sender.tab?.windowId; // none for a panel: its page is in no tab
   const bar = commandBar;
   // The page carries the key press it was opened for, so nothing else can pass for it while
   // a bar is still opening: a bar Firefox brought back with the session, or the page opened
   // by hand, which would make its normal window "the bar", to be closed with it. The window
-  // is only removed if it is the bar's own: the page could be a tab in a normal window.
+  // is only removed if it is the bar's own: the page could be a tab in a normal window. A
+  // panel with a page of an earlier press is closed by its page, when it hears of this.
   if (!bar || !port.sender.url?.endsWith(`#${bar.pressedAt}`)) {
+    if (windowId === undefined) { port.disconnect(); return; }
     barForgetUntil = Date.now() + BAR_FORGET_MS;
     browser.windows.get(windowId).then(win => (win.type === "popup" ? browser.windows.remove(windowId) : browser.tabs.remove(port.sender.tab.id))).catch(() => {});
     return;
   }
-  bar.id = windowId; // the page can be here before windows.create has answered
+  if (windowId !== undefined) bar.id = windowId; // the page can be here before windows.create has answered
   barCatchKeys(bar.caughtIn, bar, "bar:stop"); // its field has the keyboard (commandbar/commandbar.js focuses it first)
   // What was typed before the page had the keyboard goes to it as soon as it is known, also
   // before the rows: the page keeps an Enter until it has rows to choose from, and it must
   // have the first letters before it chooses. (The port can be gone by then: the key pressed
   // again, say.)
   bar.port = port;
+  if (bar.closeOnOpen && bar.id === null) { barClose(bar, true); return; } // in the window: the key was pressed again before it was there
   if (bar.early) port.postMessage(bar.early);
   bar.snapshot.then(snapshot => port.postMessage(snapshot ?? { pressedAt: bar.pressedAt, items: [], spaces: [] })).catch(() => {});
   port.onMessage.addListener(async msg => {
@@ -627,6 +688,8 @@ browser.runtime.onConnect.addListener(port => {
     }
   });
   port.onDisconnect.addListener(() => { // also when the page crashed: no window stays behind
+    bar.gone?.();
+    bar.port = null;
     if (commandBar === bar) barClose(bar, false);
   });
 });

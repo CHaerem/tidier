@@ -18,7 +18,7 @@ and writes PNGs at twice the size, as on a Retina screen:
                                  a saved tab off the page it was saved on)
     keys-*                       with the keyboard in the sidebar, for real: the cursor, a menu by key
     state-essentials-N-WIDTH     one, two and three essentials, at each width
-    bar-empty-SCHEME, bar-typed-SCHEME   the command bar's own window
+    bar-empty-SCHEME, bar-typed-SCHEME   the command bar's page
     window-no-container-, window-sidebar-closed-, window-bar-SCHEME   where the window meets other things
     settings-SCHEME              the settings page
     settings-in-full-SCHEME      with everything it can show, made up; -narrow- as narrow as it can be
@@ -732,55 +732,79 @@ def archived(cam):
     in_sidebar(m, """page.closeArchived();""")
 
 
-# The command bar is a window of its own, and its page is drawn as the settings page is: by
-# WebDriver, in that page (drawing the whole window leaves out what a mask fades). Its window
-# is the most recent one while it is open, so nothing here goes through the sidebar then.
-BAR_WINDOW = CHROME + """
-  const bar = () => [...Services.wm.getEnumerator("navigator:browser")].find(x => !x.toolbar.visible && x.gBrowser?.tabs.some(t => t.linkedBrowser.currentURI.spec.includes("/commandbar/commandbar.html")));
+# The command bar is a panel of Firefox's in the window (commandbar.js), which Firefox draws
+# apart from the window: a picture of the window does not have it. Its page is drawn by
+# itself (bar-*), and laid over the window's picture where the panel stands (window-bar-*),
+# with the corners and the shadow the dotfiles' stylesheet gives the panel drawn by hand.
+# Marionette cannot be pointed at a panel's page, nor do the keys it sends reach one: both
+# go through the page's own process.
+BAR_PANEL = CHROME + """
+  const bar = () => { const b = [...w.document.querySelectorAll("panel browser")].find(b => (b.currentURI?.spec || "").includes("/commandbar/commandbar.html")), p = b?.closest("panel");
+    return p && p.state === "open" ? {panel: p, browser: b} : null; };
+  const inBar = source => { const mm = bar().browser.messageManager, id = "shoot:bar:" + Math.random();
+    const got = new Promise(r => mm.addMessageListener(id, function heard(msg) { mm.removeMessageListener(id, heard); r(msg.data); }));
+    mm.loadFrameScript("data:," + encodeURIComponent("(async () => { const doc = content.document; " + source + " })().then(v => sendAsyncMessage(" + JSON.stringify(id) + ", v ?? null), e => sendAsyncMessage(" + JSON.stringify(id) + ", {error: String(e)}));"), false);
+    return Promise.race([got, wait(4000).then(() => ({error: "no answer"}))]); };
+  const drawBar = async () => { const b = bar().browser, box = b.getBoundingClientRect();
+    return b.browsingContext.currentWindowGlobal.drawSnapshot(new w.DOMRect(0, 0, box.width, box.height), w.devicePixelRatio, "rgb(255,255,255)"); };
+  const png = bitmapOrCanvas => { if (bitmapOrCanvas.toDataURL) return bitmapOrCanvas.toDataURL("image/png").split(",")[1];
+    const c = w.document.createElementNS("http://www.w3.org/1999/xhtml", "canvas"); c.width = bitmapOrCanvas.width; c.height = bitmapOrCanvas.height; c.getContext("2d").drawImage(bitmapOrCanvas, 0, 0); return png(c); };
 """
+
+
+def open_bar(cam):
+    """The bar, opened by its key in the main window; whether it came, with its rows and the keyboard."""
+    m = cam.m
+    select(m, on_tab(PERSONAL), PERSONAL["ctx"])
+    # (Firefox opens no second panel beside its own note about hidden tabs.)
+    m.js(CHROME + """w.document.getElementById("extension-notification-panel")?.hidePopup?.();
+      w.focus(); for (let i = 0; i < 100 && Services.focus.activeWindow !== w; i++) await wait(50); gB.selectedBrowser.focus(); await wait(200); return 1;""")
+    keys = [{"type": "keyDown", "value": c} for c in ("", "", "k")] + [{"type": "keyUp", "value": c} for c in ("k", "", "")]
+    m.cmd("WebDriver:PerformActions", {"actions": [{"type": "key", "id": "kb", "actions": keys}]})
+    m.cmd("WebDriver:ReleaseActions")
+    there = m.js(BAR_PANEL + """for (let i = 0; i < 100 && !bar(); i++) await wait(50);
+      if (!bar()) return false;
+      for (let i = 0; i < 100; i++) { const r = await inBar("return doc.hasFocus() && !!doc.documentElement.dataset.readyMs;"); if (r === true) break; await wait(50); }
+      await wait(600); return true;""")
+    if not there:
+        print("(the command bar did not open: no pictures of it)", flush=True)
+    return there
+
+
+def close_bar(cam):
+    cam.m.js(BAR_PANEL + """bar()?.panel.hidePopup(); for (let i = 0; i < 100 && bar(); i++) await wait(50); w.focus(); await wait(500); return 1;""")
+    cam.current = None  # the scheme was set without the sidebar: the next picture sets it again
+
+
+def bar_scheme(m, scheme):
+    # Not cam.scheme: that waits in the sidebar, and the keyboard is the bar's now.
+    m.js(BAR_PANEL + """const [dark] = args;
+      Services.prefs.setIntPref("ui.systemUsesDarkTheme", dark ? 1 : 0);
+      Services.prefs.setIntPref("layout.css.prefers-color-scheme.content-override", dark ? 0 : 1);
+      for (let i = 0; i < 40 && (await inBar("return content.matchMedia('(prefers-color-scheme: dark)').matches;")) !== dark; i++) await wait(50);
+      await wait(300); return 1;""", scheme == "dark")
 
 
 def command_bar(cam):
     """The command bar, empty and with something typed, in both schemes."""
     m = cam.m
-    if not cam.wanted("bar"):
-        return
-    select(m, on_tab(PERSONAL), PERSONAL["ctx"])
-    m.js(CHROME + """w.focus(); for (let i = 0; i < 100 && Services.focus.activeWindow !== w; i++) await wait(50); gB.selectedBrowser.focus(); await wait(200); return 1;""")
-    keys = lambda *k: (m.cmd("WebDriver:PerformActions", {"actions": [{"type": "key", "id": "kb", "actions": [{"type": "keyDown", "value": c} for c in k] + [{"type": "keyUp", "value": c} for c in reversed(k)]}]}),
-                       m.cmd("WebDriver:ReleaseActions"))
-    keys("\ue03d", "\ue008", "k")  # ⌘⇧K
-    handle = m.js(BAR_WINDOW + """const {NavigableManager} = ChromeUtils.importESModule("chrome://remote/content/shared/NavigableManager.sys.mjs");
-      for (let i = 0; i < 100 && !bar()?.gBrowser.selectedBrowser; i++) await wait(50);
-      const b = bar()?.gBrowser.tabs.find(t => t.linkedBrowser.currentURI.spec.includes("/commandbar/commandbar.html"))?.linkedBrowser;
-      if (!b) return null;
-      await wait(1200);
-      return NavigableManager.getIdForBrowser(b);""")
-    if not handle:
-        print("(the command bar did not open: no pictures of it)", flush=True)
+    if not cam.wanted("bar") or not open_bar(cam):
         return
     try:
         for typed in ("", "spa"):
             if typed:
-                keys(*typed)
-                time.sleep(0.6)
+                m.js(BAR_PANEL + """await inBar(`const tip = Cc["@mozilla.org/text-input-processor;1"].createInstance(Ci.nsITextInputProcessor);
+                  tip.beginInputTransactionForTests(content);
+                  for (const key of ${JSON.stringify(args[0])}) { const e = new content.KeyboardEvent("", {key, code: "Key" + key.toUpperCase()}); tip.keydown(e); tip.keyup(e); }`);
+                  await wait(600); return 1;""", typed)
             for scheme in SCHEMES:
                 name = f"bar-{'typed' if typed else 'empty'}-{scheme}"
                 if not cam.wanted(name):
                     continue
-                m.js(CHROME + """const [dark] = args;
-                  Services.prefs.setIntPref("ui.systemUsesDarkTheme", dark ? 1 : 0);
-                  Services.prefs.setIntPref("layout.css.prefers-color-scheme.content-override", dark ? 0 : 1);
-                  await wait(500); return 1;""", scheme == "dark")
-                m.cmd("Marionette:SetContext", {"value": "content"})
-                m.cmd("WebDriver:SwitchToWindow", {"handle": handle, "focus": False})
-                cam.write(name, m.cmd("WebDriver:TakeScreenshot", {"full": False}))
-                m.chrome()
+                bar_scheme(m, scheme)
+                cam.write(name, m.js(BAR_PANEL + "return png(await drawBar());"))
     finally:
-        m.chrome()
-        m.js(BAR_WINDOW + """bar()?.close(); for (let i = 0; i < 100 && bar(); i++) await wait(50);
-          const main = [...Services.wm.getEnumerator("navigator:browser")].find(x => x.toolbar.visible); main?.focus(); await wait(500); return 1;""")
-        cam.current = None  # set above without the sidebar: the next picture sets it again
+        close_bar(cam)
 
 
 # A window drawn as it is, sidebar or not: the command bar's own, or the main one with its
@@ -803,8 +827,8 @@ PLAIN_WINDOW = """
 
 def window_edges(cam):
     """The window where the dotfiles' userChrome.css meets what is not an ordinary page: a page
-    with no container selected (the settings page), the sidebar closed, and the command bar's
-    own window."""
+    with no container selected (the settings page), the sidebar closed, and the command bar
+    floating over the page."""
     m = cam.m
     select(m, on_tab(PERSONAL), PERSONAL["ctx"])
     # The settings page has no container: the window keeps the space's tint around it.
@@ -813,35 +837,40 @@ def window_edges(cam):
     cam.shoot("window-no-container", whole_window=True)
     m.js(CHROME + """gB.removeTab(gB.tabs.find(t => t.linkedBrowser.currentURI.spec.endsWith("/settings/settings.html"))); await wait(300); return 1;""")
     select(m, on_tab(PERSONAL), PERSONAL["ctx"])
-    # The command bar's own window, frame and all.
+    # The command bar, floating in the window.
     if cam.wanted("window-bar"):
         bar_window(cam)
     sidebar_closed(cam)
 
 
 def bar_window(cam):
+    """The window with the bar floating in it, where the dotfiles' stylesheet puts it."""
     m = cam.m
-    select(m, on_tab(PERSONAL), PERSONAL["ctx"])
-    m.js(CHROME + """w.focus(); for (let i = 0; i < 100 && Services.focus.activeWindow !== w; i++) await wait(50); gB.selectedBrowser.focus(); await wait(200); return 1;""")
-    keys = [{"type": "keyDown", "value": c} for c in ("\ue03d", "\ue008", "k")] + [{"type": "keyUp", "value": c} for c in ("k", "\ue008", "\ue03d")]
-    m.cmd("WebDriver:PerformActions", {"actions": [{"type": "key", "id": "kb", "actions": keys}]})
-    m.cmd("WebDriver:ReleaseActions")
+    if not open_bar(cam):
+        return
     try:
-        m.js(BAR_WINDOW + """for (let i = 0; i < 100 && !bar()?.gBrowser?.selectedBrowser; i++) await wait(50); await wait(1200); return 1;""")
         for scheme in SCHEMES:
-            if cam.wanted(f"window-bar-{scheme}"):
-                # Not cam.scheme: that waits in the sidebar, and the bar is the most recent window now.
-                m.js(CHROME + """const [dark] = args;
-                  Services.prefs.setIntPref("ui.systemUsesDarkTheme", dark ? 1 : 0);
-                  Services.prefs.setIntPref("layout.css.prefers-color-scheme.content-override", dark ? 0 : 1);
-                  await wait(500); return 1;""", scheme == "dark")
-                shot = m.js(PLAIN_WINDOW, True)
-                if shot:
-                    cam.write(f"window-bar-{scheme}", shot)
+            if not cam.wanted(f"window-bar-{scheme}"):
+                continue
+            bar_scheme(m, scheme)
+            window = m.js(WHOLE_WINDOW)
+            # The panel's corners and shadow are Firefox's to draw, from what the stylesheet
+            # says of them: read from the panel, and drawn here by hand.
+            shot = m.js(BAR_PANEL + """const [window64] = args, scale = w.devicePixelRatio, {panel} = bar();
+              const at = panel.getOuterScreenRect(), x = (at.x - w.mozInnerScreenX) * scale, y = (at.y - w.mozInnerScreenY) * scale;
+              const style = w.getComputedStyle(panel), radius = (parseFloat(style.getPropertyValue("--panel-border-radius")) || 8) * scale;
+              const page = await drawBar();
+              const under = new w.Image(); under.src = "data:image/png;base64," + window64; await under.decode();
+              const canvas = w.document.createElementNS("http://www.w3.org/1999/xhtml", "canvas"); canvas.width = under.width; canvas.height = under.height;
+              const c = canvas.getContext("2d");
+              c.drawImage(under, 0, 0);
+              const shape = () => { c.beginPath(); c.roundRect(x, y, page.width, page.height, radius); };
+              c.save(); c.shadowColor = "rgba(0,0,0,.25)"; c.shadowBlur = 40 * scale; c.shadowOffsetY = 12 * scale; c.fillStyle = "#fff"; shape(); c.fill(); c.restore();
+              c.save(); shape(); c.clip(); c.drawImage(page, x, y); c.restore();
+              return png(canvas);""", window)
+            cam.write(f"window-bar-{scheme}", shot)
     finally:
-        m.js(BAR_WINDOW + """bar()?.close(); for (let i = 0; i < 100 && bar(); i++) await wait(50);
-          const main = [...Services.wm.getEnumerator("navigator:browser")].find(x => x.toolbar.visible); main?.focus(); await wait(500); return 1;""")
-        cam.current = None
+        close_bar(cam)
 
 
 def sidebar_closed(cam):

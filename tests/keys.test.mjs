@@ -223,7 +223,65 @@ test("in a small window the keys do nothing, and copying the address still does"
   x.kill();
 });
 
-test("copying the address says so on the quiet line, and a page with no address to copy says nothing", async () => {
+test("copying the address says so on the page itself, once, and on the quiet line only where the page takes no word", async () => {
+  const { x, ff, w, tab, press } = await aWindow();
+  x.ctx.navigator.clipboard = { writeText: async () => {} };
+  ff.scriptable = true;
+  await press("copy-url");
+  assert.equal(ff.pageScripts.length, 1);
+  assert.equal(ff.pageScripts[0].id, tab.t1.id, "in the tab you are on");
+  assert.match(ff.pageScripts[0].code, /\("Address copied", \d+\)$/, "the word, and how long it stays");
+  assert.equal(x.js("noteFor")(w.id), null, "said once: the quiet line stays empty");
+  // A page too busy to answer: the line says it instead, and soon.
+  ff.scriptable = () => new Promise(() => {});
+  await press("copy-url");
+  await wait(600);
+  assert.equal(x.js("noteFor")(w.id)?.text, "Address copied");
+  x.kill();
+});
+
+test("the word on the page is put there as its own closed element, and takes nothing from the page", async () => {
+  const { x } = await aWindow();
+  // The function is sent as its source, so it can lean on nothing in the background's scope.
+  const source = String(x.js("pageNote"));
+  const made = [], timers = [];
+  const element = name => {
+    const el = { name, styles: {}, attrs: {}, kids: [], style: { setProperty: (k, v, p) => { el.styles[k] = [v, p]; } }, setAttribute: (k, v) => { el.attrs[k] = v; },
+      append: (...k) => el.kids.push(...k), remove: () => { el.removed = true; }, attachShadow: init => { el.shadow = { mode: init.mode, kids: [], append: (...k) => el.shadow.kids.push(...k) }; return el.shadow; },
+      animate: (frames, how) => { const a = { frames, how }; (el.animations ??= []).push(a); return a; } };
+    made.push(el);
+    return el;
+  };
+  const root = { namespaceURI: "http://www.w3.org/1999/xhtml", kids: [], append: k => root.kids.push(k) };
+  const page = { document: { documentElement: root, createElementNS: (ns, name) => element(name) }, matchMedia: () => ({ matches: false }), setTimeout: (f, ms) => timers.push([f, ms]) };
+  const run = new Function("document", "matchMedia", "setTimeout", "globalThis", `return (${source})("Address copied", 1400);`);
+  const scope = {};
+  assert.equal(run(page.document, page.matchMedia, page.setTimeout, scope), true);
+  const host = root.kids[0];
+  assert.equal(root.kids.length, 1);
+  assert.equal(host.styles["pointer-events"][0], "none", "it takes no click");
+  assert.ok(Object.values(host.styles).every(([, important]) => important === "important"), "the page's own styles do not reach it");
+  assert.equal(host.shadow.mode, "closed", "its text is not the page's to read");
+  assert.equal(host.kids.length, 0, "nothing of it in the page's own tree");
+  const pill = host.shadow.kids[0];
+  assert.equal(pill.attrs.role, "status", "a screen reader says it");
+  assert.equal(pill.kids.at(-1), "Address copied");
+  assert.deepEqual(timers.map(([, ms]) => ms), [1400]);
+  // The key again while it shows: the first goes, and there is one.
+  assert.equal(run(page.document, page.matchMedia, page.setTimeout, scope), true);
+  assert.equal(host.removed, true);
+  // It fades and is taken away again.
+  const second = root.kids[1];
+  timers[1][0]();
+  second.shadow.kids[0].animations.at(-1).onfinish();
+  assert.equal(second.removed, true);
+  assert.equal(scope.tidierPageNote, null);
+  // A file that is not HTML draws no such element: said elsewhere.
+  assert.equal(run({ documentElement: { namespaceURI: "http://www.w3.org/2000/svg" } }, page.matchMedia, page.setTimeout, {}), false);
+  x.kill();
+});
+
+test("copying the address says so on the quiet line where the page takes no word, and a page with no address to copy says nothing", async () => {
   const { x, ff, w, press } = await aWindow();
   const copied = [];
   x.ctx.navigator.clipboard = { writeText: async t => { copied.push(t); } };

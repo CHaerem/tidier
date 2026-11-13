@@ -23,6 +23,7 @@
     "nativeMessaging",
     "alarms",
     "clipboardWrite",
+    "activeTab",
     "contextualIdentities",
     "menus",
     "menus.overrideContext"
@@ -85,6 +86,7 @@
       "archivelist.js",
       "archive.js",
       "keys-commands.js",
+      "pagenote.js",
       "shortcuts.js",
       "commandbar.js"
     ],

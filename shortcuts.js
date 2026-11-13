@@ -19,12 +19,12 @@
 //   keypress, and Firefox's key acts when that comes back.
 // - Copying the address works in any window of Firefox's, a small or a private one too.
 
-// It says so, as Arc does: from the keys nothing else shows that it worked.
+// It says so, as Arc does, on the page itself: from the keys nothing else shows that it worked.
 async function copyUrl(windowId) {
   const [tab] = await browser.tabs.query({ active: true, windowId });
   if (!tab || !isWeb(tab.url)) return;
   await navigator.clipboard.writeText(tab.url);
-  say(windowId, "Address copied", { brief: true }); // quiet.js
+  await sayDone(windowId, tab.id, "Address copied"); // pagenote.js
 }
 
 // Through the queue: selecting a placeholder pulls its real tab in, which changes the
@@ -131,6 +131,9 @@ browser.commands.onCommand.addListener(async (name, tab) => {
   trace(`key ${name}`); // common.js: whether a press reached Tidier at all (quick ⌃⌘↓ presses were seen lost)
   const command = COMMANDS.find(c => c.name === name);
   if (!command?.action) return; // (one with no action is carried out where it is made)
+  // The command bar has the keyboard while it is open, but as a panel it is part of the
+  // window, whose keys still reach Tidier: they would act under it, on what it was not opened for.
+  if (barHasKeyboard()) return; // commandbar.js
   const windowId = tab?.windowId ?? (await browser.tabs.query({ active: true, currentWindow: true }))[0]?.windowId;
   const win = windowId !== undefined && await browser.windows.get(windowId).catch(() => null);
   // The keys work in any window of Firefox's, but a small window has no list and no spaces,

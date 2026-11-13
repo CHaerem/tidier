@@ -697,10 +697,36 @@ def shortcuts(m):
       const t = w.gBrowser.addTrustedTab("https://example.org/?smoke-copy", {userContextId: 3}); w.gBrowser.selectedTab = t; await wait(3000);
       Cc["@mozilla.org/widget/clipboardhelper;1"].getService(Ci.nsIClipboardHelper).copyString("before");
       return url(t);""")
+    # What the page shows, asked of the page's own process: the word is in a closed part of an
+    # element of Tidier's own, which a script of the page's cannot open.
+    word = H + """const mm = main().gBrowser.selectedBrowser.messageManager;
+      const got = new Promise(r => mm.addMessageListener("smoke:word", function heard(msg) { mm.removeMessageListener("smoke:word", heard); r(msg.data); }));
+      mm.loadFrameScript("data:," + encodeURIComponent(`sendAsyncMessage("smoke:word", (() => {
+        const host = [...content.document.documentElement.children].find(e => e.openOrClosedShadowRoot);
+        if (!host) return null;
+        const pill = host.openOrClosedShadowRoot.firstElementChild, r = pill.getBoundingClientRect();
+        return {text: pill.textContent, off: Math.round(Math.abs((r.left + r.right) / 2 - content.innerWidth / 2)), top: Math.round(r.top),
+                clicks: content.getComputedStyle(host).pointerEvents, closed: host.shadowRoot === null};
+      })())`), false);
+      return Promise.race([got, wait(3000).then(() => "no answer")]);"""
     press(m, "c", CMD, SHIFT)
-    time.sleep(1)
+    said = None
+    for _ in range(20):
+        said = m.js(word)
+        if said:
+            break
+        time.sleep(0.05)
+    line = m.js(H + """const b = main().document.getElementById("sidebar").contentDocument?.querySelector("browser"); if (!b) return "no sidebar";
+      const mm = b.messageManager, got = new Promise(r => mm.addMessageListener("smoke:line", function heard(msg) { mm.removeMessageListener("smoke:line", heard); r(msg.data); }));
+      mm.loadFrameScript("data:," + encodeURIComponent(`sendAsyncMessage("smoke:line", content.document.getElementById("note").classList.contains("shown") ? content.document.querySelector("#note .text").textContent : "")`), false);
+      return Promise.race([got, wait(3000).then(() => "no answer")]);""")
+    time.sleep(2.2)
+    after = m.js(word)
     copied = m.js(clipboard + "const r = read(); await removeWhere((w, t) => url(t).includes('smoke-copy')); return r;")
     check("⌘⇧C copies the address of the current tab", copied == target, repr(copied))
+    check("and says so at the top of the page, in the middle, in a part of the page it cannot read or click, without the access to all websites",
+          isinstance(said, dict) and said["text"] == "Address copied" and said["off"] <= 1 and said["top"] < 40 and said["clicks"] == "none" and said["closed"], str(said))
+    check("the word is said once (the sidebar's line stays empty) and is gone again in a moment", line == "" and after is None, f"line {line!r}, after {after}")
     before = m.js(H + "main().focus(); await wait(300); return main().SidebarController.currentID;")
     press(m, "b", CMD)
     time.sleep(1.2)
@@ -9507,9 +9533,23 @@ def alone_stay_put(m):
       await wait(500); return 1;""", opened)
 
 
-# --- The command bar: real keys, in the window it really opens in. ---------------------
-ENTER, DOWN, UP, TAB = "", "", "", ""
-BAR = H + """const bar = () => wins().find(w => !w.toolbar.visible && w.gBrowser?.tabs.some(t => url(t).includes("/commandbar/commandbar.html")));"""  # (a window just opened has no gBrowser yet)
+# --- The command bar: real keys, in the panel it really opens in. ----------------------
+ENTER, DOWN, UP, TAB = "\ue007", "\ue015", "\ue013", "\ue004"
+# The bar is a panel of Firefox's in the window it was opened from, with Tidier's page in it
+# (commandbar.js). `bar()`: {panel, browser, window}, or nothing. `barWindows()`: a bar that is
+# a window of its own, which Tidier falls back to only where Firefox opens no panel.
+BAR = H + """const barIn = w => { const b = [...w.document.querySelectorAll("panel browser")].find(b => (b.currentURI?.spec || "").includes("/commandbar/commandbar.html")), p = b?.closest("panel");
+    return p && (p.state === "open" || p.state === "showing") ? {panel: p, browser: b, window: w} : null; };
+  const bar = () => wins().filter(w => w.toolbar.visible).map(barIn).find(Boolean) ?? null;
+  const barWindows = () => wins().filter(w => !w.toolbar.visible && w.gBrowser?.tabs.some(t => url(t).includes("/commandbar/commandbar.html")));
+  // Run in the bar's own page, in its process: Marionette cannot be pointed at a panel's page.
+  const inBar = async (source, args = []) => { const b = bar(); if (!b) return {gone: true};
+    const mm = b.browser.messageManager, id = "smoke:bar:" + Math.random();
+    const got = new Promise(r => mm.addMessageListener(id, function heard(msg) { mm.removeMessageListener(id, heard); r(msg.data); }));
+    mm.loadFrameScript("data:," + encodeURIComponent("(async () => { const page = content.wrappedJSObject, doc = page.document, args = " + JSON.stringify(args) + "; " + source
+      + " })().then(value => sendAsyncMessage(" + JSON.stringify(id) + ", {value}), err => sendAsyncMessage(" + JSON.stringify(id) + ", {error: String(err)}));"), false);
+    return Promise.race([got, wait(4000).then(() => ({gone: true}))]); };
+"""
 # Tidier's own keys in Firefox's list for the window, among them the bar's two, if it has them.
 BAR_KEYS = H + """const w = main(); w.focus(); await wait(300); const mine = [...w.document.querySelectorAll('keyset[id^="ext-keyset"]')].filter(k => k.id.includes("6844a953"));
   return mine.flatMap(k => [...k.children]).map(k => [k.getAttribute("key"), k.getAttribute("modifiers")].join(" ")).filter(k => k === "K accel,shift" || k === "T accel");"""
@@ -9530,68 +9570,78 @@ def wait_for_bar(m, want=True, tries=100):
 def bar_open(m, window="main()"):
     """Open the bar with its key from `window`, as you would; returns when you can type."""
     # Once the window really has the focus: asked for, it can come after the bar has opened, which would close it.
-    m.js(H + f"const w = {window}; w.focus(); for (let i = 0; i < 100 && Services.focus.activeWindow !== w; i++) await wait(50); w.gBrowser.selectedBrowser.focus(); await wait(100); return 1;")
-    press(m, "k", CMD, SHIFT)
+    # Firefox's own question about hidden tabs is put away first: it is a panel, and Firefox
+    # opens no second one beside it (the bar is then a window of its own: alone_bar_edges).
+    m.js(H + f"""const w = {window}; for (const x of wins()) x.document.getElementById("extension-notification-panel")?.hidePopup?.();
+      w.focus(); for (let i = 0; i < 100 && Services.focus.activeWindow !== w; i++) await wait(50); w.gBrowser.selectedBrowser.focus(); await wait(100); return 1;""")
+    press_in(m, window, "k", CMD, SHIFT)
     if not wait_for_bar(m):
-        raise RuntimeError("the command bar did not open")
+        seen = m.js(BAR + """return {panels: wins().flatMap(w => [...w.document.querySelectorAll("panel")].filter(p => p.state !== "closed").map(p => [p.id, p.state, [...p.querySelectorAll("browser")].map(b => b.currentURI?.spec.slice(-60))])),
+          windows: barWindows().length, focus: Services.focus.activeWindow === main()};""")
+        traces = [t for t in extension_message(m, {"type": "stats"}).get("traces", []) if "bar" in t]
+        raise RuntimeError(f"the command bar did not open: {seen} {traces}")
+    # Its rows, and the keyboard, which Firefox gives a panel some milliseconds after it shows.
     for _ in range(100):
-        state = bar_page(m, "return doc.documentElement.dataset.readyMs || null;")
+        state = bar_page(m, "return doc.hasFocus() && doc.documentElement.dataset.readyMs || null;")
         if state:
             return int(state)
         time.sleep(0.05)
-    raise RuntimeError("the command bar has no rows")
+    raise RuntimeError("the command bar has no rows, or not the keyboard")
 
 
-def bar_keys(m, keys, *mods):
-    """Real key events, to the bar's window. Any of them may close it, before the rest of them or the release have been sent."""
-    # The chrome windows' handles (bar_page ends in chrome): walking those loads no tab.
+def press_in(m, window, key, *mods):
+    """A real key press in the given window of Firefox's (Marionette sends keys to the window it is on)."""
     m.chrome()
     for h in m.cmd("WebDriver:GetWindowHandles"):
         m.cmd("WebDriver:SwitchToWindow", {"handle": h, "focus": False})
-        if m.js("return !window.toolbar.visible;"):
-            m.cmd("WebDriver:SwitchToWindow", {"handle": h, "focus": True})
+        if m.js(H + f"return window === {window};"):
             break
-    acts = [{"type": "keyDown", "value": k} for k in mods]
-    for key in keys:
-        acts += [{"type": "keyDown", "value": key}, {"type": "keyUp", "value": key}]
-    acts += [{"type": "keyUp", "value": k} for k in reversed(mods)]
     try:
-        m.cmd("WebDriver:PerformActions", {"actions": [{"type": "key", "id": "kb", "actions": acts}]})
-        m.cmd("WebDriver:ReleaseActions")
-    except RuntimeError as err:
-        if "no such window" not in str(err):
-            raise
-    m.chrome()
-
-
-def to_bar_page(m):
-    """Marionette to the bar's own page, in content. Its handle is asked for, as in into_page:
-    switching through every tab's handle loads every unloaded tab on the way, a closed
-    folder's too, which then no longer rest. The bar can be closing meanwhile."""
-    m.chrome()
-    handle = m.js(BAR + """const {NavigableManager} = ChromeUtils.importESModule("chrome://remote/content/shared/NavigableManager.sys.mjs");
-      const t = bar()?.gBrowser.tabs.find(t => url(t).includes("/commandbar/commandbar.html"));
-      return t ? NavigableManager.getIdForBrowser(t.linkedBrowser) : null;""")
-    if not handle:
-        return False
-    m.cmd("Marionette:SetContext", {"value": "content"})
-    try:
-        m.cmd("WebDriver:SwitchToWindow", {"handle": handle, "focus": False})
-    except RuntimeError as err:
-        if "no such window" not in str(err):
-            raise
+        press(m, key, *mods)
+    finally:
         m.chrome()
-        return False
-    return True
+
+
+# What WebDriver calls a key, as a page hears it.
+BAR_KEY_NAMES = {"": "Enter", "": "Escape", "": "Tab", "": "Backspace", "": "ArrowDown", "": "ArrowUp",
+                 "": "ArrowLeft", "": "ArrowRight", "": "Meta", "": "Shift", "": "Control", "": "Alt"}
+
+
+def bar_keys(m, keys, *mods):
+    """Real key events, to the bar's page, as the keyboard gives them to a panel that has it:
+    made in the page's own process, since the keys Marionette sends go to the window's own
+    part and never reach a panel. Any of them may close the bar, before the rest have been sent."""
+    names = [BAR_KEY_NAMES.get(k, k) for k in keys]
+    answer = m.js(BAR + """const [keys, mods] = args;
+      return inBar(`const tip = Cc["@mozilla.org/text-input-processor;1"].createInstance(Ci.nsITextInputProcessor);
+        if (!tip.beginInputTransactionForTests(content)) throw new Error("the bar's page takes no keys");
+        const sided = ["Meta", "Shift", "Control", "Alt"];
+        const event = key => new content.KeyboardEvent("", {key, code: sided.includes(key) ? key + "Left" : key.length === 1 && /[a-z]/i.test(key) ? "Key" + key.toUpperCase() : key.length === 1 && /\\\\d/.test(key) ? "Digit" + key : key.length === 1 ? "" : key});
+        const flags = key => (key.length === 1 ? 0 : tip.KEY_NON_PRINTABLE_KEY);
+        const [keys, mods] = args;
+        for (const mod of mods) tip.keydown(event(mod), tip.KEY_NON_PRINTABLE_KEY);
+        try {
+          for (const key of keys) {
+            if (!content.document.documentElement) break;  // it has closed
+            tip.keydown(event(key), flags(key));
+            tip.keyup(event(key), flags(key));
+            await new Promise(r => content.setTimeout(r, 15));
+          }
+        } finally { for (const mod of [...mods].reverse()) tip.keyup(event(mod), tip.KEY_NON_PRINTABLE_KEY); }
+        return content.document.documentElement ? {field: doc.getElementById("field").value, focus: doc.hasFocus(), on: doc.activeElement?.id ?? null} : null;`, [keys, mods]);""", names, [BAR_KEY_NAMES[k] for k in mods])
+    if "error" in answer:
+        raise RuntimeError(f"keys to the bar: {answer['error']}")
+    after = answer.get("value")
+    if after and not mods and all(len(k) == 1 for k in names) and not after["field"].endswith("".join(names)):
+        print(f"INFO  typed {''.join(names)!r} into the bar, and its field has {after}", flush=True)
 
 
 def bar_page(m, script, *args):
-    """Run `script` in the bar's own page."""
-    result = None
-    if to_bar_page(m):
-        result = m.cmd("WebDriver:ExecuteScript", {"script": "const page = window.wrappedJSObject || window, doc = page.document; " + script, "args": list(args)})
-    m.chrome()
-    return result
+    """Run `script` in the bar's own page (`page`, `doc`, `args`); nothing if the bar has gone."""
+    answer = m.js(BAR + "return inBar(args[0], args[1]);", script, list(args))
+    if "error" in answer:
+        raise RuntimeError(f"in the bar's page: {answer['error']}")
+    return answer.get("value")
 
 
 BAR_ROWS = """return [...doc.querySelectorAll(".row")].map(r => ({kind: r.dataset.kind, url: r.dataset.url || null, title: r.querySelector(".title").textContent, selected: r.classList.contains("selected")}));"""
@@ -9624,29 +9674,40 @@ def alone_command_bar(m):
       const others = [1, 2, 3].filter(c => c !== space);
       const t = w.gBrowser.addTrustedTab("https://example.org/?smoke-bar-one", {userContextId: others[0], inBackground: true});
       for (let i = 0; i < 100 && !key(w, t); i++) await wait(100);
-      return {space, other: others[0], selected: url(w.gBrowser.selectedTab), hidden: t.hidden, normal: wins().length};""")
+      return {space, other: others[0], selected: url(w.gBrowser.selectedTab), hidden: t.hidden, normal: wins().length, tabs: w.gBrowser.tabs.length};""")
     ready = bar_open(m)
     print(f"INFO  the command bar is ready {ready} ms after the key", flush=True)
     r = bar_page(m, """return {focused: doc.activeElement?.id === "field" && doc.hasFocus(), rows: doc.querySelectorAll(".row").length};""")
     check("the key opens the bar, ready to type", r["focused"] and r["rows"] > 0, str(r))
-    place = m.js(BAR + """const w = main(), b = bar(); return {tabs: b.gBrowser.tabs.length, centre: Math.abs((b.screenX + b.outerWidth / 2) - (w.screenX + w.outerWidth / 2)),
-      inside: b.screenY >= w.screenY && b.screenY + b.outerHeight <= w.screenY + w.outerHeight, kept: b.gBrowser.tabs.filter(t => key(b, t) || role(b, t)).length};""")
-    check("it is a small window of its own, centred over the one you are in, and no part of tab sync",
-          place["tabs"] == 1 and place["centre"] < 8 and place["inside"] and place["kept"] == 0, str(place))
+    # The dotfiles' stylesheet puts the panel where its floating address bar is: in the middle,
+    # 18 % down, 760 px wide or seven tenths of a narrower window (Tidier gives it that width).
+    place = m.js(BAR + """const w = main(), b = bar(), r = b.panel.getOuterScreenRect(), bar_ = w.document.getElementById("urlbar");
+      return {own: barWindows().length, windows: wins().length, off: Math.round(Math.abs(r.x + r.width / 2 - (w.mozInnerScreenX + w.innerWidth / 2))),
+              top: Math.round(r.y - w.mozInnerScreenY), width: Math.round(r.width), inner: [w.innerWidth, w.innerHeight], tabs: w.gBrowser.tabs.length};""")
+    check("it is a panel in the window you are in, not a window of its own, and no tab",
+          place["own"] == 0 and place["windows"] == start["normal"] and place["tabs"] == start["tabs"], f"{place} {start}")
+    check("it floats in the middle of the window, where the address bar does, and as wide",
+          place["off"] <= 2 and abs(place["top"] - 0.18 * place["inner"][1]) <= 3 and abs(place["width"] - min(760, 0.7 * place["inner"][0])) <= 4, str(place))
     # Esc, the key again, and the focus going elsewhere each close it, and nothing has moved.
     bar_keys(m, [ESC])
     closed = wait_for_bar(m, False)
     r = m.js(BAR + """await wait(200); const w = main(); return {selected: url(w.gBrowser.selectedTab), focus: Services.focus.activeWindow === w};""")
     check("Esc closes it, back in the same tab of the same window", closed and r["selected"] == start["selected"] and r["focus"], str(r))
     bar_open(m)
-    bar_keys(m, ["k"], CMD, SHIFT)
+    press_in(m, "main()", "k", CMD, SHIFT)
     check("the key closes it again", wait_for_bar(m, False))
+    # A click beside it: Firefox closes a panel then, by itself. Tidier hears of it from the
+    # bar's page going, and the key must open a new bar at the first press, not close a ghost.
     bar_open(m)
-    m.js(BAR + "main().focus(); return 1;")
-    check("losing the focus closes it", wait_for_bar(m, False))
+    m.js(BAR + "bar().panel.hidePopup(); return 1;")
+    gone = wait_for_bar(m, False)
+    ready = bar_open(m)
+    check("closed by Firefox (a click beside it), it is gone, and the key opens it again at the first press", gone and ready >= 0, f"{gone} {ready}")
+    bar_keys(m, [ESC])
+    wait_for_bar(m, False)
 
-    # Typing at once after the key, from a field in a page: what goes there before the bar's
-    # window has the keyboard is caught in the page (barkeys.js, with the access to all
+    # Typing at once after the key, from a field in a page: what goes there before the bar
+    # has the keyboard is caught in the page (barkeys.js, with the access to all
     # websites) and handed to the bar, so none of it lands in the page.
     had_access = m.js(H + """const {ExtensionPermissions} = ChromeUtils.importESModule("resource://gre/modules/ExtensionPermissions.sys.mjs");
       const policy = WebExtensionPolicy.getByID(args[0]), had = (await ExtensionPermissions.get(args[0])).origins.includes("<all_urls>");
@@ -9666,7 +9727,7 @@ def alone_command_bar(m):
     # key that went to the page you were in is in the bar, and those lost are the first ones
     # sent to the bar's window, and no other.
     m.js(H + """const w = main(), sent = w.smokeBarKeys = [];
-      w.smokeBarKeysOn = e => { if ([...e.key].length === 1 && !e.metaKey) sent.push({key: e.key, toBar: Services.focus.activeWindow !== w && !!Services.focus.focusedElement}); };
+      w.smokeBarKeysOn = e => { if ([...e.key].length === 1 && !e.metaKey) sent.push({key: e.key, toBar: Services.focus.focusedElement !== w.gBrowser.selectedBrowser}); };
       w.addEventListener("keydown", w.smokeBarKeysOn, true); return 1;""")
     acts = [{"type": "keyDown", "value": k} for k in (CMD, SHIFT, "k")] + [{"type": "keyUp", "value": k} for k in ("k", SHIFT, CMD)]
     for k in typed:
@@ -9801,10 +9862,12 @@ def alone_command_bar(m):
     bar_keys(m, [TAB])
     field = bar_field_until(m, lambda f: f["value"] != "smoke-bar-address")
     check("⇥ completes to the address of the row, and stays in the field", field.get("value") == "example.org/?smoke-bar-address" and field["focused"], str(field))
-    to_bar_page(m)
-    row = m.cmd("WebDriver:FindElement", {"using": "css selector", "value": ".row[data-kind=tab]"})
-    m.cmd("WebDriver:ElementClick", {"id": next(iter(row.values()))})
-    m.chrome()
+    # A real click, made in the page's own process (Marionette cannot be pointed at a panel's page).
+    bar_page(m, """const r = doc.querySelector(".row[data-kind=tab]").getBoundingClientRect(), u = content.windowUtils, x = r.left + r.width / 2, y = r.top + r.height / 2;
+      for (const type of ["mousemove", "mousedown", "mouseup"]) {
+        if (content.synthesizeMouseEvent) content.synthesizeMouseEvent(type, x, y, {button: 0, clickCount: type === "mousemove" ? 0 : 1}, {});
+        else u.sendMouseEvent(type, x, y, 0, type === "mousemove" ? 0 : 1, 0);  // (before Firefox moved it to the window)
+      }""")
     closed = wait_for_bar(m, False)
     r = m.js(H + """await wait(500); return url(main().gBrowser.selectedTab);""")
     check("a click on a row chooses it", closed and "smoke-bar-address" in r, str(r))
@@ -9938,16 +10001,17 @@ def alone_command_bar(m):
     bar_keys(m, [UP, ENTER])  # round from the top to the last row
     r = {}
     for _ in range(50):
-        r = m.js(BAR + """const b = bar(), n = b?.PopupNotifications.getNotification("addon-webext-permissions", b.gBrowser.selectedBrowser);
-          return {bar: !!b, prompt: !!n, shown: n ? b.document.getElementById("addon-webext-permissions-notification")?.getBoundingClientRect().height > 0 : false};""")
+        r = m.js(BAR + """const w = main(), n = w.PopupNotifications.getNotification("addon-webext-permissions", w.gBrowser.selectedBrowser), box = w.document.getElementById("addon-webext-permissions-notification");
+          return {bar: !!bar(), prompt: !!n, shown: n ? box?.getBoundingClientRect().height > 0 : false, panel: w.document.getElementById("notification-popup")?.state, own: barWindows().length};""")
         if r["shown"]:
             break
         time.sleep(0.1)
-    check("Firefox asks, and the bar waits for the answer", r.get("bar") and r.get("shown"), str(r))
-    m.js(BAR + """const b = bar(); b.document.getElementById("addon-webext-permissions-notification")?.button.click(); await wait(500); return 1;""")
+    check("Firefox asks, in the window you are in, and the bar waits for the answer", r.get("bar") and r.get("shown") and not r.get("own"), str(r))
+    m.js(BAR + """main().document.getElementById("addon-webext-permissions-notification")?.button.click(); await wait(500); return 1;""")
     rows = bar_rows_until(m, lambda rows: not any(x["kind"] == "ask" for x in rows))
     check("once allowed the row is gone and the bar still open", bar_is_open(m) and not any(x["kind"] == "ask" for x in rows), str(rows[-2:]))
-    r = bar_page(m, """const f = doc.getElementById("field"); return {focused: doc.activeElement === f && doc.hasFocus(), history: !!page.browser.history};""")
+    r = bar_page(m, """const f = doc.getElementById("field"); for (let i = 0; i < 40 && !(doc.activeElement === f && doc.hasFocus()); i++) await new Promise(r => content.setTimeout(r, 25));
+      return {focused: doc.activeElement === f && doc.hasFocus(), history: !!page.browser.history};""")
     check("and you can go on typing", r["focused"] and r["history"], str(r))
     bar_keys(m, [ESC])
     wait_for_bar(m, False)
@@ -9988,29 +10052,31 @@ def alone_bar_edges(m):
     keys = m.js(BAR_KEYS)
     check("the command bar has its keys", len(keys) == 2, str(keys))
 
-    # A space key while the bar has the focus: a small window has no spaces, and would get a tab.
+    # A space key while the bar has the keyboard: the window's keys still reach Tidier from a
+    # panel, and the space would change under a bar that was opened in another.
     bar_open(m)
-    bar_keys(m, ["2"], CTRL)
+    press_in(m, "main()", "2" if start["space"] != 2 else "3", CTRL)
     time.sleep(1)
-    r = m.js(BAR + """const b = bar(), w = main(); return {tabs: b?.gBrowser.tabs.length, shows: b && url(b.gBrowser.selectedTab), space: w.gBrowser.selectedTab.userContextId, here: w.gBrowser.tabs.length};""")
-    check("a space key with the bar open puts no tab in its window, and changes nothing", r["tabs"] == 1 and "/commandbar/commandbar.html" in (r["shows"] or "") and r["space"] == start["space"] and r["here"] == start["tabs"], f"{r} {start}")
+    r = m.js(BAR + """const w = main(); return {open: !!bar(), space: w.gBrowser.selectedTab.userContextId, here: w.gBrowser.tabs.length};""")
+    check("a space key with the bar open changes nothing: the bar has the keyboard", r["open"] and r["space"] == start["space"] and r["here"] == start["tabs"], f"{r} {start}")
     bar_keys(m, [ESC])
     check("and Esc still closes it", wait_for_bar(m, False))
 
-    # ⌘W is one more way out: not kept as a closed window, and the key works at the first press.
+    # ⌘W is Firefox's own, and no page can take it: with the bar open it closes the tab you
+    # are on, as it does from Firefox's own address bar. The bar was opened for that tab (its
+    # commands act on it), so it goes too, rather than stay over another tab.
+    m.js(H + """const w = main(); w.focus(); const t = w.gBrowser.addTrustedTab("https://example.org/?smoke-edge-w", {userContextId: w.gBrowser.selectedTab.userContextId}); w.gBrowser.selectedTab = t;
+      for (let i = 0; i < 100 && (!key(w, t) || t.linkedBrowser.webProgress?.isLoadingDocument); i++) await wait(100); await wait(500); return 1;""")
     bar_open(m)
-    bar_keys(m, ["w"], CMD)
+    press_in(m, "main()", "w", CMD)
     closed = wait_for_bar(m, False)
-    r = 1
-    for _ in range(50):
-        r = m.js(H + """return main().SessionStore.getClosedWindowData().filter(w => w.tabs[0]?.entries?.[0]?.url?.includes("/commandbar/commandbar.html")).length;""")
-        if not r:
-            break
-        time.sleep(0.1)
+    r = m.js(H + """const w = main(); await wait(500); return {left: w.gBrowser.tabs.filter(t => url(t).includes("smoke-edge-w")).length, tabs: w.gBrowser.tabs.length};""")
     ready = bar_open(m)
-    check("⌘W closes it, leaves nothing under Recently Closed Windows, and the key opens it again", closed and r == 0 and ready >= 0, f"{closed} {r}")
+    check("⌘W with the bar open closes the tab you are on, as from Firefox's address bar; the bar goes with it, and the key opens it again at the first press",
+          closed and r["left"] == 0 and r["tabs"] == start["tabs"] and ready >= 0, f"{closed} {r} {start}")
     bar_keys(m, [ESC])
     wait_for_bar(m, False)
+    m.js(H + """await removeWhere((w, t) => t.label.includes("smoke-edge-w")); return 1;""")
 
     # Enter held down: its repeats must not answer the question its first press brought up.
     bar_open(m)
@@ -10045,7 +10111,7 @@ def alone_bar_edges(m):
     press(m, str(start["space"]), CTRL)
     time.sleep(1)
 
-    # Firefox's prompt left open while you go to another window: nothing can answer it there, and no blur comes again.
+    # Firefox's question left unanswered: you click beside it, and Firefox puts both panels away.
     sidebar_page(m, """await page.browser.permissions.remove({permissions: ["history", "bookmarks"]}); await page.browser.storage.local.remove("commandBarAsked");""")
     m.js(H + """await removeWhere((w, t) => url(t).includes("/sidebar/sidebar.html")); main().focus(); return 1;""")
     bar_open(m)
@@ -10054,40 +10120,94 @@ def alone_bar_edges(m):
     bar_keys(m, [UP, ENTER])
     r = {}
     for _ in range(50):
-        r = m.js(BAR + """const b = bar(), panel = b?.document.getElementById("notification-popup"); return {open: panel?.state === "open", at: panel ? [panel.screenX - b.screenX, panel.screenY - b.screenY] : null};""")
+        r = m.js(BAR + """const panel = main().document.getElementById("notification-popup"); return {open: panel?.state === "open", bar: !!bar()};""")
         if r["open"]:
             break
         time.sleep(0.1)
-    # (With the address bar hidden the prompt has nothing to hang from: Firefox puts it at the corner of the bar's own window.)
-    check("Firefox's prompt shows, at the bar's own window", r["open"] and r["at"] == [0, 0] and bar_is_open(m), f"{rows[-1:]} {r}")
-    m.js(H + "main().focus(); return 1;")
-    check("going to another window with the prompt open closes the bar", wait_for_bar(m, False))
+    check("Firefox's question shows in the window you are in, with the bar still there", r["open"] and r["bar"], f"{rows[-1:]} {r}")
+    m.js(BAR + """bar()?.panel.hidePopup(); main().document.getElementById("notification-popup")?.hidePopup(); await wait(300); return 1;""")
+    gone = wait_for_bar(m, False)
     ready = bar_open(m)
     r = bar_page(m, """return !!page.browser.history;""")
-    check("and the key opens it again, with nothing granted", ready >= 0 and r is False, str(r))
+    check("put away unanswered, it grants nothing, and the key opens the bar again at the first press", gone and ready >= 0 and r is False, f"{gone} {r}")
+    bar_keys(m, "example")
+    rows = bar_rows_until(m, lambda rows: rows and rows[0]["kind"] != "ask")
+    check("and it is not asked a second time", bool(rows) and not any(x["kind"] == "ask" for x in rows), str(rows[-2:]))
     bar_keys(m, [ESC])
     wait_for_bar(m, False)
 
-    # The window it was opened from closes under it: what you then choose lands in another.
+    # Another panel of Firefox's open (its menu, a question it asks): Firefox opens no second
+    # one beside it, and the bar is then a small window of its own over the one you are in.
+    m.js(BAR + """const w = main(); w.focus(); await w.PanelUI.show(); for (let i = 0; i < 40 && w.PanelUI.panel.state !== "open"; i++) await wait(50); return 1;""")
+    press_in(m, "main()", "k", CMD, SHIFT)
+    r = {}
+    for _ in range(60):
+        r = m.js(BAR + """const w = main(), [b] = barWindows(); if (!b) return {own: 0, panel: !!bar()};
+          return {own: barWindows().length, panel: !!bar(), centre: Math.abs((b.screenX + b.outerWidth / 2) - (w.screenX + w.outerWidth / 2)),
+                  inside: b.screenY >= w.screenY && b.screenY + b.outerHeight <= w.screenY + w.outerHeight, tabs: b.gBrowser.tabs.length, kept: b.gBrowser.tabs.filter(t => key(b, t) || role(b, t)).length};""")
+        if r["own"]:
+            break
+        time.sleep(0.1)
+    check("with another panel of Firefox's open, the bar is a small window of its own, centred over the one you are in, and no part of tab sync",
+          r.get("own") == 1 and not r["panel"] and r["centre"] < 8 and r["inside"] and r["tabs"] == 1 and r["kept"] == 0, str(r))
+    # Esc, with real keys, in that window.
+    m.chrome()
+    for h in m.cmd("WebDriver:GetWindowHandles"):
+        m.cmd("WebDriver:SwitchToWindow", {"handle": h, "focus": False})
+        if m.js("return !window.toolbar.visible;"):
+            m.cmd("WebDriver:SwitchToWindow", {"handle": h, "focus": True})
+            m.js(H + """for (let i = 0; i < 60 && !(Services.focus.activeWindow === window && window.gBrowser.selectedBrowser.currentURI.spec.includes("commandbar.html")); i++) await wait(50); await wait(400); return 1;""")
+            try:
+                press(m, ESC)
+            except RuntimeError as err:
+                if "no such window" not in str(err):
+                    raise
+            break
+    m.chrome()
+    r = {}
+    for _ in range(50):
+        r = m.js(BAR + """const w = main(); return {own: barWindows().length, focus: Services.focus.activeWindow === w,
+          closed: w.SessionStore.getClosedWindowData().filter(x => x.tabs[0]?.entries?.[0]?.url?.includes("/commandbar/commandbar.html")).length};""")
+        if not r["own"] and r["focus"] and not r["closed"]:
+            break
+        time.sleep(0.1)
+    check("Esc closes that window, back in the window you were in, and it is not kept under Recently Closed Windows", r == {"own": 0, "focus": True, "closed": 0}, str(r))
+    m.js(H + """main().PanelUI.hide(); await wait(300); return 1;""")
+    ready = bar_open(m)
+    check("and with that panel gone the bar is in the window again", ready >= 0 and m.js(BAR + "return barWindows().length;") == 0)
+    bar_keys(m, [ESC])
+    wait_for_bar(m, False)
+
+    # The window it was opened in closes under it: the bar goes with it, and the key works at once in another.
     windows = m.js(H + """const n = wins().length, w = main().OpenBrowserWindow(); w.__extra = true; for (let i = 0; i < 200 && !w.gBrowserInit?.delayedStartupFinished; i++) await wait(50); await wait(2500); return n;""")
     bar_open(m, "wins().find(w => w.__extra)")
+    where = m.js(BAR + "return bar().window.__extra === true;")
     m.js(H + """Services.prefs.setBoolPref("browser.tabs.warnOnClose", false); wins().find(w => w.__extra).close(); for (let i = 0; i < 50 && wins().some(w => w.__extra); i++) await wait(100); return 1;""")
-    still = bar_is_open(m)
+    gone = wait_for_bar(m, False)
+    ready = bar_open(m)
     bar_keys(m, "example.org/?smoke-edge-source")
     bar_rows_until(m, lambda rows: rows and rows[0]["kind"] == "address")
     bar_keys(m, [ENTER])
     wait_for_bar(m, False)
     r = m.js(H + """const w = main(); for (let i = 0; i < 50 && !w.gBrowser.tabs.some(x => url(x).includes("smoke-edge-source")); i++) await wait(100);
       return {here: w.gBrowser.tabs.filter(x => url(x).includes("smoke-edge-source")).length, windows: wins().length};""")
-    check("the window it was opened from closing leaves the bar working", still and r["here"] == 1 and r["windows"] == windows, f"{still} {r} {windows}")
+    check("the bar opens in the window the key was pressed in; that window closing takes the bar with it, and the key works at once in another",
+          where and gone and ready >= 0 and r["here"] == 1 and r["windows"] == windows, f"{where} {gone} {r} {windows}")
     m.js(H + """await removeWhere((w, t) => url(t).includes("smoke-edge-source") || t.label.includes("smoke-edge-source")); main().focus(); return 1;""")
     press(m, str(start["space"]), CTRL)
     time.sleep(1)
     left = m.js(H + """return wins().filter(w => !w.toolbar.visible).length;""")
     check("no window stays behind after all that", left == 0, str(left))
     m.js(H + "await wait(%d); return 1;" % 2500)  # marks on tabs made a moment ago last that long
-    kept = extension_message(m, {"type": "stats"})["sizes"]
-    grown = {name: (kept_before[name], kept[name]) for name in kept if kept[name] > kept_before[name]}
+    # (The placeholders of the window closed a moment ago are looked for in Recently Closed for
+    # ten seconds, FORGET_MS in common.js, and the bar is quick now: so until that has passed.)
+    grown = {}
+    for _ in range(6):
+        kept = extension_message(m, {"type": "stats"})["sizes"]
+        grown = {name: (kept_before[name], kept[name]) for name in kept if kept[name] > kept_before[name]}
+        if not grown:
+            break
+        time.sleep(2)
     check("and no list in memory has grown with all those bars", not grown, str(grown))
 
 
