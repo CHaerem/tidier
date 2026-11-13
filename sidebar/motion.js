@@ -73,5 +73,13 @@
     // Clipped while it moves, so what is closing goes under the folder's edge, not over the rows below.
     const anim = children.animate({ height: [`${from}px`, `${to}px`], overflow: ["clip", "clip"] }, { duration, easing });
     anim.id = "fold";
+    // Firefox keeps what you look at in its place when rows above it go (scroll anchoring),
+    // but not under a box whose height is on the move. Without that, the row you are on, the
+    // only one a closed folder still shows, went up with the fold and out of sight. So the
+    // list is told (stayput.js): now, where the row is already in its place inside the
+    // folder, and when the move is over, for a row below the folder.
+    const folded = () => list.dispatchEvent(new Event("folded"));
+    folded();
+    anim.finished.then(folded, () => {});
   }
 }
