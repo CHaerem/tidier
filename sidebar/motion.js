@@ -61,13 +61,19 @@
   function foldSoftly(box) {
     const children = box.lastElementChild;
     if (!children?.classList.contains("children")) return;
+    // A fold still under way (folded again before it was over, or on a machine too busy to
+    // have drawn it yet) holds the height, so both measures below would be that height:
+    // nothing moved, and the old fold went on to its end in a folder that was now the other
+    // way. So it is stopped first, and this one goes on from where that one had come.
+    const under = children.getAnimations().filter(a => a.id === "fold");
+    const at = under.length ? Math.round(children.getBoundingClientRect().height) : null;
+    for (const running of under) running.cancel();
     const closed = box.classList.contains("collapsed"), to = children.offsetHeight;
     box.classList.toggle("collapsed", !closed);
-    const from = children.offsetHeight;
+    const from = at ?? children.offsetHeight;
     box.classList.toggle("collapsed", closed);
     folds.takeRecords(); // the moment back is no fold of its own
     if (from === to) return;
-    for (const running of children.getAnimations()) if (running.id === "fold") running.cancel();
     const { duration, easing } = softly();
     // Clipped while it moves, so what is closing goes under the folder's edge, not over the rows below.
     const anim = children.animate({ height: [`${from}px`, `${to}px`], overflow: ["clip", "clip"] }, { duration, easing });

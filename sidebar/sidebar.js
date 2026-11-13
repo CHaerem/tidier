@@ -422,8 +422,24 @@ function keepLingering() {
 const DOUBLE_CLICK_MS = 500; // the longest a second click usually takes (a Mac's default)
 const FOLD_SHOWS_MS = 250; // most double clicks have their second click by then
 const foldsWaiting = new Map(); // folder key -> whether a click closed it, while it waits for a second click
+// And then until the background has heard of it. A view made before that still says the
+// folder is as it was, and can be on its way already (the two cross on a busy machine):
+// drawn, it opened the folder you had just closed, and the view after it closed it again.
+// (Drawn only where something else about the folder had changed too, its count or its
+// sound: a folder that is as it was last drawn is left alone, keep(). So it was rare.)
+// So what you did holds until a view agrees, or for FOLD_HEARD_MS if none ever does (the
+// folder went meanwhile, or another window folded it the other way): then the list is asked
+// for again, and is the truth.
+const FOLD_HEARD_MS = 3000;
+const foldsSent = new Map(); // folder key -> { closed, timer }
+function foldSent(key, closed) {
+  clearTimeout(foldsSent.get(key)?.timer);
+  foldsSent.set(key, { closed, timer: setTimeout(() => { foldsSent.delete(key); hello(); }, FOLD_HEARD_MS) });
+}
 function folder(f) {
-  const closed = foldsWaiting.get(f.key) ?? f.collapsed;
+  const sent = foldsSent.get(f.key);
+  if (sent && sent.closed === f.collapsed) { clearTimeout(sent.timer); foldsSent.delete(f.key); } // heard
+  const closed = foldsWaiting.get(f.key) ?? foldsSent.get(f.key)?.closed ?? f.collapsed;
   const box = keep("folder:" + f.key, () => {
     const b = el("div", "folder");
     b.setAttribute("role", "none");
@@ -452,7 +468,7 @@ function folder(f) {
       if (b.classList.contains("renaming")) return;
       wait();
       const closing = !(foldsWaiting.get(f.key) ?? b.classList.contains("collapsed"));
-      const fold = () => { foldsWaiting.delete(f.key); send({ type: "foldFolder", key: f.key, collapsed: closing }); };
+      const fold = () => { foldsWaiting.delete(f.key); foldSent(f.key, closing); send({ type: "foldFolder", key: f.key, collapsed: closing }); };
       if (!e.detail) { show(closing); return fold(); }
       if (e.detail > 1) return undoShown(); // the second of a double click, which renames
       foldSoon = setTimeout(fold, DOUBLE_CLICK_MS);

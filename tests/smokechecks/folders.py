@@ -7,7 +7,7 @@ import time
 from testfirefox import EXT_ID
 from smokechecks.base import (
     DOWN, ENTER, H, RECENTLY_CLOSED_PLACEHOLDERS, check, ext_page, extension_message, into_page,
-    more_tabs_here, no_problems, press, seen, sidebar_page, until,
+    look_in_sidebar, more_tabs_here, no_problems, press, seen, sidebar_page, until,
 )
 
 
@@ -34,6 +34,36 @@ def alone_folders(m):
     check("a tab goes into a folder", r["title"] in r["moved"][-1]["tabs"], str(r))
     check("a folder folds and unfolds", r["closed"][-1]["collapsed"] is True and r["renamed"][-1]["collapsed"] is False, str(r))
     check("a folder is renamed", r["renamed"][-1]["name"] == "Renamed", str(r))
+    # A view made before the background heard of a fold, and drawn after it: the folder
+    # stays as you put it. (The two cross on their way on a busy machine, and the folder then
+    # opened again for a moment; here that view is sent again, by hand, in the real sidebar.)
+    stale = look_in_sidebar(m, """async () => {
+      const bg = page.browser.extension.getBackgroundPage(), win = (await page.browser.windows.getCurrent()).id;
+      const head = [...doc.querySelectorAll("#tabs .folder .head")].find(h => h.querySelector(".title").textContent === "Renamed");
+      if (!head) return {none: true};
+      const box = head.parentElement, was = box.classList.contains("collapsed"), seen = [];
+      const o = new content.MutationObserver(() => { const now = box.classList.contains("collapsed"); if (seen.at(-1) !== now) seen.push(now); });
+      o.observe(box, {attributes: true, attributeFilter: ["class"]});
+      const before = await bg.viewFor(win), real = bg.viewFor;
+      // (With something else about the folder changed since it was last drawn, so that it is
+      // drawn again: a folder that is as it was drawn is left alone, whatever a view says.)
+      before.folders.find(f => f.name === "Renamed").soundTabId = -1;
+      head.click();  // as from the keys: it folds at once
+      bg.viewFor = Components.utils.exportFunction(w => w === win ? bg.Promise.resolve(before) : real.call(bg, w), bg);
+      bg.viewSoon(win);
+      await sleep(600);
+      const during = box.classList.contains("collapsed");
+      bg.viewFor = real;
+      bg.viewSoon(win);
+      await sleep(800);
+      const after = box.classList.contains("collapsed"), states = [...seen];
+      o.disconnect();
+      head.click();  // and back as it was, for the checks below
+      await sleep(1000);
+      return {was, during, after, states, back: box.classList.contains("collapsed")};
+    }""")
+    check("a view made before a fold was heard does not undo the fold for a moment",
+          stale.get("was") is False and stale.get("during") is True and stale.get("after") is True and stale.get("states") == [True] and stale.get("back") is False, str(stale))
     s = m.js(H + """const all = (await storage("%s", ["syncedTabs"])).syncedTabs, f = all[args[0]];
       const tabs = Object.entries(all).filter(([, e]) => e.parentKey === args[0]);
       return {folder: f && {name: f.name, own: f.own}, saved: tabs.map(([k, e]) => !!e.saved), key: tabs[0]?.[0],

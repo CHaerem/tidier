@@ -1101,8 +1101,12 @@ def alone_motion(m):
       const switchTo = async id => { sdoc.querySelector(`#spaces .space[data-space="${id}"]`).click(); await until(() => root.dataset.space === id); return PARTS.map(slide); };
       const head = () => sdoc.querySelector("#tabs .folder .head[title='Motion folder']");
       const fold = async () => { const h = head(), was = h.parentElement.classList.contains("collapsed"); h.click(); await until(() => h.parentElement.classList.contains("collapsed") !== was);
-        // The newest fold: a finished one can still be listed for a moment.
-        const a = h.parentElement.lastElementChild.getAnimations().filter(x => x.id === "fold").at(-1); return a ? a.effect.getKeyframes().map(k => parseInt(k.height)) : "none"; };
+        // This fold's own move: the one that goes its way. One from the fold before can still be
+        // listed for a moment, and on a busy machine this one is made a moment after the click.
+        const folds = () => h.parentElement.lastElementChild.getAnimations().filter(x => x.id === "fold").map(a => a.effect.getKeyframes().map(k => parseInt(k.height)));
+        const mine = () => folds().find(k => (was ? k[0] < k.at(-1) : k[0] > k.at(-1)));
+        await until(mine, 2000);
+        return mine() ?? folds().at(-1) ?? "none"; };
       const moving = () => [...PARTS.map(id => sdoc.getElementById(id)), ...sdoc.querySelectorAll("#tabs .folder > .children, #tabs .row")].flatMap(e => e.getAnimations()).filter(a => a.playState === "running").length;
       const newRow = async name => { const made = await page.browser.tabs.create(obj({url: "https://example.org/?smoke-motion-" + name, cookieStoreId: ids[0], active: false}));
         let row = null; await until(() => (row = sdoc.querySelector(`#tabs .tab[data-tab="${made.id}"]`)));
@@ -1113,16 +1117,33 @@ def alone_motion(m):
       await until(() => root.dataset.space === ids[0]);
       await wait(500);
       out.right = await switchTo(ids[1]);
-      await wait(500);
+      // Until it has stopped, not for a set time: a busy machine draws the page late, and a
+      // move that takes 180 ms of the page's own time was then still under way after 500.
+      await until(() => !moving(), 5000);
       out.settled = moving();
       out.left = await switchTo(ids[0]);
-      await wait(500);
+      await until(() => !moving(), 5000);
       out.closing = await fold();
-      await wait(400);
+      await until(() => !moving(), 5000);  // (over, so the next fold starts from a folder that is closed)
       out.opening = await fold();
-      await wait(400);
+      await until(() => !moving(), 5000);
+      // Folded again before the fold is over: no move is left going the old way, and the
+      // folder ends as high as it is. (The old one held the height, so the new one measured
+      // nothing to move, and the folder closed by its height while it was open.)
+      const kids = head().parentElement.lastElementChild, high = kids.offsetHeight;
+      const going = () => kids.getAnimations().filter(a => a.id === "fold" && a.playState === "running").map(a => a.effect.getKeyframes().map(k => parseInt(k.height)));
+      const turn = async () => { await null; await null; };  // the fold is made right after the click, in the same turn
+      head().click();
+      await turn();
+      const first = going();
+      head().click();
+      await turn();
+      const second = going();
+      await until(() => !moving(), 5000);
+      out.again = {first: first.length === 1 && first[0].at(-1) === 0, oldGone: !second.some(k => k.at(-1) === 0), ends: kids.offsetHeight === high && high > 0,
+                   open: !head().parentElement.classList.contains("collapsed")};
       out.row = await newRow("new");
-      await wait(600);
+      await until(() => !moving(), 5000);
       out.idle = moving();
       return out;""")
     check("another space slides in from the side its dot is on, and its parts all move together, then stop",
@@ -1130,6 +1151,8 @@ def alone_motion(m):
     closing, opening = r.get("closing"), r.get("opening")
     check("a folder closes and opens by its height, from where it was to where it goes",
           isinstance(closing, list) and closing[0] > closing[-1] and isinstance(opening, list) and opening[0] < opening[-1] and opening[-1] == closing[0], f"{closing} {opening}")
+    check("a folder folded again before its fold was over leaves no move going the old way, and ends as high as it is",
+          r.get("again") == {"first": True, "oldGone": True, "ends": True, "open": True}, str(r.get("again")))
     check("a new row fades in where it is", r.get("row") is True, str(r.get("row")))
     check("with nothing happening, nothing moves", r.get("idle") == 0, str(r.get("idle")))
 
