@@ -11,8 +11,8 @@ and writes PNGs at twice the size, as on a Retina screen:
 
     sidebar-SPACE-WIDTH-SCHEME   the sidebar per space, at 220, 300 and 480 px, light and dark
     window-SPACE-SCHEME          the whole window around it, with userChrome.css
-    hover-*, menu-*, state-*     one thing at a time, at 300 px, light and dark (state-closed-row-room and
-                                 state-saved-tab-unloaded with the mouse where it clicked)
+    hover-*, menu-*, state-*     one thing at a time, at 300 px, light and dark (state-saved-tab-unloaded
+                                 with the mouse where it clicked)
     hover-*, menu-*, state-*     one thing at a time, at 300 px, light and dark
     keys-*                       with the keyboard in the sidebar, for real: the cursor, a menu by key
     state-essentials-N-WIDTH     one, two and three essentials, at each width
@@ -899,9 +899,8 @@ def scrolled(cam):
 
 
 def under_the_hand(cam):
-    """What a hand leaves for a moment: the quiet line in its room, the room a row closed with the
-    mouse keeps while the mouse is in the list, and a saved tab just unloaded under the mouse.
-    The row closed is closed for good."""
+    """What a hand leaves for a moment: the quiet line in its room, and a saved tab just unloaded
+    under the mouse. (A row that closes folds away in a moment: nothing of it stays to be shown.)"""
     m = cam.m
     select(m, on_tab(WORK), WORK["ctx"])
     if cam.wanted("state-quiet-line"):
@@ -921,14 +920,6 @@ def under_the_hand(cam):
         in_sidebar(m, """await until(() => doc.querySelector("#tabs .still-dim"), "the row unloaded");""")
         cam.mouse(*at)
         cam.shoot("state-saved-tab-unloaded")
-    cam.mouse_away()
-    at = cam.wanted("state-closed-row-room") and cam.point_at("#tabs > .row.tab:not(.active):not(.unloaded) .close")  # today's: a saved tab unloads in its place
-    if at:
-        cam.mouse(*at, {"type": "pointerDown", "button": 0}, {"type": "pointerUp", "button": 0})
-        cam.m.cmd("WebDriver:ReleaseActions")
-        in_sidebar(m, """await until(() => doc.querySelector("#tabs .room"), "the room");""")
-        cam.mouse(*at)
-        cam.shoot("state-closed-row-room")
     cam.mouse_away()
 
 

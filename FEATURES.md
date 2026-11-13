@@ -18,7 +18,7 @@ part C).
 |---|---|---|---|
 | Vertical tab list in a sidebar | Z A S | Done | checked |
 | Unloaded tabs shown dimmed | Z A S | Done | seen in the pictures of tools/shoot.py |
-| Close button, middle click to close | Z A S | Done | in Tidier's sidebar; checked with real clicks: a middle click closes also with Firefox's autoscroll on, a double click on × closes one tab, and the rows stay where they are until the pointer leaves the list |
+| Close button, middle click to close | Z A S | Done | in Tidier's sidebar; checked with real clicks: a middle click closes also with Firefox's autoscroll on, a double click on × closes one tab, and the row folds away at once, the rows below coming up into its place in one soft move, as in Zen and Arc (no hole is left where it was) |
 | New tab button at the top of the list | A Z | Done | |
 | Drag tabs to reorder, into and out of folders | Z A S | Done | checked, every window follows; also to a place among the essentials and to a space; an essential dragged out lands where it is dropped, in a folder too; marks only where a drop does something; a drop shows in its new place at once; the list scrolls at its edges |
 | Select several tabs (⇧/⌘ click) and act on them | Z A S | Done | checked: move, close, drag and the menu; the selection lives in the sidebar only; ⌘-click takes the selected tab along only from the same folder, or from today's tabs |

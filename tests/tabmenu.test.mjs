@@ -31,7 +31,7 @@ const act = async (x, windowId, action, tabIds, more = {}) => {
 function menu({ folders = [], spaces = [{ id: C1, name: "One" }, { id: C2, name: "Two", color: "#123" }] } = {}) {
   const sent = [], copied = [];
   const clipboard = { writeText: async text => { copied.push(text); } };
-  const ctx = vm.createContext({ view: { folders, spaces, space: C1 }, send: m => sent.push(m), renameNext: false, document: {}, browser: {}, navigator: { clipboard }, console });
+  const ctx = vm.createContext({ view: { folders, spaces, space: C1 }, send: m => sent.push(m), closeRow: id => sent.push({ type: "close", tabId: id }), renameNext: false, document: {}, browser: {}, navigator: { clipboard }, console });
   vm.runInContext(readFileSync(new URL("../sidebar/tabmenu.js", import.meta.url), "utf8"), ctx);
   const items = vm.runInContext("tabMenuItems", ctx);
   // Arrays from another context compare as different: these are made here.
@@ -151,7 +151,7 @@ test("items send one list, and Close one message per tab", () => {
 function withMore({ folders = [], tabs = [] } = {}) {
   const sent = [];
   const view = { space: C1, spaces: [{ id: C1, name: "One" }], folders: folders.map(f => ({ ...f, tabs: f.tabs.map(id => ({ id })) })), tabs: tabs.map(id => ({ id })) };
-  const ctx = vm.createContext({ view, send: m => sent.push(m), renameNext: false, document: {}, browser: {}, navigator: {}, console });
+  const ctx = vm.createContext({ view, send: m => sent.push(m), closeRow: id => sent.push({ type: "close", tabId: id }), renameNext: false, document: {}, browser: {}, navigator: {}, console });
   ctx.window = ctx;
   for (const f of ["../sidebar/tabmenu.js", "../sidebar/moremenu.js"]) vm.runInContext(readFileSync(new URL(f, import.meta.url), "utf8"), ctx);
   const items = vm.runInContext("tabMenuItems", ctx);

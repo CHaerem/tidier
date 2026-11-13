@@ -93,7 +93,7 @@
     const selected = id => Number(element(id).classList.contains("active"));
     const ids = inOrder().sort((a, b) => selected(a) - selected(b));
     clear();
-    for (const tabId of ids) send({ type: "close", tabId });
+    for (const tabId of ids) closeRow(tabId); // sidebar.js: their rows fold away
   }
 
   // Together already, right in front of `before` (or last there): a shaky drop on their own

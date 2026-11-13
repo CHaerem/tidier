@@ -248,6 +248,10 @@ Changed by saying so. All of them can be reversed.
   popup of Tidier's toolbar button, which only the key opens, placed by the dotfiles'
   stylesheet where the address bar floats. With another panel of Firefox's open it is still
   the small window. ⌘W stays Firefox's: with the bar open it closes the tab under it.
+- A row that closes folds away at once, and the rows below come up into its place in one soft
+  move, as in Zen and Arc (the owner, 13 November 2026: the room a closed row kept while the
+  pointer was in the list left holes, which then filled late). A double click on × still closes
+  one tab: the second click does nothing.
 - ⇧⌘C says *Address copied* on the page itself (the owner, the same day: nothing showed that
   it had worked). For that Tidier has `activeTab`: the page a key of Tidier's is pressed in.
   It is used for that word only; a page is read only with the access to all websites.
