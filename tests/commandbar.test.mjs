@@ -1417,21 +1417,38 @@ test("a panel that goes as soon as it came was never shown: the bar opens as a w
   stayed.close(); // a click beside it
   await wait(300);
   assert.equal(barWindows(ff).length, 0);
-  // One that had the keyboard was there to be seen, however soon after it went.
+  // One that had the keyboard for a while was there to be seen.
   await panel.open(ff, w.id);
   const seen = connectPanel(x, panel.url());
-  await wait(250);
+  await wait(400);
   seen.close();
   await wait(300);
   assert.equal(barWindows(ff).length, 0);
-  // And one that never had it, gone a little later than the others: not shown either.
+  // One that never had it was not, however long Firefox took to take it away (a busy machine).
   await panel.open(ff, w.id);
   const slow = connectPanel(x, panel.url(), false);
-  await wait(300);
+  await wait(900);
   slow.close();
   await wait(300);
   assert.equal(barWindows(ff).length, 1);
-  assert.equal(panel.opened.length, 6, "the panel was asked for each time");
+  await pressKey(ff, x, w.id);
+  // Nor one that had it only on its way out.
+  await panel.open(ff, w.id);
+  const passing = connectPanel(x, panel.url(), false);
+  await wait(700);
+  await passing.tell({ type: "seen" });
+  passing.close();
+  await wait(300);
+  assert.equal(barWindows(ff).length, 1);
+  await pressKey(ff, x, w.id);
+  // But one that goes long after, never having had it: you have gone elsewhere by then.
+  await panel.open(ff, w.id);
+  const left = connectPanel(x, panel.url(), false);
+  await wait(4000);
+  left.close();
+  await wait(300);
+  assert.equal(barWindows(ff).length, 0);
+  assert.equal(panel.opened.length, 8, "the panel was asked for each time");
   x.kill();
 });
 

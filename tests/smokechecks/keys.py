@@ -422,7 +422,9 @@ def alone_command_bar(m):
     # A click beside it: Firefox closes a panel then, by itself. Tidier hears of it from the
     # bar's page going, and the key must open a new bar at the first press, not close a ghost.
     bar_open(m)
-    m.js(BAR + "bar().panel.hidePopup(); return 1;")
+    # (Not sooner than a hand could: a panel gone the moment it has the keyboard is one Firefox
+    # never showed, and the bar then comes as a window, commandbar.js.)
+    m.js(BAR + "await wait(400); bar().panel.hidePopup(); return 1;")
     gone = wait_for_bar(m, False)
     ready = bar_open(m)
     check("closed by Firefox (a click beside it), it is gone, and the key opens it again at the first press", gone and ready >= 0, f"{gone} {ready}")
@@ -915,7 +917,8 @@ def alone_bar_edges(m):
         time.sleep(0.1)
     m.js(BAR + """for (const b of barWindows()) b.close(); const w = main(); w.windowUtils.removeSheetUsingURIString(w.__noButton, w.windowUtils.USER_SHEET);
       for (let i = 0; i < 50 && barWindows().length; i++) await wait(100); w.focus(); await wait(500); return 1;""")
-    check("where Firefox cannot show the panel, the bar comes as a window of its own for the same press", r == {"own": 1, "panel": False}, str(r))
+    check("where Firefox cannot show the panel, the bar comes as a window of its own for the same press", r == {"own": 1, "panel": False},
+          f"""{r} {[t for t in extension_message(m, {"type": "stats"}).get("traces", []) if "bar" in t][-4:] if r != {"own": 1, "panel": False} else ""}""")
     ready = bar_open(m)
     check("and it is in the window again as soon as Firefox can show it there", ready >= 0 and m.js(BAR + "return barWindows().length;") == 0)
     bar_keys(m, [ESC])

@@ -37,11 +37,15 @@ const BAR_GONE_MS = 500; // a panel is gone a few milliseconds after its page is
 // stylesheet that does not hold it in place for the bar, as after an update of Tidier with
 // Firefox still running on the stylesheet it started with (the dotfiles' is read at a
 // start). It says nothing of it: it answers that the panel is open, loads the panel's page,
-// and takes it away again some 60 ms later, unseen. So the key seemed dead. A panel that
-// goes by itself, with nothing closing it, was such a one if it went sooner than anyone
-// could have seen it and closed it (BAR_UNSEEN_MS), or a little later (BAR_SEEN_MS) without
-// its page ever having had the keyboard, which a panel that shows gets within a few
-// hundredths of a second ("seen", from its page). The bar is then a window, for the same press. The panel is asked for again at the next press
+// and takes it away again some 60 ms later, unseen. So the key seemed dead. What tells such
+// a panel from one you closed is the keyboard: a panel that shows has it within a few
+// hundredths of a second, and its page says so ("seen"); one that is taken away unshown
+// never has it, or has it for a thousandth of a second on its way out. So a panel that goes
+// by itself, with nothing closing it, was not shown if its page never had the keyboard, or
+// had it for less time than a hand takes to close anything (BAR_UNSEEN_MS). By what the
+// page had, not by how long it was there: on a busy machine Firefox takes its time with
+// both. (Not after BAR_SEEN_MS: by then you have gone elsewhere, and a window that came now
+// would come after you.) The bar is then a window, for the same press. The panel is asked for again at the next press
 // (it costs those 60 ms, and nothing shows), so the bar is in the window again as soon as
 // Firefox can show it there.
 //
@@ -49,7 +53,7 @@ const BAR_GONE_MS = 500; // a panel is gone a few milliseconds after its page is
 // well within a tenth of a second; the wait is generous, since a busy machine must not make
 // a window of a panel that is on its way). That wait is long, so then the bar is a window
 // for a while (BAR_PANEL_AGAIN_MS) before the panel is tried again.
-const BAR_UNSEEN_MS = 150, BAR_SEEN_MS = 400, BAR_PANEL_MS = 2000, BAR_PANEL_AGAIN_MS = 10 * 60 * 1000;
+const BAR_UNSEEN_MS = 150, BAR_SEEN_MS = 3000, BAR_PANEL_MS = 2000, BAR_PANEL_AGAIN_MS = 10 * 60 * 1000;
 let barPanelNotBefore = 0; // when the panel is tried again, after one that never came (performance.now())
 const BAR_FORGET_MS = 10000; // Firefox lists a closed window a moment after it has closed, once it has its last state
 // A sidebar answers in a few milliseconds, and with none open Firefox says so at once; only a
@@ -92,7 +96,7 @@ async function toggleCommandBar(tab) {
   if (opening && Date.now() - commandBar.pressedAt > BAR_OPEN_LIMIT_MS) commandBar = null;
   else if (opening) { commandBar.closeOnOpen = !commandBar.closeOnOpen; return; } // what the presses add up to is settled once it is there
   if (commandBar) return barClose(commandBar, true);
-  const bar = commandBar = { ownWindow: null, from: null, pressedAt: Date.now(), snapshot: null, ctx: null, closeOnOpen: false, early: null, port: null, gone: null, there: null, noPanel: false, closed: false, seen: false, asWindow: null };
+  const bar = commandBar = { ownWindow: null, from: null, pressedAt: Date.now(), snapshot: null, ctx: null, closeOnOpen: false, early: null, port: null, gone: null, there: null, noPanel: false, closed: false, seen: null, asWindow: null };
   barCatchKeys(tab, bar); // first of all: the next key can be on its way already
   try {
     const from = await barSourceWindow(tab);
@@ -725,7 +729,7 @@ browser.runtime.onConnect.addListener(port => {
   bar.snapshot.then(snapshot => port.postMessage(snapshot ?? { pressedAt: bar.pressedAt, items: [], spaces: [] })).catch(() => {});
   port.onMessage.addListener(async msg => {
     if (msg.type === "close") await barClose(bar, msg.refocus);
-    else if (msg.type === "seen") bar.seen = true; // a panel that has the keyboard is there (BAR_SEEN_MS)
+    else if (msg.type === "seen") bar.seen ??= performance.now(); // a panel that has the keyboard is there (BAR_UNSEEN_MS)
     else if (msg.type === "asked") await browser.storage.local.set({ [BAR_ASKED]: true });
     else if (msg.type === "choose" && !bar.chosen) { // Enter pressed twice is one choice
       bar.chosen = true;
@@ -742,8 +746,8 @@ browser.runtime.onConnect.addListener(port => {
     bar.port = null;
     // A panel gone as soon as it came, with nothing having closed it, was never shown
     // (BAR_SEEN_MS, above): the bar opens as a window instead, for the same press.
-    const age = performance.now() - cameAt;
-    if (windowId === undefined && commandBar === bar && !bar.closed && !bar.noPanel && (age < BAR_UNSEEN_MS || (!bar.seen && age < BAR_SEEN_MS))) {
+    const now = performance.now(), unseen = bar.seen === null ? now - cameAt < BAR_SEEN_MS : now - bar.seen < BAR_UNSEEN_MS;
+    if (windowId === undefined && commandBar === bar && !bar.closed && !bar.noPanel && unseen) {
       barPanelFailed(bar, "went as soon as it came");
       barOpenAsWindow(bar).catch(err => { if (commandBar === bar) commandBar = null; noteError(err); });
       return;
