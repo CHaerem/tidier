@@ -1603,7 +1603,9 @@ def alone_stay_put(m):
       out.clickPulled = await pulled(was, page1);
       await wait(400);
       watching = false;
-      out.click = {moved: list.scrollTop - y, off: places.filter(t => t !== 0), top: fromTop(activeRow())};
+      // (To the pixel: the list's position is a fraction, and having gone a row down and back
+      // it was once three hundredths of a pixel from where it started, with nothing moved.)
+      out.click = {moved: Math.round(list.scrollTop - y), off: places.filter(t => t !== 0), top: fromTop(activeRow())};
       out.clickScrolls = places.length;
       // One out of view, selected from outside the list: it comes in, and stays in while the tab arrives.
       g = await ghosts();
