@@ -507,6 +507,33 @@ function rename(key) {
   };
 }
 
+// Going to another space. The bar says so at once, at the click: the list follows when
+// Firefox has selected a tab there and hidden the others, some tenth of a second later, and
+// until then nothing showed that the click had been taken. Its dot is marked as where you
+// are going (sidebar.css), which is not yet where you are: that is still the view's to say.
+// The mark goes when that space's view comes, or after a moment if it never does (a space
+// that has gone meanwhile).
+const GOING_MS = 1500;
+let goingTo = null; // { space, timer }
+function goToSpace(space) {
+  if (view && space !== view.space) {
+    clearTimeout(goingTo?.timer);
+    goingTo = { space, timer: setTimeout(arrived, GOING_MS) };
+    const bar = document.getElementById("spaces");
+    bar.classList.add("going");
+    for (const dot of bar.querySelectorAll(".space")) dot.classList.toggle("going", dot.dataset.space === space);
+  }
+  send({ type: "space", space });
+}
+function arrived() {
+  if (!goingTo) return;
+  clearTimeout(goingTo.timer);
+  goingTo = null;
+  const bar = document.getElementById("spaces");
+  bar.classList.remove("going");
+  for (const dot of bar.querySelectorAll(".space.going")) dot.classList.remove("going");
+}
+
 // --- Everything -------------------------------------------------------------------
 // The notice's words; its × to put it away is sidebar/isolation.js's.
 const problemText = el("span", "text");
@@ -516,6 +543,7 @@ let folderKeys = new Set();
 function render(next) {
   view = next;
   drawn = new Set();
+  if (goingTo?.space === view.space) arrived();
   const space = view.spaces.find(s => s.id === view.space), root = document.documentElement;
   foldsRows = view.space === roomsInSpace; // another space's list is not this one with rows gone
   if (!foldsRows) { roomsInSpace = view.space; letRoomsGo(); } // another list: nothing in it was where you pointed
@@ -563,7 +591,7 @@ function render(next) {
   place(bar, [...view.spaces.map(s => keep("space:" + s.id, () => {
     const b = el("button", "space");
     b.dataset.space = s.id;
-    b.onclick = () => send({ type: "space", space: s.id });
+    b.onclick = () => goToSpace(s.id);
     b.append(el("span", "dot"));
     return b;
   }, { s, active: s.id === view.space }, b => {

@@ -291,7 +291,9 @@ html.space-arriving .folder > .children { transition: none; } /* a whole space c
   transition: background-color var(--soft), box-shadow var(--soft), transform var(--spring);
 }
 .space:hover .dot { background: color-mix(in srgb, var(--color) 85%, var(--pale)); transform: scale(1.12); }
-.space.active .dot { background: var(--color); transform: scale(1.375); }
+/* The space you are going to is marked at the click (.going, sidebar.js), and the one you
+ * are leaving let go, before its list has come: the larger dot is where you are headed. */
+:where(#spaces:not(.going)) .space.active .dot, .space.going .dot { background: var(--color); transform: scale(1.375); }
 /* What a space has for you, on its own dot, so the bar stays a row of dots and nothing is
  * heavier than what it marks: news (news.js) or a tab an agent left you (agent.js) draw it
  * in its full colour, among the pale ones, and the active space's stays the larger. The
@@ -306,8 +308,8 @@ html.space-arriving .folder > .children { transition: none; } /* a whole space c
   transition: opacity var(--soft), filter var(--soft), transform var(--spring);
 }
 #spaces .space:hover .dot.emoji { opacity: .85; filter: grayscale(.3); }
-#spaces .space:is(.active, .news, .agent-left) .dot.emoji { opacity: 1; filter: none; }
-#spaces .space.active .dot.emoji { transform: scale(1.2); }
+#spaces .space:is(.active, .going, .news, .agent-left) .dot.emoji { opacity: 1; filter: none; }
+#spaces:not(.going) .space.active .dot.emoji, #spaces .space.going .dot.emoji { transform: scale(1.2); }
 
 /* --- Notices: quiet, on the icons' edge, in the same soft shape as everything else.
  * Never a white card: that means you are here. Every line that tells you something has

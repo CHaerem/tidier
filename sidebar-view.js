@@ -230,6 +230,17 @@ async function buildView(windowId) {
   if (sidebarPorts.has(windowId)) viewRest.set(windowId, performance.now() + Math.min(VIEW_REST * ms, VIEW_LONGEST_REST_MS));
   if (building.changed) viewSoon(windowId);
 }
+// A view without the wait, for what you asked for yourself and are waiting to see: another
+// space. The wait is there to make one view of a burst of tab events, and a switch is over
+// when this is called: waiting only made the list come a few hundredths of a second later.
+// (A view being built is not overtaken: it is told to be followed by another.)
+function viewNow(windowId) {
+  if (!sidebarPorts.get(windowId)?.size) return;
+  const building = viewsBuilding.get(windowId);
+  if (building && performance.now() - building.since < VIEW_STUCK_MS) { building.changed = true; return; }
+  clearTimeout(viewTimers.get(windowId)?.timer);
+  buildView(windowId);
+}
 const viewAllSoon = () => { for (const windowId of sidebarPorts.keys()) viewSoon(windowId); };
 // Only the sidebars that show tabs of this space: a page in another space can change
 // its title all day without any sidebar having anything to draw.

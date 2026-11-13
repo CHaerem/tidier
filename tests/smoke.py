@@ -86,7 +86,7 @@ import urllib.parse
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from mcp_client import Mcp  # noqa: E402
-from testfirefox import DOTFILES, EXT_DIR, EXT_ID, PORT, TestFirefox  # noqa: E402
+from testfirefox import DOTFILES, EXT_DIR, EXT_ID, FIXTURES, PORT, TestFirefox  # noqa: E402
 
 CMD, SHIFT, CTRL, ESC = "", "", "", ""
 
@@ -130,19 +130,6 @@ def press(m, key, *mods):
     acts += [{"type": "keyUp", "value": k} for k in reversed(mods)]
     m.cmd("WebDriver:PerformActions", {"actions": [{"type": "key", "id": "kb", "actions": acts}]})
     m.cmd("WebDriver:ReleaseActions")
-
-
-def fire_message(m, msg):
-    """Send a runtime message that makes the extension start again, and with it close the page sending it."""
-    m.js(H + """const w = main(); w.focus();
-      const t = w.gBrowser.addTrustedTab("moz-extension://" + JSON.parse(Services.prefs.getStringPref("extensions.webextensions.uuids"))[args[0]] + "/ghost.html?kind=test", {inBackground: false});
-      w.gBrowser.selectedTab = t; await wait(1500); return 1;""", EXT_ID)
-    into_page(m, "ghost.html?kind=test")
-    # The answer comes before the message goes: the page is gone once it has.
-    m.cmd("WebDriver:ExecuteAsyncScript", {"script": """const done = arguments[arguments.length - 1], msg = arguments[0], page = window.wrappedJSObject || window;
-      setTimeout(() => page.browser.runtime.sendMessage(page.JSON.parse(JSON.stringify(msg))), 300); done(1);""", "args": [msg]})
-    m.chrome()
-    time.sleep(1)
 
 
 def into_page(m, part, exact=False, focus=False):
@@ -405,10 +392,13 @@ def tab_sync(m):
       const t = main().gBrowser.addTrustedTab(args[0] + "/moving?smoke-moving", {userContextId: 3, inBackground: true});
       let k = null, ms = null; const t0 = Date.now();
       for (let i = 0; i < 100 && ms === null; i++) { await wait(100); k = key(main(), t); if (k && find(k)[1]?.length) ms = Date.now() - t0; }
-      const created = k ? find(k) : null, changes = url(t).split("#")[1];
+      // And it goes on changing after that: still the one tab, with the one ghost.
+      const changes = () => Number(url(t).split("#")[1] || 0);
+      for (let i = 0; i < 100 && changes() < 8; i++) await wait(100);
+      const created = k ? find(k) : null, changed = changes();
       await removeWhere((w, x) => url(x).includes("smoke-moving") || (k && key(w, x) === k));
-      return {created, ms, changes};""", m.pages)
-    check(f"a page whose address changes all the time gets its ghost too ({r['ms']} ms)", r["created"] == [["live/loaded"], ["ghost/unloaded"]] and int(r["changes"] or 0) >= 3 and r["ms"] <= 7000, str(r))
+      return {created, ms, changed};""", m.pages)
+    check(f"a page whose address changes all the time gets its ghost too ({r['ms']} ms), once", r["created"] == [["live/loaded"], ["ghost/unloaded"]] and r["changed"] >= 8 and r["ms"] <= 7000, str(r))
     # The window a page is taken from stays on it, as in Zen and Arc: the window you use has
     # the page, and the other one shows which page that is, not some other tab. Coming back
     # brings the page back, and the other window is then the one that waits.
@@ -8250,7 +8240,7 @@ def alone_copy_and_import(m):
     r = ext_page(m, "/settings/settings.html", """return doc.getElementById("sidebery-result").textContent;""")
     check("a Tidier copy is not taken for Sidebery's export", r == "This is not Sidebery's export.", str(r))
     # Sidebery's export: address rules from panels, and the folder it had closed closes at once.
-    with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "fixtures", "sidebery_export.json")) as f:
+    with open(os.path.join(FIXTURES, "sidebery_export.json")) as f:
         choose_file(m, "sidebery-file", f.read())
     r = ext_page(m, "/settings/settings.html", """return doc.getElementById("sidebery-result").textContent;""")
     check("Sidebery's export says what came, and what it left out", r == "Took in 3 rules, the order of 2 spaces and 1 closed folder. Left out the rules of 1 panel with no container.", str(r))
@@ -8260,7 +8250,7 @@ def alone_copy_and_import(m):
       for (let i = 0; i < 40 && !folders().some(f => f.name === "Reading"); i++) await wait(200);
       return folders().filter(f => f.name === "Reading");""")
     check("the folder Sidebery had closed is closed in the sidebar", [f["collapsed"] for f in shown] == [True], str(shown))
-    with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "fixtures", "sidebery_export.json")) as f:
+    with open(os.path.join(FIXTURES, "sidebery_export.json")) as f:
         choose_file(m, "sidebery-file", {k: v for k, v in json.load(f).items() if k != "snapshots"})
     r = ext_page(m, "/settings/settings.html", """return doc.getElementById("sidebery-result").textContent;""")
     check("an export with no snapshot says folders start open", "no snapshot in this export, so folders start open" in r, str(r))
@@ -10482,21 +10472,25 @@ def alone_many(m):
     numbers["ghostPullMs"] = r[len(r) >> 1] if r else None
     check(f"selecting a ghost brings its tab soon ({numbers['ghostPullMs']} ms)", len(r) == 5 and numbers["ghostPullMs"] < 5000, str(r))
 
-    # Switching space, from a click to the sidebar having drawn it.
+    # Switching space, from a click to the sidebar having drawn that space's list. The dot
+    # says so at the click itself, before anything has come back: until the list is there,
+    # that is all that shows the click was taken.
     r = sidebar_page(m, MANY_PAGE + """
-      const times = [], order = spaces().map(s => s.id), from = spaces().find(s => s.active).id;
+      const times = [], marked = [], order = spaces().map(s => s.id), shown = () => doc.documentElement.dataset.space, from = shown();
       const click = id => doc.querySelector(`#spaces .space[data-space="${id}"]`).click();
       for (const id of [...order.filter(s => s !== from).slice(0, 2), from, ...order.filter(s => s !== from).slice(0, 2), from]) {
-        if (spaces().find(s => s.active).id === id) continue;
+        if (shown() === id) continue;
         const t0 = performance.now();
         click(id);
-        if (!await until(() => spaces().find(s => s.active).id === id)) return {stuck: id};
+        marked.push(doc.querySelector("#spaces .space.going")?.dataset.space === id && shown() !== id);
+        if (!await until(() => shown() === id && spaces().find(s => s.active).id === id && !doc.querySelector("#spaces.going, #spaces .going"))) return {stuck: id};
         times.push(performance.now() - t0);
         await wait(1000);
       }
-      return {ms: Math.round(median(times)), most: Math.round(Math.max(...times))};""")
-    numbers["spaceSwitch"] = r
+      return {ms: Math.round(median(times)), most: Math.round(Math.max(...times)), marked};""")
+    numbers["spaceSwitch"] = {k: v for k, v in r.items() if k != "marked"}
     check(f"switching space is quick ({r.get('ms')} ms)", (r.get("ms") or 1e9) < 3000, str(r))
+    check("the dot of the space you go to is marked at the click, before its list has come, and the mark goes when it has", len(r.get("marked") or []) >= 4 and all(r["marked"]), str(r))
     shown = m.js(H + """const w = main(); await wait(500); return [...new Set(w.gBrowser.tabs.filter(t => !t.pinned && !t.hidden && t.userContextId).map(t => t.userContextId))];""")
     check("and shows one space", len(shown) == 1, str(shown))
 

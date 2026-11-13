@@ -197,7 +197,9 @@ async function switchSpace(windowId, space) {
   await browser.sessions.setWindowValue(windowId, SPACE_KEY, space).catch(() => {});
   if (last) await browser.tabs.update(last.id, { active: true }).catch(() => {});
   else await createTab({ windowId, cookieStoreId: space }).catch(ifGone); // common.js
-  if (activeSpace.has(windowId)) await setSpace(windowId, space); // else closed meanwhile
+  if (!activeSpace.has(windowId)) return; // closed meanwhile
+  await setSpace(windowId, space);
+  viewNow(windowId); // sidebar-view.js: you asked for this space, and its list is what you wait for
 }
 
 // The n-th space on the bar (⌃1, ⌃2, ...).

@@ -263,6 +263,12 @@ Changed by saying so. All of them can be reversed.
   window that is still on it as soon as the window that took it leaves it for another tab
   (the owner, 13 November 2026: with two windows side by side, one stayed grey on a page that
   no window showed any more). An essential's page does the same.
+- A new tab is in the other windows half a second after its page has loaded, not two seconds
+  after (the owner, 13 November 2026: tabs opened in one window seemed not to come to the
+  others). The longer wait stays for a page that has not loaded or is about to be opened
+  again in another space.
+- Going to another space, its dot is marked at the click and the list is drawn without the
+  usual short wait: what you asked for yourself should never look as if it was not taken.
 - Clear asks nothing: one line offers Undo. Closing several tabs and deleting a folder work
   the same way.
 - Tabs moved to another space go to the end of its tabs, not where new tabs go, so several

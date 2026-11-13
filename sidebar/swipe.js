@@ -163,12 +163,7 @@
     if (!space) return back(from);
     swipe.going = space;
     bring(dir);
-    send({ type: "space", space });
-    // The bar says so at once; the view that comes draws it again, whatever it says.
-    for (const dot of document.querySelectorAll("#spaces .space")) {
-      const on = dot.dataset.space === space;
-      if (dot.classList.contains("active") !== on) { dot.classList.toggle("active", on); delete dot.dataset.state; }
-    }
+    goToSpace(space); // sidebar.js: the bar says so at once
     // A flick goes on at the fingers' speed, or a little faster, never slower.
     const left = innerWidth - Math.abs(from);
     slide(dir * innerWidth, speed ? between(140, 3.5 * left / speed, 280) : 140 + 120 * left / innerWidth, () => { swipe.slid = true; land(); });
