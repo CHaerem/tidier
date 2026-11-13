@@ -733,7 +733,7 @@ def archived(cam):
 # The command bar is a panel of Firefox's in the window (commandbar.js), which Firefox draws
 # apart from the window: a picture of the window does not have it. Its page is drawn by
 # itself (bar-*), and laid over the window's picture where the panel stands (window-bar-*),
-# with the corners and the shadow the dotfiles' stylesheet gives the panel drawn by hand.
+# with the panel's corners and shadow drawn by hand.
 # Marionette cannot be pointed at a panel's page, nor do the keys it sends reach one: both
 # go through the page's own process.
 BAR_PANEL = CHROME + """
@@ -852,8 +852,9 @@ def bar_window(cam):
                 continue
             bar_scheme(m, scheme)
             window = m.js(WHOLE_WINDOW)
-            # The panel's corners and shadow are Firefox's to draw, from what the stylesheet
-            # says of them: read from the panel, and drawn here by hand.
+            # The panel's corners are Firefox's to draw, from what the stylesheet says of them,
+            # and its shadow is the Mac's own: the corners read from the panel, and both drawn
+            # here by hand.
             shot = m.js(BAR_PANEL + """const [window64] = args, scale = w.devicePixelRatio, {panel} = bar();
               const at = panel.getOuterScreenRect(), x = (at.x - w.mozInnerScreenX) * scale, y = (at.y - w.mozInnerScreenY) * scale;
               const style = w.getComputedStyle(panel), radius = (parseFloat(style.getPropertyValue("--panel-border-radius")) || 8) * scale;
