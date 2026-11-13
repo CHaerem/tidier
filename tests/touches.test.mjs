@@ -215,7 +215,7 @@ function page({ reduced = false } = {}) {
     setTimeout: (f, ms) => { timers.set(++id, { f, at: now + ms }); return id; },
     clearTimeout: h => timers.delete(h),
     getComputedStyle: icon => ({ opacity: icon.opacity }),
-    matchMedia: () => ({ matches: reduced }),
+    lessMotion: () => reduced, // sidebar.js
     addEventListener: (type, f) => { on[type] = f; },
   });
   vm.runInContext(readFileSync(new URL("../sidebar/touches.js", import.meta.url), "utf8"), ctx);

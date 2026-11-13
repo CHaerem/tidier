@@ -59,7 +59,7 @@
     const parts = [
       [
         ...(!live && n > 1 ? [["Sort this folder", sortChoices(tabs)]] : []),
-        ...(withAddress.length ? [[withAddress.length > 1 ? "Copy addresses" : "Copy address", () => tabAct("copy", withAddress)],
+        ...(withAddress.length ? [[withAddress.length > 1 ? "Copy addresses" : "Copy address", () => copyHere(withAddress.map(t => t.address), tabsWord(withAddress.length, "Address copied", "# addresses copied"))],
           [withAddress.length > 1 ? "Copy as Markdown links" : "Copy as Markdown link", () => tabAct("copyMarkdown", withAddress)]] : []),
       ],
       [
@@ -77,16 +77,19 @@
   // A space's More (spacemenu.js), from what spaceFacts (listactions.js) said of it. Sorting
   // and duplicates only for the space you see: the others' lists are not in front of you.
   window.spaceMore = (space, facts) => {
-    const here = space === view.space;
+    const here = space === view.space, anyOpen = () => view.folders.some(f => !f.collapsed);
     const parts = [
       [
         ...(here && view.tabs.length > 1 ? [["Sort today's tabs", sortChoices(view.tabs)]] : []),
         ...(here && facts?.duplicates ? [[facts.duplicates === 1 ? "Close 1 duplicate" : `Close ${facts.duplicates} duplicates`, () => tabAct("closeDuplicates", view.tabs)]] : []),
+        // All of them at once, where there is more than one: one is a click on its head.
+        ...(here && view.folders.length > 1 ? [[anyOpen() ? "Close all folders" : "Open all folders", () => send({ type: "foldFolders", space, collapsed: anyOpen() })]] : []),
       ],
       [
         ...(facts?.loaded ? [["Reload this space", () => send({ type: "spaceAction", action: "reload", space })]] : []),
         ...(facts?.unmuted ? [["Mute this space", () => send({ type: "spaceAction", action: "mute", space })]] : []),
         ...(facts?.muted ? [["Unmute this space", () => send({ type: "spaceAction", action: "unmute", space })]] : []),
+        ...(facts?.elsewhere ? [["Unload the other spaces", () => send({ type: "unloadOtherSpaces", space })]] : []),
       ],
     ];
     return parts.filter(part => part.length).flatMap((part, i) => (i ? [null, ...part] : part));

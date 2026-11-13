@@ -120,6 +120,8 @@ const COMMANDS = [
   { name: "space-mute", label: "Mute this space", key: "", action: onSpace("mute") },
   { name: "space-unmute", label: "Unmute this space", key: "", action: onSpace("unmute") },
   { name: "space-unload", label: "Unload this space", key: "", action: inQueue(w => unloadSpace(activeSpace.get(w), w)) },
+  { name: "space-unload-others", label: "Unload the other spaces", key: "", action: inQueue(w => unloadOtherSpaces(activeSpace.get(w), w)) },
+  { name: "folders-fold", label: "Close all folders, or open them", key: "", action: inQueue(w => toggleAllFolders(activeSpace.get(w))) },
   // Copy for Claude, carried out by bridge.js once turned on, with a key only if you give it one.
   { name: "claude-copy-page", label: "Copy this page for Claude (once turned on in Tidier's settings)" },
   { name: "claude-copy-tabs", label: "Copy this space's tabs for Claude (once turned on in Tidier's settings)" },

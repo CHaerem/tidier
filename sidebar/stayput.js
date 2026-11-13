@@ -20,6 +20,8 @@
   // one go when a view arrives, and scroll events come later, so an event always reads
   // the position of the space on screen, never another space's.
   list.addEventListener("scroll", () => { if (shown) positions.set(shown, list.scrollTop); }, { passive: true });
+  // Where a space's list was left, for what draws it before you are there (swipe.js).
+  window.placeLeftIn = space => positions.get(space) ?? 0;
 
   const outOfView = row => {
     const r = row.getBoundingClientRect(), box = list.getBoundingClientRect();
@@ -67,6 +69,12 @@
   // A tab selected with a key is marked before its view comes (sidebar.js): the list goes
   // to it then, not a moment after its mark has left the part in view.
   list.addEventListener("selectedshown", () => { follow(); notice(); });
+  // A folder folded or unfolded by its height (motion.js): the selected row that was in view
+  // stays in view, as it does when the list's own size changes (below).
+  list.addEventListener("folded", () => {
+    const row = list.querySelector(".tab.active");
+    if (row && selectedInView && !wholly(row)) row.scrollIntoView({ block: "nearest" });
+  });
   // The room's part is told apart by its height: the list and the room together keep theirs
   // when only the room comes or goes, also when something else changes in the same moment.
   // The width is the list's with its scroll bar: where a scroll bar takes room (a Mac with

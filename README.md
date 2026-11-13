@@ -114,7 +114,9 @@ be done, in order, is in [PLAN.md](PLAN.md).
    it was, under a grey layer (without, its placeholder names the page and says it is in
    another window now), and the page comes back when you use that window again, or as soon
    as the window that took it leaves it for another tab: a window stays grey only while
-   another window really shows that page. An essential's page does the same. Opening a tab adds it everywhere; closing it closes it everywhere;
+   another window really shows that page. An essential's page does the same. Opening a tab adds it everywhere, half a second after its
+   page has loaded (a page still loading waits a little longer, since it may yet be sent
+   somewhere else); closing it closes it everywhere;
    moving it into or out of a folder is the same in every window, since a folder is
    Tidier's own data; closing a window hands its tabs over to another window.
 3. **Folders** (`ownfolders.js`): each space has its folders first, then today's tabs, as
@@ -132,7 +134,10 @@ be done, in order, is in [PLAN.md](PLAN.md).
    colour, with the words in its tooltip: your review, a draft, failing checks, a
    conflict, changes asked for, approved, checks running, or simply open.
 5. **⇧⌘C copies the address** of the current tab, as in Arc and Zen
-   (`shortcuts.js`), and a word at the top of the page says so. Firefox gives ⇧⌘C to the developer tools' element
+   (`shortcuts.js`), and a word at the top of the page says so. Every other way of copying says the same word, in the
+   same place: Copy address and Copy as Markdown link in the menus, and the command bar's
+   Copy address. From a menu it is usually the sidebar's own line that says it, since
+   Firefox gives an extension the page only for a key of its own. Firefox gives ⇧⌘C to the developer tools' element
    picker, which wins over extensions; free it in `about:keyboard` (the
    dotfiles do this in `customKeys.json`).
 6. **Archiving**, as in Arc (`archive.js`): a tab not selected in any window
@@ -150,9 +155,32 @@ be done, in order, is in [PLAN.md](PLAN.md).
    page while it is on that address). ⇧⌘T reopens it in its placeholder's place. To
    remove a saved tab for good, close it while it is unloaded (the × on its placeholder,
    or a middle click), or drag it out of the folder, which makes it an ordinary tab
-   again. Every other tab is temporary: closing it closes it everywhere, and archiving
+   again. A saved tab you have browsed on in says so: a small stroke between its icon and
+   its title, and the page it is saved on in its tooltip (what comes after # in an address
+   is the same page). Its menu has *Back to saved address*, which closing it would also
+   do, but with the page still loaded, and *Save this address*, which makes where it is
+   now the page it goes back to (one line, with Undo). An essential's menu has the same
+   two while its page is on another address. The close button is a line, not a cross,
+   where it only unloads. Every other tab is temporary: closing it closes it everywhere, and archiving
    closes it when unused. A live folder's pull requests are not saved (the search decides
    what is in them).
+
+8. **Pause and play** (`tabactions.js`, `sounds.js`): a tab that plays has *Pause* in its
+   menu, which pauses what plays in the page, in every frame. While it is silent its row
+   or tile shows a play mark where the speaker was, and its menu has *Play*; both start
+   only what Tidier paused, not every video on the page. Playing again on the page, going
+   to another page or unloading it ends that. It runs a line in the page, so it needs the
+   optional access to all websites, which *Pause* asks for in its click. A sound a page
+   makes without an `<audio>` or `<video>` element cannot be reached from here, and the
+   quiet line says so.
+9. **A link dropped in the sidebar** (`sidebar/drag.js`, `droplinks.js`), from a page or
+   from another app, opens as a tab where it is dropped: among today's tabs, in a folder
+   (a saved tab there, saved on the link itself), among the essentials, or on another
+   space's dot. It opens in the background, in the space it was dropped in, and no rule
+   sends it elsewhere: it was given its place by hand. While it is over the sidebar it is
+   shown what a dragged tab is shown (the line where it lands, a closed folder that opens,
+   a space gone to). Only what is surely a link counts: text may be anything, and a file's
+   address is none a tab here can open.
 
 Compact mode and the window's look are set up in the dotfiles (`userChrome.css`, Firefox
 settings, `about:keyboard`). Switching to a tab in another window needs no command: every
@@ -295,11 +323,13 @@ With Tidier alone, the keys follow what the sidebar shows (`shortcuts.js`,
 
 - ⌃⌘↓ and ⌃⌘↑: the next and previous tab as shown, past other spaces' tabs and closed folders
 - ⌃⌘→ and ⌃⌘←: the next and previous space; ⌃1 to ⌃5: a space by its place on the bar
+- Two fingers sideways on the trackpad, anywhere in the sidebar: the next and previous
+  space, as in Zen and Arc (below)
 - ⌘1 to ⌘9: the n-th tab of this space, essentials first
 - ⌘D: make this tab an essential, or an ordinary tab again
 - ⌥⌘N: a new folder
 - ⇧⌘K: the command bar, and ⌘T as well once `about:keyboard` has cleared Firefox's own ⌘T
-- ⇧⌘C: copy the address (a word at the top of the page says so, or the line in the sidebar where a page takes none); ⌃⇧S: show or hide the sidebar
+- ⇧⌘C: copy the address (a word at the top of the page says so, or the line in the sidebar where a page takes none; the menus' Copy address says the same); ⌃⇧S: show or hide the sidebar
 - ⌘Z, with the keyboard in the sidebar: what the quiet line offers to undo, while it shows
 - Copy page for Claude, Copy these tabs for Claude and Ask Claude about this page: no key
   until you give them one, in the same Keys section once Copy for Claude is on
@@ -341,7 +371,11 @@ click beside it. An extension cannot say where such a panel stands: Firefox hang
 Extensions button, and the dotfiles' `userChrome.css` puts it in the middle of the window,
 where its floating address bar is, and as wide. While another panel of Firefox's is open (its
 menu, a question it asks) Firefox opens no second one, and the bar is a small window of its own
-over the one you are in. ⌘W is Firefox's own: with the bar open it closes the tab you are on,
+over the one you are in. So it is where Firefox cannot show the panel at all: with the
+toolbar hidden by a stylesheet that does not hold it in place for the bar (the dotfiles' does;
+Firefox reads it at a start, so until Firefox has been started again after that change the
+bar is the small window). Firefox says nothing then, so Tidier goes by the panel's page: one
+that is gone again before it ever had the keyboard was not shown. ⌘W is Firefox's own: with the bar open it closes the tab you are on,
 as it does from the address bar, and the bar goes with it. One field finds
 every tab of every space, essentials, folders, closed and archived tabs and commands, and
 history and bookmarks once you allow them. A row of another space says which, and the
@@ -367,7 +401,9 @@ and a space's menu, opening in place. It sorts today's tabs or a folder by name,
 by last use (with Undo), moves tabs to the top or the bottom of their list, takes them out of
 a folder, copies them as Markdown links, closes the duplicates among today's tabs (by the
 record's address, the one you are on stays) or the tabs above, below or around one, and
-reloads, mutes or unloads a whole folder or space, a few pages at a time. A folder's menu
+reloads, mutes or unloads a whole folder or space, a few pages at a time. A space's More
+also closes all its folders at once, or opens them, and unloads every other space, by the
+rules of Unload this space (what is selected, plays or is in a call stays). A folder's menu
 also has New tab here, and Close all its tabs. Whatever closes goes through the quiet line,
 with Undo. Each is a command in the bar, found by its name, and in the Keys section under
 More commands, with no key until you give one: what a tab's More does acts on the selection,
@@ -377,6 +413,42 @@ page's real last use, as the list draws them). In the
 sidebar ⌘A selects every row, ⇧↑ and ⇧↓ take one more, ⌥↑ and ⌥↓ move the selection (else
 the tab) one place along, in every window. A tab dragged and held over a closed folder opens
 it, and over another space's dot goes to that space, where a drop in the list puts it.
+
+## Swiping between spaces
+
+Two fingers sideways on the trackpad, in the sidebar, take you to the space beside the
+one you are in (`sidebar/swipe.js`). The list follows the fingers, and the next space
+comes in beside it, drawn as it will be when you get there: its essentials, its folders
+and tabs where you left them, and the tab you will land on. A quick flick goes there at
+once; let go slowly, and it goes there if the list has come four tenths of the way, else
+back. At the first and the last space the list gives a little and comes back; nothing is
+made, and nothing wraps around. With less motion asked for in the system's settings
+nothing follows the fingers: a clear swipe simply switches.
+
+Switching by a click on the bar or a key has motion of its own (`sidebar/motion.js`): the
+new space slides in a little way from the side its dot is on as it fades in, and the bar
+stays where it is. A folder opens and closes by its height, and a new row fades in where
+it is, having taken its room at once. All of it is short, follows what you did, and stands
+still with less motion asked for.
+
+The list stays where you left it, one space at a time (`sidebar/stayput.js`), and moves
+by itself only when another tab becomes the one you are on and its row is out of view.
+Scrolled away from that row, a thin line in the space's colour at the list's top or bottom
+edge says which way it lies, and a click on it takes the list there (`sidebar/awaymark.js`).
+
+Scrolling the list never switches space (`sidebar/swipetrack.js`). That is what went
+wrong when this was tried with Sidebery, where enough sideways movement switched,
+whenever it came. Here a movement is one thing, from its first event to the pause after
+it, and what it is gets decided once, from its first few pixels: clearly sideways (twice
+as far sideways as up or down), or a scroll. A scroll then stays a scroll however far it
+drifts, and what is neither is a scroll.
+
+Firefox tells an extension nothing about the fingers themselves, only the wheel events
+they become: not when they lift, and not which events are the trackpad gliding on
+afterwards. So a pause cannot be told from fingers that have left, and a flick is known
+by its speed. The numbers this rests on are at the top of `swipetrack.js`. They are
+checked with events made as a trackpad sends them, in a test Firefox that has no
+trackpad; how it feels under real fingers is still to be tried (PLAN.md, part C).
 
 ## The same on every machine, and spaces hidden on one
 
@@ -501,6 +573,10 @@ extensions.
   `/favicon.ico` does not load, shows the default icon until you do.
 - Firefox cannot hide a pinned tab, so other spaces' essentials stay in ⌃Tab;
   selecting one takes you to its space.
+- A saved tab whose saved address always sends the page on to another one (a short
+  address, a link dropped into a folder that redirects) shows the stroke of a tab that has
+  left its address every time it is opened. *Save this address* in its menu, once, makes
+  where it ends up the saved page.
 
 ## Performance
 
@@ -529,13 +605,13 @@ list to the manifest, both ways.
 | `nativeMessaging` | Two small programs on this machine, set up by the dotfiles: `tidier_github` (the pull request search and the daily copy) and `tidier_bridge` (the bridge for agents, when it is on). |
 | `alarms` | Timing: archiving, the live folders' refresh, the daily copy. |
 | `clipboardWrite` | ⇧⌘C, Copy address in the menus, and Copy for Claude. |
-| `activeTab` | The page you pressed one of Tidier's keys in, for that moment: ⇧⌘C says *Address copied* on the page itself. Firefox asks nothing for it and lists nothing. |
+| `activeTab` | The page you pressed one of Tidier's keys in, for that moment: ⇧⌘C and the menus' Copy address say *Address copied* on the page itself. Firefox asks nothing for it and lists nothing. |
 | `menus` | Tidier's own menu in its sidebar, and "Open link in" on a link's menu. |
 | `menus.overrideContext` | That menu instead of Firefox's, in Tidier's own sidebar only. |
 | `tabHide` | Hiding other spaces' tabs from Firefox's tab bar and ⌃Tab. Without it they are only left out of the sidebar. |
 | `webRequest` | Seeing a page's address before it loads, to keep spaces apart (Isolation, below). |
 | `webRequestBlocking` | Stopping that page before it loads in the wrong space. |
-| `*://*/*` | Every website, for the two above, for reading a page when you ask (Copy for Claude, the bridge), ⌥-click on a link, and the keys typed right after the command bar's key. |
+| `*://*/*` | Every website, for the two above, for reading a page when you ask (Copy for Claude, the bridge), ⌥-click on a link, the keys typed right after the command bar's key, and pausing what plays in a page when you ask. |
 | `<all_urls>` | Pictures of pages, when you allow them on the settings page: a window whose page another window has taken keeps showing it under a grey layer, and the bridge's screenshot. Firefox gives pictures with nothing less. |
 | `proxy` | A space's own proxy, when you give it one. |
 | `browsingData` | Signing out of everything in one space, when you ask. |
@@ -737,14 +813,18 @@ Not guaranteed:
   space's proxy and user agent; signing out; new, edited and deleted spaces; a vanished
   container brought back; a copy of a tab, and a folder, to another space.
 - `ownfolders.js` – Tidier's own folders, moving tabs.
+- `droplinks.js` – a link dropped in the sidebar opens as a tab where it lands.
 - `tabactions.js` – what the menu on a tab does (the menu itself: `sidebar/tabmenu.js`;
   the small menu Tidier draws: `sidebar/menu.js`).
 - `listactions.js`, `sidebar/moremenu.js` – More: what acts on a part of the list at once
   (sorting, closing around a tab and duplicates, a whole folder or space), and Back and
   Forward through the tabs used recently.
 - `sidebar-view.js`, `sidebar/` – Tidier's own sidebar; among its parts `selection.js`
-  (several tabs), `drag.js`, `stayput.js` (the list shows where you are) and `touches.js`
-  (the slow-load sign and warming up a tab). `sidebar/tokens.css` holds the colours and
+  (several tabs), `drag.js`, `stayput.js` (the list shows where you are), `awaymark.js`
+  (a line at its edge when the tab you are on is out of view), `touches.js`
+  (the slow-load sign and warming up a tab), and `swipetrack.js` and `swipe.js` (a swipe on
+  the trackpad switches space: what counts as one, and how it is drawn), and `motion.js`
+  (a space slides in, a folder opens by its height). `sidebar/tokens.css` holds the colours and
   sizes of every page Tidier draws.
 - `copies.js` – the daily copy of Tidier's data, and taking one in, matched to spaces by name.
 - `moveover.js`, `settings/` – the settings page, moving a browser over from Sidebery at its

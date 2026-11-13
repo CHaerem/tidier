@@ -714,14 +714,26 @@ async function placeNextTo(windowId, tabId, before, after) {
 // window, and was not kept, archived or found either. So the wait has an end, counted from
 // the first time it was put off: by then a redirect or a move to another space is long over.
 const SETTLE_LONGEST_MS = 4000;
+// A page that has finished loading in a space has little left to settle: what the long wait
+// is for has happened by then. A redirect by the server comes before the page is there, and
+// a tab that is to be opened again elsewhere (one with no container, a first page a rule
+// sends to another space, a request stopped on its way: spaces.js, isolation.js) is not
+// taken in while that is under way (settledIn, below). So such a page waits only for a
+// redirect the page itself makes as it starts, and is in the other windows half a second
+// after it has loaded and not two seconds after: a tab opened in one window seemed not to
+// come to the others at all.
+const SETTLE_LOADED_MS = 400;
 const pending = new Map(); // tabId -> { timer, first: when it was first put off }, for registering new tabs after they settle
-function registerSoon(tabId) {
+function registerSoon(tabId, ms = SETTLE_MS) {
   const now = performance.now(), waiting = pending.get(tabId), first = waiting?.first ?? now;
   if (waiting && now - first >= SETTLE_LONGEST_MS) return; // it is due: what keeps changing must not put it off again
   clearTimeout(waiting?.timer);
-  const timer = setTimeout(() => { pending.delete(tabId); serial(() => register(tabId)); }, Math.max(0, Math.min(SETTLE_MS, first + SETTLE_LONGEST_MS - now)));
+  const timer = setTimeout(() => { pending.delete(tabId); serial(() => register(tabId)); }, Math.max(0, Math.min(ms, first + SETTLE_LONGEST_MS - now)));
   pending.set(tabId, { timer, first });
 }
+// Loaded, in its space, and nothing is about to open it again somewhere else.
+const settledIn = tab => tab.status === "complete" && isWeb(tab.url) && tab.cookieStoreId !== NO_CONTAINER
+  && !newTabs.has(tab.id) && !firstPage.has(tab.id) && !reopening.has(tab.id); // spaces.js, isolation.js
 
 browser.tabs.onCreated.addListener(tab => {
   if (!started || syncBusy.has(tab.id) || syncKeyByTab.has(tab.id)) return;
@@ -753,7 +765,7 @@ browser.tabs.onUpdated.addListener((tabId, change, tab) => {
     // essential you took out of the essentials opens its page (onUnpinned, essentials.js),
     // and has nothing to wait for once that page is there.
     if (ownUnpins.has(tabId) && isWeb(change.url)) serial(() => register(tabId));
-    else if (change.url || change.status === "complete" || change.pinned === false) registerSoon(tabId);
+    else if (change.url || change.status === "complete" || change.pinned === false) registerSoon(tabId, change.status === "complete" && settledIn(tab) ? SETTLE_LOADED_MS : SETTLE_MS);
     return;
   }
   // You pinned it, also if Tidier was just busy with it: Tidier pins no synced tab itself.

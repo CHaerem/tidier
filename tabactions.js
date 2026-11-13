@@ -56,8 +56,11 @@ async function tabMenuFacts(tabIds) {
     tile: r.own.pinned,
     active: r.own.active,
     kept: r.own.pinned || !!r.entry?.saved,
+    away: awayFromSaved(r),
     loaded: r.loaded,
     muted: !!r.tab.mutedInfo?.muted,
+    playing: r.loaded && !!r.tab.audible, // (muted or not: a muted page plays on, and can be paused)
+    paused: r.loaded && pausedTabs.has(r.tab.id), // sounds.js
     address: r.address,
     folder: r.own.pinned ? null : folderKeyOf(all, r.key),
     liveFolder: !!r.entry?.liveFolder,
@@ -66,6 +69,11 @@ async function tabMenuFacts(tabIds) {
     duplicates,
   }));
 }
+// Whether a kept tab is somewhere other than the address kept for it. A saved tab by its
+// record (leftSaved, common.js). An essential's address never follows its page, so it is
+// its loaded copy that says where it is; one that is not loaded is nowhere else.
+const awayFromSaved = r => (r.own.pinned ? r.loaded && !!r.entry && isWeb(r.tab.url) && !samePage(r.tab.url, r.entry.url) : leftSaved(r.entry));
+
 browser.runtime.onMessage.addListener((msg, sender) => {
   if (msg?.type !== "tabMenu" || sender.id !== browser.runtime.id || !sender.url?.startsWith(browser.runtime.getURL(""))) return;
   return tabMenuFacts(msg.tabIds);
@@ -92,6 +100,8 @@ const TAB_ACTIONS = {
   mute: (windowId, reals) => setRealsMuted(reals, true),
   unmute: (windowId, reals) => setRealsMuted(reals, false),
   unload: unloadReals,
+  pause: (windowId, reals) => pauseReals(windowId, reals, true),
+  play: (windowId, reals) => pauseReals(windowId, reals, false),
   duplicate: async (windowId, reals) => { for (const r of reals) await duplicateReal(r); },
   // The listeners that make a pinned tab an essential ignore a tab Tidier is busy with, and
   // a tab just moved or made stays marked so for a moment (syncBusy, busy). This change is
@@ -130,6 +140,8 @@ const TAB_ACTIONS = {
     await moveRealsTo(windowId, reals.filter(r => !r.own.pinned && !r.entry?.liveFolder && folderKeyOf(all, r.key)), null);
   },
   space: (windowId, reals, { space, newSpace, at }) => moveRealsToSpace(windowId, reals, space, { newSpace, at }),
+  backToSaved: async (windowId, reals) => { for (const r of reals) await backToSaved(r); },
+  saveHere: (windowId, reals) => saveHere(windowId, reals[0]),
   rule: (windowId, reals) => alwaysOpenHere(windowId, reals[0]),
   // What More holds, the folder's and the space's menus, the command bar and the keys
   // (listactions.js). They go by the rows: what is drawn where, and in which order.
@@ -144,9 +156,96 @@ const TAB_ACTIONS = {
   // A folder's tabs, closed for good with one line to take them back: closing a saved tab
   // one by one would only unload it.
   closeAll: (windowId, reals) => closeRows(windowId, reals.map(r => r.own.id)),
-  copy: (windowId, reals) => copyText(reals.filter(r => r.address).map(r => r.address).join("\n")),
-  copyMarkdown: (windowId, reals) => copyText(reals.filter(r => r.address).map(r => markdownLink(r.title, r.address)).join("\n")),
+  // Said where every word about a key or a command is said: on the page, or on the quiet
+  // line (sayDone, pagenote.js). The sidebar's own Copy address copies in its click and asks
+  // for the same word (sidebar/tabmenu.js).
+  copy: (windowId, reals) => copied(windowId, reals, r => r.address),
+  copyMarkdown: (windowId, reals) => copied(windowId, reals, r => markdownLink(r.title, r.address), "as a Markdown link", "as Markdown links"),
 };
+
+async function copied(windowId, reals, line, one = "", many = "") {
+  const lines = reals.filter(r => r.address).map(line);
+  if (!lines.length) return;
+  await copyText(lines.join("\n")); // listactions.js
+  const what = lines.length > 1 ? `${lines.length} addresses copied` : "Address copied";
+  const [tab] = await browser.tabs.query({ windowId, active: true });
+  await sayDone(windowId, tab?.id, [what, lines.length > 1 ? many : one].filter(Boolean).join(" "));
+}
+
+// A kept tab back on the address kept for it, as closing it would take it, but without
+// closing it: the page is loaded there. Firefox's own Back goes the other way again.
+// With no page anywhere (only placeholders, the window that had it closed), the record goes
+// back, and the placeholders show the saved page again, as after a close (unloadSaved).
+async function backToSaved(r) {
+  if (!awayFromSaved(r)) return;
+  if (r.own.pinned) return void await browser.tabs.update(r.tab.id, { url: r.entry.url }).catch(() => {});
+  if (!isGhostUrl(r.tab.url)) return void await browser.tabs.update(r.tab.id, { url: r.entry.saved.url }).catch(() => {});
+  const all = await getSynced();
+  if (!all[r.key]?.saved) return;
+  Object.assign(all[r.key], all[r.key].saved);
+  saveSynced(all);
+  await redrawPlaceholders(await repsNow(r.key)); // tabnames.js
+}
+
+// The address a kept tab is on now becomes the one kept for it: what closing it takes it
+// back to, and what its placeholders open. One line says so, with Undo, as it changes
+// something that lasts and shows nowhere else (a tile is only an icon).
+async function saveHere(windowId, r) {
+  if (!awayFromSaved(r)) return;
+  if (r.own.pinned) {
+    const { url, title, icon, name } = r.entry;
+    const put = async fields => {
+      const list = await getList(), entry = list.find(e => e.key === r.key);
+      if (!entry) return; // no longer an essential
+      Object.assign(entry, fields);
+      setList([...list]);
+      viewAllSoon(); // the list, unlike the record, tells no sidebar by itself
+      await redrawPlaceholders(await copiesOf(r.key));
+    };
+    await put({ url: r.tab.url, title: r.tab.title || title, icon: r.tab.favIconUrl || icon });
+    return say(windowId, `Saved here: ${name || r.tab.title || title}`, { undo: () => put({ url, title, icon }) });
+  }
+  const all = await getSynced(), entry = all[r.key];
+  const before = { ...entry.saved };
+  entry.saved = { url: entry.url, title: entry.title, icon: entry.icon };
+  saveSynced(all);
+  viewAllSoon();
+  say(windowId, `Saved here: ${entry.name || entry.title}`, { undo: async () => {
+    const now = await getSynced();
+    if (!now[r.key]?.saved) return; // taken out of its folder meanwhile: nothing is saved for it
+    now[r.key].saved = before;
+    saveSynced(now);
+    viewAllSoon();
+  } });
+}
+
+// Pause and play, as Zen's and Arc's media controls do: what plays in the page is paused
+// there, in every frame (a video is often in another site's frame), and only what Tidier
+// paused is played again, not every video on the page. That takes running a line in the
+// page, so it needs the optional access to all websites (the menu asks for it in its click).
+// A sound a page makes without an <audio> or <video> in it cannot be reached: then it says so.
+// What was paused is kept in the page's own content-script scope, which lasts as long as the
+// page does, and so does nothing to the page itself.
+const PAUSE_PAGE = `(() => { const paused = (window.tidierPaused ??= new WeakSet()); let n = 0;
+  for (const m of document.querySelectorAll("video, audio")) if (!m.paused) { m.pause(); paused.add(m); n++; }
+  return n; })()`;
+const PLAY_PAGE = `(() => { const paused = window.tidierPaused; let n = 0;
+  for (const m of document.querySelectorAll("video, audio")) if (paused?.has(m)) { paused.delete(m); m.play().catch(() => {}); n++; }
+  return n; })()`;
+async function pauseReals(windowId, reals, pause) {
+  if (!(await browser.permissions.contains(READ_PAGES).catch(() => false))) return; // bridge.js; asked for by the menu, in its click
+  let none = 0;
+  for (const r of reals) {
+    if (!r.loaded) continue;
+    const counts = await browser.tabs.executeScript(r.tab.id, { code: pause ? PAUSE_PAGE : PLAY_PAGE, allFrames: true }).catch(() => null);
+    const n = (counts ?? []).reduce((sum, c) => sum + (Number(c) || 0), 0);
+    if (pause && n) pausedTabs.add(r.tab.id); // sounds.js
+    else if (pause) none++;
+    else pausedTabs.delete(r.tab.id);
+  }
+  viewAllSoon();
+  if (none) say(windowId, none > 1 ? `${none} pages play in a way that cannot be paused from here` : "This page plays in a way that cannot be paused from here");
+}
 
 async function setRealsMuted(reals, muted) {
   for (const r of reals) if (r.loaded) await browser.tabs.update(r.tab.id, { muted }).catch(() => {});

@@ -141,6 +141,15 @@ Tidier is generic: this repository holds no one's setup, and nothing in it shoul
       command bar opening; and whether quick presses of ⌃⌘↓ are lost while the tab just
       selected starts loading (about 1 in 8 in the slowed-down test Firefox, none with
       Firefox's own ⌃Page Down). If they are, tab stepping goes another way.
+- [ ] A swipe between spaces under real fingers (README, Swiping between spaces): that it
+      follows them, that a flick goes one space and a slow swipe lands where it should, that
+      resting the fingers half way does not let go too soon, that scrolling never switches,
+      and that Firefox's own swipe back in history stays out of the sidebar. The test
+      Firefox has no trackpad: the numbers at the top of `sidebar/swipetrack.js` are set by
+      reasoning, and are what to change if it feels wrong.
+- [ ] A link dragged into the sidebar from a real page and from another app (Slack, Mail,
+      Finder's address of a web page): that it is taken as a link, lands where the line
+      says, and that a drop where it has no place does not open the page in the sidebar itself.
 - [ ] Used for real for a while; what is missing goes in here and in FEATURES.md.
 
 ## D. Moving the daily browser
@@ -199,7 +208,28 @@ click stops it.
 
 ## F. After that
 
-What FEATURES.md has as Later, starting with what is missed most in use.
+Tidier was gone through against Zen and Arc on 13 November 2026 (Zen's release notes up to
+1.24.2b; Arc as it was left). What they have and Tidier has not is in FEATURES.md, each
+with where it stands. In this order, the first five being the ones that are felt every day:
+
+- [x] A swipe on the trackpad switches space, the list following the fingers.
+- [x] A saved tab or an essential that has left its address says so, and can go back or
+      keep the new one; the close button says when it only unloads.
+- [x] A link dragged from a page or another app can be dropped in the sidebar: a tab where
+      it lands, in a folder or among the essentials.
+- [x] Soft motion where something comes or goes: switching space by a click or a key
+      slides as a swipe does, a folder opens and closes by its height, a new row fades in.
+      Short, only for what you caused, and no row moves under the pointer.
+- [x] Pause and play from the sidebar, beside the speaker.
+
+- [x] A thin line at the list's edge when the tab you are on is out of view, and a click
+      on it goes there.
+
+- [x] All of a space's folders closed or opened at once, and every other space unloaded,
+      from the space's More, the bar and the keys.
+
+Then the small ones, in any order: an icon on a folder, any colour for a space. And then the rest of
+what FEATURES.md has as Later, starting with what is missed most in use.
 
 ## Choices made
 
@@ -238,6 +268,12 @@ Changed by saying so. All of them can be reversed.
   window that is still on it as soon as the window that took it leaves it for another tab
   (the owner, 13 November 2026: with two windows side by side, one stayed grey on a page that
   no window showed any more). An essential's page does the same.
+- A new tab is in the other windows half a second after its page has loaded, not two seconds
+  after (the owner, 13 November 2026: tabs opened in one window seemed not to come to the
+  others). The longer wait stays for a page that has not loaded or is about to be opened
+  again in another space.
+- Going to another space, its dot is marked at the click and the list is drawn without the
+  usual short wait: what you asked for yourself should never look as if it was not taken.
 - Clear asks nothing: one line offers Undo. Closing several tabs and deleting a folder work
   the same way.
 - Tabs moved to another space go to the end of its tabs, not where new tabs go, so several
@@ -250,14 +286,19 @@ Changed by saying so. All of them can be reversed.
   window of its own looked odd). It is the
   popup of Tidier's toolbar button, which only the key opens, placed by the dotfiles'
   stylesheet where the address bar floats. With another panel of Firefox's open it is still
-  the small window. ⌘W stays Firefox's: with the bar open it closes the tab under it.
+  the small window, and so it is where Firefox cannot show the panel (the owner, the same
+  day: after the update the key did nothing, in a Firefox still running on the stylesheet
+  it had started with). Tidier must work without the dotfiles; they only place things. ⌘W stays Firefox's: with the bar open it closes the tab under it.
 - A row that closes folds away at once, and the rows below come up into its place in one soft
   move, as in Zen and Arc (the owner, 13 November 2026: the room a closed row kept while the
   pointer was in the list left holes, which then filled late). A double click on × still closes
   one tab: the second click does nothing.
 - ⇧⌘C says *Address copied* on the page itself (the owner, the same day: nothing showed that
   it had worked). For that Tidier has `activeTab`: the page a key of Tidier's is pressed in.
-  It is used for that word only; a page is read only with the access to all websites.
+  It is used for that word only; a page is read only with the access to all websites. Every
+  other way of copying an address says the same word, in the same place (from a menu
+  usually the sidebar's line, since `activeTab` is for a key of Tidier's), so that copying
+  always looks the same wherever you asked for it.
 - Firefox's own ⌘1 to ⌘9, ⌘D and ⌘T are to be cleared by the dotfiles, now that no
   browser needs them for Sidebery. No extension can read about:keyboard,
   so the dotfiles tell Tidier what they cleared (managed storage), and a key they did not

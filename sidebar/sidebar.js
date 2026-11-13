@@ -91,12 +91,17 @@ function place(parent, nodes) {
 const setIf = (e, name, value) => { if (e.getAttribute(name) !== value) e.setAttribute(name, value); };
 const textIf = (e, text) => { if (e.textContent !== text) e.textContent = text; };
 
+// Less motion is asked for in the system's settings: what moves by a script then does not
+// (what moves by a style sheet is stopped there, tokens.css). Asked each time, for every
+// sidebar script: the setting can change while the sidebar is open.
+const lessMotion = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
+
 // The kept element for `id`, its content drawn again only if `state` changed.
 // Not while it is being pressed: drawing replaces what is under the pointer, and
 // Firefox then sends no click at all, so a page whose title ticks could not be muted
 // or closed. It is drawn once it is let go, from a new view, so that everything
 // reacting to a view sees it too.
-const kept = new Map();
+let kept = new Map();
 let drawn = new Set();
 let heldBack = false;
 function keep(id, make, state, draw) {
@@ -115,6 +120,16 @@ function keep(id, make, state, draw) {
 }
 for (const type of ["pointerup", "pointercancel", "dragend"]) {
   addEventListener(type, () => { if (heldBack) { heldBack = false; setTimeout(hello); } }, true);
+}
+
+// Another space drawn beside this one (swipe.js: the one a swipe brings in), by what draws
+// this one, so that it looks as it will once you are there. In a book of its own: nothing
+// kept for the list is touched, and nothing drawn there is taken for one of the list's.
+function drawApart(draw) {
+  const [mine, seen] = [kept, drawn];
+  kept = new Map();
+  drawn = new Set();
+  try { return draw(kept); } finally { kept = mine; drawn = seen; }
 }
 
 // A row that is drawn again gets a new image. One that has loaded comes straight from
@@ -249,7 +264,8 @@ function row(item, folderKey) {
     e.setAttribute("aria-selected", String(!!item.active));
     const parts = [icon(item), el("span", "title", item.title)];
     parts.push(...soundMark(item));
-    const close = el("button", "close", "×");
+    // (Drawn as a line where it only unloads: sidebar.css.)
+    const close = el("button", item.loaded && savedIn(folderKey) ? "close unloads" : "close", "×");
     // The list is one stop for Tab (keys.js): a row's × is for the pointer, and ⌫ closes by key.
     // As a stop of its own, ⇧Tab from the cursor's row would land on the × of the row above.
     close.tabIndex = -1;
@@ -263,9 +279,13 @@ function row(item, folderKey) {
       closeByPointer(item.id, ev);
     });
     parts.push(close);
+    // A saved tab you have browsed on in: a small stroke between its icon and its title,
+    // as a path has one. Out of the flow (sidebar.css), in the room that is there already,
+    // so no title moves for it; last, so it is not in the way of what looks at a row's parts.
+    if (item.away) parts.push(el("span", "away"));
     e.replaceChildren(...parts);
   });
-  setIf(r, "title", (item.pr ? (PR_WORDS[item.pr] ?? PR_WORDS.open) + "\n" : "") + (item.tip || item.title));
+  setIf(r, "title", (item.pr ? (PR_WORDS[item.pr] ?? PR_WORDS.open) + "\n" : "") + (item.tip || item.title) + (item.away ? "\nSaved on: " + item.away : ""));
   setIf(r, "data-folder", folderKey ?? "");
   const level = folderKey == null ? "1" : "2";
   setIf(r, "aria-level", level); // only when it moved: a view comes with every tab event
@@ -301,7 +321,7 @@ let pickedByHand = false; // the last row selected was clicked with the mouse
 const tabsList = document.getElementById("tabs");
 const lingering = new Set(); // tab ids of rows a closed folder keeps showing for now
 const stillDim = new Set(); // tab ids of saved tabs just unloaded with their ×, until the mouse leaves them
-let roomsInSpace = null;
+let spaceDrawn = null; // the space whose list was drawn last
 let foldsRows = false; // this view is of the list drawn before it: what has gone from it folds away
 const holding = () => tabsList.matches(":hover");
 const HELD_MS = 3000; // longer than the next click takes, shorter than a row out of place is looked at
@@ -309,12 +329,11 @@ let heldTimer = null;
 function heldFromNow() {
   if (!heldTimer) tabsList.addEventListener("mousemove", heldFromNow, { passive: true });
   clearTimeout(heldTimer);
-  heldTimer = setTimeout(letRoomsGo, HELD_MS);
+  heldTimer = setTimeout(letHeldGo, HELD_MS);
 }
 
 const ROW_FOLD_MS = 180, ROW_FOLD_EASE = "cubic-bezier(.2, .7, .2, 1)"; // tokens.css's --soft, for the room; the row's own is sidebar.css
 const CLOSE_REFUSED_MS = 1500; // a tab that is still there by then did not close
-const lessMotion = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
 const closingRows = new Map(); // tab id, as dataset.tab -> the timer that lets its row back
 // What × does to a row is not the same on every row (closeTitle, below): a saved tab that is
 // loaded only unloads, in its place, and its row stays.
@@ -375,7 +394,9 @@ function withRooms(parent, nodes) {
   }
   return out;
 }
-function letRoomsGo() {
+// What was held for the pointer is let go: the rows kept showing or kept dim, and the room
+// the quiet line left at the list's end.
+function letHeldGo() {
   for (const row of tabsList.querySelectorAll(".lingers, .still-dim")) row.classList.remove("lingers", "still-dim");
   lingering.clear();
   stillDim.clear();
@@ -384,7 +405,7 @@ function letRoomsGo() {
   heldTimer = null;
   tabsList.removeEventListener("mousemove", heldFromNow);
 }
-tabsList.addEventListener("mouseleave", letRoomsGo);
+tabsList.addEventListener("mouseleave", letHeldGo);
 // After a view: the row a closed folder showed for the selected tab, which is no longer
 // selected, stays while the pointer is in the list. (Its draw resets its classes.)
 let selectedRow = null;
@@ -492,6 +513,33 @@ function rename(key) {
   };
 }
 
+// Going to another space. The bar says so at once, at the click: the list follows when
+// Firefox has selected a tab there and hidden the others, some tenth of a second later, and
+// until then nothing showed that the click had been taken. Its dot is marked as where you
+// are going (sidebar.css), which is not yet where you are: that is still the view's to say.
+// The mark goes when that space's view comes, or after a moment if it never does (a space
+// that has gone meanwhile).
+const GOING_MS = 1500;
+let goingTo = null; // { space, timer }
+function goToSpace(space) {
+  if (view && space !== view.space) {
+    clearTimeout(goingTo?.timer);
+    goingTo = { space, timer: setTimeout(arrived, GOING_MS) };
+    const bar = document.getElementById("spaces");
+    bar.classList.add("going");
+    for (const dot of bar.querySelectorAll(".space")) dot.classList.toggle("going", dot.dataset.space === space);
+  }
+  send({ type: "space", space });
+}
+function arrived() {
+  if (!goingTo) return;
+  clearTimeout(goingTo.timer);
+  goingTo = null;
+  const bar = document.getElementById("spaces");
+  bar.classList.remove("going");
+  for (const dot of bar.querySelectorAll(".space.going")) dot.classList.remove("going");
+}
+
 // --- Everything -------------------------------------------------------------------
 // The notice's words; its × to put it away is sidebar/isolation.js's.
 const problemText = el("span", "text");
@@ -501,9 +549,10 @@ let folderKeys = new Set();
 function render(next) {
   view = next;
   drawn = new Set();
+  if (goingTo?.space === view.space) arrived();
   const space = view.spaces.find(s => s.id === view.space), root = document.documentElement;
-  foldsRows = view.space === roomsInSpace; // another space's list is not this one with rows gone
-  if (!foldsRows) { roomsInSpace = view.space; letRoomsGo(); } // another list: nothing in it was where you pointed
+  foldsRows = view.space === spaceDrawn; // another space's list is not this one with rows gone
+  if (!foldsRows) { spaceDrawn = view.space; letHeldGo(); } // another list: nothing in it was where you pointed
   const look = { space: view.space || "", accent: space?.color || "#7a7a80" };
   // A space comes in as one piece: a folder drawn for it now does not fade in on its own,
   // after everything else (sidebar.css, html.space-arriving), as a folder that appears does.
@@ -548,7 +597,7 @@ function render(next) {
   place(bar, [...view.spaces.map(s => keep("space:" + s.id, () => {
     const b = el("button", "space");
     b.dataset.space = s.id;
-    b.onclick = () => send({ type: "space", space: s.id });
+    b.onclick = () => goToSpace(s.id);
     b.append(el("span", "dot"));
     return b;
   }, { s, active: s.id === view.space }, b => {

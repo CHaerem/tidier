@@ -7,7 +7,7 @@ import { readFileSync } from "node:fs";
 import vm from "node:vm";
 import { FakeFirefox, wait, GHOST } from "./fake_firefox.mjs";
 
-const C1 = "firefox-container-1", C2 = "firefox-container-2";
+const C1 = "firefox-container-1", C2 = "firefox-container-2", C3 = "firefox-container-3";
 
 // --- What it does ---------------------------------------------------------------
 async function alone(ff) {
@@ -74,6 +74,30 @@ test("unloading a space says what it did, also for a space you are not looking a
   await x.js(`sidebarAction(${a.id}, { type: "unloadSpace", space: "${C1}" })`);
   await x.js(`sidebarAction(${a.id}, { type: "unloadSpace", space: "${C1}" })`);
   assert.deepEqual(said, [[a.id, "3 tabs unloaded in firefox-container-1"], [a.id, "Nothing to unload in firefox-container-1"]]);
+  x.kill();
+});
+
+test("unloading the other spaces leaves the space you are in, and in the others what is in use", async () => {
+  const ff = new FakeFirefox();
+  const { a, tabs } = session(ff);
+  ff.containers.add(C3);
+  const far = ff.addTab(a.id, { url: "https://far.example/", cookieStoreId: C3 });
+  const playing = ff.addTab(a.id, { url: "https://playing.example/", cookieStoreId: C3, audible: true });
+  const plain = ff.addTab(a.id, { url: "about:config", cookieStoreId: "firefox-default" });
+  const x = await alone(ff);
+  const said = [];
+  x.ctx.say = (windowId, text) => said.push([windowId, text]);
+  assert.equal((await x.js("spaceFacts")(a.id, C1)).elsewhere, 2, "what the menu is told");
+  await x.js(`sidebarAction(${a.id}, { type: "unloadOtherSpaces", space: "${C1}" })`);
+  assert.equal(tabs.elsewhere.discarded, true, "another space's page");
+  assert.equal(far.discarded, true, "and a third space's");
+  assert.equal(playing.discarded, false, "one that plays stays");
+  assert.equal(plain.discarded, false, "a tab without a container belongs to the space you are in");
+  for (const name of ["here", "there", "selected", "essential"]) assert.equal(tabs[name].discarded, false, name);
+  await x.js(`sidebarAction(${a.id}, { type: "unloadOtherSpaces", space: "${C1}" })`);
+  assert.deepEqual(said, [[a.id, "2 tabs unloaded in the other spaces"], [a.id, "Nothing to unload in the other spaces"]]);
+  assert.equal((await x.js("spaceFacts")(a.id, C1)).elsewhere, 0);
+  assert.deepEqual(x.errors, []);
   x.kill();
 });
 
@@ -165,7 +189,7 @@ test("a space's messages from the sidebar do what they say", async () => {
 // The sidebar's own scripts, with the little of a page that they need. Text-only, as a
 // menu is: what is drawn is for the smoke test.
 // `facts`: what the background says of the space when its menu opens (spaceFacts, listactions.js).
-function sidebar({ active = C1, tabs = [{ id: 1, active: true }, { id: 2 }], facts = { loaded: 0, unmuted: 0, muted: 0, duplicates: 0 } } = {}) {
+function sidebar({ active = C1, tabs = [{ id: 1, active: true }, { id: 2 }], folders = [], facts = { loaded: 0, unmuted: 0, muted: 0, duplicates: 0, elsewhere: 0 } } = {}) {
   const listeners = {}, sent = [], menus = [], options = [], asked = [];
   const box = { hidden: true, style: {}, offsetHeight: 90, getBoundingClientRect: () => ({ top: 500 }), addEventListener() {}, setAttribute() {} };
   const ctx = vm.createContext({
@@ -182,7 +206,7 @@ function sidebar({ active = C1, tabs = [{ id: 1, active: true }, { id: 2 }], fac
   });
   ctx.window = ctx;
   const REPO = new URL("../", import.meta.url);
-  vm.runInContext(`let view = ${JSON.stringify({ space: active, tabs, spaces: [{ id: C1, name: "One", color: "#000" }, { id: C2, name: "Two", color: "#000" }] })};`, ctx);
+  vm.runInContext(`let view = ${JSON.stringify({ space: active, tabs, folders, spaces: [{ id: C1, name: "One", color: "#000" }, { id: C2, name: "Two", color: "#000" }] })};`, ctx);
   for (const f of ["sidebar/menu.js", "sidebar/tabmenu.js", "sidebar/spacemenu.js", "sidebar/emoji.js", "sidebar/moremenu.js"]) vm.runInContext(readFileSync(new URL(f, REPO), "utf8"), ctx, { filename: f });
   vm.runInContext("var showMenu = items => __opened(items)", Object.assign(ctx, { __opened: items => menus.push(items) }));
   // Firefox's own menu is held back in the click; Tidier's comes once the background has answered.
@@ -298,6 +322,27 @@ test("More holds what applies: sorting and duplicates here, a whole space reload
   const quiet = sidebar({ tabs: [{ id: 1, active: true }] });
   await quiet.rightClick("#spaces .space", { space: C2 });
   assert.ok(!quiet.labels(quiet.menus.at(-1)).includes("More"), "nothing to do: no More");
+});
+
+test("More closes or opens all the folders of the space you see, and unloads the other spaces where they have pages", async () => {
+  const folders = [{ key: "F", collapsed: true, tabs: [] }, { key: "G", collapsed: false, tabs: [] }];
+  const s = sidebar({ tabs: [{ id: 1, active: true }], folders, facts: { loaded: 0, unmuted: 0, muted: 0, duplicates: 0, elsewhere: 3 } });
+  await s.rightClick("#spaces .space", { space: C1 });
+  const more = s.menus.at(-1).at(-1)[1];
+  assert.deepEqual(s.labels(more), ["Close all folders", "|", "Unload the other spaces"], "one is open: they close");
+  more[0][1]();
+  more[2][1]();
+  assert.deepEqual(JSON.parse(JSON.stringify(s.sent)), [{ type: "foldFolders", space: C1, collapsed: true }, { type: "unloadOtherSpaces", space: C1 }]);
+  vm.runInContext("view.folders[1].collapsed = true", s.ctx);
+  await s.rightClick("#spaces .space", { space: C1 });
+  assert.deepEqual(s.labels(s.menus.at(-1).at(-1)[1]).slice(0, 1), ["Open all folders"], "all closed: they open");
+  // Another space's folders are not in front of you; its More still unloads the others.
+  await s.rightClick("#spaces .space", { space: C2 });
+  assert.deepEqual(s.labels(s.menus.at(-1).at(-1)[1]), ["Unload the other spaces"]);
+  // One folder is a click on its head, and other spaces with nothing loaded have nothing to unload.
+  const one = sidebar({ tabs: [{ id: 1, active: true }], folders: folders.slice(0, 1) });
+  await one.rightClick("#spaces .space", { space: C1 });
+  assert.ok(!one.labels(one.menus.at(-1)).includes("More"));
 });
 
 test("the items send what the background knows, and Settings needs no message", async () => {

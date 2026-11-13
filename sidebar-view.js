@@ -56,6 +56,7 @@ const tabItem = (t, title, entry) => ({
   blank: NEW_TAB_PAGES.has(t.url) || undefined, // an empty new tab: no page yet, so no letter of a name that is not one (sidebar.js icon)
   note: forYouNotes.get(syncKeyByTab.get(t.id)), // bridge.js
   pr: entry?.liveFolder ? entry.pr || "open" : undefined, // a live folder's pull request: what it waits for (liveState, livefolders.js)
+  away: leftSaved(entry) ? entry.saved.title || entry.saved.url : undefined, // a saved tab off its saved page (common.js): what that page is called
 });
 
 // The icon in the record, for a placeholder that has none of its own (createRep,
@@ -86,7 +87,8 @@ browser.tabs.onRemoved.addListener(tabId => {
 });
 const queryShown = async query => (await browser.tabs.query(query)).filter(t => !removedTabs.has(t.id));
 
-async function viewFor(windowId) {
+// `apart`: a space other than the window's own, for a glimpse of it (below).
+async function viewFor(windowId, apart) {
   // Read first: a view that has it was built entirely after that drop was carried out, so the
   // sidebar can stop putting the row where it was dropped itself (sidebar/drag.js).
   const landed = landedIn.get(windowId) ?? null;
@@ -97,7 +99,7 @@ async function viewFor(windowId) {
   // Spaces in use: a container with essentials or tabs (also the empty ones are shown).
   const used = new Set(whole ? [...list.map(e => e.cookieStoreId), ...whole.map(t => t.cookieStoreId)] : []);
   const spaces = await spaceList(used);
-  const space = await spaceOf(windowId, whole, spaces);
+  const space = apart ?? await spaceOf(windowId, whole, spaces);
   for (const s of spaces) s.news = s.id !== space && spaceHasNews(s.id); // the space you are in shows it in its list
   // Of the space shown: its own tabs, those without a container, and a hidden space's
   // (shownInSpace, hiddenspaces.js), which show wherever you are.
@@ -139,6 +141,23 @@ async function viewFor(windowId) {
   return { needsHiding: !browser.tabs.hide, askHiding: askHidingLine, problem: [...notices.values()][0] ?? null, note: noteFor(windowId), spaces, space, essentials, folders, tabs: loose, loading, little: await littleRows(spaces), landed };
 }
 const landedIn = new Map(); // windowId -> the name of the last drop carried out there
+
+// A space next to the one a window shows, as its sidebar would draw it once you are there:
+// a swipe on the trackpad brings it in beside the list, following the fingers
+// (sidebar/swipe.js), before anything is switched. Its selected tab is the one a switch
+// would go back to (switchSpace, spaces.js). Asked for when a swipe begins, and built as
+// a view is: nothing is kept ready for it, since with nothing happening Tidier does nothing.
+async function glimpseOf(windowId, space) {
+  if (!(await containerSpaces()).some(s => s.id === space) || !await browser.windows.get(windowId).catch(() => null)) return null;
+  const { essentials, folders, tabs } = await viewFor(windowId, space);
+  const back = (await lastUsedIn(windowId, space))?.id;
+  for (const item of [...essentials, ...folders.flatMap(f => f.tabs), ...tabs]) item.active = item.id === back;
+  return { space, essentials, folders, tabs };
+}
+browser.runtime.onMessage.addListener((msg, sender) => {
+  if (msg?.type !== "glimpse" || sender.id !== browser.runtime.id || !sender.url?.startsWith(browser.runtime.getURL(""))) return;
+  return glimpseOf(msg.windowId, msg.space).catch(err => (console.error("Tidier: glimpse", err), null));
+});
 
 // A tab Firefox gives back (⌘⇧T) has its key among its values at once, but Tidier takes it
 // in only once it has settled (registerSoon, tabsync.js). A saved tab's comes back next to the
@@ -211,6 +230,17 @@ async function buildView(windowId) {
   if (sidebarPorts.has(windowId)) viewRest.set(windowId, performance.now() + Math.min(VIEW_REST * ms, VIEW_LONGEST_REST_MS));
   if (building.changed) viewSoon(windowId);
 }
+// A view without the wait, for what you asked for yourself and are waiting to see: another
+// space. The wait is there to make one view of a burst of tab events, and a switch is over
+// when this is called: waiting only made the list come a few hundredths of a second later.
+// (A view being built is not overtaken: it is told to be followed by another.)
+function viewNow(windowId) {
+  if (!sidebarPorts.get(windowId)?.size) return;
+  const building = viewsBuilding.get(windowId);
+  if (building && performance.now() - building.since < VIEW_STUCK_MS) { building.changed = true; return; }
+  clearTimeout(viewTimers.get(windowId)?.timer);
+  buildView(windowId);
+}
 const viewAllSoon = () => { for (const windowId of sidebarPorts.keys()) viewSoon(windowId); };
 // Only the sidebars that show tabs of this space: a page in another space can change
 // its title all day without any sidebar having anything to draw.
@@ -246,6 +276,11 @@ browser.runtime.onConnect.addListener(port => {
     } else if (msg.type === "holdNote") {
       holding = msg.held ? msg.note : null;
       holdNote(windowId, msg.note, msg.held); // quiet.js: the line waits while you are on it
+    } else if (msg.type === "copied") {
+      // The sidebar copied in its own click (the clipboard needs that): the word for it is
+      // said here, where the page and the quiet line are, as ⇧⌘C says it (pagenote.js).
+      const [tab] = await browser.tabs.query({ windowId, active: true });
+      await sayDone(windowId, tab?.id, msg.text);
     } else if (msg.type === "goToSound") {
       await goToSound(windowId, msg.tabId); // sounds.js; like select, not behind what the queue is doing
     } else if (msg.type === "warmup") {
@@ -292,8 +327,11 @@ async function sidebarActionNow(windowId, msg) {
   else if (msg.type === "tabAction") await tabAction(windowId, msg); // tabactions.js
   else if (msg.type === "renameTab") await renameTab(msg.tabId, msg.name);
   else if (msg.type === "unloadSpace") await unloadSpace(msg.space, windowId);
+  else if (msg.type === "unloadOtherSpaces") await unloadOtherSpaces(msg.space, windowId); // spaceactions.js
+  else if (msg.type === "foldFolders") await foldAllFolders(msg.space, msg.collapsed); // ownfolders.js
   else if (msg.type === "spaceAction") await spaceAction(windowId, msg); // listactions.js
   else if (msg.type === "newTabInFolder") await newTabInFolder(windowId, msg.key);
+  else if (msg.type === "openLinks") await openLinksAt(windowId, msg); // droplinks.js
   else if (msg.type === "renameSpace") await renameSpace(msg.space, msg.name);
   else if (msg.type.startsWith("little:")) await littleAction(windowId, msg); // littlewindow.js
   else if (msg.type === "askHidingSeen") askHidingSeen(); // aftermove.js

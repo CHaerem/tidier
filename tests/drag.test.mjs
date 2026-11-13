@@ -244,3 +244,85 @@ test("what the sidebar is told about a tab says whether it can be more than a ro
   assert.equal(seen.at(-1).tabs.find(t => t.id === ff.list(other.id).find(g => g.url.includes("kind=ghost")).id).page, true);
   x.kill();
 });
+
+// --- A link dropped in the sidebar (droplinks.js) ---------------------------------------------
+const linkTab = (ff, windowId, host) => ff.list(windowId).find(t => t.url === `https://${host}.example/`);
+const linkDropped = async (x, windowId, msg) => { sidebar(x, windowId)({ type: "openLinks", ...msg }); await wait(2500); };
+
+test("a link dropped above a tab opens there, in the background, in the space you are in, and the other window follows", async () => {
+  const { ff, x, w, other, tabY } = await two();
+  const selected = ff.list(w.id).find(t => t.active).id;
+  await linkDropped(x, w.id, { urls: ["https://link.example/"], folder: null, before: tabY.id });
+  const tab = linkTab(ff, w.id, "link");
+  assert.ok(tab, "it is a tab");
+  assert.equal(tab.cookieStoreId, C1);
+  assert.equal(ff.list(w.id).find(t => t.active).id, selected, "the page you are on stays");
+  const key = ff.values.get(tab.id)?.syncKey;
+  assert.ok(key && ff.store.syncedTabs[key].url === "https://link.example/" && !ff.store.syncedTabs[key].saved, "an ordinary tab, in the record");
+  assert.deepEqual(shown(ff, w.id), ["x", key, "y", "new"]);
+  assert.deepEqual(shown(ff, other.id), ["x", key, "y"], "as a placeholder, in the same place");
+  assert.equal(x.js("problems.length"), 0);
+  x.kill();
+});
+
+test("a link dropped on a folder is a saved tab there, and several keep their order", async () => {
+  const { ff, x, w } = await two();
+  await linkDropped(x, w.id, { urls: ["https://one.example/", "https://two.example/"], folder: "folder", before: null });
+  const keys = ["one", "two"].map(host => ff.values.get(linkTab(ff, w.id, host).id)?.syncKey);
+  for (const [i, host] of ["one", "two"].entries()) {
+    const entry = ff.store.syncedTabs[keys[i]];
+    assert.equal(entry.parentKey, "folder", host);
+    assert.equal(entry.saved.url, `https://${host}.example/`, "saved on the link itself");
+  }
+  assert.deepEqual(shown(ff, w.id).slice(-2), keys, "in the order they came");
+  assert.equal(x.js("comingIntoFolder.size"), 0, "nothing is left waiting for a folder");
+  x.kill();
+});
+
+test("a folder that is gone, or another space's, is no place: the link is an ordinary tab", async () => {
+  const { ff, x, w } = await two();
+  await linkDropped(x, w.id, { urls: ["https://gone.example/"], folder: "no-such-folder", before: null });
+  assert.equal(ff.store.syncedTabs[ff.values.get(linkTab(ff, w.id, "gone").id).syncKey].parentKey, null);
+  x.kill();
+});
+
+test("a link dropped among the essentials is an essential at that place, in every window", async () => {
+  const { ff, x, w, other, tiles } = await two();
+  await linkDropped(x, w.id, { urls: ["https://pinned.example/"], essential: true, before: tiles.b });
+  assert.deepEqual(order(ff), ["a", "pinned", "b", "z"]);
+  const key = ff.store.essentials[1].key;
+  assert.deepEqual(place(ff, w.id), ["a", key, "b", "z"]);
+  assert.deepEqual(place(ff, other.id), ["a", key, "b", "z"]);
+  assert.ok(!Object.values(ff.store.syncedTabs).some(e => e.url === "https://pinned.example/"), "and not an ordinary tab as well");
+  x.kill();
+});
+
+test("a link dropped on another space's dot opens there, and one line says so", async () => {
+  const { ff, x, w } = await two();
+  const said = [];
+  x.ctx.say = (windowId, text, options) => said.push([text, options?.brief]);
+  await linkDropped(x, w.id, { urls: ["https://there.example/", "https://there-too.example/"], space: C2 });
+  assert.deepEqual(["there", "there-too"].map(host => linkTab(ff, w.id, host)?.cookieStoreId), [C2, C2]);
+  assert.equal(said.length, 1);
+  assert.match(said[0][0], /^2 tabs opened in /);
+  assert.equal(x.js("activeSpace").get(w.id), C1, "you stay where you are");
+  await linkDropped(x, w.id, { urls: ["https://nowhere.example/"], space: "firefox-container-99" });
+  assert.equal(linkTab(ff, w.id, "nowhere"), undefined, "a space that is gone opens nothing");
+  x.kill();
+});
+
+test("only web addresses open, at most twenty at once, and no rule sends a dropped link elsewhere", async () => {
+  const { ff, x, w } = await two();
+  await x.js("rulesList").set([{ url: "ruled.example", space: C2 }]);
+  const before = ff.list(w.id).length;
+  await linkDropped(x, w.id, { urls: ["javascript:alert(1)", "file:///etc/passwd", "about:config", 7, null, "https://ruled.example/"], folder: null, before: null });
+  assert.equal(ff.list(w.id).length, before + 1);
+  assert.equal(linkTab(ff, w.id, "ruled").cookieStoreId, C1, "dropped here, it stays here");
+  await linkDropped(x, w.id, { urls: Array.from({ length: 50 }, (_, i) => `https://many-${i}.example/`), folder: null, before: null });
+  assert.equal(ff.list(w.id).length, before + 21);
+  await linkDropped(x, w.id, { urls: "https://not-a-list.example/" });
+  await linkDropped(x, w.id, {});
+  assert.equal(ff.list(w.id).length, before + 21);
+  assert.equal(x.js("problems.length"), 0);
+  x.kill();
+});

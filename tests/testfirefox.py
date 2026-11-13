@@ -19,11 +19,13 @@ does); the defaults are your own Mac's.
     with TestFirefox() as m:   # m is a Marionette client (chrome context)
         ...
 """
+import base64
 import http.server
 import json
 import os
 import shutil
 import socket
+import struct
 import subprocess
 import tempfile
 import threading
@@ -80,7 +82,14 @@ AGENT_PAGE = """<!doctype html><title>Agent test page</title><nav><a href="/else
 SLOW_PAGE_S = 8
 SLOW_ICON_S = 3
 ICON_PAGE = """<title>Touched</title><link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><circle cx='8' cy='8' r='7' fill='teal'/></svg>">a page with an icon"""
+# A second of silence, as a sound file, for a page that plays something (MEDIA_PAGE).
+SILENCE = base64.b64encode(b"RIFF" + struct.pack("<I", 36 + 8000) + b"WAVEfmt " + struct.pack("<IHHIIHH", 16, 1, 1, 8000, 8000, 1, 8) + b"data" + struct.pack("<I", 8000) + b"\x80" * 8000).decode()
+# A page that plays, over and over (muted, so that Firefox lets it start by itself), and says
+# in its title whether it plays: what pausing it from the sidebar reaches (alone_pause).
+MEDIA_PAGE = ("<title>Media</title><audio id='a' loop muted autoplay src='data:audio/wav;base64," + SILENCE + "'></audio>"
+              "<script>const a = document.getElementById('a'); a.onplaying = () => { document.title = 'Media playing'; }; a.onpause = () => { document.title = 'Media paused'; };</script>")
 PAGES = {
+    "/media": MEDIA_PAGE,
     "/unsaved": "<title>Unsaved</title><input autofocus><script>onbeforeunload = e => { e.preventDefault(); return 'unsaved'; };</script>unsaved input",
     "/plain": "<title>Plain</title>a plain page",
     # A field to type in, as a message box is (alone_command_bar: keys typed right after the bar's key).

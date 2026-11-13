@@ -142,6 +142,17 @@ const isWeb = url => /^https?:/i.test(url || "");
 const sameSite = (a, b) => {
   try { const h = u => new URL(u).hostname.replace(/^www\./, ""); return h(a) === h(b); } catch (e) { return false; }
 };
+// The same page: what comes after # does not count. A page moves about in there by itself
+// (a mailbox from one message to the next, a document from heading to heading), and is
+// still the page it was.
+const samePage = (a, b) => {
+  try { const p = u => { const x = new URL(u); return x.origin + x.pathname + x.search; }; return p(a) === p(b); } catch (e) { return a === b; }
+};
+// A saved tab that is no longer on the page it was saved on: you browsed on in it. Closing
+// it takes it back there (unloadSaved, tabsync.js), and until then its row says so, and its
+// menu offers the way back and to save where it is instead (tabactions.js). By the record,
+// so every window's row says the same, loaded or not.
+const leftSaved = entry => !!entry?.saved && isWeb(entry.url) && !samePage(entry.url, entry.saved.url);
 
 // Placeholder page for ghosts and essential copies (see ghost.js). Asked for once:
 // it never changes while Tidier runs, and this is looked at for every tab in a view.

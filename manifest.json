@@ -58,6 +58,7 @@
     "scripts": [
       "common.js",
       "listactions.js",
+      "droplinks.js",
       "bridge.js",
       "essentials.js",
       "tabsync.js",
@@ -150,6 +151,8 @@
     "space-mute": { "description": "Mute this space" },
     "space-unmute": { "description": "Unmute this space" },
     "space-unload": { "description": "Unload this space" },
+    "space-unload-others": { "description": "Unload the other spaces" },
+    "folders-fold": { "description": "Close all folders, or open them" },
     "claude-copy-page": { "description": "Copy this page for Claude (once turned on in its settings)" },
     "claude-copy-tabs": { "description": "Copy this space's tabs for Claude (once turned on in its settings)" },
     "claude-ask": { "description": "Ask Claude about this page (once turned on in its settings)" }

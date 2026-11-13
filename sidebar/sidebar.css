@@ -25,7 +25,7 @@ button { font: inherit; letter-spacing: inherit; color: inherit; cursor: default
  * (two in the narrowest, three from 244px, four from 322px, six in the widest). At 50px the
  * narrowest sidebar still took three, squeezed, and no width gave the two of a narrow Zen or
  * Arc. Their height moves in whole steps, so an edge never lands between two pixels. */
-#essentials {
+#essentials, #swipe .essentials {
   --tile-height: clamp(40px, round(13.5vw, 2px), 48px);
   --tile-gap: 6px;
   display: grid; gap: var(--tile-gap); margin: 4px 0 8px;
@@ -35,9 +35,9 @@ button { font: inherit; letter-spacing: inherit; color: inherit; cursor: default
 /* In a wide sidebar a few would be long empty bands, and a tile's size would jump from
  * space to space, so there they keep one size and leave the rest of the row free. */
 @media (min-width: 400px) {
-  #essentials { grid-template-columns: repeat(auto-fill, minmax(72px, 1fr)); }
+  #essentials, #swipe .essentials { grid-template-columns: repeat(auto-fill, minmax(72px, 1fr)); }
 }
-#essentials:empty { display: none; }
+#essentials:empty, #swipe .essentials:empty { display: none; }
 .tile {
   position: relative; height: var(--tile-height);
   display: grid; place-items: center;
@@ -95,7 +95,7 @@ img { filter: drop-shadow(0 0 .6px light-dark(rgb(40 30 20 / .3), rgb(255 255 25
  * selected card at the top stays whole. It starts just under New tab's lower edge, where
  * the fade is still next to nothing; that row stays above it for the mouse. */
 #tabs:focus-visible { outline: none; } /* a scrolling list takes the keyboard's focus; the keys have .cursor */
-#tabs {
+#tabs, #swipe .list {
   flex: 1; min-height: 0; overflow: hidden auto;
   margin: -2px calc(-1 * var(--pad)) 0; padding: 14px var(--pad) calc(20px + var(--held, 0px)); /* --held: note.js */
   scroll-padding: 14px 0 22px; /* so the keys' place, scrolled to, stays clear of the fades */
@@ -109,6 +109,13 @@ img { filter: drop-shadow(0 0 .6px light-dark(rgb(40 30 20 / .3), rgb(255 255 25
   padding: 0 var(--pad); border-radius: var(--radius); cursor: default;
   transition: background-color var(--quick), box-shadow var(--quick), transform var(--quick);
 }
+/* A row that comes into the list fades in where it is (a new tab, one moved in), so it is
+ * seen to arrive; it takes its room at once, so nothing under the pointer moves for it. Not
+ * when a whole space comes in, which arrives as one piece (motion.js slides it). */
+/* In :where(), so this weighs no more than .row itself: a row that is closing has a
+ * transition of its own (below), and a rule with #tabs in it would win over that. */
+:where(#tabs) .row { transition: background-color var(--quick), box-shadow var(--quick), transform var(--quick), opacity var(--soft); @starting-style { opacity: 0; } }
+html.space-arriving :where(#tabs) .row { transition: none; }
 .row:hover { background: var(--hover); }
 .row:active { transform: scale(.992); }
 .row.active { background: var(--selected); box-shadow: var(--shadow-card); }
@@ -158,6 +165,18 @@ img { filter: drop-shadow(0 0 .6px light-dark(rgb(40 30 20 / .3), rgb(255 255 25
   visibility: hidden; opacity: 0;
 }
 .row:hover .close { visibility: visible; opacity: 1; }
+/* On a saved tab that is loaded it only unloads, in its place, and a second click would
+ * remove it (sidebar.js, closeTitle): a line and not a cross, so the two are not the same
+ * button. */
+.row .close.unloads::before { mask-image: var(--icon-line); }
+/* A saved tab that has left the page it was saved on (leftSaved, common.js): a small
+ * stroke in the gap between its icon and its title, out of the flow, so the title stands
+ * where every title does. Closing it takes it back; its menu has the way back, and to
+ * save where it is. */
+.row .away {
+  position: absolute; left: calc(var(--pad) + var(--indent) + var(--icon) + (var(--icon-gap) - 6px) / 2); top: calc((var(--row) - 12px) / 2);
+  width: 6px; height: 12px; background: var(--faint); mask: var(--icon-stroke) center / contain no-repeat; pointer-events: none;
+}
 .row .close:hover, .row .sound:hover, #new-folder:hover { background: var(--press); color: var(--text); }
 
 /* Sound: one place in from the end, where it always is, so the close button has the end to
@@ -193,7 +212,20 @@ img { filter: drop-shadow(0 0 .6px light-dark(rgb(40 30 20 / .3), rgb(255 255 25
   height: 0; margin-bottom: 0; opacity: 0; overflow: hidden; pointer-events: none;
   transition: height var(--soft), margin-bottom var(--soft), opacity var(--quick);
 }
-#tabs .room { height: 0; pointer-events: none; }
+:is(#tabs, #swipe .list) .room { height: 0; pointer-events: none; }
+
+/* The tab you are on, out of the part of the list you see (awaymark.js): a thin line at
+ * the edge it lies beyond, in the space's colour. Over the list, placed by the script from
+ * the list's own box, so the notices and the quiet line's room move it with them. */
+.away-mark {
+  position: fixed; z-index: 2; transform: translateX(-50%);
+  width: 26px; height: 2px; padding: 0; border: 0; border-radius: 999px; /* round ends, whatever its length */
+  background: var(--accent); opacity: .75;
+  transition: opacity var(--quick), width var(--quick);
+  @starting-style { opacity: 0; }
+}
+.away-mark:hover { opacity: 1; width: 34px; }
+.away-mark[hidden] { display: none; }
 .folder.collapsed > .children > .tab { scroll-margin-top: calc(var(--row) + var(--row-gap)); } /* scrolled into view, it brings its head along */
 .folder > .children { transition: opacity var(--soft); @starting-style { opacity: 0; } }
 html.space-arriving .folder > .children { transition: none; } /* a whole space comes in at once (sidebar.js) */
@@ -227,23 +259,23 @@ html.space-arriving .folder > .children { transition: none; } /* a whole space c
 .tile.news::before { top: 5px; right: 5px; }
 
 /* --- The space's name, and what makes a new thing ------------------------------- */
-#space-name:empty { display: none; }
+#space-name:empty, #swipe .space-name:empty { display: none; }
 /* Regular weight and a little of the space's colour: it says where you are without
  * being a heading over a form. */
-#space-name {
+#space-name, #swipe .space-name {
   padding: 0 var(--pad); height: 24px; line-height: 24px;
   font-size: var(--size-small);
   color: var(--space-name); white-space: nowrap; overflow: hidden;
   mask-image: linear-gradient(to right, #000 calc(100% - 20px), transparent);
 }
-#actions { position: relative; z-index: 1; }
-#new-tab {
+#actions, #swipe .actions { position: relative; z-index: 1; }
+#new-tab, #swipe .new-tab {
   width: 100%; height: var(--row); box-sizing: border-box;
   display: flex; align-items: center; gap: var(--icon-gap); padding: 0 var(--pad);
   border: 0; border-radius: var(--radius); background: none; color: var(--muted); text-align: left;
   transition: background-color var(--quick), color var(--quick);
 }
-#new-tab::before { content: ""; width: var(--icon); height: var(--icon); flex: none; background: currentColor; mask: var(--icon-plus) center / contain no-repeat; }
+#new-tab::before, #swipe .new-tab::before { content: ""; width: var(--icon); height: var(--icon); flex: none; background: currentColor; mask: var(--icon-plus) center / contain no-repeat; }
 #actions:hover #new-tab { background: var(--hover); color: var(--text); }
 /* A new folder is not often needed: it shows with the row it belongs to. */
 #new-folder {
@@ -272,7 +304,9 @@ html.space-arriving .folder > .children { transition: none; } /* a whole space c
   transition: background-color var(--soft), box-shadow var(--soft), transform var(--spring);
 }
 .space:hover .dot { background: color-mix(in srgb, var(--color) 85%, var(--pale)); transform: scale(1.12); }
-.space.active .dot { background: var(--color); transform: scale(1.375); }
+/* The space you are going to is marked at the click (.going, sidebar.js), and the one you
+ * are leaving let go, before its list has come: the larger dot is where you are headed. */
+:where(#spaces:not(.going)) .space.active .dot, .space.going .dot { background: var(--color); transform: scale(1.375); }
 /* What a space has for you, on its own dot, so the bar stays a row of dots and nothing is
  * heavier than what it marks: news (news.js) or a tab an agent left you (agent.js) draw it
  * in its full colour, among the pale ones, and the active space's stays the larger. The
@@ -287,8 +321,8 @@ html.space-arriving .folder > .children { transition: none; } /* a whole space c
   transition: opacity var(--soft), filter var(--soft), transform var(--spring);
 }
 #spaces .space:hover .dot.emoji { opacity: .85; filter: grayscale(.3); }
-#spaces .space:is(.active, .news, .agent-left) .dot.emoji { opacity: 1; filter: none; }
-#spaces .space.active .dot.emoji { transform: scale(1.2); }
+#spaces .space:is(.active, .going, .news, .agent-left) .dot.emoji { opacity: 1; filter: none; }
+#spaces:not(.going) .space.active .dot.emoji, #spaces .space.going .dot.emoji { transform: scale(1.2); }
 
 /* --- Notices: quiet, on the icons' edge, in the same soft shape as everything else.
  * Never a white card: that means you are here. Every line that tells you something has
@@ -561,3 +595,28 @@ html[data-dragging="tab"] #spaces:has(> .new-space:not([hidden]))::before { cont
 }
 .little .keep:hover { background: var(--press); color: var(--text); }
 @container (max-width: 240px) { .little .where { display: none; } }
+
+/* --- A swipe on the trackpad, from one space to the next (swipe.js) -----------------
+ * The list follows the fingers, and the space it is going to comes in beside it. What
+ * moves is a picture of the two, side by side, over the place of the real list, which is
+ * out of sight meanwhile and stays where it is: a view that comes during the swipe is
+ * drawn there as always, and nothing of the swipe is in its way. The picture's parts are
+ * the list's own (above: its essentials, name, new tab and rows), so nothing changes when
+ * the two change places. It takes what the pointer does meanwhile, which is nothing. */
+html.swiping :is(#essentials, #space-name, #actions, #tabs) { opacity: 0; }
+#swipe { position: fixed; z-index: 4; inset: 0 0 auto; overflow: hidden; }
+#swipe[hidden] { display: none; }
+#swipe .strip { position: absolute; inset: 0; will-change: transform; }
+/* A space is as wide as the sidebar, laid out as the page is (body, above). */
+#swipe .pane {
+  position: absolute; inset: 0; box-sizing: border-box; padding: 4px var(--pad) 0;
+  display: flex; flex-direction: column;
+}
+#swipe .pane.next { left: 100%; right: -100%; }
+#swipe .pane.previous { left: -100%; right: 100%; }
+/* It comes in as one piece (as a space does, html.space-arriving), and none of it is new. */
+#swipe .folder > .children { transition: none; }
+/* Its lists are scrolled to where the real ones are, by hand: a scroll bar that shows itself
+ * for that would say something moved. It keeps its room, where a scroll bar takes room, so
+ * the rows are as wide as in the list. */
+#swipe .list { scrollbar-color: transparent transparent; }

@@ -31,7 +31,7 @@
     if (!icon) return; // out of sight
     const from = icon.classList.contains("slow-load") ? getComputedStyle(icon).opacity : HALFWAY;
     icon.classList.remove("slow-load");
-    if (!matchMedia("(prefers-reduced-motion: reduce)").matches) icon.animate({ opacity: [from, 1] }, BRIGHTEN_MS);
+    if (!lessMotion()) icon.animate({ opacity: [from, 1] }, BRIGHTEN_MS);
   };
 
   // Runs after render(), which listens first, so the icons here are the ones just drawn.

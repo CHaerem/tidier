@@ -42,6 +42,11 @@ part C).
 | Title and address in the tooltip, icons kept, a tab made ready when the pointer comes to it | | Done | checked; less motion when the system asks for it |
 | Resizable sidebar width | Z A S | Done | Firefox's own sidebar handle (userChrome.css) |
 | Compact mode: sidebar hidden, shown at the edge | Z A | Done | userChrome.css, ⌘S |
+| A link dragged from a page or another app can be dropped in the sidebar | Z A | Done | checked, with drags made as Firefox hands one to the page: a tab where it lands, among the tabs, in a folder (saved there), among the essentials, or on another space's dot; in the background, in that space, past the rules; marked as a dragged tab is, and text or a file is no link. A drag from a real page and from another app waits for the second Mac |
+| Soft motion where something comes or goes: a folder opening, a new row | Z A | Done | checked: a folder opens and closes by its height; a new row fades in where it is, taking its room at once, so nothing under the pointer moves for it; a row that closes folds away. Nothing of it with less motion asked for, and nothing runs while nothing happens |
+| Pause and play from the sidebar | Z A | Done | checked on a page that really plays: Pause in a playing tab's menu (it asks for the optional access to all websites in its click), and while it is silent a play mark where its speaker was, and Play in its menu, which start only what Tidier paused. A sound made without an audio or video element on the page cannot be reached, and the line says so |
+| A mark when the selected tab is out of view | Z | Done | checked: a thin line in the space's colour at the edge it lies beyond, and a click on it goes there (`sidebar/awaymark.js`) |
+| Any tab can be renamed | Z | Decide | saved tabs and essentials only: today's tabs are temporary |
 | Tabs nested under tabs (tree) | S | No | you only use folders; a tree is where most of Sidebery's bugs came from |
 
 ## Spaces
@@ -52,7 +57,9 @@ part C).
 | Space bar at the bottom with icons | Z A S | Done | checked: a coloured dot, or the emoji its name starts with (Icon in the space's menu: a list to search in, or type one); the name above the list |
 | Only the active space's tabs shown (⌃Tab too) | Z A S | Done | checked. Other spaces' essentials stay in ⌃Tab: Firefox cannot hide a pinned tab |
 | Switch with ⌃1/2/3 | Z A S | Done | checked: back to the tab you selected last in that space, in any window (not one opened in the background, moved there or resting in a closed folder, nor one another window is showing) |
-| Switch by swiping sideways on the trackpad | Z A | Later | tried with Sidebery and left out: vertical swipes switched space by mistake; to try again in Tidier's own sidebar |
+| Switch by swiping sideways on the trackpad | Z A | Done | checked, with wheel events made as a trackpad sends them: the list follows the fingers and the next space comes in beside it as it will be; a flick goes at once; a scroll is never a swipe, however far it drifts (which is what went wrong with Sidebery). How it feels under real fingers waits for the second Mac |
+| Switching by a click or ⌃1/2/3 slides as a swipe does | Z A | Done | checked: the new space slides in a little way from the side its dot is on, as it fades in; the bar stays. A short slide, not the whole width: calmer, and a key pressed several times does not wait for it |
+| The active space's dot follows the fingers during a swipe | Z A | Later | it moves when the swipe is decided |
 | Colour per space, for the whole window | Z A | Done | userChrome.css and tidier.css |
 | New, edited and deleted spaces in Tidier: name, icon and colour | Z A S | Done | checked, on the settings page and from a space's menu; dropping a tab on the bar makes a new one; Firefox's container settings aren't needed |
 | Nothing goes out in the wrong container: the first request is stopped | S | Done | checked with a server recording cookies; needs the optional access to all websites |
@@ -69,6 +76,9 @@ part C).
 | The same essentials, folders and spaces on every machine, by sync | A | Done | checked in a test Firefox, off by default, on the settings page; real Firefox Sync between two machines is not tried yet |
 | Hide a space on a given machine | | Done | checked: on the settings page, or for a machine in managed storage; hidden, not kept away |
 | Remove a space from every machine | | Later | today removing a container on one machine is local to it |
+| Any colour for a space | Z A | Later | Firefox's eight container colours today; Zen and Arc take any colour, and gradients |
+| All of a space's folders closed, or opened, at once | Z | Done | checked: in the space's More, as a command in the bar and as a key you can give; Zen has it on a click on the space's name, which here opens nothing by itself |
+| Unload every other space | Z | Done | checked: in the space's More, the bar and the keys; by the rules of Unload this space, and not a space hidden on this machine |
 
 ## Essentials and kept tabs
 
@@ -82,6 +92,9 @@ part C).
 | Kept tabs (Arc's pinned section, Zen's pinned tabs): ⌘W unloads, back to the saved address | Z A | Done | tabs in folders ("saved tabs") |
 | A divider between kept tabs and today's tabs | A Z | Done | in Tidier's sidebar |
 | Clear today's tabs in one go | A | Done | checked: from the list's menu, the space's menu and the line between folders and tabs; one line to undo it, no question |
+| A saved tab or an essential that has left its address says so, and can go back or keep the new one | Z A | Done | checked: a saved tab you browse on in has a small stroke between its icon and its title, and its tooltip names the page it is saved on; Back to saved address and Save this address in its menu, an essential's too, the second with one line and Undo. What comes after # is the same page. A tile has no mark: it is only an icon |
+| The close button says when it only unloads | Z | Done | checked: a line where it unloads a saved tab in its place, a cross where it closes or removes |
+| A link to another site from an essential opens as a tab of its own | A | Later | today the essential follows the link; a choice on the settings page, off by default |
 | Undo after closing several tabs or deleting a folder | S | Done | checked: one quiet line, in a room of its own above the bar, that waits while the pointer or the keyboard is on it; ⌘Z in the sidebar and Undo in the command bar while it shows |
 
 ## Folders
@@ -91,10 +104,12 @@ part C).
 | Folders, collapsible | Z A S | Done | Tidier's own data, checked |
 | Folders first in each space | Z A | Done | the sidebar draws them first |
 | Create, rename and delete folders | Z A S | Done | checked. Deleting one keeps its tabs, with one line to undo it |
-| Folders inside folders | A | Later | none today, and a tree is what is left out |
+| Folders inside folders | Z A | Later | none today, and a tree is what is left out |
+| An icon of its own on a folder | Z A | Later | a space has one; the same list of icons to choose from |
 | A closed folder rests: hidden from ⌃Tab and unloaded | S | Done | checked; the selected tab, sound and unsaved input stay |
 | New folder with a good name, ready to rename | S | Done | from the menu, a key, or a selection, which names it after what the tabs share |
 | New tab in a folder | S | Done | checked: New tab here in its menu; saved there once it has a page |
+| Live folders for GitHub issues and feeds | Z | Later | pull requests only today |
 | Live folders (GitHub pull requests) | A | Done | checked: each row's icon says what the pull request waits for (your review, draft, failing checks, conflict, changes asked for, approved, running, open) |
 | Folder state (open/closed) kept per space and window | Z A S | Partly | kept per folder, the same in every window |
 
@@ -124,7 +139,7 @@ part C).
 
 | Feature | From | Status | Notes |
 |---|---|---|---|
-| ⇧⌘C copies the address | Z A | Done | checked: a word at the top of the page says so for a moment, as in Arc and Zen, also with the sidebar hidden; the sidebar's line says it where Firefox lets no extension into the page |
+| ⇧⌘C copies the address | Z A | Done | checked: a word at the top of the page says so for a moment, as in Arc and Zen, also with the sidebar hidden; the sidebar's line says it where Firefox lets no extension into the page; the menus' and the bar's Copy address say the same |
 | A command bar: search tabs, essentials, history and commands | A Z | Done | checked: ⇧⌘K (⌘T once cleared in about:keyboard), floating in the middle of the window you are in (a panel of Firefox's, placed by the dotfiles' stylesheet); every space's tabs, essentials, folders, closed and archived tabs, and commands; history and bookmarks once allowed |
 | Next and previous tab as shown, the n-th tab of this space, next and previous space | A | Partly | checked: ⌃⌘ and an arrow. ⌘1 to ⌘9, ⌘D and ⌘T only once Firefox's own are cleared in about:keyboard, which the dotfiles do not do yet (README, Keys); until then the settings page marks them as Firefox's and the command bar leaves them out |
 | All shortcuts set in one place, in Tidier | | Done | checked: the settings page's Keys section, Copy for Claude's too; Firefox's own keys in about:keyboard |
@@ -146,6 +161,13 @@ part C).
 | Feature | From | Why |
 |---|---|---|
 | Bookmarks and history panels in the sidebar | S | Firefox's own are enough |
+| A library of downloads, media and history in the sidebar | Z A | Firefox's own are enough |
+| A swipe past the last space makes a new one | Z | a space has logins of its own, and is not made by accident |
+| A swipe back closes a tab that was opened from another | Z | an extension is not told of a swipe on the page |
+| A space or a folder shared as a link | Z A | needs a service outside the browser |
+| A sidebar of icons only | Z | compact mode hides the sidebar altogether, which serves the same |
+| Rows that make room while one is dragged | Z A | a line says where it lands: calmer, and it promises no more than it keeps |
+| See-through and blurred surfaces, grain | Z | an extension's sidebar cannot be see-through, and the rest is decoration |
 | Snapshots of all tabs | S | Tidier keeps its own record; Firefox's session restore does the rest |
 | Per-site styles and scripts ("Boosts", "Mods") | A Z | not what Tidier is for |
 | Notes, easels, built-in AI | A | not what Tidier is for |

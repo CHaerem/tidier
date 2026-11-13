@@ -1391,6 +1391,31 @@ test("a new tab you dragged a moment ago still gets synced when it gets an addre
   x.kill();
 });
 
+test("a page that has loaded in its space is in the other window within a second; one still on its way waits", async () => {
+  const { ff, x, windows: [a, b] } = await chaosStart();
+  const inOther = t => { const key = ff.values.get(t.id)?.syncKey; return !!key && ff.list(b.id).some(y => ff.values.get(y.id)?.syncKey === key); };
+  const t = ff.openTab(a.id, { url: "about:newtab", active: true, cookieStoreId: C1 });
+  await ff.clock.run(3000);
+  ff.load(t, "https://quick.example/");
+  await ff.clock.run(200); // loaded by now (the harness takes about a tenth of a second)
+  assert.equal(ff.tabs.get(t.id).status, "complete");
+  assert.equal(inOther(t), false, "not at once: a page may send itself on as it starts");
+  await ff.clock.run(700);
+  assert.equal(inOther(t), true, "but well within a second of having loaded");
+  // One that has an address and is still loading: nothing says yet where it will end up.
+  const slow = ff.openTab(a.id, { url: "about:newtab", active: true, cookieStoreId: C1 });
+  await ff.clock.run(3000);
+  ff.loadFactor = 40; // a slow site: each step of its load takes about a second
+  ff.load(slow, "https://slow.example/");
+  await ff.clock.run(600);
+  assert.equal(ff.tabs.get(slow.id).status, "loading");
+  assert.equal(inOther(slow), false);
+  ff.loadFactor = 1;
+  await ff.clock.idle(60000);
+  assert.equal(inOther(slow), true, "there once it has loaded");
+  x.kill();
+});
+
 test("a page whose address changes all the time is still taken in, and is in the other window", async () => {
   // A map, a dashboard, a video's time: the page writes where you are into its address more
   // often than a new tab is given to settle. Put off at every change, it never got a record.

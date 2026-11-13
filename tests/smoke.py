@@ -86,7 +86,7 @@ import urllib.parse
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from mcp_client import Mcp  # noqa: E402
-from testfirefox import DOTFILES, EXT_DIR, EXT_ID, PORT, TestFirefox  # noqa: E402
+from testfirefox import DOTFILES, EXT_DIR, EXT_ID, FIXTURES, PORT, TestFirefox  # noqa: E402
 
 CMD, SHIFT, CTRL, ESC = "", "", "", ""
 
@@ -130,19 +130,6 @@ def press(m, key, *mods):
     acts += [{"type": "keyUp", "value": k} for k in reversed(mods)]
     m.cmd("WebDriver:PerformActions", {"actions": [{"type": "key", "id": "kb", "actions": acts}]})
     m.cmd("WebDriver:ReleaseActions")
-
-
-def fire_message(m, msg):
-    """Send a runtime message that makes the extension start again, and with it close the page sending it."""
-    m.js(H + """const w = main(); w.focus();
-      const t = w.gBrowser.addTrustedTab("moz-extension://" + JSON.parse(Services.prefs.getStringPref("extensions.webextensions.uuids"))[args[0]] + "/ghost.html?kind=test", {inBackground: false});
-      w.gBrowser.selectedTab = t; await wait(1500); return 1;""", EXT_ID)
-    into_page(m, "ghost.html?kind=test")
-    # The answer comes before the message goes: the page is gone once it has.
-    m.cmd("WebDriver:ExecuteAsyncScript", {"script": """const done = arguments[arguments.length - 1], msg = arguments[0], page = window.wrappedJSObject || window;
-      setTimeout(() => page.browser.runtime.sendMessage(page.JSON.parse(JSON.stringify(msg))), 300); done(1);""", "args": [msg]})
-    m.chrome()
-    time.sleep(1)
 
 
 def into_page(m, part, exact=False, focus=False):
@@ -405,10 +392,13 @@ def tab_sync(m):
       const t = main().gBrowser.addTrustedTab(args[0] + "/moving?smoke-moving", {userContextId: 3, inBackground: true});
       let k = null, ms = null; const t0 = Date.now();
       for (let i = 0; i < 100 && ms === null; i++) { await wait(100); k = key(main(), t); if (k && find(k)[1]?.length) ms = Date.now() - t0; }
-      const created = k ? find(k) : null, changes = url(t).split("#")[1];
+      // And it goes on changing after that: still the one tab, with the one ghost.
+      const changes = () => Number(url(t).split("#")[1] || 0);
+      for (let i = 0; i < 100 && changes() < 8; i++) await wait(100);
+      const created = k ? find(k) : null, changed = changes();
       await removeWhere((w, x) => url(x).includes("smoke-moving") || (k && key(w, x) === k));
-      return {created, ms, changes};""", m.pages)
-    check(f"a page whose address changes all the time gets its ghost too ({r['ms']} ms)", r["created"] == [["live/loaded"], ["ghost/unloaded"]] and int(r["changes"] or 0) >= 3 and r["ms"] <= 7000, str(r))
+      return {created, ms, changed};""", m.pages)
+    check(f"a page whose address changes all the time gets its ghost too ({r['ms']} ms), once", r["created"] == [["live/loaded"], ["ghost/unloaded"]] and r["changed"] >= 8 and r["ms"] <= 7000, str(r))
     # The window a page is taken from stays on it, as in Zen and Arc: the window you use has
     # the page, and the other one shows which page that is, not some other tab. Coming back
     # brings the page back, and the other window is then the one that waits.
@@ -1553,11 +1543,14 @@ def alone_moves(m):
     r = sidebar_page(m, """
       const tabs = plainTabs().map(x => Number(x.dataset.tab));
       const first = tabs[0], last = tabs.at(-1);
+      // Each is waited for until it shows, not for a set time: a busy machine takes its own.
+      const until = async f => { for (let i = 0; i < 100 && !f(); i++) await wait(100); };
       send({type: "moveTab", tabId: last, before: first, folder: null});
-      await wait(1500);
+      await until(() => Number(plainTabs()[0]?.dataset.tab) === last);
       const tiles0 = [...doc.querySelectorAll("#essentials .tile")].map(t => Number(t.dataset.tab));
       send({type: "moveEssential", tabId: tiles0.at(-1), before: tiles0[0]});
-      await wait(2000);
+      await until(() => Number(doc.querySelector("#essentials .tile")?.dataset.tab) === tiles0.at(-1));
+      await wait(500); // and in the other window
       return {count: tabs.length, moved: last, was: first, order: plainTabs().map(x => Number(x.dataset.tab)), tiles0, tiles1: [...doc.querySelectorAll("#essentials .tile")].map(t => Number(t.dataset.tab))};""")
     check("a tab moved in the sidebar is where you put it", r["order"][0] == r["moved"] and r["order"][1] == r["was"], str(r))
     check("an essential moved in the sidebar is where you put it", r["tiles1"][0] == r["tiles0"][-1], str(r))
@@ -2500,7 +2493,14 @@ def alone_tab_menu(m):
         m.js(clipboard + 'Cc["@mozilla.org/widget/clipboardhelper;1"].getService(Ci.nsIClipboardHelper).copyString("before"); return 1;')
         act(a, "Copy address")
         copied = m.js(clipboard + 'await until(() => read() !== "before", 3000); return read();')
+        # And it says so, where ⇧⌘C says it: on the page where Tidier may write there, else
+        # on the sidebar's own line (sayDone, pagenote.js).
+        said = sidebar_page(m, """for (let i = 0; i < 60; i++) { const n = doc.getElementById("note");
+            if (n.classList.contains("shown")) return doc.querySelector("#note .text").textContent;
+            await wait(100); }
+          return "";""")
         check("Copy address copies the page's address from an unloaded tab", copied == "https://example.org/?smoke-menu-a", repr(copied))
+        check("and says so, as ⇧⌘C does", said == "Address copied", repr(said))
 
         # A row that is only a placeholder here, with the page loaded in another window.
         opened = m.js(H + """if (other()) return false; const w = main().OpenBrowserWindow(); w.__smoke = true;
@@ -2982,7 +2982,8 @@ def alone_hand(m):
     press(m, "z", CMD)
     back = m.js(H + """const w = main(); for (let i = 0; i < 50 && w.gBrowser.tabs.filter(t => /^hand-[89]$/.test(t.label)).length < 2; i++) await wait(100);
       return w.gBrowser.tabs.filter(t => /^hand-[89]$/.test(t.label)).length;""")
-    check("⌘Z in the sidebar undoes what the line offers", back == 2 and len(hands()) == n + 2 and not in_sidebar(m, """() => doc.getElementById("note").classList.contains("shown")"""), f"{back} {n} {hands()}, the line: {said!r}")
+    now = in_sidebar(m, """() => doc.getElementById("note").classList.contains("shown") && doc.querySelector("#note .text").textContent""")
+    check("⌘Z in the sidebar undoes what the line offers", back == 2 and len(hands()) == n + 2 and not now, f"{back} {n} {hands()}, the line: {said!r}, and after: {now!r}" + (f""", {look_in_sidebar(m, "() => page.browser.extension.getBackgroundPage().traces.slice(-8)")}""" if now else ""))
 
     # A view made before the background heard of Undo, and drawn after it: the line stays gone.
     # (The two cross on their way on a busy machine; here that view is sent again, by hand.)
@@ -3403,7 +3404,10 @@ def alone_sound(m):
     before = r["boxes"]
 
     # It starts playing, in the other window.
-    playing = m.js(H + SOUND + """for (const name of ["sound tile", "sound row", "sound inside", "sound away"]) play(real(name), true);
+    # (Once the closed folder has put its tab to rest, foldrest.js: a tab that is silent then
+    # is unloaded, and one that began to play just before would lose its sound with its page.)
+    playing = m.js(H + SOUND + """for (let i = 0; i < 100 && real("sound inside")?.linkedPanel; i++) await wait(100);
+      for (const name of ["sound tile", "sound row", "sound inside", "sound away"]) play(real(name), true);
       return wins().flatMap(w => w.gBrowser.tabs.filter(t => t.label === "sound inside").map(t => ({url: url(t).slice(-40), playing: t.soundPlaying, loaded: !!t.linkedPanel, hidden: t.hidden})));""")
     r = sidebar_page(m, FIND + """
       const [here, away] = args;
@@ -3892,8 +3896,10 @@ def alone_touches(m):
       await until(() => !signed(), 6000);
       out.gone = !signed();
       out.fading = await Promise.race([fading, wait(1000)]);
+      // Up to bright: sampled until it is there, since on a busy machine the 300 ms of the
+      // fade can take a second of looks.
       out.brightening = [];
-      for (let i = 0; i < 25; i++) { out.brightening.push(Number(page.getComputedStyle(img).opacity)); await wait(20); }
+      for (let i = 0; i < 100 && out.brightening.at(-1) !== 1; i++) { out.brightening.push(Number(page.getComputedStyle(img).opacity)); await wait(20); }
       await finished();
       out.sameIcon = slow.querySelector("img") === img && img.isConnected;
 
@@ -8250,7 +8256,7 @@ def alone_copy_and_import(m):
     r = ext_page(m, "/settings/settings.html", """return doc.getElementById("sidebery-result").textContent;""")
     check("a Tidier copy is not taken for Sidebery's export", r == "This is not Sidebery's export.", str(r))
     # Sidebery's export: address rules from panels, and the folder it had closed closes at once.
-    with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "fixtures", "sidebery_export.json")) as f:
+    with open(os.path.join(FIXTURES, "sidebery_export.json")) as f:
         choose_file(m, "sidebery-file", f.read())
     r = ext_page(m, "/settings/settings.html", """return doc.getElementById("sidebery-result").textContent;""")
     check("Sidebery's export says what came, and what it left out", r == "Took in 3 rules, the order of 2 spaces and 1 closed folder. Left out the rules of 1 panel with no container.", str(r))
@@ -8260,7 +8266,7 @@ def alone_copy_and_import(m):
       for (let i = 0; i < 40 && !folders().some(f => f.name === "Reading"); i++) await wait(200);
       return folders().filter(f => f.name === "Reading");""")
     check("the folder Sidebery had closed is closed in the sidebar", [f["collapsed"] for f in shown] == [True], str(shown))
-    with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "fixtures", "sidebery_export.json")) as f:
+    with open(os.path.join(FIXTURES, "sidebery_export.json")) as f:
         choose_file(m, "sidebery-file", {k: v for k, v in json.load(f).items() if k != "snapshots"})
     r = ext_page(m, "/settings/settings.html", """return doc.getElementById("sidebery-result").textContent;""")
     check("an export with no snapshot says folders start open", "no snapshot in this export, so folders start open" in r, str(r))
@@ -8949,6 +8955,41 @@ def alone_more(m):
           return out;""", dupe, t1)
         check("a space's More closes today's duplicates, and the first stays", bool(r.get("item")) and r.get("gone") and r.get("kept") and "Reload this space" in r.get("inMore", []), str(r))
 
+        # All the folders of the space at once, from the same More: closed while any is open,
+        # and then opened. And the other spaces unloaded, which leaves this one as it is.
+        away = m.js(MENU_TABS + """const w = main(), here = w.gBrowser.selectedTab.userContextId;
+          const ctx = [...new Set(w.gBrowser.tabs.map(t => t.userContextId))].find(c => c && c !== here);
+          if (!ctx) return null;
+          const t = w.gBrowser.addTrustedTab("https://example.org/?smoke-more-away", {userContextId: ctx, inBackground: true});
+          await until(() => role(w, t) === "live" && t.linkedPanel); await wait(500); return idOf(t);""")
+        r = sidebar_page(m, MENU_PAGE + """
+          const space = doc.documentElement.dataset.space, name = f => f.querySelector(".head .title").textContent;
+          const all = () => [...doc.querySelectorAll("#tabs .folder")], mine = () => all().filter(f => /^More (one|two)$/.test(name(f)));
+          for (const n of ["More one", "More two"]) { send({type: "newFolder", space, name: n}); await until(() => all().some(f => name(f) === n)); }
+          const closed = () => all().map(f => f.classList.contains("collapsed"));
+          const more = async () => { await rightClick(doc.getElementById("space-name")); choose("More"); return shown(); };
+          const out = {offered: [], states: []};
+          for (let i = 0; i < 2; i++) {
+            const label = (await more()).find(x => /^(Close|Open) all folders$/.test(x));
+            out.offered.push(label ?? null);
+            if (!label) break;
+            choose(label);
+            const want = label.startsWith("Close");
+            await until(() => closed().every(c => c === want));
+            out.states.push(closed().every(c => c === want));
+          }
+          const list = await more();
+          out.unloadOthers = list.includes("Unload the other spaces");
+          if (out.unloadOthers) choose("Unload the other spaces"); else menu.hidden = true;
+          out.said = await until(() => doc.getElementById("note").classList.contains("shown") && doc.querySelector("#note .text").textContent, 5000);
+          for (const f of mine()) send({type: "deleteFolder", key: f.querySelector(".head").dataset.folderHead});
+          await until(() => !mine().length);
+          return out;""")
+        unloaded = away is None or m.js(MENU_TABS + """await until(() => !byId(args[0])?.linkedPanel, 5000); const t = byId(args[0]), gone = !t.linkedPanel;
+          main().gBrowser.removeTab(t); await wait(500); return gone;""", away)
+        check("a space's More closes all its folders at once, and then opens them", sorted(r.get("offered") or [], key=str) == ["Close all folders", "Open all folders"] and r.get("states") == [True, True], str(r))
+        check("and unloads the other spaces, saying how many tabs went", away is None or (r.get("unloadOthers") and unloaded and "unloaded in the other spaces" in (r.get("said") or "")), f"{r} {away} {unloaded}")
+
         # The keys of the selection, in the sidebar: ⌥↓ moves the tab you are on one place along, in
         # every window; ⇧↓ takes the next row too; ⌘A every row.
         sidebar_page(m, MENU_PAGE + "await until(() => rowOf(args[0])); rowOf(args[0]).click(); return 1;", t1)
@@ -9133,9 +9174,25 @@ def alone_stay_put(m):
       await select(rows()[1]);
       await scrollTo(list.scrollHeight);
       out.away = !inView(activeRow());
+      // The line at the edge the tab you are on lies beyond (awaymark.js), and a click on it.
+      const marks = () => ["up", "down"].filter(way => !doc.getElementById("away-" + way).hidden);
+      out.markUp = marks();
+      const upBox = doc.getElementById("away-up").getBoundingClientRect(), listBox = list.getBoundingClientRect();
+      out.markPlace = {inside: upBox.top >= listBox.top - 1 && upBox.bottom <= listBox.bottom,
+        middle: Math.abs((upBox.left + upBox.right) / 2 - (listBox.left + listBox.right) / 2) <= 2, thin: upBox.height <= 4};
+      doc.getElementById("away-up").click();
+      await until(() => inView(activeRow()) && !marks().length);
+      out.afterClick = {shown: inView(activeRow()), marks: marks()};
+      await scrollTo(0);
+      await until(() => marks().length > 0);
+      out.markDown = marks();
+      // And back as the checks below it expect: the tab you are on above the part in view.
+      await scrollTo(list.scrollHeight);
+      await until(() => marks().join() === "up");
       await switchTo(short);
       await switchTo(home);
       out.restoredThenShown = {top: fromTop(activeRow()), bottom: fromBottom(activeRow())};
+      out.marksBack = marks();
       return out;""", home, second, short)
     # Scroll bars that take room, as a Mac shows them with a mouse (and GitHub's Macs always):
     # a list long enough to scroll is then narrower than a short one, which is no change of
@@ -9161,6 +9218,9 @@ def alone_stay_put(m):
     check("a space too short to scroll does not change another's place", r.get("short") == 0 and r["home"] != r["second"], str(r))
     check("switching back and forth quickly mixes up no place", r.get("homeQuick") == r.get("home") and r.get("secondQuick") == r.get("second") and r.get("shortQuick") == 0, str(r))
     check("a selected tab you scrolled away from comes back by the least distance from your place", r.get("away") and r["restoredThenShown"]["top"] == 0, str(r))
+    check("a thin line at the list's edge says the tab you are on is that way, and a click on it goes there",
+          r.get("markUp") == ["up"] and r.get("markDown") == ["down"] and (r.get("markPlace") or {}) == {"inside": True, "middle": True, "thin": True}
+          and (r.get("afterClick") or {}) == {"shown": True, "marks": []} and r.get("marksBack") == [], str(r))
     if bars.get("bar") and not bars.get("shortBar"):
         check("with scroll bars that take room, a space keeps its place too", bars.get("partly") and bars["homeBack"] == bars["home"], str(bars))
     else:
@@ -10256,6 +10316,26 @@ def alone_bar_edges(m):
     bar_keys(m, [ESC])
     wait_for_bar(m, False)
 
+    # A toolbar button Firefox cannot show (a stylesheet that hides the toolbar and does not
+    # hold it in place for the bar, as the dotfiles' did before it knew of the bar): Firefox
+    # says it opened the panel and takes it away unseen. The key must not be dead for it.
+    m.js(BAR + """const w = main(); w.__noButton = "data:text/css," + encodeURIComponent("#unified-extensions-button { display: none !important; }");
+      w.windowUtils.loadSheetUsingURIString(w.__noButton, w.windowUtils.USER_SHEET); w.focus(); w.gBrowser.selectedBrowser.focus(); await wait(500); return 1;""")
+    press_in(m, "main()", "k", CMD, SHIFT)
+    r = {}
+    for _ in range(60):
+        r = m.js(BAR + """return {own: barWindows().length, panel: !!bar()};""")
+        if r["own"]:
+            break
+        time.sleep(0.1)
+    m.js(BAR + """for (const b of barWindows()) b.close(); const w = main(); w.windowUtils.removeSheetUsingURIString(w.__noButton, w.windowUtils.USER_SHEET);
+      for (let i = 0; i < 50 && barWindows().length; i++) await wait(100); w.focus(); await wait(500); return 1;""")
+    check("where Firefox cannot show the panel, the bar comes as a window of its own for the same press", r == {"own": 1, "panel": False}, str(r))
+    ready = bar_open(m)
+    check("and it is in the window again as soon as Firefox can show it there", ready >= 0 and m.js(BAR + "return barWindows().length;") == 0)
+    bar_keys(m, [ESC])
+    wait_for_bar(m, False)
+
     # The window it was opened in closes under it: the bar goes with it, and the key works at once in another.
     windows = m.js(H + """const n = wins().length, w = main().OpenBrowserWindow(); w.__extra = true; for (let i = 0; i < 200 && !w.gBrowserInit?.delayedStartupFinished; i++) await wait(50); await wait(2500); return n;""")
     bar_open(m, "wins().find(w => w.__extra)")
@@ -10482,21 +10562,25 @@ def alone_many(m):
     numbers["ghostPullMs"] = r[len(r) >> 1] if r else None
     check(f"selecting a ghost brings its tab soon ({numbers['ghostPullMs']} ms)", len(r) == 5 and numbers["ghostPullMs"] < 5000, str(r))
 
-    # Switching space, from a click to the sidebar having drawn it.
+    # Switching space, from a click to the sidebar having drawn that space's list. The dot
+    # says so at the click itself, before anything has come back: until the list is there,
+    # that is all that shows the click was taken.
     r = sidebar_page(m, MANY_PAGE + """
-      const times = [], order = spaces().map(s => s.id), from = spaces().find(s => s.active).id;
+      const times = [], marked = [], order = spaces().map(s => s.id), shown = () => doc.documentElement.dataset.space, from = shown();
       const click = id => doc.querySelector(`#spaces .space[data-space="${id}"]`).click();
       for (const id of [...order.filter(s => s !== from).slice(0, 2), from, ...order.filter(s => s !== from).slice(0, 2), from]) {
-        if (spaces().find(s => s.active).id === id) continue;
+        if (shown() === id) continue;
         const t0 = performance.now();
         click(id);
-        if (!await until(() => spaces().find(s => s.active).id === id)) return {stuck: id};
+        marked.push(doc.querySelector("#spaces .space.going")?.dataset.space === id && shown() !== id);
+        if (!await until(() => shown() === id && spaces().find(s => s.active).id === id && !doc.querySelector("#spaces.going, #spaces .going"))) return {stuck: id};
         times.push(performance.now() - t0);
         await wait(1000);
       }
-      return {ms: Math.round(median(times)), most: Math.round(Math.max(...times))};""")
-    numbers["spaceSwitch"] = r
+      return {ms: Math.round(median(times)), most: Math.round(Math.max(...times)), marked};""")
+    numbers["spaceSwitch"] = {k: v for k, v in r.items() if k != "marked"}
     check(f"switching space is quick ({r.get('ms')} ms)", (r.get("ms") or 1e9) < 3000, str(r))
+    check("the dot of the space you go to is marked at the click, before its list has come, and the mark goes when it has", len(r.get("marked") or []) >= 4 and all(r["marked"]), str(r))
     shown = m.js(H + """const w = main(); await wait(500); return [...new Set(w.gBrowser.tabs.filter(t => !t.pinned && !t.hidden && t.userContextId).map(t => t.userContextId))];""")
     check("and shows one space", len(shown) == 1, str(shown))
 
@@ -10661,8 +10745,12 @@ def alone_folds_rest(m):
     check("closing a folder hides its tabs in both windows and unloads them", r["ok"], str(r))
     check("a tab that rests keeps the address it was on", all("smoke-rest-" in u for u in r["urls"]), str(r))
     check("a closed folder's tabs are out of Firefox's own ⌃Tab list", r["ctrlTab"] == 0, str(r))
+    # Its height goes to nothing in a soft move (sidebar/motion.js), so the room it leaves is
+    # read once that is over, not in the middle of it.
     r = sidebar_page(m, """const f = folders().find(f => f.name === "Resting"), head = [...doc.querySelectorAll("#tabs .folder .head")].find(h => h.querySelector(".title").textContent === "Resting");
-      return {collapsed: f.collapsed, count: head.querySelector(".count").textContent, height: head.parentElement.querySelector(".children").offsetHeight};""")
+      const children = head.parentElement.querySelector(".children");
+      for (let i = 0; i < 60 && children.offsetHeight; i++) await wait(50);
+      return {collapsed: f.collapsed, count: head.querySelector(".count").textContent, height: children.offsetHeight};""")
     check("the closed folder shows how many tabs it holds, and no rows", r["collapsed"] and r["count"] == "3" and r["height"] == 0, str(r))
 
     # Opened: shown again, and nothing loads by itself.
@@ -10938,6 +11026,480 @@ def alone_isolation_start(m):
     no_problems(m, "after a start by a link")
 
 
+# Helpers for alone_swipe, on the real sidebar (as STAY_PUT's are). A headless Firefox has no
+# trackpad: what one sends is wheel events, and those are made here as it sends them.
+SWIPE = """
+  const obj = o => page.JSON.parse(JSON.stringify(o));
+  const windowId = (await page.browser.windows.getCurrent()).id;
+  const side = page.browser.extension.getViews(obj({type: "sidebar", windowId}))[0], doc = side.document;
+  const wait = ms => new Promise(done => side.setTimeout(() => done(), ms));
+  const until = async (test, ms = 8000) => { for (const t0 = Date.now(); Date.now() - t0 < ms; await wait(30)) if (await test()) return true; return false; };
+  const root = doc.documentElement, list = doc.getElementById("tabs"), overlay = doc.getElementById("swipe");
+  const css = e => side.getComputedStyle(e);
+  const spaces = () => [...doc.querySelectorAll("#spaces .space")].map(b => ({id: b.dataset.space, active: b.classList.contains("active")}));
+  const here = () => root.dataset.space;
+  const x = () => { const t = css(overlay.querySelector(".strip")).transform; return t === "none" ? 0 : Math.round(new side.DOMMatrix(t).m41); };
+  const state = () => ({shown: !overlay.hidden, swiping: root.classList.contains("swiping"), panes: overlay.querySelectorAll(".pane").length});
+  const names = at => [...at.querySelectorAll(".tab .title")].map(t => t.textContent).join(" | ");
+  const label = e => e?.getAttribute("aria-label") ?? null;
+  const y = e => (e ? Math.round(e.getBoundingClientRect().y * 10) / 10 : null);
+  // Fingers on the trackpad, as the wheel events they become: one after the other with no
+  // turn of the page between, so the pause that ends a swipe cannot come in the middle of
+  // one, however busy the machine is. 1 px every 3 ms is a slow swipe.
+  const fingers = (moves, every = 3) => { for (const [dx, dy] of moves) { const t = side.performance.now(); while (side.performance.now() - t < every); list.dispatchEvent(new side.WheelEvent("wheel", {bubbles: true, deltaX: dx, deltaY: dy, deltaMode: 0})); } };
+  const times = (n, move) => Array.from({length: n}, () => move);
+  const gliding = from => { const out = []; for (let d = Math.abs(from); d >= 1; d *= 0.9) out.push([Math.sign(from) * Math.round(d), 0]); return out; };
+  const settled = () => until(() => overlay.hidden && !root.classList.contains("swiping"));
+  const switchTo = async id => {
+    doc.querySelector(`#spaces .space[data-space="${id}"]`).click();
+    await until(() => here() === id && doc.querySelector(".tab.active, .tile.active"));
+    await settled();
+    await wait(300);
+  };
+  const ids = spaces().map(s => s.id), width = side.innerWidth, far = 12 + Math.ceil(width * 0.45);
+"""
+
+
+def real_swipe(m, at, x, y, moves):
+    """Real wheel events, one for each [dx, dy], at a place in the sidebar."""
+    m.cmd("WebDriver:PerformActions", {"actions": [{"type": "wheel", "id": "wheel", "actions": [
+        {"type": "scroll", "x": int(at["x"] + x), "y": int(at["y"] + y), "deltaX": dx, "deltaY": dy, "duration": 0, "origin": "viewport"} for dx, dy in moves]}]})
+    m.cmd("WebDriver:ReleaseActions")
+
+
+def alone_swipe(m):
+    # A swipe on the trackpad switches space (sidebar/swipe.js): the list follows the fingers.
+    m.js(H + """const w = main(); for (const t of [...w.gBrowser.tabs]) if (url(t).includes("/sidebar/sidebar.html")) w.gBrowser.removeTab(t);
+      Services.prefs.setIntPref("ui.prefersReducedMotion", 0); await wait(300); return 1;""")
+    r = sidebar_page(m, SWIPE + """
+      const out = {spaces: ids.length};
+      await switchTo(ids[1]);  // so this sidebar has drawn the space next to the first one
+      await switchTo(ids[0]);
+      const top = list.scrollTop;
+
+      // A scroll that then drifts all the way across, and glides on.
+      fingers([[0, 4], [1, 7], [2, 9], ...times(25, [30, 2]), ...gliding(30)]);
+      out.scroll = state();
+      await wait(400);
+      out.scrollAfter = {...state(), here: here() === ids[0]};
+
+      // A slow swipe, a little way: it follows, and comes back.
+      fingers(times(12, [1, 0]));
+      out.began = {...state(), x: x(), list: css(list).opacity};
+      fingers(times(40, [1, 0]));
+      const home = overlay.querySelector(".pane:not(.next, .previous)"), next = overlay.querySelector(".pane.next");
+      const liveRow = list.querySelector(".tab"), homeRow = home?.querySelector(".list .tab");
+      out.follows = {x: x(), next: !!next, previous: !!overlay.querySelector(".pane.previous"),
+        same: !!home && names(home) === names(list), rows: list.querySelectorAll(".tab").length,
+        dy: y(homeRow) - y(liveRow), dx: homeRow && Math.round(homeRow.getBoundingClientRect().x - liveRow.getBoundingClientRect().x),
+        wide: homeRow?.getBoundingClientRect().width === liveRow.getBoundingClientRect().width,
+        nextX: next && Math.round(next.getBoundingClientRect().x) - width,
+        found: doc.querySelectorAll("#swipe [data-tab], #swipe [id], #swipe [draggable], #swipe [tabindex]").length,
+        tint: next && css(next.querySelector(".space-name")).color !== css(home.querySelector(".space-name")).color};
+      // A click on what is passing by is no click on a tab: the space coming in is drawn by what draws the list.
+      next?.querySelector(".tab, .tile")?.click();
+      out.clicked = !!next?.querySelector(".tab, .tile");
+      await settled();
+      out.back = {...state(), here: here() === ids[0], top: list.scrollTop === top, list: css(list).opacity};
+
+      // Further than four tenths of the way: it goes there, and what came in is what is there.
+      fingers(times(far, [1, 0]));
+      const pane = overlay.querySelector(".pane.next"), on = pane?.querySelector(".tab.active, .tile.active");
+      out.far = {x: x() + far - 12, names: pane && names(pane), tiles: pane?.querySelectorAll(".tile").length, on: label(on), onY: y(on),
+        firstY: y(pane?.querySelector(".list .tab")), name: pane?.querySelector(".space-name").textContent};
+      out.went = await until(() => here() === ids[1]);
+      await settled();
+      await wait(300);
+      const nowOn = doc.querySelector("#tabs .tab.active, #essentials .tile.active");
+      out.landed = {...state(), names: names(list), tiles: doc.querySelectorAll("#essentials .tile").length, on: label(nowOn), onY: y(nowOn),
+        firstY: y(list.querySelector(".tab")), name: doc.getElementById("space-name").textContent, list: css(list).opacity,
+        dot: spaces().find(s => s.active)?.id === ids[1],
+        tab: (await page.browser.tabs.query(obj({active: true, windowId})))[0].cookieStoreId === ids[1]};
+
+      // A flick: one space, whatever the trackpad glides on with.
+      await switchTo(ids[0]);
+      fingers([[6, 0], [10, 0], [18, 0], [24, 0], [30, 0], ...gliding(30)], 8);
+      out.flicked = await until(() => here() !== ids[0]);
+      await settled();
+      await wait(700);
+      out.flick = {...state(), at: ids.indexOf(here())};
+
+      // At the first space, towards no space: it gives a little and comes back.
+      await switchTo(ids[0]);
+      fingers(times(72, [-1, 0]));
+      out.edge = {...state(), x: x(), previous: !!overlay.querySelector(".pane.previous")};
+      await settled();
+      await wait(300);
+      out.edgeAfter = {...state(), here: here() === ids[0]};
+
+      // Over an open menu it is no swipe.
+      const menu = doc.getElementById("menu");
+      doc.getElementById("space-name").dispatchEvent(new side.MouseEvent("contextmenu", {bubbles: true, cancelable: true, button: 2, clientX: 20, clientY: 60}));
+      out.menu = await until(() => !menu.hidden);
+      fingers(times(far, [1, 0]));
+      out.taken = state();
+      await wait(400);
+      out.takenAfter = {...state(), here: here() === ids[0], menu: menu.hidden};
+
+      // What the background says of a space this sidebar is not showing.
+      const g = await page.browser.runtime.sendMessage(obj({type: "glimpse", windowId, space: ids[2]}));
+      out.glimpse = {space: g?.space === ids[2], tabs: g?.tabs.length + g?.folders.length + g?.essentials.length, on: [...g.essentials, ...g.tabs, ...g.folders.flatMap(f => f.tabs)].filter(t => t.active).length};
+      out.middle = (() => { const q = list.getBoundingClientRect(); return {x: q.x + q.width / 2, y: q.y + q.height / 2}; })();
+      return out;""")
+    idle = {"shown": False, "swiping": False, "panes": 0}
+    check("scrolling the list is never a swipe, however far it drifts sideways", r.get("spaces", 0) >= 3 and r.get("scroll") == idle and r.get("scrollAfter") == {**idle, "here": True}, str(r))
+    began, follows = r.get("began") or {}, r.get("follows") or {}
+    check("a sideways swipe begins after 12 px, with the list where it lies, and its picture in the list's place",
+          began == {"shown": True, "swiping": True, "panes": 1, "x": 0, "list": "0"} and follows.get("same") and follows.get("rows", 0) > 0
+          and follows.get("dy") == 0 and follows.get("wide") and follows.get("found") == 0, f"{began} {follows}")
+    check("the list follows the fingers, and the next space comes in beside it, in its own colour",
+          follows.get("x") == -40 and follows.get("dx") == -40 and follows.get("next") and follows.get("nextX") == -40 and not follows.get("previous") and follows.get("tint"), str(follows))
+    check("let go after a little way, it comes back, and the list is as it was; a click on the space passing by did nothing",
+          r.get("clicked") is True and r.get("back") == {**idle, "here": True, "top": True, "list": "1"}, f"{r.get('clicked')} {r.get('back')}")
+    far, landed = r.get("far") or {}, r.get("landed") or {}
+    same = all(far.get(k) == landed.get(k) for k in ("names", "tiles", "on", "onY", "firstY", "name"))
+    check("swiped further than four tenths of the way, the window goes to that space", far.get("x") == 0 and r.get("went") is True and landed.get("dot") and landed.get("tab") and landed.get("list") == "1"
+          and {k: landed.get(k) for k in idle} == idle, f"{r.get('went')} {landed}")
+    check("what came in beside the list is what is there on arriving: the same rows in the same places, and the tab you land on",
+          same and bool(far.get("names")) and far.get("on") is not None, f"{far} {landed}")
+    check("a flick goes one space, whatever the trackpad glides on with", r.get("flicked") is True and r.get("flick") == {**idle, "at": 1}, f"{r.get('flicked')} {r.get('flick')}")
+    edge = r.get("edge") or {}
+    check("at the first space the list gives a little and comes back", edge.get("shown") and 0 < edge.get("x", 0) < 60 and not edge.get("previous")
+          and r.get("edgeAfter") == {**idle, "here": True}, f"{edge} {r.get('edgeAfter')}")
+    check("a swipe over an open menu is none", r.get("menu") is True and r.get("taken") == idle and r.get("takenAfter") == {**idle, "here": True, "menu": True}, f"{r.get('taken')} {r.get('takenAfter')}")
+    check("the background gives a glimpse of a space that is not shown, with the tab to land on", (r.get("glimpse") or {}).get("space") and r["glimpse"]["tabs"] > 0 and r["glimpse"]["on"] <= 1, str(r.get("glimpse")))
+
+    # Firefox has a sideways swipe of its own, back and forward in a page's history. It listens
+    # for it around the pages only: a swipe in the sidebar must not also take the page back.
+    apart = m.js(H + """const w = main(); return !w.gBrowser.tabbox.contains(w.document.getElementById("sidebar-box"));""")
+    check("Firefox's own swipe, back and forward in history, does not listen in the sidebar", apart is True, str(apart))
+
+    # The same with real wheel events, which take Firefox's own way to the sidebar. They come
+    # when Marionette gets to them: a pause between two that is longer than a swipe's own
+    # ends the swipe, as it should, so a flick gets more than one try.
+    at, middle = m.js(SIDEBAR_AT), r.get("middle") or {"x": 100, "y": 200}
+    real_swipe(m, at, middle["x"], middle["y"], [(0, 30)] * 3 + [(40, 0)] * 6)
+    scrolled = sidebar_page(m, SWIPE + "await settled(); await wait(400); return {...state(), here: here() === ids[0]};")
+    check("with a real wheel, a scroll that turns sideways switches nothing", scrolled == {**idle, "here": True}, str(scrolled))
+    flicked = {}
+    for _ in range(3):
+        real_swipe(m, at, middle["x"], middle["y"], [(30, 0)] * 8)
+        flicked = sidebar_page(m, SWIPE + "await until(() => here() !== ids[0], 1500); await settled(); await wait(300); return {...state(), at: ids.indexOf(here())};")
+        if flicked.get("at") != 0:
+            break
+    check("with a real wheel, a sideways flick goes to the next space", flicked == {**idle, "at": 1}, str(flicked))
+
+    # With less motion asked for nothing follows the fingers: a clear swipe switches.
+    m.js(H + """Services.prefs.setIntPref("ui.prefersReducedMotion", 1); await wait(300); return 1;""")
+    r = sidebar_page(m, SWIPE + """
+      const out = {};
+      await switchTo(ids[0]);
+      fingers(times(12 + 40, [1, 0]));
+      out.short = state();
+      await wait(400);
+      out.shortAfter = here() === ids[0];
+      fingers(times(12 + 70, [1, 0]));
+      out.clear = state();
+      out.went = await until(() => here() === ids[1]);
+      await wait(400);
+      out.after = state();
+      await switchTo(ids[0]);
+      return out;""")
+    m.js(H + """Services.prefs.clearUserPref("ui.prefersReducedMotion"); await wait(300); return 1;""")
+    check("with less motion asked for, a clear swipe switches space and nothing is drawn of it",
+          r.get("short") == idle and r.get("shortAfter") is True and r.get("clear") == idle and r.get("went") is True and r.get("after") == idle, str(r))
+    no_problems(m, "after swiping between spaces")
+    close_sidebar_page(m)
+
+
+def alone_away(m):
+    # A saved tab you browse on in has left its address: its row says so, and its menu's two
+    # ways out do what they say (leftSaved in common.js, tabactions.js, sidebar.js).
+    m.js(H + """const w = main(); for (const t of [...w.gBrowser.tabs]) if (url(t).includes("/sidebar/sidebar.html")) w.gBrowser.removeTab(t);
+      for (const name of ["home", "beside"]) { w.gBrowser.addTrustedTab("https://example.org/?smoke-away-" + name, {userContextId: 1, inBackground: true}); await wait(300); }
+      await wait(3000); return 1;""")
+    sidebar_page(m, """send({type: "space", space: "firefox-container-1"}); await wait(1000);
+      send({type: "newFolder", space: "firefox-container-1", name: "Away folder"}); await wait(1500); return 1;""")
+    for name in ("home", "beside"):
+        to_folder(m, f"https://example.org/?smoke-away-{name}", "Away folder")
+    r = sidebar_page(m, """
+      const obj = o => page.JSON.parse(JSON.stringify(o)), windowId = (await page.browser.windows.getCurrent()).id;
+      const side = page.browser.extension.getViews(obj({type: "sidebar", windowId}))[0], sdoc = side.document;
+      const until = async (test, ms = 8000) => { for (const t0 = Date.now(); Date.now() - t0 < ms; await wait(50)) if (await test()) return true; return false; };
+      const tabs = await page.browser.tabs.query(obj({windowId}));
+      const home = tabs.find(t => t.url.endsWith("smoke-away-home")).id, beside = tabs.find(t => t.url.endsWith("smoke-away-beside")).id;
+      const row = id => sdoc.querySelector(`#tabs .tab[data-tab="${id}"]`), box = e => e.getBoundingClientRect();
+      const line = id => side.getComputedStyle(row(id).querySelector(".close"), "::before").maskImage;
+      const facts = async () => (await page.browser.runtime.sendMessage(obj({type: "tabMenu", tabIds: [home]})))[0].away;
+      const address = async () => (await page.browser.tabs.get(home)).url;
+      const out = {};
+      await page.browser.tabs.update(home, obj({active: true}));
+      await until(() => row(home)?.classList.contains("active") && !row(home).classList.contains("unloaded"));
+      out.before = {mark: !!row(home).querySelector(".away"), unloads: row(home).querySelector(".close").classList.contains("unloads"), away: await facts()};
+
+      await page.browser.tabs.update(home, obj({url: "https://example.org/?smoke-away-elsewhere"}));
+      out.marked = await until(() => row(home)?.querySelector(".away"));
+      const mark = row(home).querySelector(".away"), icon = row(home).querySelector("img, .letter"), title = row(home).querySelector(".title");
+      out.mark = {between: box(icon).right <= box(mark).left && box(mark).right <= box(title).left, width: box(mark).width,
+        title: box(title).left === box(row(beside).querySelector(".title")).left, tip: row(home).title.split("\\n").at(-1), away: await facts(),
+        line: line(home).includes("M4.25 8h7.5")};
+
+      send({type: "tabAction", action: "saveHere", tabIds: [home]});
+      out.saved = await until(() => !row(home)?.querySelector(".away"));
+      out.said = sdoc.querySelector("#note .text")?.textContent;
+      out.savedFacts = await facts();
+      sdoc.querySelector("#note .act")?.click();
+      out.undone = await until(() => row(home)?.querySelector(".away"));
+
+      send({type: "tabAction", action: "backToSaved", tabIds: [home]});
+      out.back = await until(async () => (await address()).endsWith("smoke-away-home") && !row(home)?.querySelector(".away"));
+      out.backFacts = await facts();
+      const key = sdoc.querySelector("#tabs .folder .head[title='Away folder']")?.dataset.folderHead;
+      if (key) send({type: "deleteFolder", key});
+      await wait(800);
+      await page.browser.tabs.remove(obj([home, beside]));
+      await wait(800);
+      return out;""")
+    check("a saved tab on its saved page has no mark, and its close button is the one that only unloads", r.get("before") == {"mark": False, "unloads": True, "away": False}, str(r.get("before")))
+    mark = r.get("mark") or {}
+    check("browsed on in, its row has a small stroke between its icon and its title, and no title has moved for it",
+          r.get("marked") is True and mark.get("between") and 0 < mark.get("width", 0) <= 6 and mark.get("title") and mark.get("away") is True, str(mark))
+    check("its tooltip says which page it is saved on, and the close button is drawn as a line", mark.get("tip") == "Saved on: Example Domain" and mark.get("line"), str(mark))
+    check("Save this address makes where it is its saved page, and says so; Undo takes that back",
+          r.get("saved") is True and (r.get("said") or "").startswith("Saved here") and r.get("savedFacts") is False and r.get("undone") is True, str(r))
+    check("Back to saved address takes the page back, loaded, and the mark goes", r.get("back") is True and r.get("backFacts") is False, str(r))
+    no_problems(m, "after a saved tab left its address and came back")
+    close_sidebar_page(m)
+
+
+def alone_link_drop(m):
+    # A link dragged in from a page or another app opens as a tab where it is dropped
+    # (sidebar/drag.js, droplinks.js). The drag is made as Firefox hands one to the page.
+    m.js(H + """const w = main(); for (const t of [...w.gBrowser.tabs]) if (url(t).includes("/sidebar/sidebar.html")) w.gBrowser.removeTab(t);
+      await wait(300); return 1;""")
+    sidebar_page(m, """send({type: "space", space: "firefox-container-1"}); await wait(1000);
+      send({type: "newFolder", space: "firefox-container-1", name: "Drop folder"}); await wait(1500); return 1;""")
+    r = sidebar_page(m, """
+      const obj = o => page.JSON.parse(JSON.stringify(o)), windowId = (await page.browser.windows.getCurrent()).id;
+      const side = page.browser.extension.getViews(obj({type: "sidebar", windowId}))[0], sdoc = side.document, root = sdoc.documentElement;
+      const until = async (test, ms = 8000) => { for (const t0 = Date.now(); Date.now() - t0 < ms; await wait(50)) if (await test()) return true; return false; };
+      const carrying = kinds => { const data = new side.DataTransfer(); for (const [kind, text] of kinds) data.setData(kind, text); return data; };
+      const link = name => carrying([["text/x-moz-url", "https://example.org/?smoke-drop-" + name + "\\nA link"], ["text/plain", "https://example.org/?smoke-drop-" + name]]);
+      // Over `e`, a part of the way down it (and across it).
+      const drag = (type, e, data, down = 0.75, across = 0.5) => { const q = e.getBoundingClientRect();
+        const event = new side.DragEvent(type, obj({bubbles: true, cancelable: true, clientX: q.left + q.width * across, clientY: q.top + q.height * down}));
+        Object.defineProperty(event, "dataTransfer", {value: data});
+        e.dispatchEvent(event); return event.defaultPrevented; };
+      const marks = () => [...sdoc.querySelectorAll(".drop-before, .drop-after, .drop-into, .drop-left, .drop-right")].length;
+      const tabOf = async name => (await page.browser.tabs.query(obj({windowId}))).find(t => t.url.endsWith("smoke-drop-" + name) || t.title.endsWith("smoke-drop-" + name));
+      const rowOf = async name => { const t = await tabOf(name); return t ? sdoc.querySelector(`#tabs .tab[data-tab="${t.id}"]`) : null; };
+      const out = {}, selected = (await page.browser.tabs.query(obj({windowId, active: true})))[0].id;
+      const rows = () => [...sdoc.querySelectorAll("#tabs > .tab")], row = rows()[0];
+
+      // Text and files are no links: nothing is marked, and nothing is taken.
+      out.text = {taken: drag("dragover", row, carrying([["text/plain", "https://example.org/?smoke-drop-text"]])), marks: marks(), dragging: root.dataset.dragging ?? null};
+      // (A page may not make a drag that carries a file, so here only what such a drag says it carries.)
+      out.file = {taken: drag("dragover", row, obj({types: ["text/x-moz-url", "application/x-moz-file"]})), marks: marks(), dragging: root.dataset.dragging ?? null};
+
+      // A link over the lower half of a row: a line after it, as for a tab.
+      out.over = {taken: drag("dragover", row, link("list")), after: row.classList.contains("drop-after"), marks: marks(), dragging: root.dataset.dragging ?? null};
+      // It leaves the sidebar: nothing stays.
+      row.dispatchEvent(new side.DragEvent("dragleave", obj({bubbles: true})));
+      out.left = {marks: marks(), dragging: root.dataset.dragging ?? null};
+      // It is let go of somewhere else, which this page is not told: gone by itself.
+      drag("dragover", row, link("list"));
+      await until(() => !marks() && !root.dataset.dragging, 4000);
+      out.forgotten = {marks: marks(), dragging: root.dataset.dragging ?? null};
+
+      // Dropped after that row.
+      drag("dragover", row, link("list"));
+      out.dropped = drag("drop", row, link("list"));
+      out.listed = await until(async () => (await rowOf("list"))?.previousElementSibling === row);
+      out.after = {marks: marks(), dragging: root.dataset.dragging ?? null, selected: (await page.browser.tabs.query(obj({windowId, active: true})))[0].id === selected,
+        space: (await tabOf("list"))?.cookieStoreId};
+
+      // On a folder's head: a saved tab in it.
+      const head = sdoc.querySelector("#tabs .folder .head[title='Drop folder']");
+      out.onFolder = {taken: drag("dragover", head, link("folder"), 0.5), into: head.classList.contains("drop-into")};
+      drag("drop", head, link("folder"), 0.5);
+      out.inFolder = await until(async () => (await rowOf("folder"))?.closest(".folder") === head.parentElement);
+      await page.browser.runtime.sendMessage(obj({type: "flush"}));
+      const all = (await page.browser.storage.local.get("syncedTabs")).syncedTabs;
+      out.saved = Object.values(all).find(e => (e.saved?.url ?? "").endsWith("smoke-drop-folder"))?.parentKey === head.dataset.folderHead;
+
+      // On the left half of the first tile: an essential before it.
+      const tile = sdoc.querySelector("#essentials .tile"), tiles = sdoc.querySelectorAll("#essentials .tile").length;
+      out.onTile = tile ? {taken: drag("dragover", tile, link("tile"), 0.5, 0.25), left: tile.classList.contains("drop-left")} : null;
+      if (tile) drag("drop", tile, link("tile"), 0.5, 0.25);
+      out.tile = !!tile && await until(async () => { const t = await tabOf("tile"); return t?.pinned && sdoc.querySelector(`#essentials .tile[data-tab="${t.id}"]`)?.nextElementSibling === tile; });
+      out.tiles = sdoc.querySelectorAll("#essentials .tile").length - tiles;
+
+      // Where a link has no place, the drop is still taken (Firefox would open it in the sidebar itself), and nothing opens.
+      const bar = sdoc.getElementById("spaces"), count = (await page.browser.tabs.query(obj({windowId}))).length;
+      out.nowhere = {over: drag("dragover", bar, link("nowhere"), 0.5, 0.02), marks: marks(), drop: drag("drop", bar, link("nowhere"), 0.5, 0.02)};
+      await wait(1200);
+      out.nowhere.opened = (await page.browser.tabs.query(obj({windowId}))).length - count;
+
+      // Put away again.
+      const pinned = await tabOf("tile");
+      if (pinned) { send({type: "tabAction", action: "removeEssential", tabIds: [pinned.id]}); await until(async () => !(await page.browser.tabs.get(pinned.id)).pinned); await wait(1500); }
+      send({type: "deleteFolder", key: head.dataset.folderHead});
+      await wait(800);
+      await page.browser.tabs.remove(obj((await page.browser.tabs.query(obj({windowId}))).filter(t => /smoke-drop-/.test(t.url + t.title)).map(t => t.id)));
+      await wait(1000);
+      return out;""")
+    nothing = {"marks": 0, "dragging": None}
+    check("text and a file dragged over the sidebar are no link: nothing is marked or taken", r.get("text") == {"taken": False, **nothing} and r.get("file") == {"taken": False, **nothing}, f"{r.get('text')} {r.get('file')}")
+    check("a link dragged over a row is marked as a tab would be", r.get("over") == {"taken": True, "after": True, "marks": 1, "dragging": "tab"}, str(r.get("over")))
+    check("when it leaves the sidebar, or is let go of elsewhere, nothing stays marked", r.get("left") == nothing and r.get("forgotten") == nothing, f"{r.get('left')} {r.get('forgotten')}")
+    check("dropped after a row, the link is a tab right there, in the background and in this space",
+          r.get("dropped") is True and r.get("listed") is True and r.get("after") == {**nothing, "selected": True, "space": "firefox-container-1"}, f"{r.get('dropped')} {r.get('listed')} {r.get('after')}")
+    check("dropped on a folder, it is a saved tab in it", r.get("onFolder") == {"taken": True, "into": True} and r.get("inFolder") is True and r.get("saved") is True, f"{r.get('onFolder')} {r.get('inFolder')} {r.get('saved')}")
+    check("dropped on the left of a tile, it is an essential before it", r.get("onTile") == {"taken": True, "left": True} and r.get("tile") is True and r.get("tiles") == 1, f"{r.get('onTile')} {r.get('tile')} {r.get('tiles')}")
+    check("where a link has no place the drop is still taken, so that Firefox does not open it in the sidebar, and nothing opens",
+          r.get("nowhere") == {"over": True, "marks": 0, "drop": True, "opened": 0}, str(r.get("nowhere")))
+    no_problems(m, "after links were dropped in the sidebar")
+    close_sidebar_page(m)
+
+
+def alone_motion(m):
+    # Soft motion where something comes or goes (sidebar/motion.js, sidebar.css): another
+    # space slides in from its side, a folder opens and closes by its height, a new row fades
+    # in; with less motion asked for, none of it; and with nothing happening, nothing runs.
+    m.js(H + """const w = main(); for (const t of [...w.gBrowser.tabs]) if (url(t).includes("/sidebar/sidebar.html")) w.gBrowser.removeTab(t);
+      Services.prefs.setIntPref("ui.prefersReducedMotion", 0); await wait(300); return 1;""")
+    sidebar_page(m, """send({type: "space", space: "firefox-container-1"}); await wait(1000);
+      send({type: "newFolder", space: "firefox-container-1", name: "Motion folder"}); await wait(1500); return 1;""")
+    m.js(H + """const w = main(); for (const i of [1, 2]) { w.gBrowser.addTrustedTab("https://example.org/?smoke-motion-" + i, {userContextId: 1, inBackground: true}); await wait(300); }
+      await wait(3000); return 1;""")
+    for i in (1, 2):
+        to_folder(m, f"https://example.org/?smoke-motion-{i}", "Motion folder")
+    MOTION = """
+      const obj = o => page.JSON.parse(JSON.stringify(o)), windowId = (await page.browser.windows.getCurrent()).id;
+      const side = page.browser.extension.getViews(obj({type: "sidebar", windowId}))[0], sdoc = side.document, root = sdoc.documentElement;
+      const wait = ms => new Promise(done => side.setTimeout(() => done(), ms));
+      const until = async (test, ms = 8000) => { for (const t0 = Date.now(); Date.now() - t0 < ms; await wait(20)) if (await test()) return true; return false; };
+      const ids = [...sdoc.querySelectorAll("#spaces .space")].map(b => b.dataset.space);
+      const PARTS = ["essentials", "space-name", "actions", "tabs"];
+      // What moves on a part now: its first keyframe's slide, or "none".
+      const slide = id => { const a = sdoc.getElementById(id).getAnimations().find(x => x.effect?.getKeyframes?.()[0]?.transform);
+        return a ? Math.round(new side.DOMMatrix(a.effect.getKeyframes()[0].transform).m41) : "none"; };
+      const switchTo = async id => { sdoc.querySelector(`#spaces .space[data-space="${id}"]`).click(); await until(() => root.dataset.space === id); return PARTS.map(slide); };
+      const head = () => sdoc.querySelector("#tabs .folder .head[title='Motion folder']");
+      const fold = async () => { const h = head(), was = h.parentElement.classList.contains("collapsed"); h.click(); await until(() => h.parentElement.classList.contains("collapsed") !== was);
+        // The newest fold: a finished one can still be listed for a moment.
+        const a = h.parentElement.lastElementChild.getAnimations().filter(x => x.id === "fold").at(-1); return a ? a.effect.getKeyframes().map(k => parseInt(k.height)) : "none"; };
+      const moving = () => [...PARTS.map(id => sdoc.getElementById(id)), ...sdoc.querySelectorAll("#tabs .folder > .children, #tabs .row")].flatMap(e => e.getAnimations()).filter(a => a.playState === "running").length;
+      const newRow = async name => { const made = await page.browser.tabs.create(obj({url: "https://example.org/?smoke-motion-" + name, cookieStoreId: ids[0], active: false}));
+        let row = null; await until(() => (row = sdoc.querySelector(`#tabs .tab[data-tab="${made.id}"]`)));
+        return row ? row.getAnimations().some(a => a.transitionProperty === "opacity") : null; };
+    """
+    r = sidebar_page(m, MOTION + """
+      const out = {};
+      await until(() => root.dataset.space === ids[0]);
+      await wait(500);
+      out.right = await switchTo(ids[1]);
+      await wait(500);
+      out.settled = moving();
+      out.left = await switchTo(ids[0]);
+      await wait(500);
+      out.closing = await fold();
+      await wait(400);
+      out.opening = await fold();
+      await wait(400);
+      out.row = await newRow("new");
+      await wait(600);
+      out.idle = moving();
+      return out;""")
+    check("another space slides in from the side its dot is on, and its parts all move together, then stop",
+          r.get("right") == [16] * 4 and r.get("left") == [-16] * 4 and r.get("settled") == 0, str(r))
+    closing, opening = r.get("closing"), r.get("opening")
+    check("a folder closes and opens by its height, from where it was to where it goes",
+          isinstance(closing, list) and closing[0] > closing[-1] and isinstance(opening, list) and opening[0] < opening[-1] and opening[-1] == closing[0], f"{closing} {opening}")
+    check("a new row fades in where it is", r.get("row") is True, str(r.get("row")))
+    check("with nothing happening, nothing moves", r.get("idle") == 0, str(r.get("idle")))
+
+    m.js(H + """Services.prefs.setIntPref("ui.prefersReducedMotion", 1); await wait(300); return 1;""")
+    r = sidebar_page(m, MOTION + """
+      const out = {};
+      out.space = await switchTo(ids[1]);
+      await switchTo(ids[0]);
+      out.closing = await fold();
+      out.opening = await fold();
+      out.row = await newRow("still");
+      return out;""")
+    m.js(H + """Services.prefs.clearUserPref("ui.prefersReducedMotion"); await wait(300); return 1;""")
+    check("with less motion asked for, nothing slides, folds by its height or fades in",
+          r.get("space") == ["none"] * 4 and r.get("closing") == "none" and r.get("opening") == "none" and r.get("row") is False, str(r))
+
+    sidebar_page(m, """const key = doc.querySelector("#tabs .folder .head[title='Motion folder']")?.dataset.folderHead;
+      if (key) send({type: "deleteFolder", key}); await wait(800);
+      const tabs = await page.browser.tabs.query(page.JSON.parse(JSON.stringify({})));
+      await page.browser.tabs.remove(page.JSON.parse(JSON.stringify(tabs.filter(t => /smoke-motion-/.test(t.url)).map(t => t.id))));
+      await wait(800); return 1;""")
+    no_problems(m, "after soft motion")
+    close_sidebar_page(m)
+
+
+def alone_pause(m):
+    # Pause and play from the sidebar (tabactions.js, sounds.js, sidebar/sound.js), on a page
+    # that really plays. Whether Firefox hears it is set by hand, as alone_sound does: a test
+    # machine has no sound to hear.
+    ALL = H + """const {ExtensionPermissions} = ChromeUtils.importESModule("resource://gre/modules/ExtensionPermissions.sys.mjs");
+      const [id, allow] = args, ext = WebExtensionPolicy.getByID(id).extension, all = {permissions: [], origins: ["<all_urls>"]};
+      const had = (await ExtensionPermissions.get(id)).origins.includes("<all_urls>");
+      if (allow !== had) { await ExtensionPermissions[allow ? "add" : "remove"](id, all, ext); await wait(800); }
+      return had;"""
+    had = m.js(ALL, EXT_ID, False)
+    # Firefox lets a page in a background tab start nothing by itself: here it may.
+    m.js(H + """const w = main(); for (const t of [...w.gBrowser.tabs]) if (url(t).includes("/sidebar/sidebar.html")) w.gBrowser.removeTab(t);
+      Services.prefs.setBoolPref("media.block-autoplay-until-in-foreground", false); Services.prefs.setIntPref("media.autoplay.default", 0);
+      w.gBrowser.addTrustedTab(args[0] + "/media", {userContextId: 1, inBackground: true});
+      for (let i = 0; i < 60 && !w.gBrowser.tabs.some(t => t.label === "Media playing"); i++) await wait(100);
+      return 1;""", m.pages)
+    HEAR = H + """const w = main(), t = w.gBrowser.tabs.find(x => url(x).endsWith("/media"));
+      t.toggleAttribute("soundplaying", args[0]); w.gBrowser._tabAttrModified(t, ["soundplaying"]); await wait(500); return t.label;"""
+    title = m.js(HEAR, True)
+    PAGE = """const obj = o => page.JSON.parse(JSON.stringify(o)), windowId = (await page.browser.windows.getCurrent()).id;
+      const until = async (test, ms = 8000) => { for (const t0 = Date.now(); Date.now() - t0 < ms; await wait(50)) if (await test()) return true; return false; };
+      const media = async () => (await page.browser.tabs.query(obj({windowId}))).find(t => t.url.endsWith("/media"));
+      const facts = async () => { const f = (await page.browser.runtime.sendMessage(obj({type: "tabMenu", tabIds: [(await media()).id]})))[0]; return [f.playing, f.paused]; };
+      const mark = async () => doc.querySelector(`#tabs .tab[data-tab="${(await media()).id}"] .sound`);
+    """
+    r = sidebar_page(m, PAGE + """
+      const out = {before: await facts()};
+      send({type: "tabAction", action: "pause", tabIds: [(await media()).id]});
+      await wait(1500);
+      out.refused = (await media()).title;
+      return out;""")
+    check("a page that plays offers Pause, and without the access to websites nothing is done to it",
+          title == "Media playing" and r.get("before") == [True, False] and r.get("refused") == "Media playing", f"{title} {r}")
+    m.js(ALL, EXT_ID, True)
+    r = sidebar_page(m, PAGE + """
+      send({type: "tabAction", action: "pause", tabIds: [(await media()).id]});
+      const out = {paused: await until(async () => (await media()).title === "Media paused")};
+      return out;""")
+    m.js(HEAR, False)  # silent now, as Firefox would say
+    r2 = sidebar_page(m, PAGE + """
+      const out = {};
+      out.shown = await until(async () => (await mark())?.classList.contains("paused"));
+      out.tip = (await mark())?.title ?? null;
+      out.facts = await facts();
+      (await mark())?.click();
+      out.playing = await until(async () => (await media()).title === "Media playing");
+      out.gone = await until(async () => !(await mark()));
+      return out;""")
+    check("with the access, Pause stops what plays in the page", r.get("paused") is True, str(r))
+    check("silent, its row shows Play where the speaker was, and the menu offers Play",
+          r2.get("shown") is True and r2.get("tip") == "Play" and r2.get("facts") == [False, True], str(r2))
+    check("Play from the row starts it again, and the mark goes", r2.get("playing") is True and r2.get("gone") is True, str(r2))
+    m.js(ALL, EXT_ID, had)
+    m.js(H + """await removeWhere((w, t) => url(t).endsWith("/media"));
+      Services.prefs.clearUserPref("media.block-autoplay-until-in-foreground"); Services.prefs.clearUserPref("media.autoplay.default"); return 1;""")
+    no_problems(m, "after pausing and playing a page")
+    close_sidebar_page(m)
+
+
 # Each window's tabs and space, and the folders.
 SNAP_ALONE = H + """
   const all = (await storage("%s", ["syncedTabs"])).syncedTabs;
@@ -10961,10 +11523,15 @@ ALONE_GROUPS = (alone_setup, alone_second_window, alone_spaces, alone_keys, alon
                 alone_look,
                 alone_more,
                 alone_stay_put,
+                alone_swipe,
+                alone_away,
+                alone_link_drop,
+                alone_motion,
                 alone_hand,
                 alone_new_tab,
                 alone_folds_rest,
                 alone_sound,
+                alone_pause,
                 alone_news,
                 alone_touches,
                 alone_little_window,
@@ -10992,8 +11559,8 @@ ALONE_GROUPS = (alone_setup, alone_second_window, alone_spaces, alone_keys, alon
 ALONE_SHARDS = (
     (alone_setup, alone_second_window, alone_spaces, alone_keys, alone_folders, alone_moves, alone_drag, alone_archive, alone_live_folders,
      alone_drag_details, alone_settings, alone_copy, alone_copy_and_import, alone_safe_moves, alone_more, alone_idle, alone_end),
-    (alone_setup, alone_quiet_undo, alone_tab_menu, alone_tab_names, alone_selection, alone_space_menu, alone_look, alone_stay_put, alone_idle, alone_end),
-    (alone_setup, alone_hand, alone_new_tab, alone_sound, alone_news, alone_touches, alone_little_window, alone_isolation, alone_idle, alone_end),
+    (alone_setup, alone_quiet_undo, alone_tab_menu, alone_tab_names, alone_selection, alone_space_menu, alone_look, alone_stay_put, alone_swipe, alone_away, alone_link_drop, alone_motion, alone_idle, alone_end),
+    (alone_setup, alone_hand, alone_new_tab, alone_sound, alone_pause, alone_news, alone_touches, alone_little_window, alone_isolation, alone_idle, alone_end),
     (alone_setup, alone_requests, alone_crossing, alone_archived, alone_command_bar, alone_bar_edges, alone_shortcuts, alone_keyboard, alone_idle, alone_end),
     (alone_setup, alone_folds_rest, alone_sync_hide, alone_bridge, alone_many, alone_chaos,
      alone_idle, alone_update, alone_folds_rest_kept, alone_end, alone_restart, alone_folds_rest_kept, alone_isolation_start, alone_little_restart),

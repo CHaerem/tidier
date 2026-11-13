@@ -12,8 +12,9 @@ and writes PNGs at twice the size, as on a Retina screen:
     sidebar-SPACE-WIDTH-SCHEME   the sidebar per space, at 220, 300 and 480 px, light and dark
     window-SPACE-SCHEME          the whole window around it, with userChrome.css
     hover-*, menu-*, state-*     one thing at a time, at 300 px, light and dark (state-saved-tab-unloaded
-                                 with the mouse where it clicked)
-    hover-*, menu-*, state-*     one thing at a time, at 300 px, light and dark
+                                 with the mouse where it clicked; state-swipe: a third of the way through
+                                 a swipe on the trackpad to the next space; -saved-tab-away: a saved tab
+                                 off the page it was saved on)
     keys-*                       with the keyboard in the sidebar, for real: the cursor, a menu by key
     state-essentials-N-WIDTH     one, two and three essentials, at each width
     bar-empty-SCHEME, bar-typed-SCHEME   the command bar's page
@@ -898,6 +899,54 @@ def scrolled(cam):
     in_sidebar(cam.m, """doc.getElementById("tabs").scrollTop = 0;""")
 
 
+def swipe(cam):
+    """A third of the way through a swipe on the trackpad to the next space: the list, and
+    the space coming in beside it. Held there by hand: a real swipe ends when the fingers
+    pause, so a wheel that goes one pixel to and fro keeps it going while it is looked at."""
+    if not cam.wanted("state-swipe"):
+        return
+    m, box = cam.m, cam.sidebar_box()
+    select(m, on_tab(WORK), WORK["ctx"])  # so the sidebar has drawn it, as it has when you swipe to it
+    select(m, on_tab(PERSONAL), PERSONAL["ctx"])
+    m.js(CHROME + """Services.prefs.setIntPref("ui.prefersReducedMotion", 0);
+      w.__swipeHeld = true;
+      (async () => { for (let d = 1; w.__swipeHeld; d = -d) { w.windowUtils.sendWheelEvent(args[0], args[1], d, 0, 0, 0, 0, 0, 0, 0); await wait(15); } })();
+      await wait(200); return 1;""", box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
+    try:
+        in_sidebar(m, """const list = doc.getElementById("tabs");
+          for (let i = 0; i < 12 + Math.round(content.innerWidth / 3); i++) {
+            for (const t = content.performance.now(); content.performance.now() - t < 3;);
+            list.dispatchEvent(new page.WheelEvent("wheel", clone({bubbles: true, deltaX: 1, deltaY: 0, deltaMode: 0})));
+          }
+          await until(() => doc.querySelector("#swipe .pane.next .list"), "the next space beside the list");""")
+        cam.shoot("state-swipe")
+    finally:
+        m.js(CHROME + """w.__swipeHeld = false; Services.prefs.clearUserPref("ui.prefersReducedMotion"); return 1;""")
+    in_sidebar(m, """await until(() => doc.getElementById("swipe").hidden, "the list back in its place");""")
+
+
+def away(cam):
+    """A saved tab that has been browsed on in, off the page it was saved on: the stroke before its
+    title, and under the mouse the line that says closing only unloads it. Taken back after."""
+    if not (cam.wanted("state-saved-tab-away") or cam.wanted("hover-saved-tab-away")):
+        return
+    m, moving, elsewhere = cam.m, PERSONAL["folders"][0]["tabs"][0], PERSONAL["tabs"][0]
+    select(m, on_tab(PERSONAL), PERSONAL["ctx"])
+    tab = in_sidebar(m, """const t = (await page.browser.tabs.query(clone({windowId: (await page.browser.windows.getCurrent()).id}))).find(x => x.url === args[0]);
+      await page.browser.tabs.update(t.id, clone({url: args[1] + "?elsewhere"}));
+      await until(() => doc.querySelector(`#tabs .tab[data-tab="${t.id}"] .away`), "the saved tab off its page");
+      doc.querySelector(`#tabs .tab[data-tab="${t.id}"]`).scrollIntoView(clone({block: "center"}));
+      return t.id;""", m.pages + moving["path"], m.pages + elsewhere["path"])
+    cam.shoot("state-saved-tab-away")
+    if cam.wanted("hover-saved-tab-away") and cam.point_at(f'#tabs .tab[data-tab="{tab}"]'):
+        cam.shoot("hover-saved-tab-away")
+    cam.mouse_away()
+    in_sidebar(m, """const port = await connect();
+      port.send({type: "tabAction", action: "backToSaved", tabIds: [args[0]]});
+      await until(() => !doc.querySelector(`#tabs .tab[data-tab="${args[0]}"] .away`), "the saved tab back on its page");
+      port.close();""", tab)
+
+
 def under_the_hand(cam):
     """What a hand leaves for a moment: the quiet line in its room, and a saved tab just unloaded
     under the mouse. (A row that closes folds away in a moment: nothing of it stays to be shown.)"""
@@ -1119,7 +1168,7 @@ def placeholder_on_show(cam):
 
 
 STEPS = (space_by_space, hover, hover_more, menus, more_menus, folders_closed, live_closed, folder_rename, marks, keyboard, agent_note, notices, space_rename, quiet_lines, picked, bar_marks,
-         little_window, little_window_real, command_bar, window_edges, archived, scrolled, under_the_hand, empty_spaces, few_essentials, icons_that_vanish, settings,
+         little_window, little_window_real, command_bar, window_edges, archived, scrolled, swipe, away, under_the_hand, empty_spaces, few_essentials, icons_that_vanish, settings,
          moved, no_space, placeholder_on_show)
 
 
