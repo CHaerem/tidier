@@ -1543,11 +1543,14 @@ def alone_moves(m):
     r = sidebar_page(m, """
       const tabs = plainTabs().map(x => Number(x.dataset.tab));
       const first = tabs[0], last = tabs.at(-1);
+      // Each is waited for until it shows, not for a set time: a busy machine takes its own.
+      const until = async f => { for (let i = 0; i < 100 && !f(); i++) await wait(100); };
       send({type: "moveTab", tabId: last, before: first, folder: null});
-      await wait(1500);
+      await until(() => Number(plainTabs()[0]?.dataset.tab) === last);
       const tiles0 = [...doc.querySelectorAll("#essentials .tile")].map(t => Number(t.dataset.tab));
       send({type: "moveEssential", tabId: tiles0.at(-1), before: tiles0[0]});
-      await wait(2000);
+      await until(() => Number(doc.querySelector("#essentials .tile")?.dataset.tab) === tiles0.at(-1));
+      await wait(500); // and in the other window
       return {count: tabs.length, moved: last, was: first, order: plainTabs().map(x => Number(x.dataset.tab)), tiles0, tiles1: [...doc.querySelectorAll("#essentials .tile")].map(t => Number(t.dataset.tab))};""")
     check("a tab moved in the sidebar is where you put it", r["order"][0] == r["moved"] and r["order"][1] == r["was"], str(r))
     check("an essential moved in the sidebar is where you put it", r["tiles1"][0] == r["tiles0"][-1], str(r))
@@ -2972,7 +2975,8 @@ def alone_hand(m):
     press(m, "z", CMD)
     back = m.js(H + """const w = main(); for (let i = 0; i < 50 && w.gBrowser.tabs.filter(t => /^hand-[89]$/.test(t.label)).length < 2; i++) await wait(100);
       return w.gBrowser.tabs.filter(t => /^hand-[89]$/.test(t.label)).length;""")
-    check("⌘Z in the sidebar undoes what the line offers", back == 2 and len(hands()) == n + 2 and not in_sidebar(m, """() => doc.getElementById("note").classList.contains("shown")"""), f"{back} {n} {hands()}, the line: {said!r}")
+    now = in_sidebar(m, """() => doc.getElementById("note").classList.contains("shown") && doc.querySelector("#note .text").textContent""")
+    check("⌘Z in the sidebar undoes what the line offers", back == 2 and len(hands()) == n + 2 and not now, f"{back} {n} {hands()}, the line: {said!r}, and after: {now!r}" + (f""", {look_in_sidebar(m, "() => page.browser.extension.getBackgroundPage().traces.slice(-8)")}""" if now else ""))
 
     # A view made before the background heard of Undo, and drawn after it: the line stays gone.
     # (The two cross on their way on a busy machine; here that view is sent again, by hand.)
@@ -3393,7 +3397,10 @@ def alone_sound(m):
     before = r["boxes"]
 
     # It starts playing, in the other window.
-    playing = m.js(H + SOUND + """for (const name of ["sound tile", "sound row", "sound inside", "sound away"]) play(real(name), true);
+    # (Once the closed folder has put its tab to rest, foldrest.js: a tab that is silent then
+    # is unloaded, and one that began to play just before would lose its sound with its page.)
+    playing = m.js(H + SOUND + """for (let i = 0; i < 100 && real("sound inside")?.linkedPanel; i++) await wait(100);
+      for (const name of ["sound tile", "sound row", "sound inside", "sound away"]) play(real(name), true);
       return wins().flatMap(w => w.gBrowser.tabs.filter(t => t.label === "sound inside").map(t => ({url: url(t).slice(-40), playing: t.soundPlaying, loaded: !!t.linkedPanel, hidden: t.hidden})));""")
     r = sidebar_page(m, FIND + """
       const [here, away] = args;
