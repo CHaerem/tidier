@@ -222,6 +222,9 @@ with where it stands. In this order, the first five being the ones that are felt
       Short, only for what you caused, and no row moves under the pointer.
 - [x] Pause and play from the sidebar, beside the speaker.
 
+- [x] A thin line at the list's edge when the tab you are on is out of view, and a click
+      on it goes there.
+
 Then the small ones, in any order: an icon on a folder, any colour for a space, a click on
 the space's name closes all its folders, unload every other space. And then the rest of
 what FEATURES.md has as Later, starting with what is missed most in use.

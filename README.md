@@ -425,6 +425,11 @@ stays where it is. A folder opens and closes by its height, and a new row fades 
 it is, having taken its room at once. All of it is short, follows what you did, and stands
 still with less motion asked for.
 
+The list stays where you left it, one space at a time (`sidebar/stayput.js`), and moves
+by itself only when another tab becomes the one you are on and its row is out of view.
+Scrolled away from that row, a thin line in the space's colour at the list's top or bottom
+edge says which way it lies, and a click on it takes the list there (`sidebar/awaymark.js`).
+
 Scrolling the list never switches space (`sidebar/swipetrack.js`). That is what went
 wrong when this was tried with Sidebery, where enough sideways movement switched,
 whenever it came. Here a movement is one thing, from its first event to the pause after
@@ -809,7 +814,8 @@ Not guaranteed:
   (sorting, closing around a tab and duplicates, a whole folder or space), and Back and
   Forward through the tabs used recently.
 - `sidebar-view.js`, `sidebar/` – Tidier's own sidebar; among its parts `selection.js`
-  (several tabs), `drag.js`, `stayput.js` (the list shows where you are), `touches.js`
+  (several tabs), `drag.js`, `stayput.js` (the list shows where you are), `awaymark.js`
+  (a line at its edge when the tab you are on is out of view), `touches.js`
   (the slow-load sign and warming up a tab), and `swipetrack.js` and `swipe.js` (a swipe on
   the trackpad switches space: what counts as one, and how it is drawn), and `motion.js`
   (a space slides in, a folder opens by its height). `sidebar/tokens.css` holds the colours and

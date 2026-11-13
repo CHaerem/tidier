@@ -213,6 +213,19 @@ html.space-arriving :where(#tabs) .row { transition: none; }
   transition: height var(--soft), margin-bottom var(--soft), opacity var(--quick);
 }
 :is(#tabs, #swipe .list) .room { height: 0; pointer-events: none; }
+
+/* The tab you are on, out of the part of the list you see (awaymark.js): a thin line at
+ * the edge it lies beyond, in the space's colour. Over the list, placed by the script from
+ * the list's own box, so the notices and the quiet line's room move it with them. */
+.away-mark {
+  position: fixed; z-index: 2; transform: translateX(-50%);
+  width: 26px; height: 2px; padding: 0; border: 0; border-radius: 999px; /* round ends, whatever its length */
+  background: var(--accent); opacity: .75;
+  transition: opacity var(--quick), width var(--quick);
+  @starting-style { opacity: 0; }
+}
+.away-mark:hover { opacity: 1; width: 34px; }
+.away-mark[hidden] { display: none; }
 .folder.collapsed > .children > .tab { scroll-margin-top: calc(var(--row) + var(--row-gap)); } /* scrolled into view, it brings its head along */
 .folder > .children { transition: opacity var(--soft); @starting-style { opacity: 0; } }
 html.space-arriving .folder > .children { transition: none; } /* a whole space comes in at once (sidebar.js) */

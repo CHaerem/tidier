@@ -9139,9 +9139,25 @@ def alone_stay_put(m):
       await select(rows()[1]);
       await scrollTo(list.scrollHeight);
       out.away = !inView(activeRow());
+      // The line at the edge the tab you are on lies beyond (awaymark.js), and a click on it.
+      const marks = () => ["up", "down"].filter(way => !doc.getElementById("away-" + way).hidden);
+      out.markUp = marks();
+      const upBox = doc.getElementById("away-up").getBoundingClientRect(), listBox = list.getBoundingClientRect();
+      out.markPlace = {inside: upBox.top >= listBox.top - 1 && upBox.bottom <= listBox.bottom,
+        middle: Math.abs((upBox.left + upBox.right) / 2 - (listBox.left + listBox.right) / 2) <= 2, thin: upBox.height <= 4};
+      doc.getElementById("away-up").click();
+      await until(() => inView(activeRow()) && !marks().length);
+      out.afterClick = {shown: inView(activeRow()), marks: marks()};
+      await scrollTo(0);
+      await until(() => marks().length > 0);
+      out.markDown = marks();
+      // And back as the checks below it expect: the tab you are on above the part in view.
+      await scrollTo(list.scrollHeight);
+      await until(() => marks().join() === "up");
       await switchTo(short);
       await switchTo(home);
       out.restoredThenShown = {top: fromTop(activeRow()), bottom: fromBottom(activeRow())};
+      out.marksBack = marks();
       return out;""", home, second, short)
     # Scroll bars that take room, as a Mac shows them with a mouse (and GitHub's Macs always):
     # a list long enough to scroll is then narrower than a short one, which is no change of
@@ -9167,6 +9183,9 @@ def alone_stay_put(m):
     check("a space too short to scroll does not change another's place", r.get("short") == 0 and r["home"] != r["second"], str(r))
     check("switching back and forth quickly mixes up no place", r.get("homeQuick") == r.get("home") and r.get("secondQuick") == r.get("second") and r.get("shortQuick") == 0, str(r))
     check("a selected tab you scrolled away from comes back by the least distance from your place", r.get("away") and r["restoredThenShown"]["top"] == 0, str(r))
+    check("a thin line at the list's edge says the tab you are on is that way, and a click on it goes there",
+          r.get("markUp") == ["up"] and r.get("markDown") == ["down"] and (r.get("markPlace") or {}) == {"inside": True, "middle": True, "thin": True}
+          and (r.get("afterClick") or {}) == {"shown": True, "marks": []} and r.get("marksBack") == [], str(r))
     if bars.get("bar") and not bars.get("shortBar"):
         check("with scroll bars that take room, a space keeps its place too", bars.get("partly") and bars["homeBack"] == bars["home"], str(bars))
     else:

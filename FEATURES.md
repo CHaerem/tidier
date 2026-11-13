@@ -45,7 +45,7 @@ part C).
 | A link dragged from a page or another app can be dropped in the sidebar | Z A | Done | checked, with drags made as Firefox hands one to the page: a tab where it lands, among the tabs, in a folder (saved there), among the essentials, or on another space's dot; in the background, in that space, past the rules; marked as a dragged tab is, and text or a file is no link. A drag from a real page and from another app waits for the second Mac |
 | Soft motion where something comes or goes: a folder opening, a new row | Z A | Done | checked: a folder opens and closes by its height; a new row fades in where it is, taking its room at once, so nothing under the pointer moves for it; a row that closes folds away. Nothing of it with less motion asked for, and nothing runs while nothing happens |
 | Pause and play from the sidebar | Z A | Done | checked on a page that really plays: Pause in a playing tab's menu (it asks for the optional access to all websites in its click), and while it is silent a play mark where its speaker was, and Play in its menu, which start only what Tidier paused. A sound made without an audio or video element on the page cannot be reached, and the line says so |
-| A mark when the selected tab is out of view | Z | Later | the list goes to it when it is selected; nothing says so after you scroll away |
+| A mark when the selected tab is out of view | Z | Done | checked: a thin line in the space's colour at the edge it lies beyond, and a click on it goes there (`sidebar/awaymark.js`) |
 | Any tab can be renamed | Z | Decide | saved tabs and essentials only: today's tabs are temporary |
 | Tabs nested under tabs (tree) | S | No | you only use folders; a tree is where most of Sidebery's bugs came from |
 
