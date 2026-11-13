@@ -98,6 +98,8 @@ PAGES = {
     # Its own title. /titled has none but the one in its address.
     "/with-title": "<title>A page with a title</title>a page with a title",
     "/ticking": "<title>0</title><script>let n = 0; setInterval(() => { document.title = String(++n); }, 200);</script>a title that ticks",
+    # As a map or a dashboard does: where you are is written into the address, all the time (tab_sync).
+    "/moving": "<title>Moving</title><script>let n = 0; setInterval(() => history.replaceState(null, '', location.pathname + location.search + '#' + (++n)), 600);</script>an address that changes all the time",
     "/titled": "<script>document.title = decodeURIComponent(location.search.slice(1));</script>a page with the title in its address",
     "/icon": ICON_PAGE,
     # A 16 px image as its icon, so its size can be read (alone_many).

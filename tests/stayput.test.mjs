@@ -269,10 +269,13 @@ test("in another window, going to a space takes the tab you used there, but not 
   ff.select(chat.id); await wait(200);
   await x.js("switchSpace")(v.id, C2);
   await wait(300);
-  assert.equal(ff.list(v.id).find(t => t.active)?.id, docsThere.id, "chat is on show in the first window: the one before it");
+  // (By its key: the window is on docs, which no window shows any more, so its page may have come over, tabsync.js.)
+  const onThere = () => ff.list(v.id).find(t => t.active);
+  assert.equal(ff.values.get(onThere()?.id)?.syncKey, "docs", "chat is on show in the first window: the one before it");
+  assert.ok(docsThere);
   assert.notEqual(chatThere.id, selected.id);
   ff.select(selected.id); await wait(200);
-  assert.equal((await x.js("lastUsedIn")(v.id, C2, docsThere.id))?.id, chatThere.id, "once that window has left it, it is the one");
+  assert.equal((await x.js("lastUsedIn")(v.id, C2, onThere().id))?.id, chatThere.id, "once that window has left it, it is the one");
   x.kill();
 });
 

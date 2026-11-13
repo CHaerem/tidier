@@ -279,14 +279,55 @@ async function twoWindows(ff) {
 
 test("a ghost selected right after another is pulled in too", async () => {
   const ff = new FakeFirefox();
-  const { x, here, liveA, liveB, ghostA, ghostB } = await twoWindows(ff);
+  const { x, home, here, liveA, liveB, ghostA, ghostB } = await twoWindows(ff);
+  const came = [];
+  x.b.tabs.onAttached.addListener((id, { newWindowId }) => came.push([id, newWindowId]));
   ff.select(ghostA.id);
   await wait(150);
   ff.select(ghostB.id);
   await wait(2000);
   assert.equal(ff.tabs.get(liveB.id).windowId, here.id, "the second live tab came");
   assert.equal(ff.tabs.get(liveB.id).active, true);
-  assert.equal(ff.tabs.get(liveA.id).windowId, here.id, "the first one too");
+  assert.ok(came.some(([id, to]) => id === liveA.id && to === here.id), "the first one too");
+  // The window it was taken from is still on it, and you have left it: it has gone back there.
+  assert.equal(ff.tabs.get(liveA.id).windowId, home.id);
+  x.kill();
+});
+
+test("a page goes back to a window that is still on it, once the window that took it has left it", async () => {
+  const ff = new FakeFirefox();
+  const { x, home, here, liveA, liveB, ghostA } = await twoWindows(ff);
+  const key = id => ff.values.get(id)?.syncKey, role = id => ff.values.get(id)?.syncRole;
+  const on = w => ff.list(w.id).find(t => t.active);
+  ff.select(ghostA.id); // home was on a: it stays on it, as a placeholder
+  await wait(1500);
+  assert.equal(ff.tabs.get(liveA.id).windowId, here.id);
+  assert.deepEqual([key(on(home).id), role(on(home).id)], ["a", "ghost"], "the window it left is still on it");
+  // Still on it here: it stays here, however long.
+  await wait(3000);
+  assert.equal(ff.tabs.get(liveA.id).windowId, here.id);
+  // Left for another tab, and back within the moment: it has not gone anywhere.
+  const other = ff.list(here.id).find(t => t.url === "about:home");
+  ff.select(other.id);
+  await wait(200);
+  ff.select(liveA.id);
+  await wait(1500);
+  assert.equal(ff.tabs.get(liveA.id).windowId, here.id, "stepping past it sends nothing across");
+  // Left for good: the page is back in the window that is on it, which you are not using.
+  ff.select(other.id);
+  await wait(1500);
+  assert.equal(ff.tabs.get(liveA.id).windowId, home.id);
+  assert.equal(ff.tabs.get(liveA.id).active, true, "shown there, not under a veil");
+  assert.equal(ff.focused, here.id, "and you stay where you are");
+  const leftHere = ff.list(here.id).filter(t => key(t.id) === "a");
+  assert.deepEqual(leftHere.map(t => [role(t.id), t.active]), [["ghost", false]], "this window has its placeholder again, one");
+  assert.equal(Object.values(ff.store.syncedTabs).filter(e => e.url === "https://a.example/").length, 1);
+  // A window that is not on it gets nothing: b, which home is not on, stays where it is used last.
+  ff.select(ff.list(here.id).find(t => key(t.id) === "b").id);
+  await wait(1500);
+  ff.select(other.id);
+  await wait(1500);
+  assert.equal(ff.tabs.get(liveB.id).windowId, here.id);
   x.kill();
 });
 
@@ -1347,6 +1388,25 @@ test("a new tab you dragged a moment ago still gets synced when it gets an addre
   const key = ff.values.get(fresh.id)?.syncKey;
   assert.ok(key, "it has a key");
   assert.ok(ff.list(b.id).some(y => ff.values.get(y.id)?.syncKey === key), "and a ghost in the other window");
+  x.kill();
+});
+
+test("a page whose address changes all the time is still taken in, and is in the other window", async () => {
+  // A map, a dashboard, a video's time: the page writes where you are into its address more
+  // often than a new tab is given to settle. Put off at every change, it never got a record.
+  const { ff, x, windows: [a, b] } = await chaosStart();
+  const t = ff.openTab(a.id, { url: "https://moving.example/", active: true, cookieStoreId: C1 });
+  const moved = n => { const tab = ff.tabs.get(t.id); tab.url = `https://moving.example/#${n}`; x.b.tabs.onUpdated.fire(t.id, { url: tab.url }, ff.snap(tab)); };
+  for (let n = 1; n <= 12; n++) { await ff.clock.run(700); moved(n); }
+  const key = ff.values.get(t.id)?.syncKey;
+  assert.ok(key, "it has a key while its address still changes");
+  assert.ok(ff.list(b.id).some(y => ff.values.get(y.id)?.syncKey === key), "and a placeholder in the other window");
+  // Once, however long it goes on: no second record, no second placeholder.
+  for (let n = 13; n <= 30; n++) { await ff.clock.run(700); moved(n); }
+  await ff.clock.idle(60000);
+  assert.equal(ff.values.get(t.id)?.syncKey, key);
+  assert.equal(ff.list(b.id).filter(y => ff.values.get(y.id)?.syncKey === key).length, 1);
+  assert.equal(Object.values(ff.store.syncedTabs).filter(e => /moving\.example/.test(e.url)).length, 1);
   x.kill();
 });
 

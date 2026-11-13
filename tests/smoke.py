@@ -309,6 +309,7 @@ def essential_once(m):
       a.focus(); await wait(500);
       const e = a.gBrowser.tabs.find(t => t.pinned && ek(a, t) && t.userContextId === 3);
       if (!e) return null;
+      const bBefore = b.gBrowser.selectedTab;
       const k = ek(a, e); a.gBrowser.selectedTab = e; await wait(4000);
       const out = {first: loaded(k)};
       b.focus(); await wait(500); b.gBrowser.selectedTab = copyIn(b, k); await wait(5000);
@@ -322,6 +323,10 @@ def essential_once(m):
       left.linkedBrowser.loadURI(Services.io.newURI(url(there)), {triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal()});
       await wait(5000);
       out.restored = loaded(k);
+      // The window you are using leaves it for another tab, and the other one is still on it:
+      // the page goes back there, and is not left under a veil until you go to that window.
+      b.gBrowser.selectedTab = bBefore; await wait(4000);
+      out.back = {loaded: loaded(k), copies: wins().map(w => w.gBrowser.tabs.filter(t => t.pinned && ek(w, t) === k).length), stayed: Services.focus.activeWindow === b};
       a.focus(); await wait(500);
       return out;""")
     check("an essential is loaded in one window: selecting its copy moves the loaded tab in, in its container, and leaves a placeholder",
@@ -330,6 +335,8 @@ def essential_once(m):
     check("an essential's placeholder selected in a window you are not using stays a placeholder",
           r and r["waits"] == {"selectedThere": True, "loaded": ["other/selected"]}, str(r))
     check("an essential copy that loads its page in another window makes that one a placeholder again", r and r["restored"] == ["other/selected"], str(r))
+    check("an essential left in the window you use goes back to the window that is still on it, and you stay where you are",
+          r and r["back"] == {"loaded": ["main/selected"], "copies": [1, 1], "stayed": True}, str(r and r["back"]))
 
 
 def set_title(m, address, title):
@@ -392,6 +399,16 @@ def tab_sync(m):
     check("a pulled tab and the ghost left behind stay in their container", r["containers"] == [3, 3], str(r["containers"]))
     check("pulling a tab in leaves no placeholder in Recently Closed (⌘⇧T reopens what you closed)", r["closedGhosts"] == 0, str(r["closedGhosts"]))
     check("closing a tab closes it everywhere", r["closed"] == [[], []], str(r["closed"]))
+    # A page that writes where you are into its address all the time (a map, a dashboard)
+    # never settles: it was put off at every change, and never got a record or a ghost.
+    r = m.js(H + """
+      const t = main().gBrowser.addTrustedTab(args[0] + "/moving?smoke-moving", {userContextId: 3, inBackground: true});
+      let k = null, ms = null; const t0 = Date.now();
+      for (let i = 0; i < 100 && ms === null; i++) { await wait(100); k = key(main(), t); if (k && find(k)[1]?.length) ms = Date.now() - t0; }
+      const created = k ? find(k) : null, changes = url(t).split("#")[1];
+      await removeWhere((w, x) => url(x).includes("smoke-moving") || (k && key(w, x) === k));
+      return {created, ms, changes};""", m.pages)
+    check(f"a page whose address changes all the time gets its ghost too ({r['ms']} ms)", r["created"] == [["live/loaded"], ["ghost/unloaded"]] and int(r["changes"] or 0) >= 3 and r["ms"] <= 7000, str(r))
     # The window a page is taken from stays on it, as in Zen and Arc: the window you use has
     # the page, and the other one shows which page that is, not some other tab. Coming back
     # brings the page back, and the other window is then the one that waits.
@@ -414,6 +431,31 @@ def tab_sync(m):
       return {taken, copies, back, closed};""")
     check("the window a page is taken from stays on it, as a placeholder", r["taken"] == ["placeholder", "page"] and r["copies"] == [1, 1], str(r))
     check("coming back to that window brings the page back, and the other one waits", r["back"] == ["page", "placeholder"] and r["closed"] == [[], []], str(r))
+    # The window that took the page leaves it for another tab while the other window is still
+    # on it: the page goes back there by itself. With two windows side by side, the one you
+    # are not in would else stay grey on a page that no window shows any more.
+    r = m.js(H + """
+      const a = main(), w = other(); a.focus(); await wait(800);
+      const aBefore = a.gBrowser.selectedTab, wBefore = w.gBrowser.selectedTab;
+      const t = a.gBrowser.addTrustedTab("https://example.org/?smoke-goes-back", {userContextId: 3}); a.gBrowser.selectedTab = t;
+      await wait(4500); const k = key(a, t);
+      const on = x => { const spec = x.gBrowser.selectedBrowser.currentURI.spec; return (key(x, x.gBrowser.selectedTab) === k ? "" : "another tab: ") + (spec.includes("smoke-goes-back") ? "page" : spec.includes("ghost.html") ? "placeholder" : spec.slice(0, 40)); };
+      w.focus(); await wait(800);
+      w.gBrowser.selectedTab = w.gBrowser.tabs.find(x => key(w, x) === k); await wait(3000);
+      const taken = [on(a), on(w)];
+      // Passed over only: left and come back to within the moment. Nothing is sent across.
+      w.gBrowser.selectedTab = wBefore; await wait(150); w.gBrowser.selectedTab = w.gBrowser.tabs.find(x => key(w, x) === k); await wait(2500);
+      const passed = [on(a), on(w)];
+      w.gBrowser.selectedTab = wBefore; await wait(3500);
+      const back = on(a), roles = find(k), stayed = Services.focus.activeWindow === w, there = w.gBrowser.tabs.find(x => key(w, x) === k);
+      const left = {selected: !!there?.selected, loaded: !!there?.linkedPanel};
+      await removeWhere((x, y) => key(x, y) === k);
+      if (!aBefore.closing) a.gBrowser.selectedTab = aBefore;
+      a.focus(); await wait(1500);
+      return {taken, passed, back, roles, stayed, left};""")
+    check("a page left in the window you use goes back to the window that is still on it, and you stay where you are",
+          r["taken"] == ["placeholder", "page"] and r["back"] == "page" and r["roles"] == [["live/loaded"], ["ghost/unloaded"]] and r["stayed"] and r["left"] == {"selected": False, "loaded": False}, str(r))
+    check("a page only passed over on the way to another tab is not sent across", r["passed"] == ["placeholder", "page"], str(r["passed"]))
     # What the window left behind shows. With pictures of pages allowed (settings page): the
     # page as it was, under a grey layer, as in Zen and Arc. Without: the words that say
     # where it went. Read in the placeholder's own process, which is the extension's.
@@ -2886,10 +2928,23 @@ def alone_hand(m):
     check("and its room goes once the pointer has left it", not left["shown"] and left["list"] > p["list"], str(left))
 
     def close_two(a, b):
-        p = hand_spot(m, """const [a, b] = args; row(a).scrollIntoView({block: "center"}); return {...box(row(a).querySelector(".close")), second: box(row(b).querySelector(".close"))};""", a, b)
+        # Two clicks within the moment that makes them one thing you did (CLOSE_GROUP_MS), so the
+        # second × is where it was seen before the first click. A closed row folds away, and the
+        # rows below it come up (at the end of a scrolled list, the rows above come down instead):
+        # so the row that goes first is the one whose going leaves the other where it is. On a
+        # slow machine the second click otherwise found the next row under it, and closed that.
+        before = hands()
+        p = hand_spot(m, """const [a, b] = args, list = doc.getElementById("tabs"); row(a).scrollIntoView({block: "center"});
+          const atEnd = list.scrollTop > 0 && list.scrollHeight - list.scrollTop - list.clientHeight < 40;
+          const [upper, lower] = [row(a), row(b)].sort((x, y) => box(x).top - box(y).top), [first, second] = atEnd ? [upper, lower] : [lower, upper];
+          return {...box(first.querySelector(".close")), second: box(second.querySelector(".close"))};""", a, b)
         o = m.js(SIDEBAR_AT)
         hand(m, hand_to(p), hand_pause(150), *hand_click(), hand_to({"x": o["x"] + p["second"]["x"], "y": o["y"] + p["second"]["y"]}), *hand_click())
-        return sidebar_until(m, """() => doc.getElementById("note").classList.contains("shown") && doc.querySelector("#note .text").textContent""")
+        said = sidebar_until(m, """() => doc.getElementById("note").classList.contains("shown") && doc.querySelector("#note .text").textContent""")
+        gone = sorted(set(before) - set(hands()))
+        if gone != sorted([a, b]):
+            check(f"× on {a} and on {b} closes those two", False, f"closed {gone}")
+        return said
 
     # The quiet line has a room of its own, waits while the pointer is on it, and goes a while after.
     said = close_two("hand-1", "hand-2")

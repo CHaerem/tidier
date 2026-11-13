@@ -241,7 +241,7 @@ browser.runtime.onMessage.addListener((msg, sender) => {
   }
   const lists = {
     toForget, tabsOnTheirWay, busy, keyByTab, ownMoves, ownPins, syncKeyByTab, syncRoleByTab,
-    syncBusy, pending, refreshTimers, lastRefresh, awaitingIcon, lastOrder, orderQueries, loadedSeen,
+    syncBusy, pending, leftTabs, refreshTimers, lastRefresh, awaitingIcon, lastOrder, orderQueries, loadedSeen,
     activeSpace, newTabs, firstPage, showTimers, closedIn, sidebarPorts, viewTimers, viewRest, viewsBuilding, requestOfTab,
     unruled,
     earlyKeys,
@@ -548,11 +548,12 @@ async function handOver(key, closingWindowId, { muted = false } = {}) {
     return;
   }
   if (reps.length) {
-    // The one you are looking at, if it is one of them: it should not stay blank.
-    const heir = reps.find(t => t.active && t.windowId === focusedWindowId) || reps[0];
+    // The one you are looking at, if it is one of them: it should not stay blank. Else one
+    // a window you are not using is on, which showed the page under a veil and now has it.
+    const heir = reps.find(t => t.active && t.windowId === focusedWindowId) || reps.find(t => t.active) || reps[0];
     if (muted) await browser.tabs.update(heir.id, { muted: true }).catch(() => {});
     await setRole(heir.id, key, "live");
-    await openIfBlank(heir.windowId);
+    await openIfBlank(heir.windowId, heir.active);
     return;
   }
   // No other window has it yet (one still being filled, say). It was the only copy now, so
@@ -563,9 +564,10 @@ async function handOver(key, closingWindowId, { muted = false } = {}) {
 // A placeholder asks once what to do when it is shown (ghostShown), and it is told to
 // wait if another tab is live. If it then becomes the live tab itself while it is the
 // selected tab (that tab's window closed, say), nothing will ask again, and you are looking
-// at an empty page. So in the window you are using, it opens its page now.
-async function openIfBlank(windowId) {
-  if (windowId !== focusedWindowId) return; // when you switch to it, see pullSelected
+// at an empty page. So in the window you are using, it opens its page now. `also`: in a
+// window you are not using too, which is on this page and is the only one that is.
+async function openIfBlank(windowId, also = false) {
+  if (windowId !== focusedWindowId && !also) return; // when you switch to it, see pullSelected
   const [active] = await browser.tabs.query({ windowId, active: true }).catch(() => []);
   if (!active || syncRoleByTab.get(active.id) !== "live" || !isGhostUrl(active.url)) return;
   await openPlaceholder(active.id, syncKeyByTab.get(active.id));
@@ -613,7 +615,9 @@ function dropVeil(windowId) {
 
 // Pull the live tab for `ghostId` into the ghost's window. The part you see
 // (moving the tab in and selecting it) happens first; the bookkeeping after.
-async function pull(ghostId) {
+// `back`: to a window you are not using, which is still on this page while the window that
+// took it has gone on to another tab (backToWhoIsOnIt, below).
+async function pull(ghostId, { back = false } = {}) {
   const key = syncKeyByTab.get(ghostId);
   if (!key || syncRoleByTab.get(ghostId) !== "ghost") return;
   const liveId = liveTabId(key);
@@ -623,13 +627,14 @@ async function pull(ghostId) {
   ]);
   if (!ghost) return;
   // You may have moved on while this waited in the queue: it must not take the
-  // selection back.
-  if (!ghost.active || ghost.windowId !== focusedWindowId) return;
+  // selection back. And a page goes back only while the window that has it is not on it.
+  if (!ghost.active) return;
+  if (back ? live?.active && live.windowId !== ghost.windowId : ghost.windowId !== focusedWindowId) return;
   veilPictures.delete(ghost.windowId); // of the page as it was when it left this window
   if (!live || live.windowId === ghost.windowId) {
     // No live tab to pull: the ghost becomes the live tab and loads itself.
     await setRole(ghostId, key, "live");
-    await openIfBlank(ghost.windowId);
+    await openIfBlank(ghost.windowId, back);
     return;
   }
   pulling++;
@@ -702,10 +707,20 @@ async function placeNextTo(windowId, tabId, before, after) {
 
 // --- Events ---------------------------------------------------------------
 
-const pending = new Map(); // tabId -> timer, for registering new tabs after they settle
+// A new tab is taken in once it has settled: SETTLE_MS after its address last changed or
+// its page finished loading. But some pages never settle. One that writes where you are into
+// its address all the time (a map, a dashboard, a video's time) changes it more often than
+// that, and was put off again at every change: it never got a record, so it was in no other
+// window, and was not kept, archived or found either. So the wait has an end, counted from
+// the first time it was put off: by then a redirect or a move to another space is long over.
+const SETTLE_LONGEST_MS = 4000;
+const pending = new Map(); // tabId -> { timer, first: when it was first put off }, for registering new tabs after they settle
 function registerSoon(tabId) {
-  clearTimeout(pending.get(tabId));
-  pending.set(tabId, setTimeout(() => { pending.delete(tabId); serial(() => register(tabId)); }, SETTLE_MS));
+  const now = performance.now(), waiting = pending.get(tabId), first = waiting?.first ?? now;
+  if (waiting && now - first >= SETTLE_LONGEST_MS) return; // it is due: what keeps changing must not put it off again
+  clearTimeout(waiting?.timer);
+  const timer = setTimeout(() => { pending.delete(tabId); serial(() => register(tabId)); }, Math.max(0, Math.min(SETTLE_MS, first + SETTLE_LONGEST_MS - now)));
+  pending.set(tabId, { timer, first });
 }
 
 browser.tabs.onCreated.addListener(tab => {
@@ -917,7 +932,7 @@ browser.tabs.onUpdated.addListener((tabId, change) => {
 
 browser.tabs.onRemoved.addListener((tabId, info) => {
   const muted = mutedTabs.delete(tabId);
-  clearTimeout(pending.get(tabId)); pending.delete(tabId);
+  clearTimeout(pending.get(tabId)?.timer); pending.delete(tabId);
   awaitingIcon.delete(tabId);
   const place = info.isWindowClosing ? null : closedPlace(info.windowId, tabId);
   loadedSeen.delete(tabId);
@@ -1022,6 +1037,33 @@ browser.tabs.onActivated.addListener(({ tabId, windowId, previousTabId }) => {
   if (syncRoleByTab.get(previousTabId) === "ghost") serial(() => unloadLeftPage(previousTabId));
   if (syncRoleByTab.get(tabId) === "ghost" && windowId === focusedWindowId) serial(() => pull(tabId));
 });
+
+// A window that stays on a page another window has taken shows it under a veil (pull). It
+// got the page back only when you went to that window: with two windows side by side, the
+// one you were not in stayed grey on a page that no window showed any more. So the page goes
+// back as soon as the window that took it leaves it for another tab, to a window that is
+// still on it. A moment after, and only if you have not come back to it: stepping through
+// tabs passes over many, and each would otherwise send its page across.
+const VEIL_BACK_MS = 600;
+const leftTabs = new Map(); // tabId -> the timer for a tab you have just left
+browser.tabs.onActivated.addListener(({ previousTabId }) => {
+  // (With one window there is nobody to give a page back to: nothing is looked at.)
+  if (!started || previousTabId === undefined || activeSpace.size < 2) return;
+  if (syncRoleByTab.get(previousTabId) !== "live" && !keyByTab.has(previousTabId)) return;
+  clearTimeout(leftTabs.get(previousTabId));
+  leftTabs.set(previousTabId, setTimeout(() => { leftTabs.delete(previousTabId); serial(() => backToWhoIsOnIt(previousTabId)); }, VEIL_BACK_MS));
+});
+browser.tabs.onRemoved.addListener(tabId => { clearTimeout(leftTabs.get(tabId)); leftTabs.delete(tabId); });
+async function backToWhoIsOnIt(tabId) {
+  const left = await browser.tabs.get(tabId).catch(() => null);
+  if (!left || left.active) return; // closed, or you are on it again
+  const on = (await browser.tabs.query({ active: true }).catch(() => [])).filter(t => t.windowId !== left.windowId);
+  if (left.pinned) return essentialBackTo(left, on); // essentials.js
+  const key = syncKeyByTab.get(tabId);
+  if (!key || syncRoleByTab.get(tabId) !== "live") return;
+  const waiting = on.find(t => syncKeyByTab.get(t.id) === key && syncRoleByTab.get(t.id) === "ghost");
+  if (waiting) await pull(waiting.id, { back: true });
+}
 
 // A ghost that shows the page itself stays loaded while it is selected (in a window you
 // were not using, as reconcileAll leaves it). Click another tab there as you come back, and
