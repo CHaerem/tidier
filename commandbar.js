@@ -46,9 +46,10 @@ const BAR_GONE_MS = 500; // a panel is gone a few milliseconds after its page is
 // Firefox can show it there.
 //
 // A panel whose page is not there at all after BAR_PANEL_MS will not come (a page is there
-// well within a tenth of a second). That wait is long, so then the bar is a window for a
-// while (BAR_PANEL_AGAIN_MS) before the panel is tried again.
-const BAR_UNSEEN_MS = 150, BAR_SEEN_MS = 400, BAR_PANEL_MS = 1000, BAR_PANEL_AGAIN_MS = 10 * 60 * 1000;
+// well within a tenth of a second; the wait is generous, since a busy machine must not make
+// a window of a panel that is on its way). That wait is long, so then the bar is a window
+// for a while (BAR_PANEL_AGAIN_MS) before the panel is tried again.
+const BAR_UNSEEN_MS = 150, BAR_SEEN_MS = 400, BAR_PANEL_MS = 2000, BAR_PANEL_AGAIN_MS = 10 * 60 * 1000;
 let barPanelNotBefore = 0; // when the panel is tried again, after one that never came (performance.now())
 const BAR_FORGET_MS = 10000; // Firefox lists a closed window a moment after it has closed, once it has its last state
 // A sidebar answers in a few milliseconds, and with none open Firefox says so at once; only a

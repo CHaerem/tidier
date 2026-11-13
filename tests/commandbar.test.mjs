@@ -1187,12 +1187,21 @@ function withPanel(x) {
   // `url()`: the popup the button was last given, which is the bar's page while it opens
   // (the button gets its own click back once the page is there).
   const panel = { popups: [], opened: [], refuse: null, url: () => panel.popups.filter(Boolean).at(-1) };
+  // The key, where it is to open the bar: until Firefox has been asked for the panel, which
+  // on a busy machine can be later than the moment pressKey waits.
+  panel.open = async (ff, windowId) => {
+    const before = panel.opened.length;
+    await pressKey(ff, x, windowId);
+    for (let i = 0; i < 200 && panel.opened.length === before; i++) await wait(50);
+  };
   x.b.browserAction.setPopup = async ({ popup }) => { panel.popups.push(popup); };
   x.b.browserAction.openPopup = async ({ windowId }) => { if (panel.refuse) throw new Error(panel.refuse); panel.opened.push(windowId); };
   return panel;
 }
-// Its page: in no tab, so the background knows it only by its address.
-function connectPanel(x, url) {
+// Its page: in no tab, so the background knows it only by its address. `seen`: it has the
+// keyboard, and says so, as the page of a panel that shows does at once (a panel Firefox
+// takes away unshown never has it).
+function connectPanel(x, url, seen = true) {
   const listeners = [], gone = [], sent = [];
   let cut = false;
   const port = {
@@ -1200,6 +1209,7 @@ function connectPanel(x, url) {
     onMessage: { addListener: f => listeners.push(f) }, onDisconnect: { addListener: f => gone.push(f) },
   };
   for (const { f } of x.b.runtime.onConnect.ls) f(port);
+  if (seen) for (const f of listeners) f({ type: "seen" });
   return { port, sent, tell: async m => { for (const f of listeners) await f(m); }, close: () => gone.forEach(f => f()), wasCut: () => cut };
 }
 
@@ -1233,7 +1243,7 @@ test("in the window, the key again closes it by its page, and then opens a new o
   const { w } = world(ff);
   const x = await started(ff);
   const panel = withPanel(x);
-  await pressKey(ff, x, w.id);
+  await panel.open(ff, w.id);
   const page = connectPanel(x, panel.popups[0]);
   await wait(100);
   await pressKey(ff, x, w.id);
@@ -1275,7 +1285,7 @@ test("in the window, what you choose is carried out once the bar has gone", asyn
   const { w } = world(ff);
   const x = await started(ff);
   const panel = withPanel(x);
-  await pressKey(ff, x, w.id);
+  await panel.open(ff, w.id);
   const page = connectPanel(x, panel.popups[0]);
   for (let i = 0; i < 100 && !page.sent.length; i++) await wait(100);
   const before = ff.list(w.id).length;
@@ -1289,7 +1299,7 @@ test("in the window, what you choose is carried out once the bar has gone", asyn
   assert.equal(ff.list(w.id).length, before + 1);
   assert.equal(ff.focused, w.id);
   // A page that never says it has gone does not hold what you chose for long.
-  await pressKey(ff, x, w.id);
+  await panel.open(ff, w.id);
   const stuck = connectPanel(x, panel.url());
   for (let i = 0; i < 100 && !stuck.sent.length; i++) await wait(100);
   await stuck.tell({ type: "choose", row: { kind: "command", name: "new-tab" } });
@@ -1303,7 +1313,7 @@ test("in the window, Tidier's other keys do nothing while the bar has the keyboa
   const { w, a } = world(ff);
   const x = await started(ff);
   const panel = withPanel(x);
-  await pressKey(ff, x, w.id);
+  await panel.open(ff, w.id);
   const page = connectPanel(x, panel.popups[0]);
   for (let i = 0; i < 100 && !page.sent.length; i++) await wait(100);
   const copied = [];
@@ -1334,7 +1344,7 @@ test("a panel that Firefox says it opened but whose page never comes: the bar is
   // Firefox answers, and nothing shows.
   await pressKey(ff, x, w.id);
   assert.equal(barWindows(ff).length, 0, "it waits a moment for the page");
-  await wait(1200);
+  await wait(2400);
   assert.equal(barWindows(ff).length, 1, "and then the bar is there, as a window");
   assert.equal(panel.popups.at(-1), null, "the button is not left with a popup");
   assert.ok(x.js("traces").some(t => t.includes("did not come in the window")));
@@ -1356,7 +1366,7 @@ test("a panel that Firefox says it opened but whose page never comes: the bar is
   x.js("barPanelNotBefore = 0");
   x.b.browserAction.openPopup = () => new Promise(() => {});
   await pressKey(ff, x, w.id);
-  await wait(1200);
+  await wait(2400);
   assert.equal(barWindows(ff).length, 1);
   assert.equal(panel.popups.at(-1), null);
   x.kill();
@@ -1369,8 +1379,8 @@ test("a panel that goes as soon as it came was never shown: the bar opens as a w
   const panel = withPanel(x);
   // As Firefox does with a toolbar button it cannot show: the panel's page loads, connects,
   // and is taken away some 60 ms later, with nothing said.
-  await pressKey(ff, x, w.id);
-  const unseen = connectPanel(x, panel.url());
+  await panel.open(ff, w.id);
+  const unseen = connectPanel(x, panel.url(), false);
   await wait(60);
   unseen.close();
   await wait(300);
@@ -1394,30 +1404,29 @@ test("a panel that goes as soon as it came was never shown: the bar opens as a w
   shown.close();
   assert.equal(barWindows(ff).length, 0);
   // A panel you close yourself at once, or that stays a while and then goes, is no such thing.
-  await pressKey(ff, x, w.id);
+  await panel.open(ff, w.id);
   const closedByYou = connectPanel(x, panel.url());
   await wait(50);
   await closedByYou.tell({ type: "close", refocus: true }); // Esc
   closedByYou.close();
   await wait(300);
   assert.equal(barWindows(ff).length, 0, "Esc right away closes it, and nothing opens in its place");
-  await pressKey(ff, x, w.id);
+  await panel.open(ff, w.id);
   const stayed = connectPanel(x, panel.url());
   await wait(600);
   stayed.close(); // a click beside it
   await wait(300);
   assert.equal(barWindows(ff).length, 0);
   // One that had the keyboard was there to be seen, however soon after it went.
-  await pressKey(ff, x, w.id);
+  await panel.open(ff, w.id);
   const seen = connectPanel(x, panel.url());
-  await wait(200);
-  await seen.tell({ type: "seen" });
+  await wait(250);
   seen.close();
   await wait(300);
   assert.equal(barWindows(ff).length, 0);
   // And one that never had it, gone a little later than the others: not shown either.
-  await pressKey(ff, x, w.id);
-  const slow = connectPanel(x, panel.url());
+  await panel.open(ff, w.id);
+  const slow = connectPanel(x, panel.url(), false);
   await wait(300);
   slow.close();
   await wait(300);
