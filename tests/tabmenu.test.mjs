@@ -483,8 +483,9 @@ test("Duplicate of a loaded saved tab is an ordinary tab, and takes over nothing
   const copyId = ff.log.find(l => l[0] === "duplicate")[2];
   assert.equal(ff.tabs.get(copyId).active, false, "you stay where you are");
   assert.equal(ff.index(ff.tabs.get(copyId)), ff.index(ff.tabs.get(a.id)) + 1, "next to it");
-  assert.equal(ff.values.get(copyId)?.syncKey, undefined, "SessionStore's copy of Tidier's values is gone");
-  ff.rm(a.id); // closed before the copy is registered: a loaded saved tab unloads
+  // (Gone, or its own already: a page that has loaded is taken in after a moment, tabsync.js.)
+  assert.notEqual(ff.values.get(copyId)?.syncKey, "a", "SessionStore's copy of Tidier's values is gone");
+  ff.rm(a.id); // closed at once, before or as the copy is taken in: a loaded saved tab unloads
   await wait(2500);
   const keys = Object.keys(ff.synced).filter(k => !ff.synced[k].group);
   assert.equal(keys.length, 2, "the saved tab, and the copy as a tab of its own");
