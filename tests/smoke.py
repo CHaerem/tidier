@@ -10316,6 +10316,26 @@ def alone_bar_edges(m):
     bar_keys(m, [ESC])
     wait_for_bar(m, False)
 
+    # A toolbar button Firefox cannot show (a stylesheet that hides the toolbar and does not
+    # hold it in place for the bar, as the dotfiles' did before it knew of the bar): Firefox
+    # says it opened the panel and takes it away unseen. The key must not be dead for it.
+    m.js(BAR + """const w = main(); w.__noButton = "data:text/css," + encodeURIComponent("#unified-extensions-button { display: none !important; }");
+      w.windowUtils.loadSheetUsingURIString(w.__noButton, w.windowUtils.USER_SHEET); w.focus(); w.gBrowser.selectedBrowser.focus(); await wait(500); return 1;""")
+    press_in(m, "main()", "k", CMD, SHIFT)
+    r = {}
+    for _ in range(60):
+        r = m.js(BAR + """return {own: barWindows().length, panel: !!bar()};""")
+        if r["own"]:
+            break
+        time.sleep(0.1)
+    m.js(BAR + """for (const b of barWindows()) b.close(); const w = main(); w.windowUtils.removeSheetUsingURIString(w.__noButton, w.windowUtils.USER_SHEET);
+      for (let i = 0; i < 50 && barWindows().length; i++) await wait(100); w.focus(); await wait(500); return 1;""")
+    check("where Firefox cannot show the panel, the bar comes as a window of its own for the same press", r == {"own": 1, "panel": False}, str(r))
+    ready = bar_open(m)
+    check("and it is in the window again as soon as Firefox can show it there", ready >= 0 and m.js(BAR + "return barWindows().length;") == 0)
+    bar_keys(m, [ESC])
+    wait_for_bar(m, False)
+
     # The window it was opened in closes under it: the bar goes with it, and the key works at once in another.
     windows = m.js(H + """const n = wins().length, w = main().OpenBrowserWindow(); w.__extra = true; for (let i = 0; i < 200 && !w.gBrowserInit?.delayedStartupFinished; i++) await wait(50); await wait(2500); return n;""")
     bar_open(m, "wins().find(w => w.__extra)")

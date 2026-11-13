@@ -371,7 +371,11 @@ click beside it. An extension cannot say where such a panel stands: Firefox hang
 Extensions button, and the dotfiles' `userChrome.css` puts it in the middle of the window,
 where its floating address bar is, and as wide. While another panel of Firefox's is open (its
 menu, a question it asks) Firefox opens no second one, and the bar is a small window of its own
-over the one you are in. ⌘W is Firefox's own: with the bar open it closes the tab you are on,
+over the one you are in. So it is where Firefox cannot show the panel at all: with the
+toolbar hidden by a stylesheet that does not hold it in place for the bar (the dotfiles' does;
+Firefox reads it at a start, so until Firefox has been started again after that change the
+bar is the small window). Firefox says nothing then, so Tidier goes by the panel's page: one
+that is gone again before it ever had the keyboard was not shown. ⌘W is Firefox's own: with the bar open it closes the tab you are on,
 as it does from the address bar, and the bar goes with it. One field finds
 every tab of every space, essentials, folders, closed and archived tabs and commands, and
 history and bookmarks once you allow them. A row of another space says which, and the

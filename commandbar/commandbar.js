@@ -327,6 +327,16 @@ list.addEventListener("mousedown", e => e.preventDefault()); // the field keeps 
 // page has loaded, and now and then that leaves it on the page as a whole, not on the field
 // the page had put it in: the bar was there, and what you typed went nowhere.
 addEventListener("focus", () => { if (!asking && document.activeElement !== field) field.focus(); });
+// As a panel, the bar says when it has the keyboard, once: that is when it is there to be
+// seen. Firefox can load a panel's page and take it away again unshown, and then it never
+// has (commandbar.js in the background, BAR_SEEN_MS).
+// (Heard on its way down, so that the field getting the keyboard counts too: Firefox does
+// not always tell the window itself.)
+if (inPanel) {
+  const seen = () => { if (!document.hasFocus()) return; removeEventListener("focus", seen, true); send({ type: "seen" }); };
+  addEventListener("focus", seen, true);
+  seen();
+}
 list.addEventListener("click", e => {
   const row = e.target.closest?.(".row");
   if (row) choose(rows[Number(row.dataset.i)], e.metaKey || e.ctrlKey);

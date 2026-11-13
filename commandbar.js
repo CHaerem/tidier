@@ -33,6 +33,23 @@ const BAR_PANEL_WIDTH = 760, BAR_PANEL_SHARE = 0.7;
 const BAR_WIDTH = 640, BAR_MIN_WIDTH = 360, BAR_SIDES = 48, BAR_HEIGHT = 380;
 const BAR_OPEN_LIMIT_MS = 10000; // a bar that never came must not take the key for good
 const BAR_GONE_MS = 500; // a panel is gone a few milliseconds after its page is told; what you chose does not wait longer
+// Firefox shows no panel from a toolbar button it cannot show: a toolbar hidden by a
+// stylesheet that does not hold it in place for the bar, as after an update of Tidier with
+// Firefox still running on the stylesheet it started with (the dotfiles' is read at a
+// start). It says nothing of it: it answers that the panel is open, loads the panel's page,
+// and takes it away again some 60 ms later, unseen. So the key seemed dead. A panel that
+// goes by itself, with nothing closing it, was such a one if it went sooner than anyone
+// could have seen it and closed it (BAR_UNSEEN_MS), or a little later (BAR_SEEN_MS) without
+// its page ever having had the keyboard, which a panel that shows gets within a few
+// hundredths of a second ("seen", from its page). The bar is then a window, for the same press. The panel is asked for again at the next press
+// (it costs those 60 ms, and nothing shows), so the bar is in the window again as soon as
+// Firefox can show it there.
+//
+// A panel whose page is not there at all after BAR_PANEL_MS will not come (a page is there
+// well within a tenth of a second). That wait is long, so then the bar is a window for a
+// while (BAR_PANEL_AGAIN_MS) before the panel is tried again.
+const BAR_UNSEEN_MS = 150, BAR_SEEN_MS = 400, BAR_PANEL_MS = 1000, BAR_PANEL_AGAIN_MS = 10 * 60 * 1000;
+let barPanelNotBefore = 0; // when the panel is tried again, after one that never came (performance.now())
 const BAR_FORGET_MS = 10000; // Firefox lists a closed window a moment after it has closed, once it has its last state
 // A sidebar answers in a few milliseconds, and with none open Firefox says so at once; only a
 // sidebar that is there but slow (a busy machine: 100 ms was too short there) waits this long,
@@ -74,7 +91,7 @@ async function toggleCommandBar(tab) {
   if (opening && Date.now() - commandBar.pressedAt > BAR_OPEN_LIMIT_MS) commandBar = null;
   else if (opening) { commandBar.closeOnOpen = !commandBar.closeOnOpen; return; } // what the presses add up to is settled once it is there
   if (commandBar) return barClose(commandBar, true);
-  const bar = commandBar = { ownWindow: null, from: null, pressedAt: Date.now(), snapshot: null, ctx: null, closeOnOpen: false, early: null, port: null, gone: null };
+  const bar = commandBar = { ownWindow: null, from: null, pressedAt: Date.now(), snapshot: null, ctx: null, closeOnOpen: false, early: null, port: null, gone: null, there: null, noPanel: false, closed: false, seen: false, asWindow: null };
   barCatchKeys(tab, bar); // first of all: the next key can be on its way already
   try {
     const from = await barSourceWindow(tab);
@@ -86,29 +103,52 @@ async function toggleCommandBar(tab) {
     const space = activeSpace.get(from.id), accent = barAccents.get(space);
     const given = [...(space ? [["space", space]] : []), ...(accent ? [["accent", accent]] : [])];
     const address = more => { const all = new URLSearchParams([...given, ...more]); return `${BAR_PAGE}${all.size ? `?${all}` : ""}#${bar.pressedAt}`; };
-    if (await barOpenInWindow(from, address([["panel", String(barPanelWidth(from))]]))) return; // closeOnOpen is settled when its page is there
-    const win = await browser.windows.create({ type: "popup", url: address([]), allowScriptsToClose: true, ...barPlaceOver(from) });
-    bar.ownWindow = win.id;
-    if (bar.closeOnOpen) await barClose(bar, true);
+    bar.asWindow = { url: address([]), ...barPlaceOver(from) }; // the way back, also for a panel that goes unseen
+    if (await barOpenInWindow(bar, from, address([["panel", String(barPanelWidth(from))]]))) return; // closeOnOpen is settled when its page is there
+    await barOpenAsWindow(bar);
   } catch (err) {
     if (commandBar === bar) commandBar = null;
     noteError(err);
   }
 }
 
+// As a small window of its own: where Firefox has no panel to give, will not open one, or
+// opened one nobody saw.
+async function barOpenAsWindow(bar) {
+  if (commandBar !== bar || bar.closed || bar.ownWindow !== null) return; // closed meanwhile, or a window already
+  const { url, ...place } = bar.asWindow;
+  const win = await browser.windows.create({ type: "popup", url, allowScriptsToClose: true, ...place });
+  bar.ownWindow = win.id;
+  if (bar.closeOnOpen) await barClose(bar, true);
+}
+// The panel did not show: no more of it for this bar, which is a window now. A page of it
+// that comes after all is sent away.
+function barPanelFailed(bar, how) {
+  bar.noPanel = true;
+  trace(`the bar ${how} in the window: a window of its own`);
+}
+
 // As the toolbar button's popup, in `from`. The button has no popup of its own (a click on it
 // shows or hides the sidebar, sidebar-view.js), so it is given this one for the moment of
-// opening only: Firefox reads it as it opens the panel. Returns whether Firefox opened it.
-async function barOpenInWindow(from, url) {
-  if (typeof browser.browserAction.openPopup !== "function") return false;
+// opening only: Firefox reads it as it opens the panel. Returns whether the bar is there:
+// its page has said so. What Firefox answers is not enough, since it can answer that it
+// opened a panel nobody sees, or never answer at all (BAR_PANEL_MS, above).
+async function barOpenInWindow(bar, from, url) {
+  if (typeof browser.browserAction.openPopup !== "function" || performance.now() < barPanelNotBefore) return false;
+  const there = new Promise(resolve => { bar.there = resolve; }); // called when its page connects, below
   try {
     await browser.browserAction.setPopup({ popup: url });
-    await browser.browserAction.openPopup({ windowId: from.id });
-    return true;
+    const opened = browser.browserAction.openPopup({ windowId: from.id }).then(() => there);
+    opened.catch(() => {}); // heard below, or after the wait is over, when it no longer matters
+    if (await Promise.race([opened.then(() => true), sleep(BAR_PANEL_MS).then(() => false)])) return true;
+    barPanelFailed(bar, "did not come");
+    barPanelNotBefore = performance.now() + BAR_PANEL_AGAIN_MS;
+    return false;
   } catch (err) {
     trace(`the bar could not open in the window: ${err?.message ?? err}`);
     return false;
   } finally {
+    bar.there = null;
     await browser.browserAction.setPopup({ popup: null }).catch(() => {});
   }
 }
@@ -167,6 +207,7 @@ browser.runtime.onMessage.addListener((msg, sender) => {
 });
 
 async function barClose(bar, refocus) {
+  bar.closed = true; // by you or by Tidier: a panel that goes now was not one that failed to show
   if (commandBar === bar) commandBar = null;
   if (barInPanel(bar)) {
     // In the window: its page closes it (only the page can), and Firefox gives the keyboard
@@ -664,7 +705,7 @@ browser.runtime.onConnect.addListener(port => {
   // by hand, which would make its normal window "the bar", to be closed with it. The window
   // is only removed if it is the bar's own: the page could be a tab in a normal window. A
   // panel with a page of an earlier press is closed by its page, when it hears of this.
-  if (!bar || !port.sender.url?.endsWith(`#${bar.pressedAt}`)) {
+  if (!bar || !port.sender.url?.endsWith(`#${bar.pressedAt}`) || (windowId === undefined && bar.noPanel)) {
     if (windowId === undefined) { port.disconnect(); return; }
     barForgetUntil = Date.now() + BAR_FORGET_MS;
     browser.windows.get(windowId).then(win => (win.type === "popup" ? browser.windows.remove(windowId) : browser.tabs.remove(port.sender.tab.id))).catch(() => {});
@@ -677,11 +718,13 @@ browser.runtime.onConnect.addListener(port => {
   // have the first letters before it chooses. (The port can be gone by then: the key pressed
   // again, say.)
   bar.port = port;
+  bar.there?.(); // barOpenInWindow waits for this
   if (bar.closeOnOpen && barInPanel(bar)) { barClose(bar, true); return; } // in the window: the key was pressed again before it was there
   if (bar.early) port.postMessage(bar.early);
   bar.snapshot.then(snapshot => port.postMessage(snapshot ?? { pressedAt: bar.pressedAt, items: [], spaces: [] })).catch(() => {});
   port.onMessage.addListener(async msg => {
     if (msg.type === "close") await barClose(bar, msg.refocus);
+    else if (msg.type === "seen") bar.seen = true; // a panel that has the keyboard is there (BAR_SEEN_MS)
     else if (msg.type === "asked") await browser.storage.local.set({ [BAR_ASKED]: true });
     else if (msg.type === "choose" && !bar.chosen) { // Enter pressed twice is one choice
       bar.chosen = true;
@@ -692,9 +735,18 @@ browser.runtime.onConnect.addListener(port => {
       if (windowId !== undefined) await barCarryOut({ ...bar.ctx, windowId }, msg).catch(noteError);
     }
   });
+  const cameAt = performance.now();
   port.onDisconnect.addListener(() => { // also when the page crashed: no window stays behind
     bar.gone?.();
     bar.port = null;
+    // A panel gone as soon as it came, with nothing having closed it, was never shown
+    // (BAR_SEEN_MS, above): the bar opens as a window instead, for the same press.
+    const age = performance.now() - cameAt;
+    if (windowId === undefined && commandBar === bar && !bar.closed && !bar.noPanel && (age < BAR_UNSEEN_MS || (!bar.seen && age < BAR_SEEN_MS))) {
+      barPanelFailed(bar, "went as soon as it came");
+      barOpenAsWindow(bar).catch(err => { if (commandBar === bar) commandBar = null; noteError(err); });
+      return;
+    }
     if (commandBar === bar) barClose(bar, false);
   });
 });

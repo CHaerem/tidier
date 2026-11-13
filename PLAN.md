@@ -286,7 +286,9 @@ Changed by saying so. All of them can be reversed.
   window of its own looked odd). It is the
   popup of Tidier's toolbar button, which only the key opens, placed by the dotfiles'
   stylesheet where the address bar floats. With another panel of Firefox's open it is still
-  the small window. ⌘W stays Firefox's: with the bar open it closes the tab under it.
+  the small window, and so it is where Firefox cannot show the panel (the owner, the same
+  day: after the update the key did nothing, in a Firefox still running on the stylesheet
+  it had started with). Tidier must work without the dotfiles; they only place things. ⌘W stays Firefox's: with the bar open it closes the tab under it.
 - A row that closes folds away at once, and the rows below come up into its place in one soft
   move, as in Zen and Arc (the owner, 13 November 2026: the room a closed row kept while the
   pointer was in the list left holes, which then filled late). A double click on × still closes
