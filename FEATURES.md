@@ -92,8 +92,8 @@ part C).
 | Kept tabs (Arc's pinned section, Zen's pinned tabs): ⌘W unloads, back to the saved address | Z A | Done | tabs in folders ("saved tabs") |
 | A divider between kept tabs and today's tabs | A Z | Done | in Tidier's sidebar |
 | Clear today's tabs in one go | A | Done | checked: from the list's menu, the space's menu and the line between folders and tabs; one line to undo it, no question |
-| A saved tab or an essential that has left its address says so, and can go back or keep the new one | Z A | Planned | today nothing shows it, and the only way back is to close the tab. A small mark on the row; "Back to the saved address" and "Save this address" in its menu |
-| The close button says when it only unloads | Z | Planned | today the same × for unloading a saved tab and for removing it; only the tooltip differs |
+| A saved tab or an essential that has left its address says so, and can go back or keep the new one | Z A | Done | checked: a saved tab you browse on in has a small stroke between its icon and its title, and its tooltip names the page it is saved on; Back to saved address and Save this address in its menu, an essential's too, the second with one line and Undo. What comes after # is the same page. A tile has no mark: it is only an icon |
+| The close button says when it only unloads | Z | Done | checked: a line where it unloads a saved tab in its place, a cross where it closes or removes |
 | A link to another site from an essential opens as a tab of its own | A | Later | today the essential follows the link; a choice on the settings page, off by default |
 | Undo after closing several tabs or deleting a folder | S | Done | checked: one quiet line, in a room of its own above the bar, that waits while the pointer or the keyboard is on it; ⌘Z in the sidebar and Undo in the command bar while it shows |
 

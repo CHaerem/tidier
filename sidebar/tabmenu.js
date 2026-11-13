@@ -44,6 +44,12 @@ const TAB_MENU = [
 
   { id: "rename", group: 3, label: () => "Rename",
     when: tabs => tabs[0].kept, run: tabs => renameKept(tabs[0].id) }, // renamekept.js
+  // A saved tab or an essential you have browsed on in (tabactions.js): back to where it
+  // was saved, which closing it would also do, or saved where it is now instead.
+  { id: "backToSaved", group: 3, many: true, label: n => tabsWord(n, "Back to saved address", "# tabs back to saved addresses"),
+    when: eachTab(t => t.away), run: tabs => tabAct("backToSaved", tabs) },
+  { id: "saveHere", group: 3, label: () => "Save this address",
+    when: tabs => tabs[0].away, run: tabs => tabAct("saveHere", tabs) },
 
   { id: "essential", group: 4, many: true, label: n => tabsWord(n, "Make essential", "Make # tabs essential"),
     when: eachTab(t => !t.tile && !!t.address), run: tabs => tabAct("essential", tabs) },

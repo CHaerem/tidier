@@ -10926,6 +10926,66 @@ def alone_swipe(m):
     close_sidebar_page(m)
 
 
+def alone_away(m):
+    # A saved tab you browse on in has left its address: its row says so, and its menu's two
+    # ways out do what they say (leftSaved in common.js, tabactions.js, sidebar.js).
+    m.js(H + """const w = main(); for (const t of [...w.gBrowser.tabs]) if (url(t).includes("/sidebar/sidebar.html")) w.gBrowser.removeTab(t);
+      for (const name of ["home", "beside"]) { w.gBrowser.addTrustedTab("https://example.org/?smoke-away-" + name, {userContextId: 1, inBackground: true}); await wait(300); }
+      await wait(3000); return 1;""")
+    sidebar_page(m, """send({type: "space", space: "firefox-container-1"}); await wait(1000);
+      send({type: "newFolder", space: "firefox-container-1", name: "Away folder"}); await wait(1500); return 1;""")
+    for name in ("home", "beside"):
+        to_folder(m, f"https://example.org/?smoke-away-{name}", "Away folder")
+    r = sidebar_page(m, """
+      const obj = o => page.JSON.parse(JSON.stringify(o)), windowId = (await page.browser.windows.getCurrent()).id;
+      const side = page.browser.extension.getViews(obj({type: "sidebar", windowId}))[0], sdoc = side.document;
+      const until = async (test, ms = 8000) => { for (const t0 = Date.now(); Date.now() - t0 < ms; await wait(50)) if (await test()) return true; return false; };
+      const tabs = await page.browser.tabs.query(obj({windowId}));
+      const home = tabs.find(t => t.url.endsWith("smoke-away-home")).id, beside = tabs.find(t => t.url.endsWith("smoke-away-beside")).id;
+      const row = id => sdoc.querySelector(`#tabs .tab[data-tab="${id}"]`), box = e => e.getBoundingClientRect();
+      const line = id => side.getComputedStyle(row(id).querySelector(".close"), "::before").maskImage;
+      const facts = async () => (await page.browser.runtime.sendMessage(obj({type: "tabMenu", tabIds: [home]})))[0].away;
+      const address = async () => (await page.browser.tabs.get(home)).url;
+      const out = {};
+      await page.browser.tabs.update(home, obj({active: true}));
+      await until(() => row(home)?.classList.contains("active") && !row(home).classList.contains("unloaded"));
+      out.before = {mark: !!row(home).querySelector(".away"), unloads: row(home).querySelector(".close").classList.contains("unloads"), away: await facts()};
+
+      await page.browser.tabs.update(home, obj({url: "https://example.org/?smoke-away-elsewhere"}));
+      out.marked = await until(() => row(home)?.querySelector(".away"));
+      const mark = row(home).querySelector(".away"), icon = row(home).querySelector("img, .letter"), title = row(home).querySelector(".title");
+      out.mark = {between: box(icon).right <= box(mark).left && box(mark).right <= box(title).left, width: box(mark).width,
+        title: box(title).left === box(row(beside).querySelector(".title")).left, tip: row(home).title.split("\\n").at(-1), away: await facts(),
+        line: line(home).includes("M4.25 8h7.5")};
+
+      send({type: "tabAction", action: "saveHere", tabIds: [home]});
+      out.saved = await until(() => !row(home)?.querySelector(".away"));
+      out.said = sdoc.querySelector("#note .text")?.textContent;
+      out.savedFacts = await facts();
+      sdoc.querySelector("#note .act")?.click();
+      out.undone = await until(() => row(home)?.querySelector(".away"));
+
+      send({type: "tabAction", action: "backToSaved", tabIds: [home]});
+      out.back = await until(async () => (await address()).endsWith("smoke-away-home") && !row(home)?.querySelector(".away"));
+      out.backFacts = await facts();
+      const key = sdoc.querySelector("#tabs .folder .head[title='Away folder']")?.dataset.folderHead;
+      if (key) send({type: "deleteFolder", key});
+      await wait(800);
+      await page.browser.tabs.remove(obj([home, beside]));
+      await wait(800);
+      return out;""")
+    check("a saved tab on its saved page has no mark, and its close button is the one that only unloads", r.get("before") == {"mark": False, "unloads": True, "away": False}, str(r.get("before")))
+    mark = r.get("mark") or {}
+    check("browsed on in, its row has a small stroke between its icon and its title, and no title has moved for it",
+          r.get("marked") is True and mark.get("between") and 0 < mark.get("width", 0) <= 6 and mark.get("title") and mark.get("away") is True, str(mark))
+    check("its tooltip says which page it is saved on, and the close button is drawn as a line", mark.get("tip") == "Saved on: Example Domain" and mark.get("line"), str(mark))
+    check("Save this address makes where it is its saved page, and says so; Undo takes that back",
+          r.get("saved") is True and (r.get("said") or "").startswith("Saved here") and r.get("savedFacts") is False and r.get("undone") is True, str(r))
+    check("Back to saved address takes the page back, loaded, and the mark goes", r.get("back") is True and r.get("backFacts") is False, str(r))
+    no_problems(m, "after a saved tab left its address and came back")
+    close_sidebar_page(m)
+
+
 # Each window's tabs and space, and the folders.
 SNAP_ALONE = H + """
   const all = (await storage("%s", ["syncedTabs"])).syncedTabs;
@@ -10950,6 +11010,7 @@ ALONE_GROUPS = (alone_setup, alone_second_window, alone_spaces, alone_keys, alon
                 alone_more,
                 alone_stay_put,
                 alone_swipe,
+                alone_away,
                 alone_hand,
                 alone_new_tab,
                 alone_folds_rest,
@@ -10981,7 +11042,7 @@ ALONE_GROUPS = (alone_setup, alone_second_window, alone_spaces, alone_keys, alon
 ALONE_SHARDS = (
     (alone_setup, alone_second_window, alone_spaces, alone_keys, alone_folders, alone_moves, alone_drag, alone_archive, alone_live_folders,
      alone_drag_details, alone_settings, alone_copy, alone_copy_and_import, alone_safe_moves, alone_more, alone_idle, alone_end),
-    (alone_setup, alone_quiet_undo, alone_tab_menu, alone_tab_names, alone_selection, alone_space_menu, alone_look, alone_stay_put, alone_swipe, alone_idle, alone_end),
+    (alone_setup, alone_quiet_undo, alone_tab_menu, alone_tab_names, alone_selection, alone_space_menu, alone_look, alone_stay_put, alone_swipe, alone_away, alone_idle, alone_end),
     (alone_setup, alone_hand, alone_new_tab, alone_sound, alone_news, alone_touches, alone_little_window, alone_isolation, alone_idle, alone_end),
     (alone_setup, alone_requests, alone_crossing, alone_archived, alone_command_bar, alone_bar_edges, alone_shortcuts, alone_keyboard, alone_idle, alone_end),
     (alone_setup, alone_folds_rest, alone_sync_hide, alone_bridge, alone_many, alone_chaos,

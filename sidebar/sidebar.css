@@ -158,6 +158,18 @@ img { filter: drop-shadow(0 0 .6px light-dark(rgb(40 30 20 / .3), rgb(255 255 25
   visibility: hidden; opacity: 0;
 }
 .row:hover .close { visibility: visible; opacity: 1; }
+/* On a saved tab that is loaded it only unloads, in its place, and a second click would
+ * remove it (sidebar.js, closeTitle): a line and not a cross, so the two are not the same
+ * button. */
+.row .close.unloads::before { mask-image: var(--icon-line); }
+/* A saved tab that has left the page it was saved on (leftSaved, common.js): a small
+ * stroke in the gap between its icon and its title, out of the flow, so the title stands
+ * where every title does. Closing it takes it back; its menu has the way back, and to
+ * save where it is. */
+.row .away {
+  position: absolute; left: calc(var(--pad) + var(--indent) + var(--icon) + (var(--icon-gap) - 6px) / 2); top: calc((var(--row) - 12px) / 2);
+  width: 6px; height: 12px; background: var(--faint); mask: var(--icon-stroke) center / contain no-repeat; pointer-events: none;
+}
 .row .close:hover, .row .sound:hover, #new-folder:hover { background: var(--press); color: var(--text); }
 
 /* Sound: one place in from the end, where it always is, so the close button has the end to

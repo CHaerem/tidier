@@ -210,7 +210,7 @@ Tidier was gone through against Zen and Arc on 13 November 2026 (Zen's release n
 with where it stands. In this order, the first five being the ones that are felt every day:
 
 - [x] A swipe on the trackpad switches space, the list following the fingers.
-- [ ] A saved tab or an essential that has left its address says so, and can go back or
+- [x] A saved tab or an essential that has left its address says so, and can go back or
       keep the new one; the close button says when it only unloads.
 - [ ] A link dragged from a page or another app can be dropped in the sidebar: a tab where
       it lands, in a folder or among the essentials.

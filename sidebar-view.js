@@ -56,6 +56,7 @@ const tabItem = (t, title, entry) => ({
   blank: NEW_TAB_PAGES.has(t.url) || undefined, // an empty new tab: no page yet, so no letter of a name that is not one (sidebar.js icon)
   note: forYouNotes.get(syncKeyByTab.get(t.id)), // bridge.js
   pr: entry?.liveFolder ? entry.pr || "open" : undefined, // a live folder's pull request: what it waits for (liveState, livefolders.js)
+  away: leftSaved(entry) ? entry.saved.title || entry.saved.url : undefined, // a saved tab off its saved page (common.js): what that page is called
 });
 
 // The icon in the record, for a placeholder that has none of its own (createRep,

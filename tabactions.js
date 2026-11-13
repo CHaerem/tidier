@@ -56,6 +56,7 @@ async function tabMenuFacts(tabIds) {
     tile: r.own.pinned,
     active: r.own.active,
     kept: r.own.pinned || !!r.entry?.saved,
+    away: awayFromSaved(r),
     loaded: r.loaded,
     muted: !!r.tab.mutedInfo?.muted,
     address: r.address,
@@ -66,6 +67,11 @@ async function tabMenuFacts(tabIds) {
     duplicates,
   }));
 }
+// Whether a kept tab is somewhere other than the address kept for it. A saved tab by its
+// record (leftSaved, common.js). An essential's address never follows its page, so it is
+// its loaded copy that says where it is; one that is not loaded is nowhere else.
+const awayFromSaved = r => (r.own.pinned ? r.loaded && !!r.entry && isWeb(r.tab.url) && !samePage(r.tab.url, r.entry.url) : leftSaved(r.entry));
+
 browser.runtime.onMessage.addListener((msg, sender) => {
   if (msg?.type !== "tabMenu" || sender.id !== browser.runtime.id || !sender.url?.startsWith(browser.runtime.getURL(""))) return;
   return tabMenuFacts(msg.tabIds);
@@ -130,6 +136,8 @@ const TAB_ACTIONS = {
     await moveRealsTo(windowId, reals.filter(r => !r.own.pinned && !r.entry?.liveFolder && folderKeyOf(all, r.key)), null);
   },
   space: (windowId, reals, { space, newSpace, at }) => moveRealsToSpace(windowId, reals, space, { newSpace, at }),
+  backToSaved: async (windowId, reals) => { for (const r of reals) await backToSaved(r); },
+  saveHere: (windowId, reals) => saveHere(windowId, reals[0]),
   rule: (windowId, reals) => alwaysOpenHere(windowId, reals[0]),
   // What More holds, the folder's and the space's menus, the command bar and the keys
   // (listactions.js). They go by the rows: what is drawn where, and in which order.
@@ -147,6 +155,53 @@ const TAB_ACTIONS = {
   copy: (windowId, reals) => copyText(reals.filter(r => r.address).map(r => r.address).join("\n")),
   copyMarkdown: (windowId, reals) => copyText(reals.filter(r => r.address).map(r => markdownLink(r.title, r.address)).join("\n")),
 };
+
+// A kept tab back on the address kept for it, as closing it would take it, but without
+// closing it: the page is loaded there. Firefox's own Back goes the other way again.
+// With no page anywhere (only placeholders, the window that had it closed), the record goes
+// back, and the placeholders show the saved page again, as after a close (unloadSaved).
+async function backToSaved(r) {
+  if (!awayFromSaved(r)) return;
+  if (r.own.pinned) return void await browser.tabs.update(r.tab.id, { url: r.entry.url }).catch(() => {});
+  if (!isGhostUrl(r.tab.url)) return void await browser.tabs.update(r.tab.id, { url: r.entry.saved.url }).catch(() => {});
+  const all = await getSynced();
+  if (!all[r.key]?.saved) return;
+  Object.assign(all[r.key], all[r.key].saved);
+  saveSynced(all);
+  await redrawPlaceholders(await repsNow(r.key)); // tabnames.js
+}
+
+// The address a kept tab is on now becomes the one kept for it: what closing it takes it
+// back to, and what its placeholders open. One line says so, with Undo, as it changes
+// something that lasts and shows nowhere else (a tile is only an icon).
+async function saveHere(windowId, r) {
+  if (!awayFromSaved(r)) return;
+  if (r.own.pinned) {
+    const { url, title, icon, name } = r.entry;
+    const put = async fields => {
+      const list = await getList(), entry = list.find(e => e.key === r.key);
+      if (!entry) return; // no longer an essential
+      Object.assign(entry, fields);
+      setList([...list]);
+      viewAllSoon(); // the list, unlike the record, tells no sidebar by itself
+      await redrawPlaceholders(await copiesOf(r.key));
+    };
+    await put({ url: r.tab.url, title: r.tab.title || title, icon: r.tab.favIconUrl || icon });
+    return say(windowId, `Saved here: ${name || r.tab.title || title}`, { undo: () => put({ url, title, icon }) });
+  }
+  const all = await getSynced(), entry = all[r.key];
+  const before = { ...entry.saved };
+  entry.saved = { url: entry.url, title: entry.title, icon: entry.icon };
+  saveSynced(all);
+  viewAllSoon();
+  say(windowId, `Saved here: ${entry.name || entry.title}`, { undo: async () => {
+    const now = await getSynced();
+    if (!now[r.key]?.saved) return; // taken out of its folder meanwhile: nothing is saved for it
+    now[r.key].saved = before;
+    saveSynced(now);
+    viewAllSoon();
+  } });
+}
 
 async function setRealsMuted(reals, muted) {
   for (const r of reals) if (r.loaded) await browser.tabs.update(r.tab.id, { muted }).catch(() => {});

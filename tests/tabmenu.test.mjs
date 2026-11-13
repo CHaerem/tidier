@@ -71,6 +71,22 @@ test("Rename is only on essentials and saved tabs", () => {
   assert.deepEqual(menu().labels([row({ kept: true, folder: "F" })]).slice(5, 9), ["Copy address", "|", "Rename", "|"]);
 });
 
+test("a kept tab that has left its address offers the way back, and to save where it is", () => {
+  const saved = row({ kept: true, folder: "F" });
+  assert.deepEqual(menu().labels([{ ...saved, away: true }]).slice(7, 11), ["Rename", "Back to saved address", "Save this address", "|"]);
+  assert.ok(!menu().labels([saved]).some(l => /saved address|Save this/.test(l)), "on its address there is nothing to offer");
+  assert.deepEqual(menu().labels([tile({ away: true })]).slice(7, 10), ["Rename", "Back to saved address", "Save this address"]);
+  // Several: back for all of them, if all of them are away; saving is one tab's.
+  const many = [{ ...saved, id: 1, away: true }, { ...saved, id: 2, away: true }];
+  assert.ok(menu().labels(many).includes("2 tabs back to saved addresses"));
+  assert.ok(!menu().labels(many).includes("Save this address"));
+  assert.ok(!menu().labels([many[0], saved]).some(l => /saved address/.test(l)));
+  const m = menu();
+  m.items([{ ...saved, away: true }]).find(i => i?.[0] === "Back to saved address")[1]();
+  m.items([{ ...saved, away: true }]).find(i => i?.[0] === "Save this address")[1]();
+  assert.deepEqual(JSON.parse(JSON.stringify(m.sent)), [{ type: "tabAction", action: "backToSaved", tabIds: [1] }, { type: "tabAction", action: "saveHere", tabIds: [1] }]);
+});
+
 test("with several tabs, labels count them, and what takes one tab is left out", () => {
   assert.deepEqual(menu().labels([row({ id: 1 }), row({ id: 2, kept: true, folder: "F" }), row({ id: 3 })]),
     ["Reload 3 tabs", "Mute 3 tabs", "Unload 3 tabs", "|", "Copy 3 addresses", "|", "Make 3 tabs essential", "Move 3 tabs to folder", "Move 3 tabs to space", "|", "Close 3 tabs"]);
@@ -340,7 +356,7 @@ test("what the menu is told is about the real tab", async () => {
   const { x, ghost, live } = await twoWindows(ff);
   live.mutedInfo = { muted: true };
   const [facts] = await x.send({ type: "tabMenu", tabIds: [ghost.id] });
-  assert.deepEqual(JSON.parse(JSON.stringify(facts)), { id: ghost.id, tile: false, active: false, kept: false, loaded: true, muted: true, address: "https://a.example/page", folder: null, liveFolder: false, space: C1, ruled: false, duplicates: 0 });
+  assert.deepEqual(JSON.parse(JSON.stringify(facts)), { id: ghost.id, tile: false, active: false, kept: false, away: false, loaded: true, muted: true, address: "https://a.example/page", folder: null, liveFolder: false, space: C1, ruled: false, duplicates: 0 });
   assert.equal((await x.send({ type: "tabMenu", tabIds: [ghost.id, 9999] })).length, 1, "a tab closed meanwhile is left out");
   x.kill();
 });
@@ -820,4 +836,141 @@ test("nothing is left of Firefox's own menu items", () => {
     const src = readFileSync(new URL("../" + file, import.meta.url), "utf8");
     assert.ok(!/browser\.menus\.|startMenus/.test(src), file);
   }
+});
+
+// --- A kept tab that has left its address ------------------------------------------------------
+test("the same page: what comes after # does not count, everything before it does", async () => {
+  const ff = new FakeFirefox();
+  const w = ff.addWindow({ focused: true });
+  ff.addTab(w.id, { url: "https://a.example/", active: true, cookieStoreId: C1 });
+  const x = await alone(ff);
+  const same = x.js("samePage"), left = x.js("leftSaved");
+  assert.equal(same("https://mail.example/u/0/#inbox", "https://mail.example/u/0/#inbox/123"), true);
+  assert.equal(same("https://a.example/watch?v=1", "https://a.example/watch?v=2"), false);
+  assert.equal(same("https://a.example/a", "https://a.example/b"), false);
+  assert.equal(same("https://a.example/a", "https://b.example/a"), false);
+  assert.equal(left({ url: "https://a.example/b", saved: { url: "https://a.example/a" } }), true);
+  assert.equal(left({ url: "https://a.example/a#x", saved: { url: "https://a.example/a" } }), false);
+  assert.equal(left({ url: "https://a.example/b" }), false, "an ordinary tab has no address to leave");
+  assert.equal(left({ url: "about:blank", saved: { url: "https://a.example/a" } }), false, "between two pages it is nowhere");
+  assert.equal(left(undefined), false);
+  x.kill();
+});
+
+// One window with a folder, a saved tab on its saved page in it, and an essential.
+async function kept(ff) {
+  ff.store.essentials = [{ key: "e", url: "https://e.example/", cookieStoreId: C1, title: "E", icon: "https://e.example/i.png" }];
+  ff.store.syncedTabs = { F: FOLDER, a: entry("https://a.example/board", { title: "Board", parentKey: "F", saved: { url: "https://a.example/board", title: "Board" } }) };
+  const w = ff.addWindow({ focused: true });
+  const tile = ff.addTab(w.id, { url: "https://e.example/", title: "E", pinned: true, cookieStoreId: C1, index: 0 }, { essentialKey: "e" });
+  const saved = ff.addTab(w.id, { url: "https://a.example/board", title: "Board", active: true, cookieStoreId: C1 }, { syncKey: "a", syncRole: "live" });
+  const x = await alone(ff);
+  const facts = async id => (await x.send({ type: "tabMenu", tabIds: [id] }))[0];
+  const rowOf = async id => JSON.parse(JSON.stringify(await x.ctx.viewFor(w.id))).folders[0].tabs.find(t => t.id === id);
+  return { x, w, tile, saved, facts, rowOf };
+}
+
+test("a saved tab you browse on in is away from its address, in its row and in its menu, until it is back", async () => {
+  const ff = new FakeFirefox();
+  const { x, saved, facts, rowOf } = await kept(ff);
+  assert.equal((await rowOf(saved.id)).away, undefined);
+  assert.equal((await facts(saved.id)).away, false);
+  ff.navigate(saved.id, "https://a.example/board#card-7", "Board");
+  await wait(600);
+  assert.equal((await rowOf(saved.id)).away, undefined, "the part after # is the same page");
+  ff.navigate(saved.id, "https://a.example/issue/7", "Issue 7");
+  await wait(600);
+  assert.equal((await rowOf(saved.id)).away, "Board", "the row knows what its saved page is called");
+  assert.equal((await rowOf(saved.id)).title, "Issue 7");
+  assert.equal((await facts(saved.id)).away, true);
+
+  await act(x, saved.windowId, "backToSaved", [saved.id]);
+  assert.deepEqual(ff.log.filter(l => l[0] === "update-url").at(-1), ["update-url", saved.id, "https://a.example/board"], "the page itself goes back, loaded");
+  await wait(600);
+  assert.equal((await rowOf(saved.id)).away, undefined);
+  assert.equal((await x.js("getSynced")()).a.url, "https://a.example/board");
+  const updates = ff.log.filter(l => l[0] === "update-url").length;
+  await act(x, saved.windowId, "backToSaved", [saved.id]);
+  assert.equal(ff.log.filter(l => l[0] === "update-url").length, updates, "on its address, nothing is loaded again");
+  x.kill();
+});
+
+test("Save this address makes where a saved tab is its saved page, says so, and Undo takes it back", async () => {
+  const ff = new FakeFirefox();
+  const { x, saved, facts, rowOf } = await kept(ff);
+  ff.navigate(saved.id, "https://a.example/issue/7", "Issue 7");
+  await wait(600);
+  await act(x, saved.windowId, "saveHere", [saved.id]);
+  const now = (await x.js("getSynced")()).a;
+  assert.deepEqual([now.saved.url, now.saved.title, now.url], ["https://a.example/issue/7", "Issue 7", "https://a.example/issue/7"]);
+  assert.equal((await facts(saved.id)).away, false);
+  assert.equal((await rowOf(saved.id)).away, undefined);
+  assert.equal(x.said.at(-1).text, "Saved here: Issue 7");
+  await x.said.at(-1).undo();
+  await wait(500);
+  assert.equal((await x.js("getSynced")()).a.saved.url, "https://a.example/board");
+  assert.equal((await rowOf(saved.id)).away, "Board", "away again, as it was");
+  // Closing it takes it back to what is saved, as always.
+  const said = x.said.length;
+  await act(x, saved.windowId, "saveHere", [9999]);
+  assert.equal(x.said.length, said, "a tab that is gone says nothing");
+  x.kill();
+});
+
+test("a saved tab with no page anywhere goes back in the record, and its placeholders show the saved page", async () => {
+  const ff = new FakeFirefox();
+  ff.store.syncedTabs = { F: FOLDER, a: entry("https://a.example/issue/7", { title: "Issue 7", parentKey: "F", saved: { url: "https://a.example/board", title: "Board" } }) };
+  const w = ff.addWindow({ focused: true });
+  ff.addTab(w.id, { url: "https://other.example/", active: true, cookieStoreId: C1 });
+  const ghost = ff.addTab(w.id, { url: GHOST("ghost", "a"), title: "Issue 7", cookieStoreId: C1, discarded: true }, { syncKey: "a", syncRole: "ghost" });
+  const x = await alone(ff);
+  assert.equal((await x.send({ type: "tabMenu", tabIds: [ghost.id] }))[0].away, true, "by the record: its row says so in every window");
+  await act(x, w.id, "backToSaved", [ghost.id]);
+  const now = (await x.js("getSynced")()).a;
+  assert.deepEqual([now.url, now.title], ["https://a.example/board", "Board"]);
+  assert.deepEqual(ff.log.filter(l => l[0] === "update-url").at(-1), ["update-url", ghost.id, GHOST("ghost", "a")], "the placeholder is drawn again, and no page is loaded");
+  x.kill();
+});
+
+test("an essential on another address: back to its own, or that one saved instead, with Undo", async () => {
+  const ff = new FakeFirefox();
+  const { x, w, tile, facts } = await kept(ff);
+  assert.equal((await facts(tile.id)).away, false);
+  ff.navigate(tile.id, "https://e.example/#inbox", "E");
+  await wait(600);
+  assert.equal((await facts(tile.id)).away, false);
+  ff.navigate(tile.id, "https://e.example/channel/2", "Channel 2");
+  await wait(600);
+  assert.equal((await facts(tile.id)).away, true);
+  assert.equal((await x.js("getList")())[0].url, "https://e.example/", "its own address never follows the page");
+
+  await act(x, w.id, "saveHere", [tile.id]);
+  const e = (await x.js("getList")())[0];
+  assert.deepEqual([e.url, e.title, e.icon, e.key], ["https://e.example/channel/2", "Channel 2", "https://e.example/i.png", "e"]);
+  assert.equal((await facts(tile.id)).away, false);
+  assert.equal(x.said.at(-1).text, "Saved here: Channel 2");
+  await x.said.at(-1).undo();
+  await wait(500);
+  assert.equal((await x.js("getList")())[0].url, "https://e.example/");
+  assert.equal((await facts(tile.id)).away, true);
+
+  await act(x, w.id, "backToSaved", [tile.id]);
+  assert.deepEqual(ff.log.filter(l => l[0] === "update-url").at(-1), ["update-url", tile.id, "https://e.example/"]);
+  await wait(600);
+  assert.equal((await facts(tile.id)).away, false);
+  // Unloaded, it is nowhere else.
+  ff.navigate(tile.id, "https://e.example/channel/3", "Channel 3");
+  await wait(600);
+  tile.discarded = true;
+  assert.equal((await facts(tile.id)).away, false);
+  x.kill();
+});
+
+test("the row draws the mark and the line for closing only where they are true", () => {
+  const page = readFileSync(new URL("../sidebar/sidebar.js", import.meta.url), "utf8"), css = readFileSync(new URL("../sidebar/sidebar.css", import.meta.url), "utf8");
+  assert.match(page, /if \(item\.away\) parts\.push\(el\("span", "away"\)\);/);
+  assert.match(page, /item\.loaded && savedIn\(folderKey\) \? "close unloads" : "close"/, "a line only where the button unloads, as its tooltip says");
+  assert.match(css, /\.row \.close\.unloads::before \{ mask-image: var\(--icon-line\); \}/);
+  // Out of the flow, so no title moves for it, and it takes no click.
+  assert.match(css, /\.row \.away \{\s*position: absolute;[^}]*pointer-events: none;/);
 });

@@ -148,7 +148,13 @@ be done, in order, is in [PLAN.md](PLAN.md).
    page while it is on that address). ⇧⌘T reopens it in its placeholder's place. To
    remove a saved tab for good, close it while it is unloaded (the × on its placeholder,
    or a middle click), or drag it out of the folder, which makes it an ordinary tab
-   again. Every other tab is temporary: closing it closes it everywhere, and archiving
+   again. A saved tab you have browsed on in says so: a small stroke between its icon and
+   its title, and the page it is saved on in its tooltip (what comes after # in an address
+   is the same page). Its menu has *Back to saved address*, which closing it would also
+   do, but with the page still loaded, and *Save this address*, which makes where it is
+   now the page it goes back to (one line, with Undo). An essential's menu has the same
+   two while its page is on another address. The close button is a line, not a cross,
+   where it only unloads. Every other tab is temporary: closing it closes it everywhere, and archiving
    closes it when unused. A live folder's pull requests are not saved (the search decides
    what is in them).
 

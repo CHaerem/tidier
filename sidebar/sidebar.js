@@ -259,7 +259,8 @@ function row(item, folderKey) {
     e.setAttribute("aria-selected", String(!!item.active));
     const parts = [icon(item), el("span", "title", item.title)];
     parts.push(...soundMark(item));
-    const close = el("button", "close", "×");
+    // (Drawn as a line where it only unloads: sidebar.css.)
+    const close = el("button", item.loaded && savedIn(folderKey) ? "close unloads" : "close", "×");
     // The list is one stop for Tab (keys.js): a row's × is for the pointer, and ⌫ closes by key.
     // As a stop of its own, ⇧Tab from the cursor's row would land on the × of the row above.
     close.tabIndex = -1;
@@ -273,9 +274,13 @@ function row(item, folderKey) {
       closeByPointer(item.id, ev);
     });
     parts.push(close);
+    // A saved tab you have browsed on in: a small stroke between its icon and its title,
+    // as a path has one. Out of the flow (sidebar.css), in the room that is there already,
+    // so no title moves for it; last, so it is not in the way of what looks at a row's parts.
+    if (item.away) parts.push(el("span", "away"));
     e.replaceChildren(...parts);
   });
-  setIf(r, "title", (item.pr ? (PR_WORDS[item.pr] ?? PR_WORDS.open) + "\n" : "") + (item.tip || item.title));
+  setIf(r, "title", (item.pr ? (PR_WORDS[item.pr] ?? PR_WORDS.open) + "\n" : "") + (item.tip || item.title) + (item.away ? "\nSaved on: " + item.away : ""));
   setIf(r, "data-folder", folderKey ?? "");
   const level = folderKey == null ? "1" : "2";
   setIf(r, "aria-level", level); // only when it moved: a view comes with every tab event
