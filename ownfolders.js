@@ -37,6 +37,24 @@ async function foldFolder(key, collapsed) {
   await foldChanged(key); // foldrest.js
 }
 
+// Every folder of a space at once, closed or opened, as a click on each would do: closed,
+// their tabs rest (foldrest.js). One write and one round of hiding for all of them.
+async function foldAllFolders(space, collapsed) {
+  const all = await getSynced();
+  const keys = Object.keys(all).filter(k => isOwnFolder(all[k]) && all[k].cookieStoreId === space && !!all[k].collapsed !== !!collapsed);
+  if (!keys.length) return;
+  for (const k of keys) all[k].collapsed = !!collapsed;
+  saveSynced(all);
+  for (const w of await normalWindows()) successorSoon(w.id); // spaces.js, as foldFolder
+  await showSpaceEverywhere(); // foldrest.js
+  if (collapsed) for (const k of keys) await restFolder(k);
+}
+// The key's and the command bar's: closed if any is open, else opened.
+async function toggleAllFolders(space) {
+  const folders = Object.values(await getSynced()).filter(e => isOwnFolder(e) && e.cookieStoreId === space);
+  if (folders.length) await foldAllFolders(space, folders.some(f => !f.collapsed));
+}
+
 // Deleting a folder loses nothing: its tabs become ordinary tabs, which archiving
 // then tidies as usual. (A live folder's tabs go with it: the search decides them. But a
 // page with unsaved input must not make Firefox ask at a moment you did not choose, so

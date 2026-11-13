@@ -397,7 +397,9 @@ and a space's menu, opening in place. It sorts today's tabs or a folder by name,
 by last use (with Undo), moves tabs to the top or the bottom of their list, takes them out of
 a folder, copies them as Markdown links, closes the duplicates among today's tabs (by the
 record's address, the one you are on stays) or the tabs above, below or around one, and
-reloads, mutes or unloads a whole folder or space, a few pages at a time. A folder's menu
+reloads, mutes or unloads a whole folder or space, a few pages at a time. A space's More
+also closes all its folders at once, or opens them, and unloads every other space, by the
+rules of Unload this space (what is selected, plays or is in a call stays). A folder's menu
 also has New tab here, and Close all its tabs. Whatever closes goes through the quiet line,
 with Undo. Each is a command in the bar, found by its name, and in the Keys section under
 More commands, with no key until you give one: what a tab's More does acts on the selection,

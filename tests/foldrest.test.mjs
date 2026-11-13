@@ -56,6 +56,38 @@ test("closing a folder hides its tabs in every window and unloads the real ones"
   x.kill();
 });
 
+test("all the folders of a space close and open at once, as each would by its head, and another space's are left alone", async () => {
+  const ff = new FakeFirefox();
+  const C2 = "firefox-container-2";
+  const s = twoWindows(ff);
+  Object.assign(ff.store.syncedTabs, {
+    G: folder({ name: "Second", rank: 2 }), c: inFolder("https://c.example/", { parentKey: "G" }),
+    Away: folder({ name: "Away", cookieStoreId: C2 }),
+  });
+  const c = live(ff, s.w1, "c"), cGhost = ghost(ff, s.w2, "c");
+  const x = await alone(ff);
+  // (As the scripts have it: the record is written to the store a moment later.)
+  const state = async () => { const all = await x.js("getSynced")(); return Object.fromEntries(["F", "G", "Away"].map(k => [k, !!all[k].collapsed])); };
+  await act(x, s.w1.id, { type: "foldFolders", space: C1, collapsed: true });
+  assert.deepEqual(await state(), { F: true, G: true, Away: false });
+  for (const t of [s.a, s.b, c, s.aGhost, s.bGhost, cGhost]) assert.equal(t.hidden, true);
+  assert.deepEqual(discards(ff).sort(), [s.a.id, s.b.id, c.id].sort(), "their real tabs rest");
+  assert.equal(s.here.discarded, false);
+  ff.log.length = 0;
+  await act(x, s.w1.id, { type: "foldFolders", space: C1, collapsed: false });
+  assert.deepEqual(await state(), { F: false, G: false, Away: false });
+  for (const t of [s.a, s.b, c, s.aGhost, s.bGhost, cGhost]) assert.equal(t.hidden, false);
+  assert.ok(!ff.log.some(l => ["update-url", "discard"].includes(l[0])), "opening loads nothing");
+  // The key's: closed while any is open, opened once all are closed.
+  await x.js("serial")(() => x.js("foldFolder")("F", true));
+  await x.js("serial")(() => x.js("toggleAllFolders")(C1));
+  assert.deepEqual(await state(), { F: true, G: true, Away: false });
+  await x.js("serial")(() => x.js("toggleAllFolders")(C1));
+  assert.deepEqual(await state(), { F: false, G: false, Away: false });
+  assert.deepEqual(x.errors, []);
+  x.kill();
+});
+
 test("opening a folder shows its tabs and loads nothing", async () => {
   const ff = new FakeFirefox();
   const s = twoWindows(ff);

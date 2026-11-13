@@ -225,8 +225,10 @@ with where it stands. In this order, the first five being the ones that are felt
 - [x] A thin line at the list's edge when the tab you are on is out of view, and a click
       on it goes there.
 
-Then the small ones, in any order: an icon on a folder, any colour for a space, a click on
-the space's name closes all its folders, unload every other space. And then the rest of
+- [x] All of a space's folders closed or opened at once, and every other space unloaded,
+      from the space's More, the bar and the keys.
+
+Then the small ones, in any order: an icon on a folder, any colour for a space. And then the rest of
 what FEATURES.md has as Later, starting with what is missed most in use.
 
 ## Choices made

@@ -251,7 +251,7 @@ async function barContext(windowId) {
   return {
     windowId, spaces, space, tab, picked, closed, all, list, view, folder,
     folderReals: folder ? (await Promise.all(folder.tabs.map(t => realOf(t.id)))).filter(Boolean) : [],
-    doubles: doublesIn(view, all), pages: await spacePages(space),
+    doubles: doublesIn(view, all), pages: await spacePages(space), elsewhere: (await pagesOfOtherSpaces(space)).length,
     addresses: picked.map(t => barAddressOf(t, all, list)).filter(Boolean),
     key: tab ? syncKeyByTab.get(tab.id) : undefined,
   };
@@ -414,6 +414,8 @@ function barListCommands() {
     { name: "space-mute", label: "Mute this space", when: ctx => ctx.pages.some(t => !t.mutedInfo?.muted), run: ctx => spaceAction(ctx.windowId, { action: "mute", space: ctx.space }) },
     { name: "space-unmute", label: "Unmute this space", when: ctx => ctx.pages.some(t => t.mutedInfo?.muted), run: ctx => spaceAction(ctx.windowId, { action: "unmute", space: ctx.space }) },
     { name: "space-unload", label: "Unload this space", when: ctx => ctx.pages.length > 0, run: ctx => unloadSpace(ctx.space, ctx.windowId) },
+    { name: "space-unload-others", label: "Unload the other spaces", when: ctx => ctx.elsewhere > 0, run: ctx => unloadOtherSpaces(ctx.space, ctx.windowId) },
+    { name: "folders-fold", label: ctx => (ctx.view.folders.some(f => !f.collapsed) ? "Close all folders" : "Open all folders"), when: ctx => ctx.view.folders.length > 1, run: ctx => toggleAllFolders(ctx.space) },
   ];
 }
 

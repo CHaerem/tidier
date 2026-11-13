@@ -8955,6 +8955,41 @@ def alone_more(m):
           return out;""", dupe, t1)
         check("a space's More closes today's duplicates, and the first stays", bool(r.get("item")) and r.get("gone") and r.get("kept") and "Reload this space" in r.get("inMore", []), str(r))
 
+        # All the folders of the space at once, from the same More: closed while any is open,
+        # and then opened. And the other spaces unloaded, which leaves this one as it is.
+        away = m.js(MENU_TABS + """const w = main(), here = w.gBrowser.selectedTab.userContextId;
+          const ctx = [...new Set(w.gBrowser.tabs.map(t => t.userContextId))].find(c => c && c !== here);
+          if (!ctx) return null;
+          const t = w.gBrowser.addTrustedTab("https://example.org/?smoke-more-away", {userContextId: ctx, inBackground: true});
+          await until(() => role(w, t) === "live" && t.linkedPanel); await wait(500); return idOf(t);""")
+        r = sidebar_page(m, MENU_PAGE + """
+          const space = doc.documentElement.dataset.space, name = f => f.querySelector(".head .title").textContent;
+          const all = () => [...doc.querySelectorAll("#tabs .folder")], mine = () => all().filter(f => /^More (one|two)$/.test(name(f)));
+          for (const n of ["More one", "More two"]) { send({type: "newFolder", space, name: n}); await until(() => all().some(f => name(f) === n)); }
+          const closed = () => all().map(f => f.classList.contains("collapsed"));
+          const more = async () => { await rightClick(doc.getElementById("space-name")); choose("More"); return shown(); };
+          const out = {offered: [], states: []};
+          for (let i = 0; i < 2; i++) {
+            const label = (await more()).find(x => /^(Close|Open) all folders$/.test(x));
+            out.offered.push(label ?? null);
+            if (!label) break;
+            choose(label);
+            const want = label.startsWith("Close");
+            await until(() => closed().every(c => c === want));
+            out.states.push(closed().every(c => c === want));
+          }
+          const list = await more();
+          out.unloadOthers = list.includes("Unload the other spaces");
+          if (out.unloadOthers) choose("Unload the other spaces"); else menu.hidden = true;
+          out.said = await until(() => doc.getElementById("note").classList.contains("shown") && doc.querySelector("#note .text").textContent, 5000);
+          for (const f of mine()) send({type: "deleteFolder", key: f.querySelector(".head").dataset.folderHead});
+          await until(() => !mine().length);
+          return out;""")
+        unloaded = away is None or m.js(MENU_TABS + """await until(() => !byId(args[0])?.linkedPanel, 5000); const t = byId(args[0]), gone = !t.linkedPanel;
+          main().gBrowser.removeTab(t); await wait(500); return gone;""", away)
+        check("a space's More closes all its folders at once, and then opens them", sorted(r.get("offered") or [], key=str) == ["Close all folders", "Open all folders"] and r.get("states") == [True, True], str(r))
+        check("and unloads the other spaces, saying how many tabs went", away is None or (r.get("unloadOthers") and unloaded and "unloaded in the other spaces" in (r.get("said") or "")), f"{r} {away} {unloaded}")
+
         # The keys of the selection, in the sidebar: ⌥↓ moves the tab you are on one place along, in
         # every window; ⇧↓ takes the next row too; ⌘A every row.
         sidebar_page(m, MENU_PAGE + "await until(() => rowOf(args[0])); rowOf(args[0]).click(); return 1;", t1)

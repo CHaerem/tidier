@@ -294,6 +294,7 @@ async function spaceFacts(windowId, space) {
     unmuted: pages.filter(t => !t.mutedInfo?.muted).length,
     muted: pages.filter(t => t.mutedInfo?.muted).length,
     duplicates: view?.space === space ? doublesIn(view, await getSynced()).length : 0,
+    elsewhere: (await pagesOfOtherSpaces(space)).length, // spaceactions.js: what Unload the other spaces would take
   };
 }
 browser.runtime.onMessage.addListener((msg, sender) => {

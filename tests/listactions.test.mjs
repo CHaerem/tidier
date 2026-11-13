@@ -291,13 +291,13 @@ test("a whole space: its loaded pages in any window are reloaded or muted, and i
   s.copy.b.discarded = false; // loaded in the other window too, for a moment: both are pages
   s.tab.a.discarded = true;
   // b twice, the folder's two and the essential.
-  assert.deepEqual({ ...await s.x.send({ type: "spaceFacts", space: C1, windowId: s.w.id }) }, { loaded: 5, unmuted: 5, muted: 0, duplicates: 0 });
+  assert.deepEqual({ ...await s.x.send({ type: "spaceFacts", space: C1, windowId: s.w.id }) }, { loaded: 5, unmuted: 5, muted: 0, duplicates: 0, elsewhere: 1 });
   await s.x.js("spaceAction")(s.w.id, { action: "mute", space: C1 });
   assert.equal(s.tab.a.mutedInfo, undefined, "an unloaded tab has no sound to mute");
   assert.equal(s.tab.b.mutedInfo.muted, true);
   assert.equal(s.copy.b.mutedInfo.muted, true);
   assert.equal(s.tab.other.mutedInfo, undefined, "another space");
-  assert.deepEqual({ ...await s.x.send({ type: "spaceFacts", space: C1 }) }, { loaded: 5, unmuted: 0, muted: 5, duplicates: 0 });
+  assert.deepEqual({ ...await s.x.send({ type: "spaceFacts", space: C1 }) }, { loaded: 5, unmuted: 0, muted: 5, duplicates: 0, elsewhere: 1 });
   await s.x.js("spaceAction")(s.w.id, { action: "reload", space: C1 });
   await wait(20000); // three at a time, the next once one has loaded or had long enough
   assert.ok(s.ff.log.some(l => l[0] === "reload" && l[1] === s.copy.b.id));

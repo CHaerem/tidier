@@ -77,8 +77,8 @@ part C).
 | Hide a space on a given machine | | Done | checked: on the settings page, or for a machine in managed storage; hidden, not kept away |
 | Remove a space from every machine | | Later | today removing a container on one machine is local to it |
 | Any colour for a space | Z A | Later | Firefox's eight container colours today; Zen and Arc take any colour, and gradients |
-| A click on the space's name closes all its folders, and opens them again | Z | Later | |
-| Unload every other space | Z | Later | Unload this space is there |
+| All of a space's folders closed, or opened, at once | Z | Done | checked: in the space's More, as a command in the bar and as a key you can give; Zen has it on a click on the space's name, which here opens nothing by itself |
+| Unload every other space | Z | Done | checked: in the space's More, the bar and the keys; by the rules of Unload this space, and not a space hidden on this machine |
 
 ## Essentials and kept tabs
 

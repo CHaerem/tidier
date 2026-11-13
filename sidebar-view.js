@@ -327,6 +327,8 @@ async function sidebarActionNow(windowId, msg) {
   else if (msg.type === "tabAction") await tabAction(windowId, msg); // tabactions.js
   else if (msg.type === "renameTab") await renameTab(msg.tabId, msg.name);
   else if (msg.type === "unloadSpace") await unloadSpace(msg.space, windowId);
+  else if (msg.type === "unloadOtherSpaces") await unloadOtherSpaces(msg.space, windowId); // spaceactions.js
+  else if (msg.type === "foldFolders") await foldAllFolders(msg.space, msg.collapsed); // ownfolders.js
   else if (msg.type === "spaceAction") await spaceAction(windowId, msg); // listactions.js
   else if (msg.type === "newTabInFolder") await newTabInFolder(windowId, msg.key);
   else if (msg.type === "openLinks") await openLinksAt(windowId, msg); // droplinks.js
