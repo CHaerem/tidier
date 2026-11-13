@@ -3,7 +3,7 @@
 // a whole folder or space, back and forward through the tabs used recently, a new tab in a
 // folder and a tab carried to another space. Above all: what is drawn is what counts, every
 // window follows, and what closes can be taken back. The menus' items are in
-// tests/tabmenu.test.mjs and tests/spacemenu.test.mjs; real clicks in alone_more (smoke.py).
+// tests/tabmenu.test.mjs and tests/spacemenu.test.mjs; real clicks in alone_more (smokechecks/rows.py).
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { FakeFirefox, wait } from "./fake_firefox.mjs";

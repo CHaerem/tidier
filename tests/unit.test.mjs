@@ -164,9 +164,12 @@ test("Tidier speaks to no other extension: it takes no message from one, sends n
 });
 
 // Packages built side by side each add helpers to the smoke test, and in Python the later
-// `def` silently replaces the first: the first package's checks then call the wrong one.
-test("the smoke test defines no top-level function or constant twice", () => {
-  const src = readFileSync(new URL("smoke.py", import.meta.url), "utf8");
-  const names = [...src.matchAll(/^def ([A-Za-z_]\w*)\(|^([A-Z][A-Z0-9_]*) = /gm)].map(m => m[1] ?? m[2]);
+// `def` silently replaces the first: the first package's checks then call the wrong one. The
+// smoke test is a runner and a file for each area (tests/smokechecks/), which take their
+// helpers from each other by name: so a name is one thing in all of them, not only in each.
+test("the smoke test defines no top-level function or constant twice, in any of its files", () => {
+  const files = ["smoke.py", ...readdirSync(new URL("smokechecks/", import.meta.url)).filter(f => f.endsWith(".py")).map(f => "smokechecks/" + f)];
+  assert.ok(files.length > 10, "the checks are in their files");
+  const names = files.flatMap(file => [...readFileSync(new URL(file, import.meta.url), "utf8").matchAll(/^def ([A-Za-z_]\w*)\(|^([A-Z][A-Z0-9_]*) = /gm)].map(m => m[1] ?? m[2]));
   assert.deepEqual(names.filter((name, i) => names.indexOf(name) !== i), []);
 });

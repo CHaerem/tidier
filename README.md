@@ -314,7 +314,7 @@ It can be taken back in `about:addons`.
 
 The checks are in `tests/bridge.test.mjs` (what is allowed, on a fake Firefox),
 `tests/test_bridge.py` (the socket and the protocol, playing Firefox) and `alone_bridge` in
-`tests/smoke.py` (end to end, in a real Firefox).
+`tests/smoke.py` (end to end, in a real Firefox; its checks are in `tests/smokechecks/`, a file for each area).
 
 ## Keys and the command bar
 
@@ -357,7 +357,7 @@ answers its own Enter and Space. Tab comes into the list once, on the tab you ar
 the next Tab goes on past it, as ⇧Tab goes back out: a row's ×, its speaker and Clear are
 for the pointer (⌫ and the menus do the same by key). Rows, folders, essentials and spaces are named for a
 screen reader, with what is selected and what is open (`sidebar/keys.js`, `alone_keyboard`
-in `tests/smoke.py`). Two things Firefox decides: no key puts the keyboard in the sidebar
+in `tests/smokechecks/keys.py`). Two things Firefox decides: no key puts the keyboard in the sidebar
 (F6 skips it, and an extension's page cannot take the focus from the page, tried in the test
 Firefox: Tab from the address bar, or ⇧Tab twice from the page, reaches it), and whenever the selected tab
 changes (a tab selected, the selected tab closed, another space) Firefox gives the keyboard
@@ -944,8 +944,11 @@ closing a saved tab means and when a tab is saved, and rules about the repositor
 windows, a refused call during a start, an essential in a removed container, a browser
 moved over from Sidebery at its first start.
 
-The group names for `--only` are the check functions in `tests/smoke.py`
-(`new_window`, `essentials`, `tab_sync`, `saved_tabs`, …); a group that needs the second
+The group names for `--only` are the check functions in `tests/smokechecks/`, a file for
+each area (`core.py` has `new_window`, `essentials`, `tab_sync`, `saved_tabs`, …; the chain's
+`alone_*` are in `spaces.py`, `folders.py`, `rows.py`, `hand.py`, `marks.py`, `isolation.py`,
+`windows.py`, `keys.py`, `settings.py` and `lasting.py`; `base.py` is what they all lean on).
+`tests/smoke.py` itself only chooses and runs them; a group that needs the second
 window gets it first. Without `--only`, the groups run in eight test Firefoxes at once: the
 core groups (`GROUPS`, in three `SHARDS`), where Tidier may not hide tabs, as on a browser
 moved over from Sidebery by itself, each with a folder of Tidier's own in each space; and
@@ -962,7 +965,7 @@ second one on the same ports says so.
 
 A test must not switch Marionette through every tab's handle to find a page: that
 loads every unloaded tab on the way, and a closed folder's tabs would no longer rest.
-`into_page` in `tests/smoke.py` asks for the one tab's handle instead.
+`into_page` in `tests/smokechecks/base.py` asks for the one tab's handle instead.
 
 The smoke test runs in an invisible test Firefox with a throwaway profile
 (`tests/testfirefox.py`), so it never touches your own Firefox: no restart, no

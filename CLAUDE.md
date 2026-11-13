@@ -33,6 +33,9 @@ tests/smoke.py                                # everything, eight Firefoxes at o
 - Two smoke tests at once need their own ports: `--port 3000` (it uses the next
   ones as well), or the second one stops and says so.
 - `--only` adds the setup groups a group needs (NEEDS in smoke.py).
+- `tests/smoke.py` chooses and runs the groups; the checks are in `tests/smokechecks/`, a
+  file for each area, with what they share in `base.py`. A new group goes in the file of its
+  area, and into `ALONE_GROUPS` and a part (`ALONE_SHARDS`) in smoke.py.
 - A group of the chain (`alone_*`, named from when Tidier also ran beside Sidebery) makes
   what it needs itself and must not lean on the group before it: it has to pass by itself
   after `alone_setup`, and in its part.
