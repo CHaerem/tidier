@@ -555,7 +555,17 @@ test("the setting stays out of the copies, so it cannot reach another machine", 
 test("the manifest: only optional access to pages, and no content script", () => {
   const manifest = JSON.parse(readFileSync(new URL("../manifest.json", import.meta.url), "utf8"));
   assert.ok(manifest.optional_permissions.includes("*://*/*"));
-  assert.ok(!manifest.permissions.includes("<all_urls>") && !manifest.permissions.includes("activeTab"));
+  assert.ok(!manifest.permissions.includes("<all_urls>"));
+  // A key of Tidier's gives it the page it was pressed in (activeTab, for the word ⇧⌘C says
+  // there: pagenote.js). That must never be how a page is read: reading asks whether you
+  // gave the access to all websites, before anything is put in a page.
+  const bridge = readFileSync(new URL("../bridge.js", import.meta.url), "utf8");
+  assert.match(bridge, /async function bridgeCanRead\(tab\) \{[^}]*permissions\.contains\(READ_PAGES\)/);
+  assert.equal(bridge.match(/executeScript/g).length, 2, "one place puts a script in a page: bridgeInPage");
+  for (const use of bridge.matchAll(/bridgeInPage\(/g)) {
+    const before = bridge.slice(0, use.index), fn = before.slice(before.lastIndexOf("\nasync function ") + 1);
+    assert.ok(fn === "async function " || /bridgeCanRead\(|permissions\.contains\(READ_PAGES\)/.test(fn), `asked first: ${fn.slice(0, 60)}`);
+  }
   assert.equal(manifest.content_scripts, undefined, "nothing runs in a page by itself");
   assert.equal(manifest.web_accessible_resources, undefined, "a page cannot load or frame anything of Tidier's");
   assert.equal(manifest.externally_connectable, undefined);

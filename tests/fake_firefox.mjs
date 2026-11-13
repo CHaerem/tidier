@@ -104,6 +104,14 @@ export class FakeFirefox {
       TAB_ID_NONE: -1,
       onCreated: ev(), onUpdated: ev(), onRemoved: ev(), onMoved: ev(), onActivated: ev(), onAttached: ev(), onDetached: ev(),
       sendMessage: () => reject("Could not establish connection. Receiving end does not exist."), // no content script in a page here
+      // A script into a page: refused unless the test lets it in (ff.scriptable), as Firefox
+      // refuses without activeTab or the access to the site. What ran is in ff.pageScripts.
+      executeScript: async (id, { code, file }) => {
+        need(id);
+        if (!ff.scriptable) throw new Error("Missing host permission for the tab");
+        (ff.pageScripts ??= []).push({ id, code, file });
+        return [ff.scriptable === true ? true : await ff.scriptable(id, code)];
+      },
       query: async (q = {}) => { if (ff.hooks.query) await ff.hooks.query(q); let out = [...ff.wins.values()].flatMap(w => ff.list(w.id));
         for (const k of ["windowId", "pinned", "active", "discarded", "hidden", "cookieStoreId", "audible"]) if (q[k] !== undefined) out = out.filter(t => [q[k]].flat().includes(t[k]));
         if (q.muted !== undefined) out = out.filter(t => !!t.mutedInfo?.muted === q.muted);

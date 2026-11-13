@@ -259,7 +259,10 @@ const BAR_COMMANDS = [
   { name: "copy-url", label: ctx => barCount(ctx, "Copy address", "Copy # addresses"), when: ctx => ctx.addresses.length > 0,
     run: async ctx => { // and says so, as ⇧⌘C does (copyUrl, shortcuts.js)
       await navigator.clipboard.writeText(ctx.addresses.join("\n"));
-      say(ctx.windowId, ctx.addresses.length > 1 ? `${ctx.addresses.length} addresses copied` : "Address copied", { brief: true });
+      const copied = ctx.addresses.length > 1 ? `${ctx.addresses.length} addresses copied` : "Address copied";
+      // (Not waited for: the queue this runs in must not stand still for a page that is slow to take it.)
+      if (ctx.tab) sayDone(ctx.windowId, ctx.tab.id, copied).catch(noteError); // pagenote.js
+      else say(ctx.windowId, copied, { brief: true });
     } },
   { name: "rename-tab", label: "Rename this tab", when: ctx => barOnlyThisTab(ctx) && barIsKept(ctx),
     ask: ctx => ({ placeholder: "A name, or nothing for the page's title", value: barNameOf(ctx), heading: `Rename “${barShort(barNameOf(ctx))}”`, confirm: "Call it “#”", empty: "Use the page's own title" }),

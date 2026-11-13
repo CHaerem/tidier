@@ -697,10 +697,36 @@ def shortcuts(m):
       const t = w.gBrowser.addTrustedTab("https://example.org/?smoke-copy", {userContextId: 3}); w.gBrowser.selectedTab = t; await wait(3000);
       Cc["@mozilla.org/widget/clipboardhelper;1"].getService(Ci.nsIClipboardHelper).copyString("before");
       return url(t);""")
+    # What the page shows, asked of the page's own process: the word is in a closed part of an
+    # element of Tidier's own, which a script of the page's cannot open.
+    word = H + """const mm = main().gBrowser.selectedBrowser.messageManager;
+      const got = new Promise(r => mm.addMessageListener("smoke:word", function heard(msg) { mm.removeMessageListener("smoke:word", heard); r(msg.data); }));
+      mm.loadFrameScript("data:," + encodeURIComponent(`sendAsyncMessage("smoke:word", (() => {
+        const host = [...content.document.documentElement.children].find(e => e.openOrClosedShadowRoot);
+        if (!host) return null;
+        const pill = host.openOrClosedShadowRoot.firstElementChild, r = pill.getBoundingClientRect();
+        return {text: pill.textContent, off: Math.round(Math.abs((r.left + r.right) / 2 - content.innerWidth / 2)), top: Math.round(r.top),
+                clicks: content.getComputedStyle(host).pointerEvents, closed: host.shadowRoot === null};
+      })())`), false);
+      return Promise.race([got, wait(3000).then(() => "no answer")]);"""
     press(m, "c", CMD, SHIFT)
-    time.sleep(1)
+    said = None
+    for _ in range(20):
+        said = m.js(word)
+        if said:
+            break
+        time.sleep(0.05)
+    line = m.js(H + """const b = main().document.getElementById("sidebar").contentDocument?.querySelector("browser"); if (!b) return "no sidebar";
+      const mm = b.messageManager, got = new Promise(r => mm.addMessageListener("smoke:line", function heard(msg) { mm.removeMessageListener("smoke:line", heard); r(msg.data); }));
+      mm.loadFrameScript("data:," + encodeURIComponent(`sendAsyncMessage("smoke:line", content.document.getElementById("note").classList.contains("shown") ? content.document.querySelector("#note .text").textContent : "")`), false);
+      return Promise.race([got, wait(3000).then(() => "no answer")]);""")
+    time.sleep(2.2)
+    after = m.js(word)
     copied = m.js(clipboard + "const r = read(); await removeWhere((w, t) => url(t).includes('smoke-copy')); return r;")
     check("⌘⇧C copies the address of the current tab", copied == target, repr(copied))
+    check("and says so at the top of the page, in the middle, in a part of the page it cannot read or click, without the access to all websites",
+          isinstance(said, dict) and said["text"] == "Address copied" and said["off"] <= 1 and said["top"] < 40 and said["clicks"] == "none" and said["closed"], str(said))
+    check("the word is said once (the sidebar's line stays empty) and is gone again in a moment", line == "" and after is None, f"line {line!r}, after {after}")
     before = m.js(H + "main().focus(); await wait(300); return main().SidebarController.currentID;")
     press(m, "b", CMD)
     time.sleep(1.2)

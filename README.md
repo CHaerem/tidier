@@ -130,7 +130,7 @@ be done, in order, is in [PLAN.md](PLAN.md).
    colour, with the words in its tooltip: your review, a draft, failing checks, a
    conflict, changes asked for, approved, checks running, or simply open.
 5. **⇧⌘C copies the address** of the current tab, as in Arc and Zen
-   (`shortcuts.js`). Firefox gives ⇧⌘C to the developer tools' element
+   (`shortcuts.js`), and a word at the top of the page says so. Firefox gives ⇧⌘C to the developer tools' element
    picker, which wins over extensions; free it in `about:keyboard` (the
    dotfiles do this in `customKeys.json`).
 6. **Archiving**, as in Arc (`archive.js`): a tab not selected in any window
@@ -254,7 +254,8 @@ agent <-stdio-> native/tidier-mcp.py <-Unix socket-> native/tidier-bridge.py <-n
   write to, and each connection's user is checked. There is no network port. Web pages
   cannot reach any of it: they cannot use native messaging, the only scripts Tidier puts in
   pages only send the address of a link you ⌥-clicked (below) and the keys you typed in the
-  moment after the command bar's key (below), and no page of Tidier's can be framed or
+  moment after the command bar's key (below), or show a word for a moment that takes nothing
+  from the page (*Address copied*, `pagenote.js`), and no page of Tidier's can be framed or
   loaded by them.
 - **Pages can try to steer an agent.** Everything read from a page (text, titles,
   addresses, what `find` returns, a screenshot) goes back marked as untrusted, between markers
@@ -276,8 +277,9 @@ Reading pages needs access to all websites, which is optional and asked for in t
 that turns these on. A screenshot needs *Pictures of pages* allowed on the settings page as
 well (Firefox gives pictures of pages only to an extension given `<all_urls>`, which adds
 access to local files); until then it is refused in words. Without either an agent can still see tabs and addresses,
-and a copy holds the title and address. A click in the sidebar does not give a page's
-`activeTab` in Firefox (only its own menus, keys and toolbar button do), so that is not used.
+and a copy holds the title and address. A key of Tidier's gives it the page the key was pressed
+in (`activeTab`), which is used for one thing, the word ⇧⌘C says there; a page is never read
+by it, only with the access to all websites, which is asked about first.
 It can be taken back in `about:addons`.
 
 The checks are in `tests/bridge.test.mjs` (what is allowed, on a fake Firefox),
@@ -295,7 +297,7 @@ With Tidier alone, the keys follow what the sidebar shows (`shortcuts.js`,
 - ⌘D: make this tab an essential, or an ordinary tab again
 - ⌥⌘N: a new folder
 - ⇧⌘K: the command bar, and ⌘T as well once `about:keyboard` has cleared Firefox's own ⌘T
-- ⇧⌘C: copy the address (the line in the sidebar says so); ⌃⇧S: show or hide the sidebar
+- ⇧⌘C: copy the address (a word at the top of the page says so, or the line in the sidebar where a page takes none); ⌃⇧S: show or hide the sidebar
 - ⌘Z, with the keyboard in the sidebar: what the quiet line offers to undo, while it shows
 - Copy page for Claude, Copy these tabs for Claude and Ask Claude about this page: no key
   until you give them one, in the same Keys section once Copy for Claude is on
@@ -502,7 +504,7 @@ None of this is measured on a real Mac yet: that is for the second Mac (PLAN.md)
 
 ## What Tidier may do in the browser
 
-Every right in `manifest.json`, and what it is for. The first ten are had from the start;
+Every right in `manifest.json`, and what it is for. The first eleven are had from the start;
 Firefox showed its list once, at the install. The rest are asked for by your click, each
 when it is first of use, and everything else works without them. A unit test holds this
 list to the manifest, both ways.
@@ -517,6 +519,7 @@ list to the manifest, both ways.
 | `nativeMessaging` | Two small programs on this machine, set up by the dotfiles: `tidier_github` (the pull request search and the daily copy) and `tidier_bridge` (the bridge for agents, when it is on). |
 | `alarms` | Timing: archiving, the live folders' refresh, the daily copy. |
 | `clipboardWrite` | ⇧⌘C, Copy address in the menus, and Copy for Claude. |
+| `activeTab` | The page you pressed one of Tidier's keys in, for that moment: ⇧⌘C says *Address copied* on the page itself. Firefox asks nothing for it and lists nothing. |
 | `menus` | Tidier's own menu in its sidebar, and "Open link in" on a link's menu. |
 | `menus.overrideContext` | That menu instead of Firefox's, in Tidier's own sidebar only. |
 | `tabHide` | Hiding other spaces' tabs from Firefox's tab bar and ⌃Tab. Without it they are only left out of the sidebar. |
@@ -694,7 +697,7 @@ Not guaranteed:
 - `archive.js` – archiving of unused tabs.
 - `archivelist.js`, `sidebar/archived.js` – the list of archived and closed tabs, per space.
 - `shortcuts.js` – one table for every key, the command bar's and Claude's included; ⇧⌘C
-  copies the address. `keys-commands.js`, `settings/keys.js`, `sidebar/keys.js` and
+  copies the address, and `pagenote.js` says so on the page. `keys-commands.js`, `settings/keys.js`, `sidebar/keys.js` and
   `sidebar/keyrename.js` – what the keys do, the settings page's Keys
   section, and keys in the sidebar.
 - `commandbar.js`, `commandbar/` (the bar's page, `first.js` for its first frame, and
