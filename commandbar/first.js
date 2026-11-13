@@ -8,6 +8,14 @@
   const root = document.documentElement, given = new URLSearchParams(location.search);
   if (given.get("space")) root.dataset.space = given.get("space");
   if (given.get("accent")) root.style.setProperty("--accent", given.get("accent"));
+  // In the window itself, as a panel of Firefox's (commandbar.js): a panel is as large as
+  // its page, so the page says how large that is, from its first frame. As a window of its
+  // own the page fills the window instead.
+  const panel = Number(given.get("panel"));
+  if (panel > 0) {
+    root.classList.add("panel");
+    root.style.setProperty("--panel-width", `${panel}px`);
+  }
   try {
     const css = localStorage.getItem("commandbar:look");
     if (css) {

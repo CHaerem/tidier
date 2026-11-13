@@ -21,10 +21,15 @@ let enterWaiting = null; // Enter before anything has come back
 let historyTimer = null, historySeq = 0;
 let engine = null; // the name of Firefox's search engine, once the bar may know it
 
+// As a panel in the window you are in, or as a window of its own (first.js). A panel is
+// closed by its page alone, and Firefox closes it when you click beside it.
+const inPanel = document.documentElement.classList.contains("panel");
+
 const port = browser.runtime.connect({ name: "commandbar" });
 const send = msg => port.postMessage(msg);
 port.onDisconnect.addListener(() => window.close());
 port.onMessage.addListener(msg => {
+  if (msg.type === "close") return window.close();
   if (msg.type === "early") return typedBefore(msg);
   data = msg;
   if (data.color) document.documentElement.style.setProperty("--accent", data.color);
@@ -218,10 +223,12 @@ function lookUpMore() {
 
 async function askForMore() {
   asking = true;
+  // First: Firefox's question is a panel too, and opening it closes a bar that is one, with
+  // this page. The answer still counts, and the next bar has what you allowed.
+  send({ type: "asked" });
   const allowed = await browser.permissions.request({ permissions: ["history", "bookmarks"] }).catch(() => false);
   asking = false;
   field.focus();
-  send({ type: "asked" });
   data.asked = true;
   lookUpMore();
   update({ keepSelected: allowed });
@@ -316,12 +323,16 @@ list.addEventListener("mousemove", e => {
   if (row) select(Number(row.dataset.i));
 });
 list.addEventListener("mousedown", e => e.preventDefault()); // the field keeps the focus
+// And has it whenever the bar does. Firefox gives a panel the keyboard a moment after its
+// page has loaded, and now and then that leaves it on the page as a whole, not on the field
+// the page had put it in: the bar was there, and what you typed went nowhere.
+addEventListener("focus", () => { if (!asking && document.activeElement !== field) field.focus(); });
 list.addEventListener("click", e => {
   const row = e.target.closest?.(".row");
   if (row) choose(rows[Number(row.dataset.i)], e.metaKey || e.ctrlKey);
 });
 
-// Losing the focus closes it, like Arc's. What counts is the window: inside it the focus can
+// Losing the focus closes it, like Arc's. As a window of its own, what counts is the window: inside it the focus can
 // hop away from the page and back (Firefox settles the new window), and then you can simply
 // go on typing, unless it is Firefox's own prompt that has it. A moment later, for a window
 // that is still getting the focus.
@@ -331,6 +342,7 @@ list.addEventListener("click", e => {
 // it instead of opening it. So then the window's own event counts too, and only then: a new
 // window's focus can pass through "none" on its way here, which must not close the bar.
 function focusWent() {
+  if (inPanel) return; // Firefox closes a panel that has lost the focus by itself
   setTimeout(async () => {
     if (document.hasFocus()) return;
     const win = await browser.windows.getCurrent();

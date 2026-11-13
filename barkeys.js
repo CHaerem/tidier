@@ -1,6 +1,7 @@
-// The keys you type right after the command bar's key, before its window has the keyboard.
-// An extension cannot draw over a page, so the bar is a window of its own (commandbar.js),
-// and Firefox takes some 60 to 150 ms to make one and give it the keyboard. Until then the
+// The keys you type right after the command bar's key, before the bar has the keyboard.
+// The bar is a panel Firefox opens in the window (commandbar.js), or a window of its own
+// where Firefox opens no panel, and Firefox takes some 30 ms to open a panel and give it the
+// keyboard, and 60 to 150 ms for a window. Until then the
 // keys go to the page you were in: a "w" landed in a message box, and "ferry" and Enter
 // searched the web for "rry". So for that moment they are caught here and handed to the bar.
 //

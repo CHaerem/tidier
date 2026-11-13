@@ -1176,3 +1176,166 @@ test("Reopen closed tab brings back the last one that was a page", async () => {
   assert.equal(restored, "page");
   x.kill();
 });
+
+// --- In the window itself: the bar as the toolbar button's popup ------------------------
+// A Firefox that opens the popup (the fake has no openPopup unless a test gives it one, so
+// everything above is the bar as a window of its own, which is what Tidier falls back to).
+function withPanel(x) {
+  const panel = { popups: [], opened: [], refuse: null };
+  x.b.browserAction.setPopup = async ({ popup }) => { panel.popups.push(popup); };
+  x.b.browserAction.openPopup = async ({ windowId }) => { if (panel.refuse) throw new Error(panel.refuse); panel.opened.push(windowId); };
+  return panel;
+}
+// Its page: in no tab, so the background knows it only by its address.
+function connectPanel(x, url) {
+  const listeners = [], gone = [], sent = [];
+  let cut = false;
+  const port = {
+    name: "commandbar", sender: { id: "tidier", url }, postMessage: m => sent.push(m), disconnect: () => { cut = true; },
+    onMessage: { addListener: f => listeners.push(f) }, onDisconnect: { addListener: f => gone.push(f) },
+  };
+  for (const { f } of x.b.runtime.onConnect.ls) f(port);
+  return { port, sent, tell: async m => { for (const f of listeners) await f(m); }, close: () => gone.forEach(f => f()), wasCut: () => cut };
+}
+
+test("the bar opens in the window you are in, as wide as the floating address bar, and the button keeps its click", async () => {
+  const ff = new FakeFirefox();
+  const { w, v } = world(ff);
+  const x = await started(ff);
+  const panel = withPanel(x);
+  await pressKey(ff, x, v.id);
+  assert.deepEqual(panel.opened, [v.id], "in the window the key was pressed in, not the first one");
+  assert.equal(barWindows(ff).length, 0, "no window of its own");
+  assert.equal(panel.popups.length, 2);
+  assert.equal(panel.popups[1], null, "the button's click still shows and hides the sidebar");
+  const given = new URLSearchParams(panel.popups[0].split("?")[1].split("#")[0]);
+  assert.equal(given.get("panel"), "760", "min(760px, 70vw) of a window 1200 wide");
+  assert.equal(given.get("space"), C1);
+  const page = connectPanel(x, panel.popups[0]);
+  for (let i = 0; i < 100 && !page.sent.length; i++) await wait(100);
+  assert.ok(page.sent[0].items.length > 0, "its rows");
+  // A narrow window: seven tenths of it, and never narrower than the bar can be.
+  page.close();
+  ff.wins.get(w.id).width = 800;
+  await pressKey(ff, x, w.id);
+  assert.equal(new URLSearchParams(panel.popups.at(-2).split("?")[1].split("#")[0]).get("panel"), "560");
+  x.kill();
+});
+
+test("in the window, the key again closes it by its page, and then opens a new one at the first press", async () => {
+  const ff = new FakeFirefox();
+  const { w } = world(ff);
+  const x = await started(ff);
+  const panel = withPanel(x);
+  await pressKey(ff, x, w.id);
+  const page = connectPanel(x, panel.popups[0]);
+  await wait(100);
+  await pressKey(ff, x, w.id);
+  assert.equal(page.sent.at(-1)?.type, "close", "only its page can close a panel");
+  assert.equal(panel.opened.length, 1, "and no second one opened");
+  page.close(); // the page has gone
+  await pressKey(ff, x, w.id);
+  assert.equal(panel.opened.length, 2);
+  // Closed by Firefox (a click beside it): heard from the page going, with nothing told to it.
+  const second = connectPanel(x, panel.popups.at(-2));
+  await wait(50);
+  second.close();
+  await pressKey(ff, x, w.id);
+  assert.equal(panel.opened.length, 3, "the key opens it, and does not close a bar that is no longer there");
+  x.kill();
+});
+
+test("in the window, the key pressed again before the page is there closes it as soon as it is", async () => {
+  const ff = new FakeFirefox();
+  const { w } = world(ff);
+  const x = await started(ff);
+  const panel = withPanel(x);
+  const fire = () => x.b.commands.onCommand.fire("command-bar", ff.snap(ff.tabs.get(w.order[0])));
+  fire(); fire();
+  await wait(300);
+  assert.equal(panel.opened.length, 1);
+  const page = connectPanel(x, panel.popups[0]);
+  await wait(50);
+  assert.deepEqual(page.sent.map(m => m.type), ["close"], "told to go, and given nothing to show");
+  page.close();
+  fire();
+  await wait(300);
+  assert.equal(panel.opened.length, 2, "the next press opens it");
+  x.kill();
+});
+
+test("in the window, what you choose is carried out once the bar has gone", async () => {
+  const ff = new FakeFirefox();
+  const { w } = world(ff);
+  const x = await started(ff);
+  const panel = withPanel(x);
+  await pressKey(ff, x, w.id);
+  const page = connectPanel(x, panel.popups[0]);
+  for (let i = 0; i < 100 && !page.sent.length; i++) await wait(100);
+  const before = ff.list(w.id).length;
+  const done = page.tell({ type: "choose", row: { kind: "command", name: "new-tab" } });
+  await wait(50);
+  assert.equal(page.sent.at(-1)?.type, "close");
+  assert.equal(ff.list(w.id).length, before, "not under an open panel: the tab would not get the keyboard");
+  page.close();
+  await done;
+  await wait(100);
+  assert.equal(ff.list(w.id).length, before + 1);
+  assert.equal(ff.focused, w.id);
+  // A page that never says it has gone does not hold what you chose for long.
+  await pressKey(ff, x, w.id);
+  const stuck = connectPanel(x, panel.popups.at(-2));
+  for (let i = 0; i < 100 && !stuck.sent.length; i++) await wait(100);
+  await stuck.tell({ type: "choose", row: { kind: "command", name: "new-tab" } });
+  await wait(100);
+  assert.equal(ff.list(w.id).length, before + 2);
+  x.kill();
+});
+
+test("in the window, Tidier's other keys do nothing while the bar has the keyboard, and the bar goes when its tab is no longer in front", async () => {
+  const ff = new FakeFirefox();
+  const { w, a } = world(ff);
+  const x = await started(ff);
+  const panel = withPanel(x);
+  await pressKey(ff, x, w.id);
+  const page = connectPanel(x, panel.popups[0]);
+  for (let i = 0; i < 100 && !page.sent.length; i++) await wait(100);
+  const copied = [];
+  x.ctx.navigator.clipboard = { writeText: async t => { copied.push(t); } };
+  x.b.commands.onCommand.fire("copy-url", ff.snap(a));
+  x.b.commands.onCommand.fire("next-space", ff.snap(a));
+  await wait(300);
+  assert.deepEqual(copied, [], "the window's keys reach Tidier from a panel");
+  assert.equal(x.js("activeSpace").get(w.id), C1);
+  // ⌘W is Firefox's own, and closes the tab you are on also from a panel: another comes to the front.
+  const other = ff.list(w.id).find(t => t.id !== a.id && !t.pinned);
+  ff.select(other.id);
+  await wait(100);
+  assert.equal(page.sent.at(-1)?.type, "close");
+  page.close();
+  x.b.commands.onCommand.fire("copy-url", ff.snap(ff.tabs.get(other.id)));
+  await wait(300);
+  assert.equal(copied.length, 1, "and the keys are Tidier's again");
+  x.kill();
+});
+
+test("a Firefox that will not open the panel gets the bar as a window of its own, and a page of an earlier press is sent away", async () => {
+  const ff = new FakeFirefox();
+  const { w } = world(ff);
+  const x = await started(ff);
+  const panel = withPanel(x);
+  panel.refuse = "openPopup() cannot be called while another panel is open";
+  await pressKey(ff, x, w.id);
+  assert.equal(barWindows(ff).length, 1);
+  assert.equal(panel.popups.at(-1), null, "the button is not left with a popup");
+  assert.ok(!ff.tabs.get(barWindows(ff)[0].order[0]).url.includes("panel="), "the page fills its window");
+  await pressKey(ff, x, w.id);
+  assert.equal(barWindows(ff).length, 0);
+  // The button's popup shown some other way, with the address of a press long gone.
+  panel.refuse = null;
+  const stray = connectPanel(x, "commandbar/commandbar.html?panel=760#1");
+  await wait(50);
+  assert.equal(stray.wasCut(), true, "its page closes it when it hears that");
+  assert.equal(stray.sent.length, 0);
+  x.kill();
+});

@@ -243,6 +243,14 @@ Changed by saying so. All of them can be reversed.
   One line says where they went, with Undo.
 - Small windows for links from other apps have one on-off on the settings page, to be looked
   at again after the second Mac.
+- The command bar floats in the window you are in (the owner, 13 November 2026: the small
+  window of its own looked odd). It is the
+  popup of Tidier's toolbar button, which only the key opens, placed by the dotfiles'
+  stylesheet where the address bar floats. With another panel of Firefox's open it is still
+  the small window. ⌘W stays Firefox's: with the bar open it closes the tab under it.
+- ⇧⌘C says *Address copied* on the page itself (the owner, the same day: nothing showed that
+  it had worked). For that Tidier has `activeTab`: the page a key of Tidier's is pressed in.
+  It is used for that word only; a page is read only with the access to all websites.
 - Firefox's own ⌘1 to ⌘9, ⌘D and ⌘T are to be cleared by the dotfiles, now that no
   browser needs them for Sidebery. No extension can read about:keyboard,
   so the dotfiles tell Tidier what they cleared (managed storage), and a key they did not

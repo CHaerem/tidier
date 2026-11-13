@@ -331,8 +331,16 @@ Firefox: Tab from the address bar, or ⇧Tab twice from the page, reaches it), a
 changes (a tab selected, the selected tab closed, another space) Firefox gives the keyboard
 to the page. Closing a tab that is not the selected one keeps it in the list.
 
-The command bar (`commandbar.js`, `commandbar/`) opens with ⇧⌘K in a small window over the
-one you are in, and with ⌘T too once Firefox's new tab key is cleared. One field finds
+The command bar (`commandbar.js`, `commandbar/`) opens with ⇧⌘K in the window you are in,
+and with ⌘T too once Firefox's new tab key is cleared. It floats over the page as Zen's and
+Arc's do: a panel of Firefox's own (the popup of Tidier's toolbar button, opened by the key),
+with no frame and no title, which takes the keyboard and gives it back, and goes when you
+click beside it. An extension cannot say where such a panel stands: Firefox hangs it from the
+Extensions button, and the dotfiles' `userChrome.css` puts it in the middle of the window,
+where its floating address bar is, and as wide. While another panel of Firefox's is open (its
+menu, a question it asks) Firefox opens no second one, and the bar is a small window of its own
+over the one you are in. ⌘W is Firefox's own: with the bar open it closes the tab you are on,
+as it does from the address bar, and the bar goes with it. One field finds
 every tab of every space, essentials, folders, closed and archived tabs and commands, and
 history and bookmarks once you allow them. A row of another space says which, and the
 selected one what Enter does there ("Switch to Work"). Commands act on the tabs selected in
@@ -341,7 +349,7 @@ field goes back, and one that closes tabs is never what a plain Enter takes for 
 is only somewhere in its name, nor moved up by use. Enter goes to a tab, or opens an
 address or a search in the active space; ⌘↵ opens a new tab instead.
 
-Firefox takes a moment to make the bar's window and give it the keyboard. What you type
+Firefox takes a moment (some 30 ms) to open the bar and give it the keyboard. What you type
 before that is caught where it went and handed to the bar (`barkeys.js`, in pages while
 Tidier has the access to all websites, and in its sidebar), so nothing lands in the page.
 Without that access, the first letters typed at once after the key still go to the page.
@@ -701,7 +709,7 @@ Not guaranteed:
   `sidebar/keyrename.js` – what the keys do, the settings page's Keys
   section, and keys in the sidebar.
 - `commandbar.js`, `commandbar/` (the bar's page, `first.js` for its first frame, and
-  `rank.js`, what it shows for what you type), `barkeys.js` (the keys typed before its window
+  `rank.js`, what it shows for what you type), `barkeys.js` (the keys typed before it
   has the keyboard), `sidebar/commandbar-link.js` – the command bar.
 - `spaces.js` – spaces: hiding, switching, new tabs and links, rules.
 - `spaceactions.js`, `sidebar/spacemenu.js` – a space's menu and what it does (rename,

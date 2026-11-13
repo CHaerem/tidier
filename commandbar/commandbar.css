@@ -1,7 +1,9 @@
 /* The command bar, on the sidebar's tokens (tokens.css), so the two read as one thing: the
- * window is the surface, in the space's tint; rows have the list's height, corners and
+ * bar is the surface, in the space's tint; rows have the list's height, corners and
  * icons; the selected row is the one card; text is see-through, so it takes on the tint.
- * With the dotfiles' userChrome.css the window has no frame of its own around it. */
+ * It is a panel of Firefox's in the window you are in (html.panel, first.js), which the
+ * dotfiles' userChrome.css puts in the middle of the window; or, where Firefox opens no
+ * panel, a small window of its own, which the page fills. */
 
 /* The tint from the space's colour, as the sidebar's (sidebar.css); your
  * own tidier.css, keyed on html[data-space], still wins. */
@@ -10,6 +12,10 @@ html {
   background: var(--frame);
 }
 html, body { height: 100%; margin: 0; }
+/* A panel takes its size from the page, and Firefox measures the body: a field and eight
+ * rows, whatever is typed, so nothing jumps, and as wide as the window says (first.js). */
+html.panel, html.panel body { width: var(--panel-width); height: calc(53px + 2 * var(--pad) + 8 * (var(--row) + var(--row-gap))); }
+html.panel { overflow: hidden; }
 body { display: flex; flex-direction: column; overflow: hidden; color: var(--text); cursor: default; user-select: none; }
 
 /* The icons stand in one column with the rows' icons, and what you type starts where

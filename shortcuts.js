@@ -131,6 +131,9 @@ browser.commands.onCommand.addListener(async (name, tab) => {
   trace(`key ${name}`); // common.js: whether a press reached Tidier at all (quick ⌃⌘↓ presses were seen lost)
   const command = COMMANDS.find(c => c.name === name);
   if (!command?.action) return; // (one with no action is carried out where it is made)
+  // The command bar has the keyboard while it is open, but as a panel it is part of the
+  // window, whose keys still reach Tidier: they would act under it, on what it was not opened for.
+  if (barHasKeyboard()) return; // commandbar.js
   const windowId = tab?.windowId ?? (await browser.tabs.query({ active: true, currentWindow: true }))[0]?.windowId;
   const win = windowId !== undefined && await browser.windows.get(windowId).catch(() => null);
   // The keys work in any window of Firefox's, but a small window has no list and no spaces,
