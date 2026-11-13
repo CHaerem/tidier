@@ -59,6 +59,8 @@ async function tabMenuFacts(tabIds) {
     away: awayFromSaved(r),
     loaded: r.loaded,
     muted: !!r.tab.mutedInfo?.muted,
+    playing: r.loaded && !!r.tab.audible, // (muted or not: a muted page plays on, and can be paused)
+    paused: r.loaded && pausedTabs.has(r.tab.id), // sounds.js
     address: r.address,
     folder: r.own.pinned ? null : folderKeyOf(all, r.key),
     liveFolder: !!r.entry?.liveFolder,
@@ -98,6 +100,8 @@ const TAB_ACTIONS = {
   mute: (windowId, reals) => setRealsMuted(reals, true),
   unmute: (windowId, reals) => setRealsMuted(reals, false),
   unload: unloadReals,
+  pause: (windowId, reals) => pauseReals(windowId, reals, true),
+  play: (windowId, reals) => pauseReals(windowId, reals, false),
   duplicate: async (windowId, reals) => { for (const r of reals) await duplicateReal(r); },
   // The listeners that make a pinned tab an essential ignore a tab Tidier is busy with, and
   // a tab just moved or made stays marked so for a moment (syncBusy, busy). This change is
@@ -201,6 +205,34 @@ async function saveHere(windowId, r) {
     saveSynced(now);
     viewAllSoon();
   } });
+}
+
+// Pause and play, as Zen's and Arc's media controls do: what plays in the page is paused
+// there, in every frame (a video is often in another site's frame), and only what Tidier
+// paused is played again, not every video on the page. That takes running a line in the
+// page, so it needs the optional access to all websites (the menu asks for it in its click).
+// A sound a page makes without an <audio> or <video> in it cannot be reached: then it says so.
+// What was paused is kept in the page's own content-script scope, which lasts as long as the
+// page does, and so does nothing to the page itself.
+const PAUSE_PAGE = `(() => { const paused = (window.tidierPaused ??= new WeakSet()); let n = 0;
+  for (const m of document.querySelectorAll("video, audio")) if (!m.paused) { m.pause(); paused.add(m); n++; }
+  return n; })()`;
+const PLAY_PAGE = `(() => { const paused = window.tidierPaused; let n = 0;
+  for (const m of document.querySelectorAll("video, audio")) if (paused?.has(m)) { paused.delete(m); m.play().catch(() => {}); n++; }
+  return n; })()`;
+async function pauseReals(windowId, reals, pause) {
+  if (!(await browser.permissions.contains(READ_PAGES).catch(() => false))) return; // bridge.js; asked for by the menu, in its click
+  let none = 0;
+  for (const r of reals) {
+    if (!r.loaded) continue;
+    const counts = await browser.tabs.executeScript(r.tab.id, { code: pause ? PAUSE_PAGE : PLAY_PAGE, allFrames: true }).catch(() => null);
+    const n = (counts ?? []).reduce((sum, c) => sum + (Number(c) || 0), 0);
+    if (pause && n) pausedTabs.add(r.tab.id); // sounds.js
+    else if (pause) none++;
+    else pausedTabs.delete(r.tab.id);
+  }
+  viewAllSoon();
+  if (none) say(windowId, none > 1 ? `${none} pages play in a way that cannot be paused from here` : "This page plays in a way that cannot be paused from here");
 }
 
 async function setRealsMuted(reals, muted) {

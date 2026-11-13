@@ -217,10 +217,10 @@ with where it stands. In this order, the first five being the ones that are felt
       keep the new one; the close button says when it only unloads.
 - [x] A link dragged from a page or another app can be dropped in the sidebar: a tab where
       it lands, in a folder or among the essentials.
-- [ ] Soft motion where something comes or goes: switching space by a click or a key
+- [x] Soft motion where something comes or goes: switching space by a click or a key
       slides as a swipe does, a folder opens and closes by its height, a new row fades in.
       Short, only for what you caused, and no row moves under the pointer.
-- [ ] Pause and play from the sidebar, beside the speaker.
+- [x] Pause and play from the sidebar, beside the speaker.
 
 Then the small ones, in any order: an icon on a folder, any colour for a space, a click on
 the space's name closes all its folders, unload every other space. And then the rest of

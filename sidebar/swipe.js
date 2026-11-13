@@ -117,6 +117,9 @@
   }
 
   function begin() {
+    // A space that is still sliding in (motion.js) is taken where it is going: the picture
+    // is of the list as it will stand, and nothing of the list may show through it.
+    for (const id of ["essentials", "space-name", "actions", "tabs"]) for (const running of document.getElementById(id).getAnimations()) running.finish();
     swipe = { space: view.space, top: list.scrollTop, panes: {}, home: homePane() };
     overlay.style.height = list.getBoundingClientRect().bottom + "px";
     strip.replaceChildren(swipe.home);

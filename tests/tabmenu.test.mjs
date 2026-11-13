@@ -356,7 +356,7 @@ test("what the menu is told is about the real tab", async () => {
   const { x, ghost, live } = await twoWindows(ff);
   live.mutedInfo = { muted: true };
   const [facts] = await x.send({ type: "tabMenu", tabIds: [ghost.id] });
-  assert.deepEqual(JSON.parse(JSON.stringify(facts)), { id: ghost.id, tile: false, active: false, kept: false, away: false, loaded: true, muted: true, address: "https://a.example/page", folder: null, liveFolder: false, space: C1, ruled: false, duplicates: 0 });
+  assert.deepEqual(JSON.parse(JSON.stringify(facts)), { id: ghost.id, tile: false, active: false, kept: false, away: false, loaded: true, muted: true, playing: false, paused: false, address: "https://a.example/page", folder: null, liveFolder: false, space: C1, ruled: false, duplicates: 0 });
   assert.equal((await x.send({ type: "tabMenu", tabIds: [ghost.id, 9999] })).length, 1, "a tab closed meanwhile is left out");
   x.kill();
 });
@@ -973,4 +973,85 @@ test("the row draws the mark and the line for closing only where they are true",
   assert.match(css, /\.row \.close\.unloads::before \{ mask-image: var\(--icon-line\); \}/);
   // Out of the flow, so no title moves for it, and it takes no click.
   assert.match(css, /\.row \.away \{\s*position: absolute;[^}]*pointer-events: none;/);
+});
+
+// --- Pause and play (tabactions.js, sounds.js) ---------------------------------------------------
+test("a page that plays offers Pause beside Mute, one Tidier paused offers Play, and Pause asks for the access in its click", async () => {
+  assert.deepEqual(menu().labels([row({ playing: true })]).slice(0, 4), ["Reload", "Pause", "Mute", "Unload"]);
+  assert.deepEqual(menu().labels([row({ paused: true })]).slice(0, 3), ["Reload", "Play", "Mute"]);
+  assert.ok(!menu().labels([row({ playing: true, paused: true })]).includes("Pause"), "it plays again by itself only once Firefox says so");
+  assert.ok(!menu().labels([row()]).some(l => l === "Pause" || l === "Play"));
+  assert.ok(menu().labels([row({ id: 1, playing: true }), row({ id: 2, playing: true })]).includes("Pause 2 tabs"));
+  assert.ok(!menu().labels([row({ id: 1, playing: true }), row({ id: 2 })]).includes("Pause 2 tabs"));
+  const m = menu(), asked = [];
+  m.ctx.browser.permissions = { request: async p => { asked.push(JSON.parse(JSON.stringify(p))); return asked.length > 1; } };
+  m.items([row({ playing: true })]).find(i => i?.[0] === "Pause")[1](); // refused
+  m.items([row({ playing: true })]).find(i => i?.[0] === "Pause")[1](); // given
+  await wait(50);
+  assert.deepEqual(asked, [{ origins: ["*://*/*"] }, { origins: ["*://*/*"] }]);
+  assert.deepEqual(JSON.parse(JSON.stringify(m.sent)), [{ type: "tabAction", action: "pause", tabIds: [1] }], "only once it is given");
+});
+
+test("Pause stops what plays in the real tab, its row shows Play while it is silent, and Play starts only that again", async () => {
+  const ff = new FakeFirefox();
+  const { here, ghost, live, x } = await twoWindows(ff);
+  const scripts = () => (ff.pageScripts ?? []).map(p => [p.id, /m\.pause\(\)/.test(p.code) ? "pause" : /m\.play\(\)/.test(p.code) ? "play" : "?"]);
+  const rowSound = async () => JSON.parse(JSON.stringify(await x.ctx.viewFor(here.id))).tabs.find(t => t.id === ghost.id);
+  live.audible = true;
+  x.b.tabs.onUpdated.fire(live.id, { audible: true }, ff.snap(live));
+  assert.deepEqual([(await x.send({ type: "tabMenu", tabIds: [ghost.id] }))[0].playing, (await x.send({ type: "tabMenu", tabIds: [ghost.id] }))[0].paused], [true, false]);
+
+  ff.scriptable = async () => 1;
+  await act(x, here.id, "pause", [ghost.id]);
+  assert.deepEqual(scripts(), [], "without the access to websites nothing runs in the page");
+
+  ff.grant("*://*/*");
+  await act(x, here.id, "pause", [ghost.id]);
+  assert.deepEqual(scripts(), [[live.id, "pause"]], "in the real tab, in the other window");
+  assert.equal(ff.pageScripts[0].allFrames, undefined, "(the fake keeps only the code)");
+  live.audible = false;
+  x.b.tabs.onUpdated.fire(live.id, { audible: false }, ff.snap(live));
+  await wait(300);
+  assert.deepEqual([(await rowSound()).sound, (await rowSound()).soundTabId], ["paused", live.id], "silent, it still shows where it was");
+  assert.equal((await x.send({ type: "tabMenu", tabIds: [ghost.id] }))[0].paused, true);
+
+  await act(x, here.id, "play", [ghost.id]);
+  assert.deepEqual(scripts().at(-1), [live.id, "play"]);
+  assert.equal((await rowSound()).sound, null);
+  assert.equal(x.js("pausedTabs.size"), 0);
+  x.kill();
+});
+
+test("a paused page that plays again, goes to another page, closes or is unloaded is no longer paused", async () => {
+  const ff = new FakeFirefox();
+  const { here, ghost, live, x } = await twoWindows(ff);
+  ff.grant("*://*/*");
+  ff.scriptable = async () => 1;
+  const pause = async () => { await act(x, here.id, "pause", [ghost.id]); assert.equal(x.js("pausedTabs").has(live.id), true); };
+  await pause();
+  live.audible = true;
+  x.b.tabs.onUpdated.fire(live.id, { audible: true }, ff.snap(live));
+  assert.equal(x.js("pausedTabs").has(live.id), false, "played again on the page");
+  await pause();
+  x.b.tabs.onUpdated.fire(live.id, { url: "https://a.example/next" }, ff.snap(live));
+  assert.equal(x.js("pausedTabs").has(live.id), false, "another page");
+  await pause();
+  x.b.tabs.onUpdated.fire(live.id, { discarded: true }, ff.snap(live));
+  assert.equal(x.js("pausedTabs").has(live.id), false, "unloaded");
+  await pause();
+  ff.rm(live.id);
+  await wait(100);
+  assert.equal(x.js("pausedTabs.size"), 0, "closed");
+  x.kill();
+});
+
+test("a page with nothing Tidier can pause says so, and is not marked paused", async () => {
+  const ff = new FakeFirefox();
+  const { here, ghost, x } = await twoWindows(ff);
+  ff.grant("*://*/*");
+  ff.scriptable = async () => 0;
+  await act(x, here.id, "pause", [ghost.id]);
+  assert.equal(x.js("pausedTabs.size"), 0);
+  assert.deepEqual(x.said.map(s => s.text), ["This page plays in a way that cannot be paused from here"]);
+  x.kill();
 });

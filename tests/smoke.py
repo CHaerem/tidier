@@ -10606,8 +10606,12 @@ def alone_folds_rest(m):
     check("closing a folder hides its tabs in both windows and unloads them", r["ok"], str(r))
     check("a tab that rests keeps the address it was on", all("smoke-rest-" in u for u in r["urls"]), str(r))
     check("a closed folder's tabs are out of Firefox's own ⌃Tab list", r["ctrlTab"] == 0, str(r))
+    # Its height goes to nothing in a soft move (sidebar/motion.js), so the room it leaves is
+    # read once that is over, not in the middle of it.
     r = sidebar_page(m, """const f = folders().find(f => f.name === "Resting"), head = [...doc.querySelectorAll("#tabs .folder .head")].find(h => h.querySelector(".title").textContent === "Resting");
-      return {collapsed: f.collapsed, count: head.querySelector(".count").textContent, height: head.parentElement.querySelector(".children").offsetHeight};""")
+      const children = head.parentElement.querySelector(".children");
+      for (let i = 0; i < 60 && children.offsetHeight; i++) await wait(50);
+      return {collapsed: f.collapsed, count: head.querySelector(".count").textContent, height: children.offsetHeight};""")
     check("the closed folder shows how many tabs it holds, and no rows", r["collapsed"] and r["count"] == "3" and r["height"] == 0, str(r))
 
     # Opened: shown again, and nothing loads by itself.
@@ -11219,6 +11223,144 @@ def alone_link_drop(m):
     close_sidebar_page(m)
 
 
+def alone_motion(m):
+    # Soft motion where something comes or goes (sidebar/motion.js, sidebar.css): another
+    # space slides in from its side, a folder opens and closes by its height, a new row fades
+    # in; with less motion asked for, none of it; and with nothing happening, nothing runs.
+    m.js(H + """const w = main(); for (const t of [...w.gBrowser.tabs]) if (url(t).includes("/sidebar/sidebar.html")) w.gBrowser.removeTab(t);
+      Services.prefs.setIntPref("ui.prefersReducedMotion", 0); await wait(300); return 1;""")
+    sidebar_page(m, """send({type: "space", space: "firefox-container-1"}); await wait(1000);
+      send({type: "newFolder", space: "firefox-container-1", name: "Motion folder"}); await wait(1500); return 1;""")
+    m.js(H + """const w = main(); for (const i of [1, 2]) { w.gBrowser.addTrustedTab("https://example.org/?smoke-motion-" + i, {userContextId: 1, inBackground: true}); await wait(300); }
+      await wait(3000); return 1;""")
+    for i in (1, 2):
+        to_folder(m, f"https://example.org/?smoke-motion-{i}", "Motion folder")
+    MOTION = """
+      const obj = o => page.JSON.parse(JSON.stringify(o)), windowId = (await page.browser.windows.getCurrent()).id;
+      const side = page.browser.extension.getViews(obj({type: "sidebar", windowId}))[0], sdoc = side.document, root = sdoc.documentElement;
+      const wait = ms => new Promise(done => side.setTimeout(() => done(), ms));
+      const until = async (test, ms = 8000) => { for (const t0 = Date.now(); Date.now() - t0 < ms; await wait(20)) if (await test()) return true; return false; };
+      const ids = [...sdoc.querySelectorAll("#spaces .space")].map(b => b.dataset.space);
+      const PARTS = ["essentials", "space-name", "actions", "tabs"];
+      // What moves on a part now: its first keyframe's slide, or "none".
+      const slide = id => { const a = sdoc.getElementById(id).getAnimations().find(x => x.effect?.getKeyframes?.()[0]?.transform);
+        return a ? Math.round(new side.DOMMatrix(a.effect.getKeyframes()[0].transform).m41) : "none"; };
+      const switchTo = async id => { sdoc.querySelector(`#spaces .space[data-space="${id}"]`).click(); await until(() => root.dataset.space === id); return PARTS.map(slide); };
+      const head = () => sdoc.querySelector("#tabs .folder .head[title='Motion folder']");
+      const fold = async () => { const h = head(), was = h.parentElement.classList.contains("collapsed"); h.click(); await until(() => h.parentElement.classList.contains("collapsed") !== was);
+        // The newest fold: a finished one can still be listed for a moment.
+        const a = h.parentElement.lastElementChild.getAnimations().filter(x => x.id === "fold").at(-1); return a ? a.effect.getKeyframes().map(k => parseInt(k.height)) : "none"; };
+      const moving = () => [...PARTS.map(id => sdoc.getElementById(id)), ...sdoc.querySelectorAll("#tabs .folder > .children, #tabs .row")].flatMap(e => e.getAnimations()).filter(a => a.playState === "running").length;
+      const newRow = async name => { const made = await page.browser.tabs.create(obj({url: "https://example.org/?smoke-motion-" + name, cookieStoreId: ids[0], active: false}));
+        let row = null; await until(() => (row = sdoc.querySelector(`#tabs .tab[data-tab="${made.id}"]`)));
+        return row ? row.getAnimations().some(a => a.transitionProperty === "opacity") : null; };
+    """
+    r = sidebar_page(m, MOTION + """
+      const out = {};
+      await until(() => root.dataset.space === ids[0]);
+      await wait(500);
+      out.right = await switchTo(ids[1]);
+      await wait(500);
+      out.settled = moving();
+      out.left = await switchTo(ids[0]);
+      await wait(500);
+      out.closing = await fold();
+      await wait(400);
+      out.opening = await fold();
+      await wait(400);
+      out.row = await newRow("new");
+      await wait(600);
+      out.idle = moving();
+      return out;""")
+    check("another space slides in from the side its dot is on, and its parts all move together, then stop",
+          r.get("right") == [16] * 4 and r.get("left") == [-16] * 4 and r.get("settled") == 0, str(r))
+    closing, opening = r.get("closing"), r.get("opening")
+    check("a folder closes and opens by its height, from where it was to where it goes",
+          isinstance(closing, list) and closing[0] > closing[-1] and isinstance(opening, list) and opening[0] < opening[-1] and opening[-1] == closing[0], f"{closing} {opening}")
+    check("a new row fades in where it is", r.get("row") is True, str(r.get("row")))
+    check("with nothing happening, nothing moves", r.get("idle") == 0, str(r.get("idle")))
+
+    m.js(H + """Services.prefs.setIntPref("ui.prefersReducedMotion", 1); await wait(300); return 1;""")
+    r = sidebar_page(m, MOTION + """
+      const out = {};
+      out.space = await switchTo(ids[1]);
+      await switchTo(ids[0]);
+      out.closing = await fold();
+      out.opening = await fold();
+      out.row = await newRow("still");
+      return out;""")
+    m.js(H + """Services.prefs.clearUserPref("ui.prefersReducedMotion"); await wait(300); return 1;""")
+    check("with less motion asked for, nothing slides, folds by its height or fades in",
+          r.get("space") == ["none"] * 4 and r.get("closing") == "none" and r.get("opening") == "none" and r.get("row") is False, str(r))
+
+    sidebar_page(m, """const key = doc.querySelector("#tabs .folder .head[title='Motion folder']")?.dataset.folderHead;
+      if (key) send({type: "deleteFolder", key}); await wait(800);
+      const tabs = await page.browser.tabs.query(page.JSON.parse(JSON.stringify({})));
+      await page.browser.tabs.remove(page.JSON.parse(JSON.stringify(tabs.filter(t => /smoke-motion-/.test(t.url)).map(t => t.id))));
+      await wait(800); return 1;""")
+    no_problems(m, "after soft motion")
+    close_sidebar_page(m)
+
+
+def alone_pause(m):
+    # Pause and play from the sidebar (tabactions.js, sounds.js, sidebar/sound.js), on a page
+    # that really plays. Whether Firefox hears it is set by hand, as alone_sound does: a test
+    # machine has no sound to hear.
+    ALL = H + """const {ExtensionPermissions} = ChromeUtils.importESModule("resource://gre/modules/ExtensionPermissions.sys.mjs");
+      const [id, allow] = args, ext = WebExtensionPolicy.getByID(id).extension, all = {permissions: [], origins: ["<all_urls>"]};
+      const had = (await ExtensionPermissions.get(id)).origins.includes("<all_urls>");
+      if (allow !== had) { await ExtensionPermissions[allow ? "add" : "remove"](id, all, ext); await wait(800); }
+      return had;"""
+    had = m.js(ALL, EXT_ID, False)
+    # Firefox lets a page in a background tab start nothing by itself: here it may.
+    m.js(H + """const w = main(); for (const t of [...w.gBrowser.tabs]) if (url(t).includes("/sidebar/sidebar.html")) w.gBrowser.removeTab(t);
+      Services.prefs.setBoolPref("media.block-autoplay-until-in-foreground", false); Services.prefs.setIntPref("media.autoplay.default", 0);
+      w.gBrowser.addTrustedTab(args[0] + "/media", {userContextId: 1, inBackground: true});
+      for (let i = 0; i < 60 && !w.gBrowser.tabs.some(t => t.label === "Media playing"); i++) await wait(100);
+      return 1;""", m.pages)
+    HEAR = H + """const w = main(), t = w.gBrowser.tabs.find(x => url(x).endsWith("/media"));
+      t.toggleAttribute("soundplaying", args[0]); w.gBrowser._tabAttrModified(t, ["soundplaying"]); await wait(500); return t.label;"""
+    title = m.js(HEAR, True)
+    PAGE = """const obj = o => page.JSON.parse(JSON.stringify(o)), windowId = (await page.browser.windows.getCurrent()).id;
+      const until = async (test, ms = 8000) => { for (const t0 = Date.now(); Date.now() - t0 < ms; await wait(50)) if (await test()) return true; return false; };
+      const media = async () => (await page.browser.tabs.query(obj({windowId}))).find(t => t.url.endsWith("/media"));
+      const facts = async () => { const f = (await page.browser.runtime.sendMessage(obj({type: "tabMenu", tabIds: [(await media()).id]})))[0]; return [f.playing, f.paused]; };
+      const mark = async () => doc.querySelector(`#tabs .tab[data-tab="${(await media()).id}"] .sound`);
+    """
+    r = sidebar_page(m, PAGE + """
+      const out = {before: await facts()};
+      send({type: "tabAction", action: "pause", tabIds: [(await media()).id]});
+      await wait(1500);
+      out.refused = (await media()).title;
+      return out;""")
+    check("a page that plays offers Pause, and without the access to websites nothing is done to it",
+          title == "Media playing" and r.get("before") == [True, False] and r.get("refused") == "Media playing", f"{title} {r}")
+    m.js(ALL, EXT_ID, True)
+    r = sidebar_page(m, PAGE + """
+      send({type: "tabAction", action: "pause", tabIds: [(await media()).id]});
+      const out = {paused: await until(async () => (await media()).title === "Media paused")};
+      return out;""")
+    m.js(HEAR, False)  # silent now, as Firefox would say
+    r2 = sidebar_page(m, PAGE + """
+      const out = {};
+      out.shown = await until(async () => (await mark())?.classList.contains("paused"));
+      out.tip = (await mark())?.title ?? null;
+      out.facts = await facts();
+      (await mark())?.click();
+      out.playing = await until(async () => (await media()).title === "Media playing");
+      out.gone = await until(async () => !(await mark()));
+      return out;""")
+    check("with the access, Pause stops what plays in the page", r.get("paused") is True, str(r))
+    check("silent, its row shows Play where the speaker was, and the menu offers Play",
+          r2.get("shown") is True and r2.get("tip") == "Play" and r2.get("facts") == [False, True], str(r2))
+    check("Play from the row starts it again, and the mark goes", r2.get("playing") is True and r2.get("gone") is True, str(r2))
+    m.js(ALL, EXT_ID, had)
+    m.js(H + """await removeWhere((w, t) => url(t).endsWith("/media"));
+      Services.prefs.clearUserPref("media.block-autoplay-until-in-foreground"); Services.prefs.clearUserPref("media.autoplay.default"); return 1;""")
+    no_problems(m, "after pausing and playing a page")
+    close_sidebar_page(m)
+
+
 # Each window's tabs and space, and the folders.
 SNAP_ALONE = H + """
   const all = (await storage("%s", ["syncedTabs"])).syncedTabs;
@@ -11245,10 +11387,12 @@ ALONE_GROUPS = (alone_setup, alone_second_window, alone_spaces, alone_keys, alon
                 alone_swipe,
                 alone_away,
                 alone_link_drop,
+                alone_motion,
                 alone_hand,
                 alone_new_tab,
                 alone_folds_rest,
                 alone_sound,
+                alone_pause,
                 alone_news,
                 alone_touches,
                 alone_little_window,
@@ -11276,8 +11420,8 @@ ALONE_GROUPS = (alone_setup, alone_second_window, alone_spaces, alone_keys, alon
 ALONE_SHARDS = (
     (alone_setup, alone_second_window, alone_spaces, alone_keys, alone_folders, alone_moves, alone_drag, alone_archive, alone_live_folders,
      alone_drag_details, alone_settings, alone_copy, alone_copy_and_import, alone_safe_moves, alone_more, alone_idle, alone_end),
-    (alone_setup, alone_quiet_undo, alone_tab_menu, alone_tab_names, alone_selection, alone_space_menu, alone_look, alone_stay_put, alone_swipe, alone_away, alone_link_drop, alone_idle, alone_end),
-    (alone_setup, alone_hand, alone_new_tab, alone_sound, alone_news, alone_touches, alone_little_window, alone_isolation, alone_idle, alone_end),
+    (alone_setup, alone_quiet_undo, alone_tab_menu, alone_tab_names, alone_selection, alone_space_menu, alone_look, alone_stay_put, alone_swipe, alone_away, alone_link_drop, alone_motion, alone_idle, alone_end),
+    (alone_setup, alone_hand, alone_new_tab, alone_sound, alone_pause, alone_news, alone_touches, alone_little_window, alone_isolation, alone_idle, alone_end),
     (alone_setup, alone_requests, alone_crossing, alone_archived, alone_command_bar, alone_bar_edges, alone_shortcuts, alone_keyboard, alone_idle, alone_end),
     (alone_setup, alone_folds_rest, alone_sync_hide, alone_bridge, alone_many, alone_chaos,
      alone_idle, alone_update, alone_folds_rest_kept, alone_end, alone_restart, alone_folds_rest_kept, alone_isolation_start, alone_little_restart),

@@ -109,6 +109,13 @@ img { filter: drop-shadow(0 0 .6px light-dark(rgb(40 30 20 / .3), rgb(255 255 25
   padding: 0 var(--pad); border-radius: var(--radius); cursor: default;
   transition: background-color var(--quick), box-shadow var(--quick), transform var(--quick);
 }
+/* A row that comes into the list fades in where it is (a new tab, one moved in), so it is
+ * seen to arrive; it takes its room at once, so nothing under the pointer moves for it. Not
+ * when a whole space comes in, which arrives as one piece (motion.js slides it). */
+/* In :where(), so this weighs no more than .row itself: a row that is closing has a
+ * transition of its own (below), and a rule with #tabs in it would win over that. */
+:where(#tabs) .row { transition: background-color var(--quick), box-shadow var(--quick), transform var(--quick), opacity var(--soft); @starting-style { opacity: 0; } }
+html.space-arriving :where(#tabs) .row { transition: none; }
 .row:hover { background: var(--hover); }
 .row:active { transform: scale(.992); }
 .row.active { background: var(--selected); box-shadow: var(--shadow-card); }

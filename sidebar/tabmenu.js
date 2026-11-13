@@ -28,6 +28,12 @@ const spaceChoices = tabs => otherSpaces(tabs).map(s => [s.name, () => tabAct("s
 const TAB_MENU = [
   { id: "reload", group: 1, many: true, label: n => tabsWord(n, "Reload", "Reload # tabs"),
     when: eachTab(t => t.loaded), run: tabs => tabAct("reload", tabs) },
+  // Here, in the click: what plays is paused in the page, which needs the access to all
+  // websites, and asking for it needs your click (tabactions.js).
+  { id: "pause", group: 1, many: true, label: n => tabsWord(n, "Pause", "Pause # tabs"),
+    when: tabs => tabs.every(t => t.playing && !t.paused), run: tabs => browser.permissions.request({ origins: ["*://*/*"] }).then(given => { if (given) tabAct("pause", tabs); }, () => {}) },
+  { id: "play", group: 1, many: true, label: n => tabsWord(n, "Play", "Play # tabs"),
+    when: eachTab(t => t.paused), run: tabs => tabAct("play", tabs) },
   { id: "mute", group: 1, many: true, label: n => tabsWord(n, "Mute", "Mute # tabs"),
     when: tabs => tabs.every(t => t.loaded) && tabs.some(t => !t.muted), run: tabs => tabAct("mute", tabs) },
   { id: "unmute", group: 1, many: true, label: n => tabsWord(n, "Unmute", "Unmute # tabs"),

@@ -7,9 +7,14 @@
 // real page, wherever that is. Nothing here runs unless a view is being drawn or a
 // sound changes: no timer, no polling, and with nothing playing only the two queries.
 
+// Pages Tidier paused (tabactions.js), while they stay on the page they were paused on and
+// silent: no longer audible, they would show nothing, and nothing would say where the music
+// was, or let it go on. Kept in memory only: after a restart nothing plays anyway.
+const pausedTabs = new Set();
+
 // Firefox keeps a muted tab audible while the page still plays (the user just does
 // not hear it), so muted decides first.
-const ownSound = t => t.mutedInfo?.muted ? "muted" : t.audible ? "playing" : null;
+const ownSound = t => t.mutedInfo?.muted ? "muted" : t.audible ? "playing" : pausedTabs.has(t.id) ? "paused" : null;
 
 // Which tabs had sound in the last view, to notice when one closes.
 let soundTabs = new Set();
@@ -27,10 +32,11 @@ const knowEssentials = tabs => Promise.all(tabs.filter(t => t.pinned).map(t => k
 // a real page. A placeholder is left out, as what it says says nothing about the page:
 // a mute there does nothing until it loads the page (Firefox's own tab menu can do
 // that), and a page that has just become a placeholder is still audible for a moment.
-// Playing wins over muted: what you can hear is what you are looking for.
+// Playing wins over muted, and muted over paused: what you can hear is what you are looking for.
 async function soundsFor() {
-  const [playing, muted] = await Promise.all([browser.tabs.query({ audible: true }), browser.tabs.query({ muted: true })]);
-  const tabs = [...muted, ...playing.filter(t => ownSound(t) === "playing")].filter(t => !isGhostUrl(t.url));
+  const [playing, muted, paused] = await Promise.all([browser.tabs.query({ audible: true }), browser.tabs.query({ muted: true }),
+    Promise.all([...pausedTabs].map(id => browser.tabs.get(id).catch(() => null)))]);
+  const tabs = [...paused.filter(t => t && ownSound(t) === "paused"), ...muted, ...playing.filter(t => ownSound(t) === "playing")].filter(t => !isGhostUrl(t.url));
   await knowEssentials(tabs);
   return new Map(tabs.map(t => [soundKey(t), { sound: ownSound(t), tabId: t.id, space: t.cookieStoreId }]));
 }
@@ -82,3 +88,9 @@ async function goToSound(windowId, tabId) {
 browser.tabs.onUpdated.addListener(() => viewAllSoon(), { properties: ["audible", "mutedInfo"] });
 browser.tabs.onUpdated.addListener(tabId => { if (soundTabs.has(tabId)) viewAllSoon(); }, { properties: ["url"] });
 browser.tabs.onRemoved.addListener(tabId => { if (soundTabs.delete(tabId)) viewAllSoon(); });
+// A paused page that plays again (by itself, or by you on the page), goes to another page or
+// is unloaded is no longer one Tidier paused: its Play would start nothing, or the wrong thing.
+browser.tabs.onRemoved.addListener(tabId => pausedTabs.delete(tabId));
+browser.tabs.onUpdated.addListener((tabId, change) => {
+  if (pausedTabs.has(tabId) && (change.audible || change.url || change.discarded)) { pausedTabs.delete(tabId); viewAllSoon(); }
+}, { properties: ["audible", "url", "discarded"] });

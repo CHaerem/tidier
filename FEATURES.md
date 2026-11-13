@@ -43,8 +43,8 @@ part C).
 | Resizable sidebar width | Z A S | Done | Firefox's own sidebar handle (userChrome.css) |
 | Compact mode: sidebar hidden, shown at the edge | Z A | Done | userChrome.css, ⌘S |
 | A link dragged from a page or another app can be dropped in the sidebar | Z A | Done | checked, with drags made as Firefox hands one to the page: a tab where it lands, among the tabs, in a folder (saved there), among the essentials, or on another space's dot; in the background, in that space, past the rules; marked as a dragged tab is, and text or a file is no link. A drag from a real page and from another app waits for the second Mac |
-| Soft motion where something comes or goes: a folder opening, a new row | Z A | Planned | today a folder's tabs fade in while its height jumps, and a new row is simply there. Short, only for what you caused, and no row moves under the pointer |
-| Pause and play from the sidebar | Z A | Planned | mute only today; needs the optional access to all websites |
+| Soft motion where something comes or goes: a folder opening, a new row | Z A | Done | checked: a folder opens and closes by its height; a new row fades in where it is, taking its room at once, so nothing under the pointer moves for it; a row that closes folds away. Nothing of it with less motion asked for, and nothing runs while nothing happens |
+| Pause and play from the sidebar | Z A | Done | checked on a page that really plays: Pause in a playing tab's menu (it asks for the optional access to all websites in its click), and while it is silent a play mark where its speaker was, and Play in its menu, which start only what Tidier paused. A sound made without an audio or video element on the page cannot be reached, and the line says so |
 | A mark when the selected tab is out of view | Z | Later | the list goes to it when it is selected; nothing says so after you scroll away |
 | Any tab can be renamed | Z | Decide | saved tabs and essentials only: today's tabs are temporary |
 | Tabs nested under tabs (tree) | S | No | you only use folders; a tree is where most of Sidebery's bugs came from |
@@ -58,7 +58,7 @@ part C).
 | Only the active space's tabs shown (⌃Tab too) | Z A S | Done | checked. Other spaces' essentials stay in ⌃Tab: Firefox cannot hide a pinned tab |
 | Switch with ⌃1/2/3 | Z A S | Done | checked: back to the tab you selected last in that space, in any window (not one opened in the background, moved there or resting in a closed folder, nor one another window is showing) |
 | Switch by swiping sideways on the trackpad | Z A | Done | checked, with wheel events made as a trackpad sends them: the list follows the fingers and the next space comes in beside it as it will be; a flick goes at once; a scroll is never a swipe, however far it drifts (which is what went wrong with Sidebery). How it feels under real fingers waits for the second Mac |
-| Switching by a click or ⌃1/2/3 slides as a swipe does | Z A | Planned | today the list changes in one frame while the tint fades |
+| Switching by a click or ⌃1/2/3 slides as a swipe does | Z A | Done | checked: the new space slides in a little way from the side its dot is on, as it fades in; the bar stays. A short slide, not the whole width: calmer, and a key pressed several times does not wait for it |
 | The active space's dot follows the fingers during a swipe | Z A | Later | it moves when the swipe is decided |
 | Colour per space, for the whole window | Z A | Done | userChrome.css and tidier.css |
 | New, edited and deleted spaces in Tidier: name, icon and colour | Z A S | Done | checked, on the settings page and from a space's menu; dropping a tab on the bar makes a new one; Firefox's container settings aren't needed |

@@ -158,7 +158,15 @@ be done, in order, is in [PLAN.md](PLAN.md).
    closes it when unused. A live folder's pull requests are not saved (the search decides
    what is in them).
 
-8. **A link dropped in the sidebar** (`sidebar/drag.js`, `droplinks.js`), from a page or
+8. **Pause and play** (`tabactions.js`, `sounds.js`): a tab that plays has *Pause* in its
+   menu, which pauses what plays in the page, in every frame. While it is silent its row
+   or tile shows a play mark where the speaker was, and its menu has *Play*; both start
+   only what Tidier paused, not every video on the page. Playing again on the page, going
+   to another page or unloading it ends that. It runs a line in the page, so it needs the
+   optional access to all websites, which *Pause* asks for in its click. A sound a page
+   makes without an `<audio>` or `<video>` element cannot be reached from here, and the
+   quiet line says so.
+9. **A link dropped in the sidebar** (`sidebar/drag.js`, `droplinks.js`), from a page or
    from another app, opens as a tab where it is dropped: among today's tabs, in a folder
    (a saved tab there, saved on the link itself), among the essentials, or on another
    space's dot. It opens in the background, in the space it was dropped in, and no rule
@@ -404,6 +412,12 @@ back. At the first and the last space the list gives a little and comes back; no
 made, and nothing wraps around. With less motion asked for in the system's settings
 nothing follows the fingers: a clear swipe simply switches.
 
+Switching by a click on the bar or a key has motion of its own (`sidebar/motion.js`): the
+new space slides in a little way from the side its dot is on as it fades in, and the bar
+stays where it is. A folder opens and closes by its height, and a new row fades in where
+it is, having taken its room at once. All of it is short, follows what you did, and stands
+still with less motion asked for.
+
 Scrolling the list never switches space (`sidebar/swipetrack.js`). That is what went
 wrong when this was tried with Sidebery, where enough sideways movement switched,
 whenever it came. Here a movement is one thing, from its first event to the pause after
@@ -579,7 +593,7 @@ list to the manifest, both ways.
 | `tabHide` | Hiding other spaces' tabs from Firefox's tab bar and ⌃Tab. Without it they are only left out of the sidebar. |
 | `webRequest` | Seeing a page's address before it loads, to keep spaces apart (Isolation, below). |
 | `webRequestBlocking` | Stopping that page before it loads in the wrong space. |
-| `*://*/*` | Every website, for the two above, for reading a page when you ask (Copy for Claude, the bridge), ⌥-click on a link, and the keys typed right after the command bar's key. |
+| `*://*/*` | Every website, for the two above, for reading a page when you ask (Copy for Claude, the bridge), ⌥-click on a link, the keys typed right after the command bar's key, and pausing what plays in a page when you ask. |
 | `<all_urls>` | Pictures of pages, when you allow them on the settings page: a window whose page another window has taken keeps showing it under a grey layer, and the bridge's screenshot. Firefox gives pictures with nothing less. |
 | `proxy` | A space's own proxy, when you give it one. |
 | `browsingData` | Signing out of everything in one space, when you ask. |
@@ -790,7 +804,8 @@ Not guaranteed:
 - `sidebar-view.js`, `sidebar/` – Tidier's own sidebar; among its parts `selection.js`
   (several tabs), `drag.js`, `stayput.js` (the list shows where you are), `touches.js`
   (the slow-load sign and warming up a tab), and `swipetrack.js` and `swipe.js` (a swipe on
-  the trackpad switches space: what counts as one, and how it is drawn). `sidebar/tokens.css` holds the colours and
+  the trackpad switches space: what counts as one, and how it is drawn), and `motion.js`
+  (a space slides in, a folder opens by its height). `sidebar/tokens.css` holds the colours and
   sizes of every page Tidier draws.
 - `copies.js` – the daily copy of Tidier's data, and taking one in, matched to spaces by name.
 - `moveover.js`, `settings/` – the settings page, moving a browser over from Sidebery at its
