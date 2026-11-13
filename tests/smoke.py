@@ -2493,7 +2493,14 @@ def alone_tab_menu(m):
         m.js(clipboard + 'Cc["@mozilla.org/widget/clipboardhelper;1"].getService(Ci.nsIClipboardHelper).copyString("before"); return 1;')
         act(a, "Copy address")
         copied = m.js(clipboard + 'await until(() => read() !== "before", 3000); return read();')
+        # And it says so, where ⇧⌘C says it: on the page where Tidier may write there, else
+        # on the sidebar's own line (sayDone, pagenote.js).
+        said = sidebar_page(m, """for (let i = 0; i < 60; i++) { const n = doc.getElementById("note");
+            if (n.classList.contains("shown")) return doc.querySelector("#note .text").textContent;
+            await wait(100); }
+          return "";""")
         check("Copy address copies the page's address from an unloaded tab", copied == "https://example.org/?smoke-menu-a", repr(copied))
+        check("and says so, as ⇧⌘C does", said == "Address copied", repr(said))
 
         # A row that is only a placeholder here, with the page loaded in another window.
         opened = m.js(H + """if (other()) return false; const w = main().OpenBrowserWindow(); w.__smoke = true;
@@ -3889,8 +3896,10 @@ def alone_touches(m):
       await until(() => !signed(), 6000);
       out.gone = !signed();
       out.fading = await Promise.race([fading, wait(1000)]);
+      // Up to bright: sampled until it is there, since on a busy machine the 300 ms of the
+      // fade can take a second of looks.
       out.brightening = [];
-      for (let i = 0; i < 25; i++) { out.brightening.push(Number(page.getComputedStyle(img).opacity)); await wait(20); }
+      for (let i = 0; i < 100 && out.brightening.at(-1) !== 1; i++) { out.brightening.push(Number(page.getComputedStyle(img).opacity)); await wait(20); }
       await finished();
       out.sameIcon = slow.querySelector("img") === img && img.isConnected;
 

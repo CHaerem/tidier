@@ -134,7 +134,10 @@ be done, in order, is in [PLAN.md](PLAN.md).
    colour, with the words in its tooltip: your review, a draft, failing checks, a
    conflict, changes asked for, approved, checks running, or simply open.
 5. **⇧⌘C copies the address** of the current tab, as in Arc and Zen
-   (`shortcuts.js`), and a word at the top of the page says so. Firefox gives ⇧⌘C to the developer tools' element
+   (`shortcuts.js`), and a word at the top of the page says so. Every other way of copying says the same word, in the
+   same place: Copy address and Copy as Markdown link in the menus, and the command bar's
+   Copy address. From a menu it is usually the sidebar's own line that says it, since
+   Firefox gives an extension the page only for a key of its own. Firefox gives ⇧⌘C to the developer tools' element
    picker, which wins over extensions; free it in `about:keyboard` (the
    dotfiles do this in `customKeys.json`).
 6. **Archiving**, as in Arc (`archive.js`): a tab not selected in any window
@@ -326,7 +329,7 @@ With Tidier alone, the keys follow what the sidebar shows (`shortcuts.js`,
 - ⌘D: make this tab an essential, or an ordinary tab again
 - ⌥⌘N: a new folder
 - ⇧⌘K: the command bar, and ⌘T as well once `about:keyboard` has cleared Firefox's own ⌘T
-- ⇧⌘C: copy the address (a word at the top of the page says so, or the line in the sidebar where a page takes none); ⌃⇧S: show or hide the sidebar
+- ⇧⌘C: copy the address (a word at the top of the page says so, or the line in the sidebar where a page takes none; the menus' Copy address says the same); ⌃⇧S: show or hide the sidebar
 - ⌘Z, with the keyboard in the sidebar: what the quiet line offers to undo, while it shows
 - Copy page for Claude, Copy these tabs for Claude and Ask Claude about this page: no key
   until you give them one, in the same Keys section once Copy for Claude is on
@@ -591,7 +594,7 @@ list to the manifest, both ways.
 | `nativeMessaging` | Two small programs on this machine, set up by the dotfiles: `tidier_github` (the pull request search and the daily copy) and `tidier_bridge` (the bridge for agents, when it is on). |
 | `alarms` | Timing: archiving, the live folders' refresh, the daily copy. |
 | `clipboardWrite` | ⇧⌘C, Copy address in the menus, and Copy for Claude. |
-| `activeTab` | The page you pressed one of Tidier's keys in, for that moment: ⇧⌘C says *Address copied* on the page itself. Firefox asks nothing for it and lists nothing. |
+| `activeTab` | The page you pressed one of Tidier's keys in, for that moment: ⇧⌘C and the menus' Copy address say *Address copied* on the page itself. Firefox asks nothing for it and lists nothing. |
 | `menus` | Tidier's own menu in its sidebar, and "Open link in" on a link's menu. |
 | `menus.overrideContext` | That menu instead of Firefox's, in Tidier's own sidebar only. |
 | `tabHide` | Hiding other spaces' tabs from Firefox's tab bar and ⌃Tab. Without it they are only left out of the sidebar. |

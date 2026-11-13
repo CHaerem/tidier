@@ -288,7 +288,10 @@ Changed by saying so. All of them can be reversed.
   one tab: the second click does nothing.
 - ⇧⌘C says *Address copied* on the page itself (the owner, the same day: nothing showed that
   it had worked). For that Tidier has `activeTab`: the page a key of Tidier's is pressed in.
-  It is used for that word only; a page is read only with the access to all websites.
+  It is used for that word only; a page is read only with the access to all websites. Every
+  other way of copying an address says the same word, in the same place (from a menu
+  usually the sidebar's line, since `activeTab` is for a key of Tidier's), so that copying
+  always looks the same wherever you asked for it.
 - Firefox's own ⌘1 to ⌘9, ⌘D and ⌘T are to be cleared by the dotfiles, now that no
   browser needs them for Sidebery. No extension can read about:keyboard,
   so the dotfiles tell Tidier what they cleared (managed storage), and a key they did not

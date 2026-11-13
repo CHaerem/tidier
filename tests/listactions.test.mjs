@@ -314,6 +314,49 @@ test("copying as Markdown links: one per line, and a title cannot end its link",
   s.x.kill();
 });
 
+test("a copy from a menu says so, on the page you are on, and tells how many and in what form", async () => {
+  const s = await world({ today: ["a", "b"] });
+  s.ff.scriptable = true;
+  await s.act("copy", ["a"]);
+  assert.equal(s.ff.pageScripts.length, 1, "on the page itself, as ⇧⌘C says it");
+  assert.match(s.ff.pageScripts.at(-1).code, /\("Address copied", \d+\)$/);
+  assert.deepEqual(s.x.said, [], "said once: not on the quiet line as well");
+  await s.act("copy", ["a", "b"]);
+  assert.match(s.ff.pageScripts.at(-1).code, /\("2 addresses copied", \d+\)$/);
+  await s.act("copyMarkdown", ["a"]);
+  assert.match(s.ff.pageScripts.at(-1).code, /\("Address copied as a Markdown link", \d+\)$/);
+  await s.act("copyMarkdown", ["a", "b"]);
+  assert.match(s.ff.pageScripts.at(-1).code, /\("2 addresses copied as Markdown links", \d+\)$/);
+  s.x.kill();
+});
+
+test("where the page takes no word, a copy from a menu says it on the quiet line, and nothing to copy says nothing", async () => {
+  const s = await world({ today: ["a"] });
+  await s.act("copy", ["a"]); // no page script allowed: as on a page Firefox shields
+  assert.deepEqual(s.x.said, [{ text: "Address copied", brief: true }]);
+  s.x.said = [];
+  s.x.copied = [];
+  await s.act("copy", [s.tab.e.id]); // an essential that is only a placeholder here has an address
+  await s.x.js("serial")(() => s.x.js("tabAction")(s.w.id, { action: "copy", tabIds: [] }));
+  assert.deepEqual(s.x.copied, ["https://e.example/"]);
+  assert.equal(s.x.said.length, 1, "nothing copied, nothing said");
+  s.x.kill();
+});
+
+test("the sidebar's own copy asks for the same word, said where a key's word is said", async () => {
+  const s = await world({ today: ["a"] });
+  s.ff.scriptable = true;
+  // The way in from a sidebar: it copies in its own click and asks for the word (tabmenu.js).
+  const heard = [];
+  s.x.b.runtime.onConnect.fire({ name: "sidebar", sender: { id: s.x.b.runtime.id }, postMessage() {}, onMessage: { addListener: f => heard.push(f) }, onDisconnect: { addListener() {} } });
+  for (const f of heard) await f({ type: "hello", windowId: s.w.id });
+  for (const f of heard) await f({ type: "copied", text: "Address copied" });
+  await wait(300);
+  assert.match(s.ff.pageScripts.at(-1)?.code ?? "", /\("Address copied", \d+\)$/);
+  assert.deepEqual(s.x.said, []);
+  s.x.kill();
+});
+
 // --- Back and forward ------------------------------------------------------------------
 test("back and forward go through this space's tabs by their real last use, and a walk ends when you go elsewhere", async () => {
   const s = await world({ today: ["a", "b", "c", "d"], active: "a" });
@@ -388,6 +431,8 @@ test("a folder's and a space's keys act on the folder of the selection, else of 
   const press = async name => { s.x.b.commands.onCommand.fire(name, s.ff.snap(s.tab.f1)); await wait(800); };
   await press("folder-copy");
   assert.deepEqual(s.x.copied, ["https://f1.example/\nhttps://f2.example/"], "the folder's tabs as drawn");
+  assert.deepEqual(s.x.said, [{ text: "2 addresses copied", brief: true }], "and it says so");
+  s.x.said = [];
   await press("folder-mute");
   assert.equal(s.tab.f2.mutedInfo?.muted, true);
   assert.equal(s.tab.a.mutedInfo, undefined, "not today's tabs");
@@ -399,7 +444,7 @@ test("a folder's and a space's keys act on the folder of the selection, else of 
   s.x.b.runtime.sendMessage = async msg => (msg.type === "commandBarSelection" ? [s.tab.a.id, s.tab.b.id] : undefined);
   await press("folder-close");
   assert.equal((await s.view()).folders.F.length, 3);
-  assert.deepEqual(s.x.said, []);
+  assert.deepEqual(s.x.said, [], "and says nothing");
   await press("space-mute");
   assert.equal(s.tab.a.mutedInfo?.muted, true, "this window's space");
   assert.equal(s.tab.other.mutedInfo, undefined, "not another space");

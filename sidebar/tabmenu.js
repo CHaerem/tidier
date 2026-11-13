@@ -11,6 +11,10 @@
 const tabsWord = (n, one, many) => (n > 1 ? many.replace("#", n) : one);
 const eachTab = test => tabs => tabs.every(test);
 const tabAct = (action, tabs, more = {}) => send({ type: "tabAction", action, tabIds: tabs.map(t => t.id), ...more });
+// Copied in the click, where the clipboard can be written to, and said where every other
+// word about a key or a command is said: on the page, or on the quiet line (pagenote.js).
+const copyHere = (lines, said) => navigator.clipboard.writeText(lines.join("\n"))
+  .then(() => send({ type: "copied", text: said }), err => console.error("Tidier: copy", err));
 const movable = t => !t.tile && !t.liveFolder && !!t.address; // the search decides what is in a live folder
 
 // A tab's folders to choose from: leaving out where all of them already are.
@@ -46,7 +50,7 @@ const TAB_MENU = [
     when: eachTab(t => !!t.address), run: tabs => tabAct("duplicate", tabs) },
   // Here, on the click: the addresses are at hand, and a copy need not wait for the queue.
   { id: "copy", group: 2, many: true, label: n => tabsWord(n, "Copy address", "Copy # addresses"),
-    when: eachTab(t => !!t.address), run: tabs => navigator.clipboard.writeText(tabs.map(t => t.address).join("\n")).catch(err => console.error("Tidier: copy", err)) },
+    when: eachTab(t => !!t.address), run: tabs => copyHere(tabs.map(t => t.address), tabsWord(tabs.length, "Address copied", "# addresses copied")) },
 
   { id: "rename", group: 3, label: () => "Rename",
     when: tabs => tabs[0].kept, run: tabs => renameKept(tabs[0].id) }, // renamekept.js

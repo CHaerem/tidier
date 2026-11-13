@@ -91,6 +91,11 @@ function place(parent, nodes) {
 const setIf = (e, name, value) => { if (e.getAttribute(name) !== value) e.setAttribute(name, value); };
 const textIf = (e, text) => { if (e.textContent !== text) e.textContent = text; };
 
+// Less motion is asked for in the system's settings: what moves by a script then does not
+// (what moves by a style sheet is stopped there, tokens.css). Asked each time, for every
+// sidebar script: the setting can change while the sidebar is open.
+const lessMotion = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
+
 // The kept element for `id`, its content drawn again only if `state` changed.
 // Not while it is being pressed: drawing replaces what is under the pointer, and
 // Firefox then sends no click at all, so a page whose title ticks could not be muted
@@ -316,7 +321,7 @@ let pickedByHand = false; // the last row selected was clicked with the mouse
 const tabsList = document.getElementById("tabs");
 const lingering = new Set(); // tab ids of rows a closed folder keeps showing for now
 const stillDim = new Set(); // tab ids of saved tabs just unloaded with their ×, until the mouse leaves them
-let roomsInSpace = null;
+let spaceDrawn = null; // the space whose list was drawn last
 let foldsRows = false; // this view is of the list drawn before it: what has gone from it folds away
 const holding = () => tabsList.matches(":hover");
 const HELD_MS = 3000; // longer than the next click takes, shorter than a row out of place is looked at
@@ -324,12 +329,11 @@ let heldTimer = null;
 function heldFromNow() {
   if (!heldTimer) tabsList.addEventListener("mousemove", heldFromNow, { passive: true });
   clearTimeout(heldTimer);
-  heldTimer = setTimeout(letRoomsGo, HELD_MS);
+  heldTimer = setTimeout(letHeldGo, HELD_MS);
 }
 
 const ROW_FOLD_MS = 180, ROW_FOLD_EASE = "cubic-bezier(.2, .7, .2, 1)"; // tokens.css's --soft, for the room; the row's own is sidebar.css
 const CLOSE_REFUSED_MS = 1500; // a tab that is still there by then did not close
-const lessMotion = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
 const closingRows = new Map(); // tab id, as dataset.tab -> the timer that lets its row back
 // What × does to a row is not the same on every row (closeTitle, below): a saved tab that is
 // loaded only unloads, in its place, and its row stays.
@@ -390,7 +394,9 @@ function withRooms(parent, nodes) {
   }
   return out;
 }
-function letRoomsGo() {
+// What was held for the pointer is let go: the rows kept showing or kept dim, and the room
+// the quiet line left at the list's end.
+function letHeldGo() {
   for (const row of tabsList.querySelectorAll(".lingers, .still-dim")) row.classList.remove("lingers", "still-dim");
   lingering.clear();
   stillDim.clear();
@@ -399,7 +405,7 @@ function letRoomsGo() {
   heldTimer = null;
   tabsList.removeEventListener("mousemove", heldFromNow);
 }
-tabsList.addEventListener("mouseleave", letRoomsGo);
+tabsList.addEventListener("mouseleave", letHeldGo);
 // After a view: the row a closed folder showed for the selected tab, which is no longer
 // selected, stays while the pointer is in the list. (Its draw resets its classes.)
 let selectedRow = null;
@@ -545,8 +551,8 @@ function render(next) {
   drawn = new Set();
   if (goingTo?.space === view.space) arrived();
   const space = view.spaces.find(s => s.id === view.space), root = document.documentElement;
-  foldsRows = view.space === roomsInSpace; // another space's list is not this one with rows gone
-  if (!foldsRows) { roomsInSpace = view.space; letRoomsGo(); } // another list: nothing in it was where you pointed
+  foldsRows = view.space === spaceDrawn; // another space's list is not this one with rows gone
+  if (!foldsRows) { spaceDrawn = view.space; letHeldGo(); } // another list: nothing in it was where you pointed
   const look = { space: view.space || "", accent: space?.color || "#7a7a80" };
   // A space comes in as one piece: a folder drawn for it now does not fade in on its own,
   // after everything else (sidebar.css, html.space-arriving), as a folder that appears does.

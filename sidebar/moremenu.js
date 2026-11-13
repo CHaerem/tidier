@@ -59,7 +59,7 @@
     const parts = [
       [
         ...(!live && n > 1 ? [["Sort this folder", sortChoices(tabs)]] : []),
-        ...(withAddress.length ? [[withAddress.length > 1 ? "Copy addresses" : "Copy address", () => tabAct("copy", withAddress)],
+        ...(withAddress.length ? [[withAddress.length > 1 ? "Copy addresses" : "Copy address", () => copyHere(withAddress.map(t => t.address), tabsWord(withAddress.length, "Address copied", "# addresses copied"))],
           [withAddress.length > 1 ? "Copy as Markdown links" : "Copy as Markdown link", () => tabAct("copyMarkdown", withAddress)]] : []),
       ],
       [

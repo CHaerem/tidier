@@ -42,13 +42,16 @@ const BAR_ASK_SIDEBAR_MS = 300;
 const CLOSED_LOOKED_AT = 25; // Firefox's list of closed tabs holds about this many anyway
 const BAR_ASKED = "commandBarAsked"; // storage: history and bookmarks have been asked for, so the row does not come back
 
-let commandBar = null; // the open bar: { id (its window's, if it is one), from, pressedAt, snapshot (a promise), ctx, closeOnOpen, early (keys caught before it), port (once its page is there), caughtIn (the tab they were caught in), gone (called when its page has gone) }
+let commandBar = null; // the open bar: { ownWindow (its id, where the bar is a window), from, pressedAt, snapshot (a promise), ctx, closeOnOpen, early (keys caught before it), port (once its page is there), caughtIn (the tab they were caught in), gone (called when its page has gone) }
 
 const barUses = storedValue("commandUses", () => ({})); // command name -> how often: "the most used"
 const barAccents = new Map(); // space -> its colour, as the last bar was given it
 
+// Where the bar is: Firefox's panel in the window you are in, also while it is on its way
+// there, unless it has been given a window of its own (the way back, toggleCommandBar).
+const barInPanel = bar => bar.ownWindow === null;
 // Open in the window itself, with its page there: the keyboard is the bar's (shortcuts.js).
-const barHasKeyboard = () => !!commandBar?.port && commandBar.id === null;
+const barHasKeyboard = () => !!commandBar?.port && barInPanel(commandBar);
 
 // The window to open from: the one you are in. A sign-in popup or another bar is not a
 // window to open tabs in, so then any normal window.
@@ -67,11 +70,11 @@ async function barSourceWindow(tab) {
 // keyboard is caught where it goes (barkeys.js) and handed to it.
 async function toggleCommandBar(tab) {
   // "There" is when its page has said so (the port): a panel has nothing else to go by.
-  const opening = commandBar && !commandBar.port && commandBar.id === null;
+  const opening = commandBar && !commandBar.port && barInPanel(commandBar);
   if (opening && Date.now() - commandBar.pressedAt > BAR_OPEN_LIMIT_MS) commandBar = null;
   else if (opening) { commandBar.closeOnOpen = !commandBar.closeOnOpen; return; } // what the presses add up to is settled once it is there
   if (commandBar) return barClose(commandBar, true);
-  const bar = commandBar = { id: null, from: null, pressedAt: Date.now(), snapshot: null, ctx: null, closeOnOpen: false, early: null, port: null, gone: null };
+  const bar = commandBar = { ownWindow: null, from: null, pressedAt: Date.now(), snapshot: null, ctx: null, closeOnOpen: false, early: null, port: null, gone: null };
   barCatchKeys(tab, bar); // first of all: the next key can be on its way already
   try {
     const from = await barSourceWindow(tab);
@@ -85,7 +88,7 @@ async function toggleCommandBar(tab) {
     const address = more => { const all = new URLSearchParams([...given, ...more]); return `${BAR_PAGE}${all.size ? `?${all}` : ""}#${bar.pressedAt}`; };
     if (await barOpenInWindow(from, address([["panel", String(barPanelWidth(from))]]))) return; // closeOnOpen is settled when its page is there
     const win = await browser.windows.create({ type: "popup", url: address([]), allowScriptsToClose: true, ...barPlaceOver(from) });
-    bar.id = win.id;
+    bar.ownWindow = win.id;
     if (bar.closeOnOpen) await barClose(bar, true);
   } catch (err) {
     if (commandBar === bar) commandBar = null;
@@ -165,7 +168,7 @@ browser.runtime.onMessage.addListener((msg, sender) => {
 
 async function barClose(bar, refocus) {
   if (commandBar === bar) commandBar = null;
-  if (bar.id == null) {
+  if (barInPanel(bar)) {
     // In the window: its page closes it (only the page can), and Firefox gives the keyboard
     // back to where it was. Waited for, since what you chose is carried out after this, and a
     // tab selected under an open panel would not get the keyboard.
@@ -176,7 +179,7 @@ async function barClose(bar, refocus) {
     return;
   }
   barForgetUntil = Date.now() + BAR_FORGET_MS;
-  await browser.windows.remove(bar.id).catch(() => {});
+  await browser.windows.remove(bar.ownWindow).catch(() => {});
   // Not after losing the focus: you clicked somewhere else, and that is where you want to be.
   if (refocus) await browser.windows.update(bar.from, { focused: true }).catch(() => {});
 }
@@ -196,7 +199,7 @@ async function barForgetClosed() {
 browser.sessions.onChanged.addListener(barForgetClosed);
 
 browser.windows.onRemoved.addListener(id => {
-  if (commandBar?.id !== id) return;
+  if (commandBar?.ownWindow !== id) return;
   commandBar = null; // closed by something else than the bar itself: ⌘W, say
   barForgetUntil = Date.now() + BAR_FORGET_MS;
 });
@@ -665,14 +668,14 @@ browser.runtime.onConnect.addListener(port => {
     browser.windows.get(windowId).then(win => (win.type === "popup" ? browser.windows.remove(windowId) : browser.tabs.remove(port.sender.tab.id))).catch(() => {});
     return;
   }
-  if (windowId !== undefined) bar.id = windowId; // the page can be here before windows.create has answered
+  if (windowId !== undefined) bar.ownWindow = windowId; // the page can be here before windows.create has answered
   barCatchKeys(bar.caughtIn, bar, "bar:stop"); // its field has the keyboard (commandbar/commandbar.js focuses it first)
   // What was typed before the page had the keyboard goes to it as soon as it is known, also
   // before the rows: the page keeps an Enter until it has rows to choose from, and it must
   // have the first letters before it chooses. (The port can be gone by then: the key pressed
   // again, say.)
   bar.port = port;
-  if (bar.closeOnOpen && bar.id === null) { barClose(bar, true); return; } // in the window: the key was pressed again before it was there
+  if (bar.closeOnOpen && barInPanel(bar)) { barClose(bar, true); return; } // in the window: the key was pressed again before it was there
   if (bar.early) port.postMessage(bar.early);
   bar.snapshot.then(snapshot => port.postMessage(snapshot ?? { pressedAt: bar.pressedAt, items: [], spaces: [] })).catch(() => {});
   port.onMessage.addListener(async msg => {

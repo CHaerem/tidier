@@ -34,7 +34,7 @@
   // When the room goes, the list grows into it. Scrolled to its end, Firefox would then
   // move every row down to fill the list: instead, with the pointer in the list, the list
   // keeps that much room at its end until the pointer has left it or rested there a while
-  // (letRoomsGo, heldFromNow, sidebar.js), so nothing moves under the pointer. (With the
+  // (letHeldGo, heldFromNow, sidebar.js), so nothing moves under the pointer. (With the
   // pointer elsewhere nothing is under it.)
   const closeRoom = () => {
     roomTimer = null;

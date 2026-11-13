@@ -70,6 +70,7 @@ function pageNote(text, ms) {
 // Whether it could be said there. At once, also in a page still loading: by the time the
 // page has finished, the word would be about something you did a while ago.
 async function sayInPage(tabId, text) {
+  if (tabId === undefined) return false; // no tab to say it in: the quiet line then
   const said = browser.tabs.executeScript(tabId, { code: `(${pageNote})(${JSON.stringify(text)}, ${PAGE_NOTE_MS})`, runAt: "document_start" })
     .then(([there]) => there === true, () => false); // refused: Firefox lets no extension into this page
   // A page too busy to answer must not leave the key without a word.

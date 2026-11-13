@@ -4,12 +4,11 @@
 // new row fades in by itself, sidebar.css; a swipe has motion of its own, swipe.js.)
 //
 // Nothing here runs while nothing happens: no timer, no frame loop. With less motion asked
-// for in the system's settings none of it moves.
+// for in the system's settings none of it moves (lessMotion, sidebar.js).
 //
 // In a block, so that no name here can clash with another sidebar script.
 {
   const root = document.documentElement, list = document.getElementById("tabs");
-  const stillAsked = matchMedia("(prefers-reduced-motion: reduce)");
   // The time and curve everything soft here moves by (tokens.css), read once it is needed.
   let soft = null;
   const softly = () => {
@@ -30,7 +29,7 @@
   port.onMessage.addListener(next => {
     const was = shown;
     shown = next.space;
-    if (!was || was === next.space || stillAsked.matches || root.classList.contains("swiping")) return;
+    if (!was || was === next.space || lessMotion() || root.classList.contains("swiping")) return;
     const ids = next.spaces.map(s => s.id), from = ids.indexOf(was), to = ids.indexOf(next.space);
     const dir = from < 0 || to < 0 ? 0 : Math.sign(to - from);
     const { duration, easing } = softly();
@@ -48,7 +47,7 @@
   // in the same turn: nothing is painted in between. Not while a whole space comes in, nor
   // for a folder that is new: only one that was there and changed.
   const folds = new MutationObserver(records => {
-    if (stillAsked.matches || root.classList.contains("space-arriving") || root.classList.contains("swiping")) return;
+    if (lessMotion() || root.classList.contains("space-arriving") || root.classList.contains("swiping")) return;
     const changed = new Set();
     for (const r of records) {
       const box = r.target;

@@ -156,9 +156,21 @@ const TAB_ACTIONS = {
   // A folder's tabs, closed for good with one line to take them back: closing a saved tab
   // one by one would only unload it.
   closeAll: (windowId, reals) => closeRows(windowId, reals.map(r => r.own.id)),
-  copy: (windowId, reals) => copyText(reals.filter(r => r.address).map(r => r.address).join("\n")),
-  copyMarkdown: (windowId, reals) => copyText(reals.filter(r => r.address).map(r => markdownLink(r.title, r.address)).join("\n")),
+  // Said where every word about a key or a command is said: on the page, or on the quiet
+  // line (sayDone, pagenote.js). The sidebar's own Copy address copies in its click and asks
+  // for the same word (sidebar/tabmenu.js).
+  copy: (windowId, reals) => copied(windowId, reals, r => r.address),
+  copyMarkdown: (windowId, reals) => copied(windowId, reals, r => markdownLink(r.title, r.address), "as a Markdown link", "as Markdown links"),
 };
+
+async function copied(windowId, reals, line, one = "", many = "") {
+  const lines = reals.filter(r => r.address).map(line);
+  if (!lines.length) return;
+  await copyText(lines.join("\n")); // listactions.js
+  const what = lines.length > 1 ? `${lines.length} addresses copied` : "Address copied";
+  const [tab] = await browser.tabs.query({ windowId, active: true });
+  await sayDone(windowId, tab?.id, [what, lines.length > 1 ? many : one].filter(Boolean).join(" "));
+}
 
 // A kept tab back on the address kept for it, as closing it would take it, but without
 // closing it: the page is loaded there. Firefox's own Back goes the other way again.

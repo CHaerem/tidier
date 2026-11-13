@@ -276,6 +276,11 @@ browser.runtime.onConnect.addListener(port => {
     } else if (msg.type === "holdNote") {
       holding = msg.held ? msg.note : null;
       holdNote(windowId, msg.note, msg.held); // quiet.js: the line waits while you are on it
+    } else if (msg.type === "copied") {
+      // The sidebar copied in its own click (the clipboard needs that): the word for it is
+      // said here, where the page and the quiet line are, as ⇧⌘C says it (pagenote.js).
+      const [tab] = await browser.tabs.query({ windowId, active: true });
+      await sayDone(windowId, tab?.id, msg.text);
     } else if (msg.type === "goToSound") {
       await goToSound(windowId, msg.tabId); // sounds.js; like select, not behind what the queue is doing
     } else if (msg.type === "warmup") {

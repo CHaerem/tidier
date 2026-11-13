@@ -32,7 +32,6 @@
     overlay.addEventListener(type, e => { e.preventDefault(); e.stopPropagation(); }, true);
   }
 
-  const stillAsked = matchMedia("(prefers-reduced-motion: reduce)");
   const GIVE_UP_MS = 2000; // no view of the new space for this long: the list as it is, is the truth
   const STRAY_PX = 24; // what a swipe's own up and down can have scrolled the list under the picture
   let swipe = null; // { space, top, home, panes, anim, backing, going, slid, arrived, giveUp }
@@ -40,7 +39,7 @@
   const lastViews = new Map(); // space -> its view when this sidebar last drew it
 
   const neighbour = dir => { const ids = view.spaces.map(s => s.id); return ids[ids.indexOf(view.space) + dir] ?? null; };
-  const env = () => ({ width: innerWidth, next: !!neighbour(1), prev: !!neighbour(-1), still: stillAsked.matches });
+  const env = () => ({ width: innerWidth, next: !!neighbour(1), prev: !!neighbour(-1), still: lessMotion() });
   // A swipe is for the list as it lies: not over a menu, a drag, a name being typed or the archived tabs.
   const taken = () => !view || !!dragging || !document.getElementById("menu").hidden || archivedSpace !== null || !!document.activeElement?.closest?.("input");
 
