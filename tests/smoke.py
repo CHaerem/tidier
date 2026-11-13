@@ -2928,10 +2928,23 @@ def alone_hand(m):
     check("and its room goes once the pointer has left it", not left["shown"] and left["list"] > p["list"], str(left))
 
     def close_two(a, b):
-        p = hand_spot(m, """const [a, b] = args; row(a).scrollIntoView({block: "center"}); return {...box(row(a).querySelector(".close")), second: box(row(b).querySelector(".close"))};""", a, b)
+        # Two clicks within the moment that makes them one thing you did (CLOSE_GROUP_MS), so the
+        # second × is where it was seen before the first click. A closed row folds away, and the
+        # rows below it come up (at the end of a scrolled list, the rows above come down instead):
+        # so the row that goes first is the one whose going leaves the other where it is. On a
+        # slow machine the second click otherwise found the next row under it, and closed that.
+        before = hands()
+        p = hand_spot(m, """const [a, b] = args, list = doc.getElementById("tabs"); row(a).scrollIntoView({block: "center"});
+          const atEnd = list.scrollTop > 0 && list.scrollHeight - list.scrollTop - list.clientHeight < 40;
+          const [upper, lower] = [row(a), row(b)].sort((x, y) => box(x).top - box(y).top), [first, second] = atEnd ? [upper, lower] : [lower, upper];
+          return {...box(first.querySelector(".close")), second: box(second.querySelector(".close"))};""", a, b)
         o = m.js(SIDEBAR_AT)
         hand(m, hand_to(p), hand_pause(150), *hand_click(), hand_to({"x": o["x"] + p["second"]["x"], "y": o["y"] + p["second"]["y"]}), *hand_click())
-        return sidebar_until(m, """() => doc.getElementById("note").classList.contains("shown") && doc.querySelector("#note .text").textContent""")
+        said = sidebar_until(m, """() => doc.getElementById("note").classList.contains("shown") && doc.querySelector("#note .text").textContent""")
+        gone = sorted(set(before) - set(hands()))
+        if gone != sorted([a, b]):
+            check(f"× on {a} and on {b} closes those two", False, f"closed {gone}")
+        return said
 
     # The quiet line has a room of its own, waits while the pointer is on it, and goes a while after.
     said = close_two("hand-1", "hand-2")
