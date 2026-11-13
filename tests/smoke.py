@@ -1164,6 +1164,17 @@ def old_browser(m):
               settings: wins().map(w => w.gBrowser.tabs.filter(t => url(t).includes("/settings/settings.html")).length),
               inFront: wins().filter(w => url(w.gBrowser.selectedTab).includes("/settings/settings.html")).length,
               closed: wins().flatMap(w => w.SessionStore.getClosedTabDataForWindow(w)).filter(c => JSON.stringify(c.state.entries || []).includes("/sidebery/group.html")).length};"""
+    # Two windows: the folder's page is in every one of them. The second window this group is
+    # given (new_window's) is closed again by reopened_window, and in a Firefox where Tidier
+    # cannot be installed for real, update and restart, which make or restore one, are skipped:
+    # so one is made here where there is none, rather than leaving this group to what the
+    # groups before it happened to leave behind.
+    m.js(H + """if (wins().length > 1) return 0;
+      const w = main().OpenBrowserWindow(); w.__smoke = true;
+      for (let i = 0; i < 100 && !w.gBrowser; i++) await wait(100);
+      const want = main().gBrowser.tabs.filter(t => !t.pinned && role(main(), t)).length;
+      for (let i = 0; i < 200 && w.gBrowser.tabs.filter(t => !t.pinned && role(w, t)).length < want; i++) await wait(100);
+      await wait(3000); return 1;""")
     extension_message(m, {"type": "flush"})
     picked = m.js(H + """const {AddonManager} = ChromeUtils.importESModule("resource://gre/modules/AddonManager.sys.mjs");
       const [id, page] = args, ext = WebExtensionPolicy.getByID(id).extension;
