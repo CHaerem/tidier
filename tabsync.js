@@ -702,10 +702,20 @@ async function placeNextTo(windowId, tabId, before, after) {
 
 // --- Events ---------------------------------------------------------------
 
-const pending = new Map(); // tabId -> timer, for registering new tabs after they settle
+// A new tab is taken in once it has settled: SETTLE_MS after its address last changed or
+// its page finished loading. But some pages never settle. One that writes where you are into
+// its address all the time (a map, a dashboard, a video's time) changes it more often than
+// that, and was put off again at every change: it never got a record, so it was in no other
+// window, and was not kept, archived or found either. So the wait has an end, counted from
+// the first time it was put off: by then a redirect or a move to another space is long over.
+const SETTLE_LONGEST_MS = 4000;
+const pending = new Map(); // tabId -> { timer, first: when it was first put off }, for registering new tabs after they settle
 function registerSoon(tabId) {
-  clearTimeout(pending.get(tabId));
-  pending.set(tabId, setTimeout(() => { pending.delete(tabId); serial(() => register(tabId)); }, SETTLE_MS));
+  const now = performance.now(), waiting = pending.get(tabId), first = waiting?.first ?? now;
+  if (waiting && now - first >= SETTLE_LONGEST_MS) return; // it is due: what keeps changing must not put it off again
+  clearTimeout(waiting?.timer);
+  const timer = setTimeout(() => { pending.delete(tabId); serial(() => register(tabId)); }, Math.max(0, Math.min(SETTLE_MS, first + SETTLE_LONGEST_MS - now)));
+  pending.set(tabId, { timer, first });
 }
 
 browser.tabs.onCreated.addListener(tab => {
@@ -917,7 +927,7 @@ browser.tabs.onUpdated.addListener((tabId, change) => {
 
 browser.tabs.onRemoved.addListener((tabId, info) => {
   const muted = mutedTabs.delete(tabId);
-  clearTimeout(pending.get(tabId)); pending.delete(tabId);
+  clearTimeout(pending.get(tabId)?.timer); pending.delete(tabId);
   awaitingIcon.delete(tabId);
   const place = info.isWindowClosing ? null : closedPlace(info.windowId, tabId);
   loadedSeen.delete(tabId);

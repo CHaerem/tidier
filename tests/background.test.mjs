@@ -1350,6 +1350,25 @@ test("a new tab you dragged a moment ago still gets synced when it gets an addre
   x.kill();
 });
 
+test("a page whose address changes all the time is still taken in, and is in the other window", async () => {
+  // A map, a dashboard, a video's time: the page writes where you are into its address more
+  // often than a new tab is given to settle. Put off at every change, it never got a record.
+  const { ff, x, windows: [a, b] } = await chaosStart();
+  const t = ff.openTab(a.id, { url: "https://moving.example/", active: true, cookieStoreId: C1 });
+  const moved = n => { const tab = ff.tabs.get(t.id); tab.url = `https://moving.example/#${n}`; x.b.tabs.onUpdated.fire(t.id, { url: tab.url }, ff.snap(tab)); };
+  for (let n = 1; n <= 12; n++) { await ff.clock.run(700); moved(n); }
+  const key = ff.values.get(t.id)?.syncKey;
+  assert.ok(key, "it has a key while its address still changes");
+  assert.ok(ff.list(b.id).some(y => ff.values.get(y.id)?.syncKey === key), "and a placeholder in the other window");
+  // Once, however long it goes on: no second record, no second placeholder.
+  for (let n = 13; n <= 30; n++) { await ff.clock.run(700); moved(n); }
+  await ff.clock.idle(60000);
+  assert.equal(ff.values.get(t.id)?.syncKey, key);
+  assert.equal(ff.list(b.id).filter(y => ff.values.get(y.id)?.syncKey === key).length, 1);
+  assert.equal(Object.values(ff.store.syncedTabs).filter(e => /moving\.example/.test(e.url)).length, 1);
+  x.kill();
+});
+
 test("a tab pinned while Tidier was just busy with it leaves tab sync", async () => {
   const { ff, x, windows: [a, b] } = await chaosStart();
   const t = ff.openTab(a.id, { url: "https://a.example/", active: true, cookieStoreId: "firefox-container-1" });

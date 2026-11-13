@@ -392,6 +392,16 @@ def tab_sync(m):
     check("a pulled tab and the ghost left behind stay in their container", r["containers"] == [3, 3], str(r["containers"]))
     check("pulling a tab in leaves no placeholder in Recently Closed (⌘⇧T reopens what you closed)", r["closedGhosts"] == 0, str(r["closedGhosts"]))
     check("closing a tab closes it everywhere", r["closed"] == [[], []], str(r["closed"]))
+    # A page that writes where you are into its address all the time (a map, a dashboard)
+    # never settles: it was put off at every change, and never got a record or a ghost.
+    r = m.js(H + """
+      const t = main().gBrowser.addTrustedTab(args[0] + "/moving?smoke-moving", {userContextId: 3, inBackground: true});
+      let k = null, ms = null; const t0 = Date.now();
+      for (let i = 0; i < 100 && ms === null; i++) { await wait(100); k = key(main(), t); if (k && find(k)[1]?.length) ms = Date.now() - t0; }
+      const created = k ? find(k) : null, changes = url(t).split("#")[1];
+      await removeWhere((w, x) => url(x).includes("smoke-moving") || (k && key(w, x) === k));
+      return {created, ms, changes};""", m.pages)
+    check(f"a page whose address changes all the time gets its ghost too ({r['ms']} ms)", r["created"] == [["live/loaded"], ["ghost/unloaded"]] and int(r["changes"] or 0) >= 3 and r["ms"] <= 7000, str(r))
     # The window a page is taken from stays on it, as in Zen and Arc: the window you use has
     # the page, and the other one shows which page that is, not some other tab. Coming back
     # brings the page back, and the other window is then the one that waits.
