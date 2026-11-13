@@ -42,7 +42,7 @@ part C).
 | Title and address in the tooltip, icons kept, a tab made ready when the pointer comes to it | | Done | checked; less motion when the system asks for it |
 | Resizable sidebar width | Z A S | Done | Firefox's own sidebar handle (userChrome.css) |
 | Compact mode: sidebar hidden, shown at the edge | Z A | Done | userChrome.css, ⌘S |
-| A link dragged from a page or another app can be dropped in the sidebar | Z A | Planned | today the sidebar takes only its own rows; to become a tab where it lands, in a folder or among the essentials |
+| A link dragged from a page or another app can be dropped in the sidebar | Z A | Done | checked, with drags made as Firefox hands one to the page: a tab where it lands, among the tabs, in a folder (saved there), among the essentials, or on another space's dot; in the background, in that space, past the rules; marked as a dragged tab is, and text or a file is no link. A drag from a real page and from another app waits for the second Mac |
 | Soft motion where something comes or goes: a folder opening, a new row | Z A | Planned | today a folder's tabs fade in while its height jumps, and a new row is simply there. Short, only for what you caused, and no row moves under the pointer |
 | Pause and play from the sidebar | Z A | Planned | mute only today; needs the optional access to all websites |
 | A mark when the selected tab is out of view | Z | Later | the list goes to it when it is selected; nothing says so after you scroll away |

@@ -11106,6 +11106,96 @@ def alone_away(m):
     close_sidebar_page(m)
 
 
+def alone_link_drop(m):
+    # A link dragged in from a page or another app opens as a tab where it is dropped
+    # (sidebar/drag.js, droplinks.js). The drag is made as Firefox hands one to the page.
+    m.js(H + """const w = main(); for (const t of [...w.gBrowser.tabs]) if (url(t).includes("/sidebar/sidebar.html")) w.gBrowser.removeTab(t);
+      await wait(300); return 1;""")
+    sidebar_page(m, """send({type: "space", space: "firefox-container-1"}); await wait(1000);
+      send({type: "newFolder", space: "firefox-container-1", name: "Drop folder"}); await wait(1500); return 1;""")
+    r = sidebar_page(m, """
+      const obj = o => page.JSON.parse(JSON.stringify(o)), windowId = (await page.browser.windows.getCurrent()).id;
+      const side = page.browser.extension.getViews(obj({type: "sidebar", windowId}))[0], sdoc = side.document, root = sdoc.documentElement;
+      const until = async (test, ms = 8000) => { for (const t0 = Date.now(); Date.now() - t0 < ms; await wait(50)) if (await test()) return true; return false; };
+      const carrying = kinds => { const data = new side.DataTransfer(); for (const [kind, text] of kinds) data.setData(kind, text); return data; };
+      const link = name => carrying([["text/x-moz-url", "https://example.org/?smoke-drop-" + name + "\\nA link"], ["text/plain", "https://example.org/?smoke-drop-" + name]]);
+      // Over `e`, a part of the way down it (and across it).
+      const drag = (type, e, data, down = 0.75, across = 0.5) => { const q = e.getBoundingClientRect();
+        const event = new side.DragEvent(type, obj({bubbles: true, cancelable: true, clientX: q.left + q.width * across, clientY: q.top + q.height * down}));
+        Object.defineProperty(event, "dataTransfer", {value: data});
+        e.dispatchEvent(event); return event.defaultPrevented; };
+      const marks = () => [...sdoc.querySelectorAll(".drop-before, .drop-after, .drop-into, .drop-left, .drop-right")].length;
+      const tabOf = async name => (await page.browser.tabs.query(obj({windowId}))).find(t => t.url.endsWith("smoke-drop-" + name) || t.title.endsWith("smoke-drop-" + name));
+      const rowOf = async name => { const t = await tabOf(name); return t ? sdoc.querySelector(`#tabs .tab[data-tab="${t.id}"]`) : null; };
+      const out = {}, selected = (await page.browser.tabs.query(obj({windowId, active: true})))[0].id;
+      const rows = () => [...sdoc.querySelectorAll("#tabs > .tab")], row = rows()[0];
+
+      // Text and files are no links: nothing is marked, and nothing is taken.
+      out.text = {taken: drag("dragover", row, carrying([["text/plain", "https://example.org/?smoke-drop-text"]])), marks: marks(), dragging: root.dataset.dragging ?? null};
+      // (A page may not make a drag that carries a file, so here only what such a drag says it carries.)
+      out.file = {taken: drag("dragover", row, obj({types: ["text/x-moz-url", "application/x-moz-file"]})), marks: marks(), dragging: root.dataset.dragging ?? null};
+
+      // A link over the lower half of a row: a line after it, as for a tab.
+      out.over = {taken: drag("dragover", row, link("list")), after: row.classList.contains("drop-after"), marks: marks(), dragging: root.dataset.dragging ?? null};
+      // It leaves the sidebar: nothing stays.
+      row.dispatchEvent(new side.DragEvent("dragleave", obj({bubbles: true})));
+      out.left = {marks: marks(), dragging: root.dataset.dragging ?? null};
+      // It is let go of somewhere else, which this page is not told: gone by itself.
+      drag("dragover", row, link("list"));
+      await until(() => !marks() && !root.dataset.dragging, 4000);
+      out.forgotten = {marks: marks(), dragging: root.dataset.dragging ?? null};
+
+      // Dropped after that row.
+      drag("dragover", row, link("list"));
+      out.dropped = drag("drop", row, link("list"));
+      out.listed = await until(async () => (await rowOf("list"))?.previousElementSibling === row);
+      out.after = {marks: marks(), dragging: root.dataset.dragging ?? null, selected: (await page.browser.tabs.query(obj({windowId, active: true})))[0].id === selected,
+        space: (await tabOf("list"))?.cookieStoreId};
+
+      // On a folder's head: a saved tab in it.
+      const head = sdoc.querySelector("#tabs .folder .head[title='Drop folder']");
+      out.onFolder = {taken: drag("dragover", head, link("folder"), 0.5), into: head.classList.contains("drop-into")};
+      drag("drop", head, link("folder"), 0.5);
+      out.inFolder = await until(async () => (await rowOf("folder"))?.closest(".folder") === head.parentElement);
+      await page.browser.runtime.sendMessage(obj({type: "flush"}));
+      const all = (await page.browser.storage.local.get("syncedTabs")).syncedTabs;
+      out.saved = Object.values(all).find(e => (e.saved?.url ?? "").endsWith("smoke-drop-folder"))?.parentKey === head.dataset.folderHead;
+
+      // On the left half of the first tile: an essential before it.
+      const tile = sdoc.querySelector("#essentials .tile"), tiles = sdoc.querySelectorAll("#essentials .tile").length;
+      out.onTile = tile ? {taken: drag("dragover", tile, link("tile"), 0.5, 0.25), left: tile.classList.contains("drop-left")} : null;
+      if (tile) drag("drop", tile, link("tile"), 0.5, 0.25);
+      out.tile = !!tile && await until(async () => { const t = await tabOf("tile"); return t?.pinned && sdoc.querySelector(`#essentials .tile[data-tab="${t.id}"]`)?.nextElementSibling === tile; });
+      out.tiles = sdoc.querySelectorAll("#essentials .tile").length - tiles;
+
+      // Where a link has no place, the drop is still taken (Firefox would open it in the sidebar itself), and nothing opens.
+      const bar = sdoc.getElementById("spaces"), count = (await page.browser.tabs.query(obj({windowId}))).length;
+      out.nowhere = {over: drag("dragover", bar, link("nowhere"), 0.5, 0.02), marks: marks(), drop: drag("drop", bar, link("nowhere"), 0.5, 0.02)};
+      await wait(1200);
+      out.nowhere.opened = (await page.browser.tabs.query(obj({windowId}))).length - count;
+
+      // Put away again.
+      const pinned = await tabOf("tile");
+      if (pinned) { send({type: "tabAction", action: "removeEssential", tabIds: [pinned.id]}); await until(async () => !(await page.browser.tabs.get(pinned.id)).pinned); await wait(1500); }
+      send({type: "deleteFolder", key: head.dataset.folderHead});
+      await wait(800);
+      await page.browser.tabs.remove(obj((await page.browser.tabs.query(obj({windowId}))).filter(t => /smoke-drop-/.test(t.url + t.title)).map(t => t.id)));
+      await wait(1000);
+      return out;""")
+    nothing = {"marks": 0, "dragging": None}
+    check("text and a file dragged over the sidebar are no link: nothing is marked or taken", r.get("text") == {"taken": False, **nothing} and r.get("file") == {"taken": False, **nothing}, f"{r.get('text')} {r.get('file')}")
+    check("a link dragged over a row is marked as a tab would be", r.get("over") == {"taken": True, "after": True, "marks": 1, "dragging": "tab"}, str(r.get("over")))
+    check("when it leaves the sidebar, or is let go of elsewhere, nothing stays marked", r.get("left") == nothing and r.get("forgotten") == nothing, f"{r.get('left')} {r.get('forgotten')}")
+    check("dropped after a row, the link is a tab right there, in the background and in this space",
+          r.get("dropped") is True and r.get("listed") is True and r.get("after") == {**nothing, "selected": True, "space": "firefox-container-1"}, f"{r.get('dropped')} {r.get('listed')} {r.get('after')}")
+    check("dropped on a folder, it is a saved tab in it", r.get("onFolder") == {"taken": True, "into": True} and r.get("inFolder") is True and r.get("saved") is True, f"{r.get('onFolder')} {r.get('inFolder')} {r.get('saved')}")
+    check("dropped on the left of a tile, it is an essential before it", r.get("onTile") == {"taken": True, "left": True} and r.get("tile") is True and r.get("tiles") == 1, f"{r.get('onTile')} {r.get('tile')} {r.get('tiles')}")
+    check("where a link has no place the drop is still taken, so that Firefox does not open it in the sidebar, and nothing opens",
+          r.get("nowhere") == {"over": True, "marks": 0, "drop": True, "opened": 0}, str(r.get("nowhere")))
+    no_problems(m, "after links were dropped in the sidebar")
+    close_sidebar_page(m)
+
+
 # Each window's tabs and space, and the folders.
 SNAP_ALONE = H + """
   const all = (await storage("%s", ["syncedTabs"])).syncedTabs;
@@ -11131,6 +11221,7 @@ ALONE_GROUPS = (alone_setup, alone_second_window, alone_spaces, alone_keys, alon
                 alone_stay_put,
                 alone_swipe,
                 alone_away,
+                alone_link_drop,
                 alone_hand,
                 alone_new_tab,
                 alone_folds_rest,
@@ -11162,7 +11253,7 @@ ALONE_GROUPS = (alone_setup, alone_second_window, alone_spaces, alone_keys, alon
 ALONE_SHARDS = (
     (alone_setup, alone_second_window, alone_spaces, alone_keys, alone_folders, alone_moves, alone_drag, alone_archive, alone_live_folders,
      alone_drag_details, alone_settings, alone_copy, alone_copy_and_import, alone_safe_moves, alone_more, alone_idle, alone_end),
-    (alone_setup, alone_quiet_undo, alone_tab_menu, alone_tab_names, alone_selection, alone_space_menu, alone_look, alone_stay_put, alone_swipe, alone_away, alone_idle, alone_end),
+    (alone_setup, alone_quiet_undo, alone_tab_menu, alone_tab_names, alone_selection, alone_space_menu, alone_look, alone_stay_put, alone_swipe, alone_away, alone_link_drop, alone_idle, alone_end),
     (alone_setup, alone_hand, alone_new_tab, alone_sound, alone_news, alone_touches, alone_little_window, alone_isolation, alone_idle, alone_end),
     (alone_setup, alone_requests, alone_crossing, alone_archived, alone_command_bar, alone_bar_edges, alone_shortcuts, alone_keyboard, alone_idle, alone_end),
     (alone_setup, alone_folds_rest, alone_sync_hide, alone_bridge, alone_many, alone_chaos,

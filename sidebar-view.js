@@ -313,6 +313,7 @@ async function sidebarActionNow(windowId, msg) {
   else if (msg.type === "unloadSpace") await unloadSpace(msg.space, windowId);
   else if (msg.type === "spaceAction") await spaceAction(windowId, msg); // listactions.js
   else if (msg.type === "newTabInFolder") await newTabInFolder(windowId, msg.key);
+  else if (msg.type === "openLinks") await openLinksAt(windowId, msg); // droplinks.js
   else if (msg.type === "renameSpace") await renameSpace(msg.space, msg.name);
   else if (msg.type.startsWith("little:")) await littleAction(windowId, msg); // littlewindow.js
   else if (msg.type === "askHidingSeen") askHidingSeen(); // aftermove.js

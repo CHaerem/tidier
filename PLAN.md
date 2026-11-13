@@ -147,6 +147,9 @@ Tidier is generic: this repository holds no one's setup, and nothing in it shoul
       and that Firefox's own swipe back in history stays out of the sidebar. The test
       Firefox has no trackpad: the numbers at the top of `sidebar/swipetrack.js` are set by
       reasoning, and are what to change if it feels wrong.
+- [ ] A link dragged into the sidebar from a real page and from another app (Slack, Mail,
+      Finder's address of a web page): that it is taken as a link, lands where the line
+      says, and that a drop where it has no place does not open the page in the sidebar itself.
 - [ ] Used for real for a while; what is missing goes in here and in FEATURES.md.
 
 ## D. Moving the daily browser
@@ -212,7 +215,7 @@ with where it stands. In this order, the first five being the ones that are felt
 - [x] A swipe on the trackpad switches space, the list following the fingers.
 - [x] A saved tab or an essential that has left its address says so, and can go back or
       keep the new one; the close button says when it only unloads.
-- [ ] A link dragged from a page or another app can be dropped in the sidebar: a tab where
+- [x] A link dragged from a page or another app can be dropped in the sidebar: a tab where
       it lands, in a folder or among the essentials.
 - [ ] Soft motion where something comes or goes: switching space by a click or a key
       slides as a swipe does, a folder opens and closes by its height, a new row fades in.

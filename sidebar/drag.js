@@ -38,8 +38,10 @@ function marks(target, cls) {
   if (target && !target.classList.contains(cls)) target.classList.add(cls);
 }
 
-// What is being dragged, as drawn now. A tab carried to another space is drawn nowhere.
-const draggedNow = () => (dragging.away ? dragging.source : kept.get(dragging.kind === "folder" ? "folder:" + dragging.key : (dragging.kind === "essential" ? "tile:" : "tab:") + dragging.tabId));
+// What is being dragged, as drawn now. A tab carried to another space is drawn nowhere,
+// and a link has no row yet: something that is nowhere in the list stands in for it.
+const linkRow = el("div");
+const draggedNow = () => (dragging.link ? linkRow : dragging.away ? dragging.source : kept.get(dragging.kind === "folder" ? "folder:" + dragging.key : (dragging.kind === "essential" ? "tile:" : "tab:") + dragging.tabId));
 
 // A tab event can take it away during the drag (the tab closed, or went to another window
 // or space). Its dragend then goes to the removed element and never reaches us. That
@@ -84,7 +86,8 @@ function springAt(e) {
   const dot = over?.closest?.("#spaces .space");
   const bare = [...view.essentials, ...view.tabs].some(i => i.id === dragging.tabId && !i.page);
   if (dot && dot.dataset.space !== view.space && !bare) {
-    return { target: dot, then: () => { if (!dragging) return; dragging.away ??= view.space; send({ type: "space", space: dot.dataset.space }); } };
+    // (A link belongs to no space yet: it only goes where it is dropped.)
+    return { target: dot, then: () => { if (!dragging) return; if (!dragging.link) dragging.away ??= view.space; send({ type: "space", space: dot.dataset.space }); } };
   }
   return null;
 }
@@ -249,19 +252,79 @@ function nextTab(t) {
   return null;
 }
 addEventListener("dragover", e => {
+  linkComes(e);
   const drop = dropAt(e);
   marks(drop?.target, drop?.cls);
   dragScroll(dragEdgeSpeed(e));
   const spring = springAt(e);
   holdOver(spring?.target ?? null, spring?.then);
-  if (drop) { e.preventDefault(); e.dataTransfer.dropEffect = "move"; }
+  if (dragging?.link) {
+    // Always answered: left to Firefox, a link dropped on a page is opened in that page,
+    // and this page is the sidebar. Where it has no place, the pointer says so.
+    e.preventDefault();
+    if (!drop) e.dataTransfer.dropEffect = "none";
+  } else if (drop) { e.preventDefault(); e.dataTransfer.dropEffect = "move"; }
 });
 addEventListener("drop", e => {
-  const drop = dropAt(e);
+  const drop = dropAt(e), links = dragging?.link ? linksIn(e.dataTransfer) : null;
   dragging = null;
   settleDrag();
-  if (drop) { e.preventDefault(); sendDrop([drop.msg]); }
+  if (links) {
+    e.preventDefault();
+    const msg = drop && links.length ? linkDrop(drop.msg, links) : null;
+    if (msg) send(msg);
+  } else if (drop) { e.preventDefault(); sendDrop([drop.msg]); }
 });
+
+// --- A link from a page or another app ---------------------------------------------------
+// A link dragged in from outside the sidebar opens as a tab where it is dropped
+// (droplinks.js): among the tabs, in a folder, among the essentials, on another space's dot.
+// Everything a dragged tab is shown (the marks, a closed folder that opens, the list
+// scrolling at its edges, a space gone to) is the same, so while it is over the sidebar it
+// counts as a tab being dragged, one that has no row yet (linkRow).
+//
+// Only what is surely a link: a drag says what kinds of things it carries, not what they
+// are, until it is dropped. Text may be anything, and a mark is only where a drop does
+// something; a file has an address too, but not one a tab here can open.
+//
+// The drag is another page's, so its end is not told here. It is over when it leaves the
+// sidebar, when it is dropped, or when nothing has been heard of it for a moment (Firefox
+// sends a dragover every third of a second at least while it is over the page).
+const LINK_KINDS = ["text/x-moz-url", "text/uri-list"], LINK_GONE_MS = 1500;
+let linkGone = null;
+const carriesLink = data => !!data && LINK_KINDS.some(kind => data.types.includes(kind)) && !data.types.includes("application/x-moz-file") && !data.types.includes("Files");
+function linkComes(e) {
+  if (!dragging && view && carriesLink(e.dataTransfer)) {
+    dragging = { kind: "tab", tabId: 0, link: true };
+    document.documentElement.dataset.dragging = "tab";
+  }
+  if (!dragging?.link) return;
+  clearTimeout(linkGone);
+  linkGone = setTimeout(linkLeaves, LINK_GONE_MS);
+}
+function linkLeaves() {
+  clearTimeout(linkGone);
+  if (!dragging?.link) return;
+  dragging = null;
+  settleDrag();
+}
+addEventListener("dragleave", e => { if (!e.relatedTarget) linkLeaves(); });
+addEventListener("drop", () => clearTimeout(linkGone), true);
+
+// The addresses in what was dropped, each once, in order. Firefox's own kind holds an
+// address and its title on alternate lines; the other one address a line, with # for notes.
+function linksIn(data) {
+  const own = data.getData("text/x-moz-url");
+  const lines = own ? own.split(/\r?\n/).filter((line, i) => i % 2 === 0) : data.getData("text/uri-list").split(/\r?\n/).filter(line => !line.startsWith("#"));
+  return [...new Set(lines.map(line => line.trim()).filter(line => /^https?:\/\//i.test(line)))];
+}
+// What a tab dropped there would be told to do, as what a link dropped there is told.
+function linkDrop(msg, urls) {
+  if (msg.type === "moveTab") return { type: "openLinks", urls, folder: msg.folder ?? null, before: msg.before ?? null };
+  if (msg.type === "pin" && msg.pinned) return { type: "openLinks", urls, essential: true, before: msg.before ?? null };
+  if (msg.type === "tabAction" && msg.action === "space") return { type: "openLinks", urls, space: msg.space };
+  return null;
+}
 
 // --- A drop shows where it lands, at once ----------------------------------------------
 // The background moves the tab in every window and then sends a view: on a busy machine a

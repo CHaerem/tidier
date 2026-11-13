@@ -158,6 +158,15 @@ be done, in order, is in [PLAN.md](PLAN.md).
    closes it when unused. A live folder's pull requests are not saved (the search decides
    what is in them).
 
+8. **A link dropped in the sidebar** (`sidebar/drag.js`, `droplinks.js`), from a page or
+   from another app, opens as a tab where it is dropped: among today's tabs, in a folder
+   (a saved tab there, saved on the link itself), among the essentials, or on another
+   space's dot. It opens in the background, in the space it was dropped in, and no rule
+   sends it elsewhere: it was given its place by hand. While it is over the sidebar it is
+   shown what a dragged tab is shown (the line where it lands, a closed folder that opens,
+   a space gone to). Only what is surely a link counts: text may be anything, and a file's
+   address is none a tab here can open.
+
 Compact mode and the window's look are set up in the dotfiles (`userChrome.css`, Firefox
 settings, `about:keyboard`). Switching to a tab in another window needs no command: every
 tab is in every window. Tidier gives its keys itself, once, and they are changed in the
@@ -532,6 +541,10 @@ extensions.
   `/favicon.ico` does not load, shows the default icon until you do.
 - Firefox cannot hide a pinned tab, so other spaces' essentials stay in ⌃Tab;
   selecting one takes you to its space.
+- A saved tab whose saved address always sends the page on to another one (a short
+  address, a link dropped into a folder that redirects) shows the stroke of a tab that has
+  left its address every time it is opened. *Save this address* in its menu, once, makes
+  where it ends up the saved page.
 
 ## Performance
 
@@ -768,6 +781,7 @@ Not guaranteed:
   space's proxy and user agent; signing out; new, edited and deleted spaces; a vanished
   container brought back; a copy of a tab, and a folder, to another space.
 - `ownfolders.js` – Tidier's own folders, moving tabs.
+- `droplinks.js` – a link dropped in the sidebar opens as a tab where it lands.
 - `tabactions.js` – what the menu on a tab does (the menu itself: `sidebar/tabmenu.js`;
   the small menu Tidier draws: `sidebar/menu.js`).
 - `listactions.js`, `sidebar/moremenu.js` – More: what acts on a part of the list at once

@@ -58,6 +58,7 @@
     "scripts": [
       "common.js",
       "listactions.js",
+      "droplinks.js",
       "bridge.js",
       "essentials.js",
       "tabsync.js",
