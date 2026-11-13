@@ -141,6 +141,12 @@ Tidier is generic: this repository holds no one's setup, and nothing in it shoul
       command bar opening; and whether quick presses of ⌃⌘↓ are lost while the tab just
       selected starts loading (about 1 in 8 in the slowed-down test Firefox, none with
       Firefox's own ⌃Page Down). If they are, tab stepping goes another way.
+- [ ] A swipe between spaces under real fingers (README, Swiping between spaces): that it
+      follows them, that a flick goes one space and a slow swipe lands where it should, that
+      resting the fingers half way does not let go too soon, that scrolling never switches,
+      and that Firefox's own swipe back in history stays out of the sidebar. The test
+      Firefox has no trackpad: the numbers at the top of `sidebar/swipetrack.js` are set by
+      reasoning, and are what to change if it feels wrong.
 - [ ] Used for real for a while; what is missing goes in here and in FEATURES.md.
 
 ## D. Moving the daily browser
@@ -199,7 +205,23 @@ click stops it.
 
 ## F. After that
 
-What FEATURES.md has as Later, starting with what is missed most in use.
+Tidier was gone through against Zen and Arc on 13 November 2026 (Zen's release notes up to
+1.24.2b; Arc as it was left). What they have and Tidier has not is in FEATURES.md, each
+with where it stands. In this order, the first five being the ones that are felt every day:
+
+- [x] A swipe on the trackpad switches space, the list following the fingers.
+- [ ] A saved tab or an essential that has left its address says so, and can go back or
+      keep the new one; the close button says when it only unloads.
+- [ ] A link dragged from a page or another app can be dropped in the sidebar: a tab where
+      it lands, in a folder or among the essentials.
+- [ ] Soft motion where something comes or goes: switching space by a click or a key
+      slides as a swipe does, a folder opens and closes by its height, a new row fades in.
+      Short, only for what you caused, and no row moves under the pointer.
+- [ ] Pause and play from the sidebar, beside the speaker.
+
+Then the small ones, in any order: an icon on a folder, any colour for a space, a click on
+the space's name closes all its folders, unload every other space. And then the rest of
+what FEATURES.md has as Later, starting with what is missed most in use.
 
 ## Choices made
 

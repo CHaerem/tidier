@@ -291,6 +291,8 @@ With Tidier alone, the keys follow what the sidebar shows (`shortcuts.js`,
 
 - ⌃⌘↓ and ⌃⌘↑: the next and previous tab as shown, past other spaces' tabs and closed folders
 - ⌃⌘→ and ⌃⌘←: the next and previous space; ⌃1 to ⌃5: a space by its place on the bar
+- Two fingers sideways on the trackpad, anywhere in the sidebar: the next and previous
+  space, as in Zen and Arc (below)
 - ⌘1 to ⌘9: the n-th tab of this space, essentials first
 - ⌘D: make this tab an essential, or an ordinary tab again
 - ⌥⌘N: a new folder
@@ -365,6 +367,31 @@ page's real last use, as the list draws them). In the
 sidebar ⌘A selects every row, ⇧↑ and ⇧↓ take one more, ⌥↑ and ⌥↓ move the selection (else
 the tab) one place along, in every window. A tab dragged and held over a closed folder opens
 it, and over another space's dot goes to that space, where a drop in the list puts it.
+
+## Swiping between spaces
+
+Two fingers sideways on the trackpad, in the sidebar, take you to the space beside the
+one you are in (`sidebar/swipe.js`). The list follows the fingers, and the next space
+comes in beside it, drawn as it will be when you get there: its essentials, its folders
+and tabs where you left them, and the tab you will land on. A quick flick goes there at
+once; let go slowly, and it goes there if the list has come four tenths of the way, else
+back. At the first and the last space the list gives a little and comes back; nothing is
+made, and nothing wraps around. With less motion asked for in the system's settings
+nothing follows the fingers: a clear swipe simply switches.
+
+Scrolling the list never switches space (`sidebar/swipetrack.js`). That is what went
+wrong when this was tried with Sidebery, where enough sideways movement switched,
+whenever it came. Here a movement is one thing, from its first event to the pause after
+it, and what it is gets decided once, from its first few pixels: clearly sideways (twice
+as far sideways as up or down), or a scroll. A scroll then stays a scroll however far it
+drifts, and what is neither is a scroll.
+
+Firefox tells an extension nothing about the fingers themselves, only the wheel events
+they become: not when they lift, and not which events are the trackpad gliding on
+afterwards. So a pause cannot be told from fingers that have left, and a flick is known
+by its speed. The numbers this rests on are at the top of `swipetrack.js`. They are
+checked with events made as a trackpad sends them, in a test Firefox that has no
+trackpad; how it feels under real fingers is still to be tried (PLAN.md, part C).
 
 ## The same on every machine, and spaces hidden on one
 
@@ -730,8 +757,9 @@ Not guaranteed:
   (sorting, closing around a tab and duplicates, a whole folder or space), and Back and
   Forward through the tabs used recently.
 - `sidebar-view.js`, `sidebar/` – Tidier's own sidebar; among its parts `selection.js`
-  (several tabs), `drag.js`, `stayput.js` (the list shows where you are) and `touches.js`
-  (the slow-load sign and warming up a tab). `sidebar/tokens.css` holds the colours and
+  (several tabs), `drag.js`, `stayput.js` (the list shows where you are), `touches.js`
+  (the slow-load sign and warming up a tab), and `swipetrack.js` and `swipe.js` (a swipe on
+  the trackpad switches space: what counts as one, and how it is drawn). `sidebar/tokens.css` holds the colours and
   sizes of every page Tidier draws.
 - `copies.js` – the daily copy of Tidier's data, and taking one in, matched to spaces by name.
 - `moveover.js`, `settings/` – the settings page, moving a browser over from Sidebery at its

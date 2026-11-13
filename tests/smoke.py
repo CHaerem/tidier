@@ -10740,6 +10740,192 @@ def alone_isolation_start(m):
     no_problems(m, "after a start by a link")
 
 
+# Helpers for alone_swipe, on the real sidebar (as STAY_PUT's are). A headless Firefox has no
+# trackpad: what one sends is wheel events, and those are made here as it sends them.
+SWIPE = """
+  const obj = o => page.JSON.parse(JSON.stringify(o));
+  const windowId = (await page.browser.windows.getCurrent()).id;
+  const side = page.browser.extension.getViews(obj({type: "sidebar", windowId}))[0], doc = side.document;
+  const wait = ms => new Promise(done => side.setTimeout(() => done(), ms));
+  const until = async (test, ms = 8000) => { for (const t0 = Date.now(); Date.now() - t0 < ms; await wait(30)) if (await test()) return true; return false; };
+  const root = doc.documentElement, list = doc.getElementById("tabs"), overlay = doc.getElementById("swipe");
+  const css = e => side.getComputedStyle(e);
+  const spaces = () => [...doc.querySelectorAll("#spaces .space")].map(b => ({id: b.dataset.space, active: b.classList.contains("active")}));
+  const here = () => root.dataset.space;
+  const x = () => { const t = css(overlay.querySelector(".strip")).transform; return t === "none" ? 0 : Math.round(new side.DOMMatrix(t).m41); };
+  const state = () => ({shown: !overlay.hidden, swiping: root.classList.contains("swiping"), panes: overlay.querySelectorAll(".pane").length});
+  const names = at => [...at.querySelectorAll(".tab .title")].map(t => t.textContent).join(" | ");
+  const label = e => e?.getAttribute("aria-label") ?? null;
+  const y = e => (e ? Math.round(e.getBoundingClientRect().y * 10) / 10 : null);
+  // Fingers on the trackpad, as the wheel events they become: one after the other with no
+  // turn of the page between, so the pause that ends a swipe cannot come in the middle of
+  // one, however busy the machine is. 1 px every 3 ms is a slow swipe.
+  const fingers = (moves, every = 3) => { for (const [dx, dy] of moves) { const t = side.performance.now(); while (side.performance.now() - t < every); list.dispatchEvent(new side.WheelEvent("wheel", {bubbles: true, deltaX: dx, deltaY: dy, deltaMode: 0})); } };
+  const times = (n, move) => Array.from({length: n}, () => move);
+  const gliding = from => { const out = []; for (let d = Math.abs(from); d >= 1; d *= 0.9) out.push([Math.sign(from) * Math.round(d), 0]); return out; };
+  const settled = () => until(() => overlay.hidden && !root.classList.contains("swiping"));
+  const switchTo = async id => {
+    doc.querySelector(`#spaces .space[data-space="${id}"]`).click();
+    await until(() => here() === id && doc.querySelector(".tab.active, .tile.active"));
+    await settled();
+    await wait(300);
+  };
+  const ids = spaces().map(s => s.id), width = side.innerWidth, far = 12 + Math.ceil(width * 0.45);
+"""
+
+
+def real_swipe(m, at, x, y, moves):
+    """Real wheel events, one for each [dx, dy], at a place in the sidebar."""
+    m.cmd("WebDriver:PerformActions", {"actions": [{"type": "wheel", "id": "wheel", "actions": [
+        {"type": "scroll", "x": int(at["x"] + x), "y": int(at["y"] + y), "deltaX": dx, "deltaY": dy, "duration": 0, "origin": "viewport"} for dx, dy in moves]}]})
+    m.cmd("WebDriver:ReleaseActions")
+
+
+def alone_swipe(m):
+    # A swipe on the trackpad switches space (sidebar/swipe.js): the list follows the fingers.
+    m.js(H + """const w = main(); for (const t of [...w.gBrowser.tabs]) if (url(t).includes("/sidebar/sidebar.html")) w.gBrowser.removeTab(t);
+      Services.prefs.setIntPref("ui.prefersReducedMotion", 0); await wait(300); return 1;""")
+    r = sidebar_page(m, SWIPE + """
+      const out = {spaces: ids.length};
+      await switchTo(ids[1]);  // so this sidebar has drawn the space next to the first one
+      await switchTo(ids[0]);
+      const top = list.scrollTop;
+
+      // A scroll that then drifts all the way across, and glides on.
+      fingers([[0, 4], [1, 7], [2, 9], ...times(25, [30, 2]), ...gliding(30)]);
+      out.scroll = state();
+      await wait(400);
+      out.scrollAfter = {...state(), here: here() === ids[0]};
+
+      // A slow swipe, a little way: it follows, and comes back.
+      fingers(times(12, [1, 0]));
+      out.began = {...state(), x: x(), list: css(list).opacity};
+      fingers(times(40, [1, 0]));
+      const home = overlay.querySelector(".pane:not(.next, .previous)"), next = overlay.querySelector(".pane.next");
+      const liveRow = list.querySelector(".tab"), homeRow = home?.querySelector(".list .tab");
+      out.follows = {x: x(), next: !!next, previous: !!overlay.querySelector(".pane.previous"),
+        same: !!home && names(home) === names(list), rows: list.querySelectorAll(".tab").length,
+        dy: y(homeRow) - y(liveRow), dx: homeRow && Math.round(homeRow.getBoundingClientRect().x - liveRow.getBoundingClientRect().x),
+        wide: homeRow?.getBoundingClientRect().width === liveRow.getBoundingClientRect().width,
+        nextX: next && Math.round(next.getBoundingClientRect().x) - width,
+        found: doc.querySelectorAll("#swipe [data-tab], #swipe [id], #swipe [draggable], #swipe [tabindex]").length,
+        tint: next && css(next.querySelector(".space-name")).color !== css(home.querySelector(".space-name")).color};
+      // A click on what is passing by is no click on a tab: the space coming in is drawn by what draws the list.
+      next?.querySelector(".tab, .tile")?.click();
+      out.clicked = !!next?.querySelector(".tab, .tile");
+      await settled();
+      out.back = {...state(), here: here() === ids[0], top: list.scrollTop === top, list: css(list).opacity};
+
+      // Further than four tenths of the way: it goes there, and what came in is what is there.
+      fingers(times(far, [1, 0]));
+      const pane = overlay.querySelector(".pane.next"), on = pane?.querySelector(".tab.active, .tile.active");
+      out.far = {x: x() + far - 12, names: pane && names(pane), tiles: pane?.querySelectorAll(".tile").length, on: label(on), onY: y(on),
+        firstY: y(pane?.querySelector(".list .tab")), name: pane?.querySelector(".space-name").textContent};
+      out.went = await until(() => here() === ids[1]);
+      await settled();
+      await wait(300);
+      const nowOn = doc.querySelector("#tabs .tab.active, #essentials .tile.active");
+      out.landed = {...state(), names: names(list), tiles: doc.querySelectorAll("#essentials .tile").length, on: label(nowOn), onY: y(nowOn),
+        firstY: y(list.querySelector(".tab")), name: doc.getElementById("space-name").textContent, list: css(list).opacity,
+        dot: spaces().find(s => s.active)?.id === ids[1],
+        tab: (await page.browser.tabs.query(obj({active: true, windowId})))[0].cookieStoreId === ids[1]};
+
+      // A flick: one space, whatever the trackpad glides on with.
+      await switchTo(ids[0]);
+      fingers([[6, 0], [10, 0], [18, 0], [24, 0], [30, 0], ...gliding(30)], 8);
+      out.flicked = await until(() => here() !== ids[0]);
+      await settled();
+      await wait(700);
+      out.flick = {...state(), at: ids.indexOf(here())};
+
+      // At the first space, towards no space: it gives a little and comes back.
+      await switchTo(ids[0]);
+      fingers(times(72, [-1, 0]));
+      out.edge = {...state(), x: x(), previous: !!overlay.querySelector(".pane.previous")};
+      await settled();
+      await wait(300);
+      out.edgeAfter = {...state(), here: here() === ids[0]};
+
+      // Over an open menu it is no swipe.
+      const menu = doc.getElementById("menu");
+      doc.getElementById("space-name").dispatchEvent(new side.MouseEvent("contextmenu", {bubbles: true, cancelable: true, button: 2, clientX: 20, clientY: 60}));
+      out.menu = await until(() => !menu.hidden);
+      fingers(times(far, [1, 0]));
+      out.taken = state();
+      await wait(400);
+      out.takenAfter = {...state(), here: here() === ids[0], menu: menu.hidden};
+
+      // What the background says of a space this sidebar is not showing.
+      const g = await page.browser.runtime.sendMessage(obj({type: "glimpse", windowId, space: ids[2]}));
+      out.glimpse = {space: g?.space === ids[2], tabs: g?.tabs.length + g?.folders.length + g?.essentials.length, on: [...g.essentials, ...g.tabs, ...g.folders.flatMap(f => f.tabs)].filter(t => t.active).length};
+      out.middle = (() => { const q = list.getBoundingClientRect(); return {x: q.x + q.width / 2, y: q.y + q.height / 2}; })();
+      return out;""")
+    idle = {"shown": False, "swiping": False, "panes": 0}
+    check("scrolling the list is never a swipe, however far it drifts sideways", r.get("spaces", 0) >= 3 and r.get("scroll") == idle and r.get("scrollAfter") == {**idle, "here": True}, str(r))
+    began, follows = r.get("began") or {}, r.get("follows") or {}
+    check("a sideways swipe begins after 12 px, with the list where it lies, and its picture in the list's place",
+          began == {"shown": True, "swiping": True, "panes": 1, "x": 0, "list": "0"} and follows.get("same") and follows.get("rows", 0) > 0
+          and follows.get("dy") == 0 and follows.get("wide") and follows.get("found") == 0, f"{began} {follows}")
+    check("the list follows the fingers, and the next space comes in beside it, in its own colour",
+          follows.get("x") == -40 and follows.get("dx") == -40 and follows.get("next") and follows.get("nextX") == -40 and not follows.get("previous") and follows.get("tint"), str(follows))
+    check("let go after a little way, it comes back, and the list is as it was; a click on the space passing by did nothing",
+          r.get("clicked") is True and r.get("back") == {**idle, "here": True, "top": True, "list": "1"}, f"{r.get('clicked')} {r.get('back')}")
+    far, landed = r.get("far") or {}, r.get("landed") or {}
+    same = all(far.get(k) == landed.get(k) for k in ("names", "tiles", "on", "onY", "firstY", "name"))
+    check("swiped further than four tenths of the way, the window goes to that space", far.get("x") == 0 and r.get("went") is True and landed.get("dot") and landed.get("tab") and landed.get("list") == "1"
+          and {k: landed.get(k) for k in idle} == idle, f"{r.get('went')} {landed}")
+    check("what came in beside the list is what is there on arriving: the same rows in the same places, and the tab you land on",
+          same and bool(far.get("names")) and far.get("on") is not None, f"{far} {landed}")
+    check("a flick goes one space, whatever the trackpad glides on with", r.get("flicked") is True and r.get("flick") == {**idle, "at": 1}, f"{r.get('flicked')} {r.get('flick')}")
+    edge = r.get("edge") or {}
+    check("at the first space the list gives a little and comes back", edge.get("shown") and 0 < edge.get("x", 0) < 60 and not edge.get("previous")
+          and r.get("edgeAfter") == {**idle, "here": True}, f"{edge} {r.get('edgeAfter')}")
+    check("a swipe over an open menu is none", r.get("menu") is True and r.get("taken") == idle and r.get("takenAfter") == {**idle, "here": True, "menu": True}, f"{r.get('taken')} {r.get('takenAfter')}")
+    check("the background gives a glimpse of a space that is not shown, with the tab to land on", (r.get("glimpse") or {}).get("space") and r["glimpse"]["tabs"] > 0 and r["glimpse"]["on"] <= 1, str(r.get("glimpse")))
+
+    # Firefox has a sideways swipe of its own, back and forward in a page's history. It listens
+    # for it around the pages only: a swipe in the sidebar must not also take the page back.
+    apart = m.js(H + """const w = main(); return !w.gBrowser.tabbox.contains(w.document.getElementById("sidebar-box"));""")
+    check("Firefox's own swipe, back and forward in history, does not listen in the sidebar", apart is True, str(apart))
+
+    # The same with real wheel events, which take Firefox's own way to the sidebar. They come
+    # when Marionette gets to them: a pause between two that is longer than a swipe's own
+    # ends the swipe, as it should, so a flick gets more than one try.
+    at, middle = m.js(SIDEBAR_AT), r.get("middle") or {"x": 100, "y": 200}
+    real_swipe(m, at, middle["x"], middle["y"], [(0, 30)] * 3 + [(40, 0)] * 6)
+    scrolled = sidebar_page(m, SWIPE + "await settled(); await wait(400); return {...state(), here: here() === ids[0]};")
+    check("with a real wheel, a scroll that turns sideways switches nothing", scrolled == {**idle, "here": True}, str(scrolled))
+    flicked = {}
+    for _ in range(3):
+        real_swipe(m, at, middle["x"], middle["y"], [(30, 0)] * 8)
+        flicked = sidebar_page(m, SWIPE + "await until(() => here() !== ids[0], 1500); await settled(); await wait(300); return {...state(), at: ids.indexOf(here())};")
+        if flicked.get("at") != 0:
+            break
+    check("with a real wheel, a sideways flick goes to the next space", flicked == {**idle, "at": 1}, str(flicked))
+
+    # With less motion asked for nothing follows the fingers: a clear swipe switches.
+    m.js(H + """Services.prefs.setIntPref("ui.prefersReducedMotion", 1); await wait(300); return 1;""")
+    r = sidebar_page(m, SWIPE + """
+      const out = {};
+      await switchTo(ids[0]);
+      fingers(times(12 + 40, [1, 0]));
+      out.short = state();
+      await wait(400);
+      out.shortAfter = here() === ids[0];
+      fingers(times(12 + 70, [1, 0]));
+      out.clear = state();
+      out.went = await until(() => here() === ids[1]);
+      await wait(400);
+      out.after = state();
+      await switchTo(ids[0]);
+      return out;""")
+    m.js(H + """Services.prefs.clearUserPref("ui.prefersReducedMotion"); await wait(300); return 1;""")
+    check("with less motion asked for, a clear swipe switches space and nothing is drawn of it",
+          r.get("short") == idle and r.get("shortAfter") is True and r.get("clear") == idle and r.get("went") is True and r.get("after") == idle, str(r))
+    no_problems(m, "after swiping between spaces")
+    close_sidebar_page(m)
+
+
 # Each window's tabs and space, and the folders.
 SNAP_ALONE = H + """
   const all = (await storage("%s", ["syncedTabs"])).syncedTabs;
@@ -10763,6 +10949,7 @@ ALONE_GROUPS = (alone_setup, alone_second_window, alone_spaces, alone_keys, alon
                 alone_look,
                 alone_more,
                 alone_stay_put,
+                alone_swipe,
                 alone_hand,
                 alone_new_tab,
                 alone_folds_rest,
@@ -10794,7 +10981,7 @@ ALONE_GROUPS = (alone_setup, alone_second_window, alone_spaces, alone_keys, alon
 ALONE_SHARDS = (
     (alone_setup, alone_second_window, alone_spaces, alone_keys, alone_folders, alone_moves, alone_drag, alone_archive, alone_live_folders,
      alone_drag_details, alone_settings, alone_copy, alone_copy_and_import, alone_safe_moves, alone_more, alone_idle, alone_end),
-    (alone_setup, alone_quiet_undo, alone_tab_menu, alone_tab_names, alone_selection, alone_space_menu, alone_look, alone_stay_put, alone_idle, alone_end),
+    (alone_setup, alone_quiet_undo, alone_tab_menu, alone_tab_names, alone_selection, alone_space_menu, alone_look, alone_stay_put, alone_swipe, alone_idle, alone_end),
     (alone_setup, alone_hand, alone_new_tab, alone_sound, alone_news, alone_touches, alone_little_window, alone_isolation, alone_idle, alone_end),
     (alone_setup, alone_requests, alone_crossing, alone_archived, alone_command_bar, alone_bar_edges, alone_shortcuts, alone_keyboard, alone_idle, alone_end),
     (alone_setup, alone_folds_rest, alone_sync_hide, alone_bridge, alone_many, alone_chaos,

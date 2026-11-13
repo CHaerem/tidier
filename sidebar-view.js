@@ -86,7 +86,8 @@ browser.tabs.onRemoved.addListener(tabId => {
 });
 const queryShown = async query => (await browser.tabs.query(query)).filter(t => !removedTabs.has(t.id));
 
-async function viewFor(windowId) {
+// `apart`: a space other than the window's own, for a glimpse of it (below).
+async function viewFor(windowId, apart) {
   // Read first: a view that has it was built entirely after that drop was carried out, so the
   // sidebar can stop putting the row where it was dropped itself (sidebar/drag.js).
   const landed = landedIn.get(windowId) ?? null;
@@ -97,7 +98,7 @@ async function viewFor(windowId) {
   // Spaces in use: a container with essentials or tabs (also the empty ones are shown).
   const used = new Set(whole ? [...list.map(e => e.cookieStoreId), ...whole.map(t => t.cookieStoreId)] : []);
   const spaces = await spaceList(used);
-  const space = await spaceOf(windowId, whole, spaces);
+  const space = apart ?? await spaceOf(windowId, whole, spaces);
   for (const s of spaces) s.news = s.id !== space && spaceHasNews(s.id); // the space you are in shows it in its list
   // Of the space shown: its own tabs, those without a container, and a hidden space's
   // (shownInSpace, hiddenspaces.js), which show wherever you are.
@@ -139,6 +140,23 @@ async function viewFor(windowId) {
   return { needsHiding: !browser.tabs.hide, askHiding: askHidingLine, problem: [...notices.values()][0] ?? null, note: noteFor(windowId), spaces, space, essentials, folders, tabs: loose, loading, little: await littleRows(spaces), landed };
 }
 const landedIn = new Map(); // windowId -> the name of the last drop carried out there
+
+// A space next to the one a window shows, as its sidebar would draw it once you are there:
+// a swipe on the trackpad brings it in beside the list, following the fingers
+// (sidebar/swipe.js), before anything is switched. Its selected tab is the one a switch
+// would go back to (switchSpace, spaces.js). Asked for when a swipe begins, and built as
+// a view is: nothing is kept ready for it, since with nothing happening Tidier does nothing.
+async function glimpseOf(windowId, space) {
+  if (!(await containerSpaces()).some(s => s.id === space) || !await browser.windows.get(windowId).catch(() => null)) return null;
+  const { essentials, folders, tabs } = await viewFor(windowId, space);
+  const back = (await lastUsedIn(windowId, space))?.id;
+  for (const item of [...essentials, ...folders.flatMap(f => f.tabs), ...tabs]) item.active = item.id === back;
+  return { space, essentials, folders, tabs };
+}
+browser.runtime.onMessage.addListener((msg, sender) => {
+  if (msg?.type !== "glimpse" || sender.id !== browser.runtime.id || !sender.url?.startsWith(browser.runtime.getURL(""))) return;
+  return glimpseOf(msg.windowId, msg.space).catch(err => (console.error("Tidier: glimpse", err), null));
+});
 
 // A tab Firefox gives back (⌘⇧T) has its key among its values at once, but Tidier takes it
 // in only once it has settled (registerSoon, tabsync.js). A saved tab's comes back next to the

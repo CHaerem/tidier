@@ -96,7 +96,7 @@ const textIf = (e, text) => { if (e.textContent !== text) e.textContent = text; 
 // Firefox then sends no click at all, so a page whose title ticks could not be muted
 // or closed. It is drawn once it is let go, from a new view, so that everything
 // reacting to a view sees it too.
-const kept = new Map();
+let kept = new Map();
 let drawn = new Set();
 let heldBack = false;
 function keep(id, make, state, draw) {
@@ -115,6 +115,16 @@ function keep(id, make, state, draw) {
 }
 for (const type of ["pointerup", "pointercancel", "dragend"]) {
   addEventListener(type, () => { if (heldBack) { heldBack = false; setTimeout(hello); } }, true);
+}
+
+// Another space drawn beside this one (swipe.js: the one a swipe brings in), by what draws
+// this one, so that it looks as it will once you are there. In a book of its own: nothing
+// kept for the list is touched, and nothing drawn there is taken for one of the list's.
+function drawApart(draw) {
+  const [mine, seen] = [kept, drawn];
+  kept = new Map();
+  drawn = new Set();
+  try { return draw(kept); } finally { kept = mine; drawn = seen; }
 }
 
 // A row that is drawn again gets a new image. One that has loaded comes straight from

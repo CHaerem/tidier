@@ -26,8 +26,6 @@
   /* The one colour: the active space's, set by sidebar.js. For what must be found at
    * a glance (the active space, where a drop lands, the keyboard's place), not for decoration. */
   --accent: #7a7a80;
-  --accent-soft: color-mix(in srgb, var(--accent) 16%, transparent);
-  --accent-line: color-mix(in srgb, var(--accent) 62%, transparent);
 
   /* Text. --muted keeps 4.5:1 on all four light tints: the title of an unloaded tab is
    * still something you read, only quieter. */
@@ -40,8 +38,6 @@
   --state-good: light-dark(#1a7f37, #3fb950);
   --state-bad: light-dark(#cf222e, #f85149);
   --state-wait: light-dark(#9a6700, #d29922);
-  /* The space's name, wherever it is written: about as quiet as --muted, with a little of its colour. */
-  --space-name: color-mix(in srgb, var(--accent) 28%, light-dark(rgb(28 25 23 / .72), rgb(255 252 248 / .62)));
 
   /* What lifts off the surface, least to most: at rest; under the mouse; the selected card. */
   --tile: light-dark(rgb(255 255 255 / .4), rgb(255 255 255 / .055));
@@ -147,6 +143,17 @@
    * than the Mac's own apps set it, and would thicken light text on dark. */
   letter-spacing: -.006em;
   -moz-osx-font-smoothing: grayscale;
+}
+
+/* What is made from the one colour. Also for a part of the page that is drawn in another
+ * space's colour and sets --accent on itself (the space a swipe brings in, swipe.js): a
+ * name made from another is worked out where it is declared, so a part that only
+ * inherited these would keep the page's. */
+:root, .own-accent {
+  --accent-soft: color-mix(in srgb, var(--accent) 16%, transparent);
+  --accent-line: color-mix(in srgb, var(--accent) 62%, transparent);
+  /* The space's name, wherever it is written: about as quiet as --muted, with a little of its colour. */
+  --space-name: color-mix(in srgb, var(--accent) 28%, light-dark(rgb(28 25 23 / .72), rgb(255 252 248 / .62)));
 }
 
 /* On what opens above the surface a lift towards white would not show, so here
