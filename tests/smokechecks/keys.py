@@ -927,7 +927,9 @@ def alone_bar_edges(m):
     # The window it was opened in closes under it: the bar goes with it, and the key works at once in another.
     windows = m.js(H + """const n = wins().length, w = main().OpenBrowserWindow(); w.__extra = true; for (let i = 0; i < 200 && !w.gBrowserInit?.delayedStartupFinished; i++) await wait(50); await wait(2500); return n;""")
     bar_open(m, "wins().find(w => w.__extra)")
-    where = m.js(BAR + "return bar().window.__extra === true;")
+    # (In it, or as a window of its own over it: a window this new can still take the keyboard
+    # from a panel as it settles, on a busy machine, and the bar then comes as a window.)
+    where = m.js(BAR + "return bar().window.__extra === true || barWindows().length === 1;")
     m.js(H + """Services.prefs.setBoolPref("browser.tabs.warnOnClose", false); wins().find(w => w.__extra).close(); for (let i = 0; i < 50 && wins().some(w => w.__extra); i++) await wait(100); return 1;""")
     gone = wait_for_bar(m, False)
     ready = bar_open(m)

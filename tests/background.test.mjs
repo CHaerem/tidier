@@ -294,6 +294,25 @@ test("a ghost selected right after another is pulled in too", async () => {
   x.kill();
 });
 
+test("a pull under way when you select another placeholder does not take you back to its page, and the other comes too", async () => {
+  const ff = new FakeFirefox();
+  const { x, here, liveA, liveB, ghostA, ghostB } = await twoWindows(ff);
+  // A busy machine: the move of a page between windows takes longer than your next click.
+  const move = x.b.tabs.move;
+  x.b.tabs.move = async (...args) => { await new Promise(done => x.ctx.setTimeout(done, 400)); return move(...args); };
+  const selections = [];
+  x.b.tabs.onActivated.addListener(({ tabId, windowId }) => { if (windowId === here.id) selections.push(tabId); });
+  ff.select(ghostA.id);
+  await wait(150); // the pull of A is under way, waiting for its move
+  ff.select(ghostB.id);
+  await wait(3000);
+  assert.equal(ff.tabs.get(liveB.id).windowId, here.id, "the one you went on to came");
+  assert.equal(ff.tabs.get(liveB.id).active, true, "and is the tab you are on");
+  assert.ok(!selections.includes(liveA.id), "the first page was never selected over it");
+  assert.deepEqual(x.errors, []);
+  x.kill();
+});
+
 test("a page goes back to a window that is still on it, once the window that took it has left it", async () => {
   const ff = new FakeFirefox();
   const { x, home, here, liveA, liveB, ghostA } = await twoWindows(ff);

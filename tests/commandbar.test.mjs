@@ -327,6 +327,21 @@ test("the window opens centred over the one you are in, and the key closes it", 
   x.kill();
 });
 
+test("the window the bar was opened from closes: a bar that is a window of its own goes with it, and the key opens a new one elsewhere", async () => {
+  const ff = new FakeFirefox();
+  const { w, v } = world(ff);
+  const x = await started(ff);
+  await openBar(ff, x, v.id);
+  assert.equal(barWindows(ff).length, 1);
+  await x.b.windows.remove(v.id);
+  await wait(300);
+  assert.equal(barWindows(ff).length, 0, "nothing stays over a window that has gone");
+  await openBar(ff, x, w.id);
+  assert.equal(barWindows(ff).length, 1, "and the key opens the bar, it does not close one that is gone");
+  assert.deepEqual(x.errors, []);
+  x.kill();
+});
+
 test("the key pressed again before the window is there leaves no window behind", async () => {
   const ff = new FakeFirefox();
   const { w } = world(ff);

@@ -245,6 +245,10 @@ async function barForgetClosed() {
 browser.sessions.onChanged.addListener(barForgetClosed);
 
 browser.windows.onRemoved.addListener(id => {
+  // The window the bar was opened from has closed: what it would act on is gone. A panel
+  // goes with its window; a bar that is a window of its own stayed, over nothing, and the
+  // key in another window then only closed it.
+  if (commandBar?.from === id && !barInPanel(commandBar)) return void barClose(commandBar, false).catch(noteError);
   if (commandBar?.ownWindow !== id) return;
   commandBar = null; // closed by something else than the bar itself: ⌘W, say
   barForgetUntil = Date.now() + BAR_FORGET_MS;

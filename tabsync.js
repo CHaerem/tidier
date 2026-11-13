@@ -663,10 +663,19 @@ async function pull(ghostId, { back = false } = {}) {
     // it is refused if you close the tab or the window meanwhile: ⌘W right after a
     // click. The ghost then stays what it was, for closing that tab to deal with: it
     // would otherwise be left behind, unknown to Tidier, as a tab you closed coming back.
+    //
+    // The page is selected as it arrives only if its placeholder still is: the move takes
+    // its time (and the picture before it), and on a busy machine you had selected another
+    // placeholder by then. Selected anyway, the page took you back from the tab you had
+    // gone on to, and that one was then never pulled in, as it was no longer the one you
+    // were on. Not selected, it is simply here, in its placeholder's place.
     beingPulled.add(live.id);
     const moved = await browser.tabs.move(live.id, { windowId: ghost.windowId, index: ghost.index })
       .finally(() => beingPulled.delete(live.id))
-      .then(() => browser.tabs.update(live.id, { active: true }))
+      .then(async () => {
+        const still = await browser.tabs.get(ghostId).catch(() => null);
+        if (!still || still.active) await browser.tabs.update(live.id, { active: true });
+      })
       .then(() => setRole(live.id, key, "live"), () => false);
     if (!moved) { dropVeil(fromWindow); return; }
     forget(ghostId);
