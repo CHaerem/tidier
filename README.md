@@ -112,7 +112,9 @@ be done, in order, is in [PLAN.md](PLAN.md).
    ever loaded once. The window the page is taken from stays on that tab, as Zen and Arc
    do: with *Pictures of pages* allowed on the settings page it keeps showing the page as
    it was, under a grey layer (without, its placeholder names the page and says it is in
-   another window now), and the page comes back when you use that window again. Opening a tab adds it everywhere; closing it closes it everywhere;
+   another window now), and the page comes back when you use that window again, or as soon
+   as the window that took it leaves it for another tab: a window stays grey only while
+   another window really shows that page. An essential's page does the same. Opening a tab adds it everywhere; closing it closes it everywhere;
    moving it into or out of a folder is the same in every window, since a folder is
    Tidier's own data; closing a window hands its tabs over to another window.
 3. **Folders** (`ownfolders.js`): each space has its folders first, then today's tabs, as

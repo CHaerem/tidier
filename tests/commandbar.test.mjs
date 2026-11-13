@@ -699,8 +699,11 @@ test("an empty new tab is not offered to be unloaded", async () => {
   assert.ok(!page.sent[0].items.some(i => i.name === "unload"), "nothing in it to unload");
   await page.tell({ type: "close", refocus: true });
   await wait(100);
-  await ff.ext.b.tabs.update(a.id, { active: true });
-  await wait(300);
+  // (The other window is on the same tab, so its page went there when it was left here:
+  // this window's copy of it is selected, and the page comes back.)
+  const here = ff.list(w.id).find(t => ff.values.get(t.id)?.syncKey === ff.values.get(a.id)?.syncKey);
+  await ff.ext.b.tabs.update(here.id, { active: true });
+  await wait(1000);
   page = await openBar(ff, x, w.id);
   assert.ok(page.sent[0].items.some(i => i.name === "unload"), "a page is");
   assert.ok(blank);

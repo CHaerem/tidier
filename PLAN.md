@@ -234,7 +234,10 @@ Changed by saying so. All of them can be reversed.
   says so in the sidebar.
 - A pinned tab is an essential, also one reopened after its essential was removed.
 - A page is loaded once. A selected copy of it in a window you are not using becomes a
-  placeholder, and the page comes to you when you go to that window.
+  placeholder, and the page comes to you when you go to that window. It also goes back to a
+  window that is still on it as soon as the window that took it leaves it for another tab
+  (the owner, 13 November 2026: with two windows side by side, one stayed grey on a page that
+  no window showed any more). An essential's page does the same.
 - Clear asks nothing: one line offers Undo. Closing several tabs and deleting a folder work
   the same way.
 - Tabs moved to another space go to the end of its tabs, not where new tabs go, so several

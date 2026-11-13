@@ -309,6 +309,7 @@ def essential_once(m):
       a.focus(); await wait(500);
       const e = a.gBrowser.tabs.find(t => t.pinned && ek(a, t) && t.userContextId === 3);
       if (!e) return null;
+      const bBefore = b.gBrowser.selectedTab;
       const k = ek(a, e); a.gBrowser.selectedTab = e; await wait(4000);
       const out = {first: loaded(k)};
       b.focus(); await wait(500); b.gBrowser.selectedTab = copyIn(b, k); await wait(5000);
@@ -322,6 +323,10 @@ def essential_once(m):
       left.linkedBrowser.loadURI(Services.io.newURI(url(there)), {triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal()});
       await wait(5000);
       out.restored = loaded(k);
+      // The window you are using leaves it for another tab, and the other one is still on it:
+      // the page goes back there, and is not left under a veil until you go to that window.
+      b.gBrowser.selectedTab = bBefore; await wait(4000);
+      out.back = {loaded: loaded(k), copies: wins().map(w => w.gBrowser.tabs.filter(t => t.pinned && ek(w, t) === k).length), stayed: Services.focus.activeWindow === b};
       a.focus(); await wait(500);
       return out;""")
     check("an essential is loaded in one window: selecting its copy moves the loaded tab in, in its container, and leaves a placeholder",
@@ -330,6 +335,8 @@ def essential_once(m):
     check("an essential's placeholder selected in a window you are not using stays a placeholder",
           r and r["waits"] == {"selectedThere": True, "loaded": ["other/selected"]}, str(r))
     check("an essential copy that loads its page in another window makes that one a placeholder again", r and r["restored"] == ["other/selected"], str(r))
+    check("an essential left in the window you use goes back to the window that is still on it, and you stay where you are",
+          r and r["back"] == {"loaded": ["main/selected"], "copies": [1, 1], "stayed": True}, str(r and r["back"]))
 
 
 def set_title(m, address, title):
@@ -424,6 +431,31 @@ def tab_sync(m):
       return {taken, copies, back, closed};""")
     check("the window a page is taken from stays on it, as a placeholder", r["taken"] == ["placeholder", "page"] and r["copies"] == [1, 1], str(r))
     check("coming back to that window brings the page back, and the other one waits", r["back"] == ["page", "placeholder"] and r["closed"] == [[], []], str(r))
+    # The window that took the page leaves it for another tab while the other window is still
+    # on it: the page goes back there by itself. With two windows side by side, the one you
+    # are not in would else stay grey on a page that no window shows any more.
+    r = m.js(H + """
+      const a = main(), w = other(); a.focus(); await wait(800);
+      const aBefore = a.gBrowser.selectedTab, wBefore = w.gBrowser.selectedTab;
+      const t = a.gBrowser.addTrustedTab("https://example.org/?smoke-goes-back", {userContextId: 3}); a.gBrowser.selectedTab = t;
+      await wait(4500); const k = key(a, t);
+      const on = x => { const spec = x.gBrowser.selectedBrowser.currentURI.spec; return (key(x, x.gBrowser.selectedTab) === k ? "" : "another tab: ") + (spec.includes("smoke-goes-back") ? "page" : spec.includes("ghost.html") ? "placeholder" : spec.slice(0, 40)); };
+      w.focus(); await wait(800);
+      w.gBrowser.selectedTab = w.gBrowser.tabs.find(x => key(w, x) === k); await wait(3000);
+      const taken = [on(a), on(w)];
+      // Passed over only: left and come back to within the moment. Nothing is sent across.
+      w.gBrowser.selectedTab = wBefore; await wait(150); w.gBrowser.selectedTab = w.gBrowser.tabs.find(x => key(w, x) === k); await wait(2500);
+      const passed = [on(a), on(w)];
+      w.gBrowser.selectedTab = wBefore; await wait(3500);
+      const back = on(a), roles = find(k), stayed = Services.focus.activeWindow === w, there = w.gBrowser.tabs.find(x => key(w, x) === k);
+      const left = {selected: !!there?.selected, loaded: !!there?.linkedPanel};
+      await removeWhere((x, y) => key(x, y) === k);
+      if (!aBefore.closing) a.gBrowser.selectedTab = aBefore;
+      a.focus(); await wait(1500);
+      return {taken, passed, back, roles, stayed, left};""")
+    check("a page left in the window you use goes back to the window that is still on it, and you stay where you are",
+          r["taken"] == ["placeholder", "page"] and r["back"] == "page" and r["roles"] == [["live/loaded"], ["ghost/unloaded"]] and r["stayed"] and r["left"] == {"selected": False, "loaded": False}, str(r))
+    check("a page only passed over on the way to another tab is not sent across", r["passed"] == ["placeholder", "page"], str(r["passed"]))
     # What the window left behind shows. With pictures of pages allowed (settings page): the
     # page as it was, under a grey layer, as in Zen and Arc. Without: the words that say
     # where it went. Read in the placeholder's own process, which is the extension's.

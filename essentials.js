@@ -493,12 +493,15 @@ async function copiesOf(key) {
 // A placeholder shown in `tab`'s window: returns whether it should open the
 // page itself. In a window you are not using it waits (it may have just become
 // a placeholder, see oneLoaded); when you switch to it, onFocusChanged asks again.
-async function essentialShown(tab) {
-  if (tab.windowId !== focusedWindowId) return false;
+// `back`: in a window you are not using that is still on this essential, while the window
+// that took its page has gone on to another tab (essentialBackTo, below).
+async function essentialShown(tab, { back = false } = {}) {
+  if (tab.windowId !== focusedWindowId && !back) return false;
   const key = await keyOf(tab);
-  veilPictures.delete(tab.windowId); // of the page as it was when it left this window
-  if (!key || !(await getList()).some(e => e.key === key)) return true;
+  if (!key || !(await getList()).some(e => e.key === key)) { veilPictures.delete(tab.windowId); return true; }
   const loaded = (await copiesOf(key)).find(t => t.id !== tab.id && t.windowId !== tab.windowId && isLoadedCopy(t));
+  if (back && loaded?.active) return false; // that window is on it again
+  veilPictures.delete(tab.windowId); // of the page as it was when it left this window
   if (!loaded) return true;
   // Firefox closes a window when the last tab it can show leaves it. Using an essential in
   // another window must not close this one, so here it gets its placeholder first. So does a
@@ -563,11 +566,26 @@ function selectedEssential(windowId) {
   return serial(async () => {
     const [active] = await browser.tabs.query({ windowId, active: true });
     if (!active?.pinned || !isGhostUrl(active.url) || !(await keyOf(active))) return;
-    if (await essentialShown(active)) {
-      const entry = (await getList()).find(e => e.key === keyByTab.get(active.id));
-      if (entry) await browser.tabs.update(active.id, { url: entry.url }).catch(() => {});
-    }
+    await showEssentialIn(active);
   });
+}
+// The page comes to this placeholder, or it opens the page itself where no copy is loaded.
+async function showEssentialIn(placeholder, options) {
+  if (!(await essentialShown(placeholder, options))) return;
+  const entry = (await getList()).find(e => e.key === keyByTab.get(placeholder.id));
+  if (entry) await browser.tabs.update(placeholder.id, { url: entry.url }).catch(() => {});
+}
+// You have left an essential (`left`, its loaded copy) for another tab, and a window you are
+// not using is still on it, showing its placeholder under a veil: the page goes back there,
+// as a tab's does (backToWhoIsOnIt, tabsync.js, which calls this in the queue). `on`: the
+// tabs the other windows are on.
+async function essentialBackTo(left, on) {
+  if (!isLoadedCopy(left)) return;
+  const key = await keyOf(left);
+  if (!key) return;
+  for (const t of on) {
+    if (t.pinned && isGhostUrl(t.url) && await keyOf(t) === key) return showEssentialIn(t, { back: true });
+  }
 }
 
 // A new tab page you pinned has no page to be an essential of, until you give it an address.

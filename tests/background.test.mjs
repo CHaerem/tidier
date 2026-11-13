@@ -279,14 +279,55 @@ async function twoWindows(ff) {
 
 test("a ghost selected right after another is pulled in too", async () => {
   const ff = new FakeFirefox();
-  const { x, here, liveA, liveB, ghostA, ghostB } = await twoWindows(ff);
+  const { x, home, here, liveA, liveB, ghostA, ghostB } = await twoWindows(ff);
+  const came = [];
+  x.b.tabs.onAttached.addListener((id, { newWindowId }) => came.push([id, newWindowId]));
   ff.select(ghostA.id);
   await wait(150);
   ff.select(ghostB.id);
   await wait(2000);
   assert.equal(ff.tabs.get(liveB.id).windowId, here.id, "the second live tab came");
   assert.equal(ff.tabs.get(liveB.id).active, true);
-  assert.equal(ff.tabs.get(liveA.id).windowId, here.id, "the first one too");
+  assert.ok(came.some(([id, to]) => id === liveA.id && to === here.id), "the first one too");
+  // The window it was taken from is still on it, and you have left it: it has gone back there.
+  assert.equal(ff.tabs.get(liveA.id).windowId, home.id);
+  x.kill();
+});
+
+test("a page goes back to a window that is still on it, once the window that took it has left it", async () => {
+  const ff = new FakeFirefox();
+  const { x, home, here, liveA, liveB, ghostA } = await twoWindows(ff);
+  const key = id => ff.values.get(id)?.syncKey, role = id => ff.values.get(id)?.syncRole;
+  const on = w => ff.list(w.id).find(t => t.active);
+  ff.select(ghostA.id); // home was on a: it stays on it, as a placeholder
+  await wait(1500);
+  assert.equal(ff.tabs.get(liveA.id).windowId, here.id);
+  assert.deepEqual([key(on(home).id), role(on(home).id)], ["a", "ghost"], "the window it left is still on it");
+  // Still on it here: it stays here, however long.
+  await wait(3000);
+  assert.equal(ff.tabs.get(liveA.id).windowId, here.id);
+  // Left for another tab, and back within the moment: it has not gone anywhere.
+  const other = ff.list(here.id).find(t => t.url === "about:home");
+  ff.select(other.id);
+  await wait(200);
+  ff.select(liveA.id);
+  await wait(1500);
+  assert.equal(ff.tabs.get(liveA.id).windowId, here.id, "stepping past it sends nothing across");
+  // Left for good: the page is back in the window that is on it, which you are not using.
+  ff.select(other.id);
+  await wait(1500);
+  assert.equal(ff.tabs.get(liveA.id).windowId, home.id);
+  assert.equal(ff.tabs.get(liveA.id).active, true, "shown there, not under a veil");
+  assert.equal(ff.focused, here.id, "and you stay where you are");
+  const leftHere = ff.list(here.id).filter(t => key(t.id) === "a");
+  assert.deepEqual(leftHere.map(t => [role(t.id), t.active]), [["ghost", false]], "this window has its placeholder again, one");
+  assert.equal(Object.values(ff.store.syncedTabs).filter(e => e.url === "https://a.example/").length, 1);
+  // A window that is not on it gets nothing: b, which home is not on, stays where it is used last.
+  ff.select(ff.list(here.id).find(t => key(t.id) === "b").id);
+  await wait(1500);
+  ff.select(other.id);
+  await wait(1500);
+  assert.equal(ff.tabs.get(liveB.id).windowId, here.id);
   x.kill();
 });
 
