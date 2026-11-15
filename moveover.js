@@ -238,12 +238,12 @@ browser.runtime.onMessage.addListener((msg, sender) => {
 async function settingsAction(msg, sender) {
   switch (msg.type.slice("settings:".length)) {
     case "get": {
-      const stored = await browser.storage.local.get(["archiveAfterHours", "lastCopy", "movedNote"]);
+      const stored = await browser.storage.local.get(["archiveAfterHours", "unloadAfterHours", "lastCopy", "movedNote"]);
       // What the move from Sidebery did, said once on the page it opens (afterMoving).
       if (stored.movedNote?.opened) await browser.storage.local.remove("movedNote");
       const network = notices.has("spaceNetwork") ? await spaceNetwork.get() : {}; // isolation.js: which spaces that notice is about
       return {
-        rules: await rulesList.get(), spaces: await containerSpaces(), archiveHours: archiveHours(stored.archiveAfterHours),
+        rules: await rulesList.get(), spaces: await containerSpaces(), archiveHours: archiveHours(stored.archiveAfterHours), unloadHours: unloadHours(stored.unloadAfterHours), // unloadidle.js
         lastCopy: stored.lastCopy ?? null, version: browser.runtime.getManifest().version, hiding: !!browser.tabs.hide,
         notices: [...notices].map(([kind, text]) => ({ kind, text })),
         network: Object.entries(network).filter(([, n]) => n?.proxy || n?.userAgent).map(([id, n]) => ({ id, proxy: !!n.proxy, userAgent: !!n.userAgent })),
@@ -257,6 +257,11 @@ async function settingsAction(msg, sender) {
       const hours = archiveHoursFrom(msg.hours);
       if (hours !== null) await browser.storage.local.set({ archiveAfterHours: hours });
       return archiveHours((await browser.storage.local.get("archiveAfterHours")).archiveAfterHours);
+    }
+    case "unloadHours": { // as the archive time: what is stored, which the page then shows (unloadidle.js)
+      const hours = unloadHoursFrom(msg.hours);
+      if (hours !== null) await browser.storage.local.set({ unloadAfterHours: hours });
+      return unloadHours((await browser.storage.local.get("unloadAfterHours")).unloadAfterHours);
     }
     case "rules": rulesList.set(msg.rules.filter(r => r.url && r.space).map(r => ({ url: r.url, space: r.space }))); setNotice("rule", null); viewAllSoon(); return true;
     case "space": await browser.contextualIdentities.update(msg.id, msg.changes).catch(noteError); return true;

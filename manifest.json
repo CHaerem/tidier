@@ -87,6 +87,7 @@
       "news.js",
       "archivelist.js",
       "archive.js",
+      "unloadidle.js",
       "keys-commands.js",
       "pagenote.js",
       "shortcuts.js",

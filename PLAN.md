@@ -229,6 +229,8 @@ with where it stands. In this order, the first five being the ones that are felt
       from the space's More, the bar and the keys.
 
 - [x] An icon of its own on a folder, chosen as a space's is.
+- [x] The bar of spaces follows the fingers during a swipe.
+- [x] Tabs not used for a while can be unloaded where they are (off until a time is set).
 
 Then the small ones, in any order: any colour for a space. And then the rest of
 what FEATURES.md has as Later, starting with what is missed most in use.

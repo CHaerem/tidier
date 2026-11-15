@@ -25,6 +25,7 @@ async function refresh() {
   drawSpaces();
   if (document.activeElement?.closest?.("#rules") == null && !rulesUnsaved()) drawRules();
   if (document.activeElement !== $("archive-hours")) $("archive-hours").value = state.archiveHours;
+  if (document.activeElement !== $("unload-hours")) $("unload-hours").value = state.unloadHours;
   $("copy-state").textContent = state.lastCopy ? `Last copy: ${new Date(state.lastCopy).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })}.` : "No copy made yet.";
   $("version").textContent = "Version " + state.version;
 }
@@ -200,6 +201,7 @@ $("add-rule").onclick = () => {
 // The background decides what is allowed (archiveHoursFrom, archive.js) and says what it
 // stored, which the field then shows: an emptied field or -5 changes nothing.
 $("archive-hours").onchange = async e => { e.target.value = await ask("archiveHours", { hours: e.target.value }); };
+$("unload-hours").onchange = async e => { e.target.value = await ask("unloadHours", { hours: e.target.value }); };
 
 $("allow-hiding").onclick = () => browser.permissions.request({ permissions: ["tabHide"] }).then(refresh);
 

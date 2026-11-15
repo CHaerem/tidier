@@ -120,7 +120,7 @@ part C).
 | Every tab in every window, loaded only once | Z | Done | |
 | Archive tabs unused for 12 hours | A | Done | |
 | Find archived tabs again | A | Done | checked: Tidier's own list per space, from the list's menu, the space's menu and the command bar |
-| Unload tabs unused for a while (keep them, free memory) | Z S | Later | Firefox unloads on low memory; closed folders and whole spaces unload in Tidier |
+| Unload tabs unused for a while (keep them, free memory) | Z S | Done | checked: a time on the settings page, off until set; tabs in folders too; essentials, selected tabs, sound, calls and unsaved input stay loaded |
 | Nothing works when nothing happens (no idle work) | | Done | checked by the smoke test, also with 300 tabs |
 | Fast with many tabs | | Done | checked with 300 tabs, measured up to 1000: a new window has them all in about 7 s |
 | Random use never breaks what Tidier promises | | Done | checked: random sequences on the real background scripts, and a long random run in a real test Firefox |

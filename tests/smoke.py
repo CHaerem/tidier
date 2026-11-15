@@ -90,7 +90,7 @@ from smokechecks.core import (  # noqa: E402
 )
 from smokechecks.folders import (  # noqa: E402
     alone_archive, alone_archived, alone_drag, alone_drag_details, alone_folders, alone_folds_rest, alone_folds_rest_kept, alone_live_folders,
-    alone_moves, alone_safe_moves,
+    alone_moves, alone_safe_moves, alone_unload_idle,
 )
 from smokechecks.hand import (  # noqa: E402
     alone_hand, alone_quiet_undo, alone_selection, alone_stay_put,
@@ -135,7 +135,7 @@ PINS_APART = """
 apart_after = []
 
 
-ALONE_GROUPS = (alone_setup, alone_second_window, alone_spaces, alone_keys, alone_folders, alone_moves, alone_drag, alone_archive, alone_live_folders,
+ALONE_GROUPS = (alone_setup, alone_second_window, alone_spaces, alone_keys, alone_folders, alone_moves, alone_drag, alone_archive, alone_unload_idle, alone_live_folders,
                 alone_drag_details,
                 alone_settings, alone_setup_files, alone_copy, alone_copy_and_import,
                 alone_safe_moves,
@@ -183,7 +183,7 @@ ALONE_GROUPS = (alone_setup, alone_second_window, alone_spaces, alone_keys, alon
 # About equally long: 10 to 14 minutes each on a Mac. (alone_more is in the first: that one
 # has the second window, which its keys are checked in too.)
 ALONE_SHARDS = (
-    (alone_setup, alone_second_window, alone_spaces, alone_keys, alone_folders, alone_moves, alone_drag, alone_archive, alone_live_folders,
+    (alone_setup, alone_second_window, alone_spaces, alone_keys, alone_folders, alone_moves, alone_drag, alone_archive, alone_unload_idle, alone_live_folders,
      alone_drag_details, alone_settings, alone_setup_files, alone_copy, alone_copy_and_import, alone_safe_moves, alone_more, alone_idle, alone_end),
     (alone_setup, alone_quiet_undo, alone_tab_menu, alone_tab_names, alone_selection, alone_space_menu, alone_look, alone_stay_put, alone_swipe, alone_away, alone_link_drop, alone_motion, alone_idle, alone_end),
     (alone_setup, alone_hand, alone_new_tab, alone_sound, alone_pause, alone_news, alone_touches, alone_little_window, alone_isolation, alone_idle, alone_end),

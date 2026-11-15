@@ -149,6 +149,13 @@ be done, in order, is in [PLAN.md](PLAN.md).
    placeholder (its real page was in a window you closed) counts from when it became
    one. The time never counts from before archiving was first turned on. Change it on the
    settings page, or with `archiveAfterHours` in the extension storage (0 = off).
+   Before that, a tab not used for a while can be **unloaded** where it is, as in Zen
+   (`unloadidle.js`): it stays in the list and in every window and frees its memory, and
+   its page comes back when you select it. Off until you set a time on the settings page
+   (*Unload tabs not used for … hours*; quarters of an hour count). Tabs in folders are
+   unloaded too; essentials, the tab selected in each window, tabs playing sound or in a
+   call and pages with unsaved input stay loaded. Firefox itself unloads tabs only when the
+   whole machine is short of memory.
 7. **Saved tabs**, like Arc's pinned section and Zen's pinned tabs (in
    `tabsync.js`, the rules in `closeAction` in `common.js`): a tab in a
    folder is *saved*. Closing it while it is loaded (⌘W, or the ×) unloads it instead,
@@ -807,6 +814,7 @@ Not guaranteed:
   must be started again to read its setup files, and its button.
 - `ghost.html` / `ghost.js` – placeholder page for ghosts, essential copies and never-loaded live tabs.
 - `archive.js` – archiving of unused tabs.
+- `unloadidle.js` – unloading tabs not used for a while, where they are.
 - `archivelist.js`, `sidebar/archived.js` – the list of archived and closed tabs, per space.
 - `shortcuts.js` – one table for every key, the command bar's and Claude's included; ⇧⌘C
   copies the address, and `pagenote.js` says so on the page. `keys-commands.js`, `settings/keys.js`, `sidebar/keys.js` and

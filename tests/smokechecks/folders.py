@@ -1440,6 +1440,50 @@ def alone_archive(m):
     check("archiving keeps a tab in a folder", late.get("kept", {}).get(s["kept"]) == "folder", str(late))
 
 
+def alone_unload_idle(m):
+    # Tabs not used for a while are unloaded where they are (unloadidle.js): a real Firefox
+    # frees the page, the row dims, and selecting it brings the page back.
+    ctx = m.js(H + "return main().gBrowser.selectedTab.userContextId;")
+    made = m.js(H + """const w = main(), ctx = args[0];
+      const tabs = ["old", "recent", "sounding"].map(n => w.gBrowser.addTrustedTab(args[1] + "/titled?idle%20" + n, {userContextId: ctx, inBackground: true}));
+      for (let i = 0; i < 100 && !tabs.every(t => key(w, t) && t.linkedPanel && t.label.startsWith("idle ")); i++) await wait(100);
+      await wait(1500);
+      // Used three hours ago, as far as Firefox knows: its own record of it, set by hand.
+      const ago = h => Date.now() - h * 3600e3;
+      tabs[0]._lastAccessed = ago(3); tabs[2]._lastAccessed = ago(3);
+      tabs[2].toggleAttribute("soundplaying", true); w.gBrowser._tabAttrModified(tabs[2], ["soundplaying"]);
+      return {keys: tabs.map(t => key(w, t)), loaded: tabs.map(t => !!t.linkedPanel), selected: w.gBrowser.selectedTab.label};""", ctx, m.pages)
+    state = H + """const w = main(), t = n => w.gBrowser.tabs.find(x => x.label === "idle " + n);
+      return {loaded: Object.fromEntries(["old", "recent", "sounding"].map(n => [n, !!t(n)?.linkedPanel])), keys: ["old", "recent", "sounding"].map(n => key(w, t(n))),
+              order: w.gBrowser.tabs.filter(x => x.label.startsWith("idle ")).map(x => x.label), selected: w.gBrowser.selectedTab.label, selectedLoaded: !!w.gBrowser.selectedTab.linkedPanel};"""
+    was = extension_message(m, {"type": "settings:get"}).get("unloadHours")
+    off = extension_message(m, {"type": "unloadIdleNow"})
+    before = m.js(state)
+    check("with no time set, a tab not used for hours stays loaded", was == 0 and off == 0 and before["loaded"] == {"old": True, "recent": True, "sounding": True}, f"{was} {off} {before}")
+    stored = extension_message(m, {"type": "settings:unloadHours", "hours": "2"})
+    n = extension_message(m, {"type": "unloadIdleNow"})
+    m.js(H + """const w = main(); for (let i = 0; i < 50 && w.gBrowser.tabs.find(x => x.label === "idle old")?.linkedPanel; i++) await wait(100); return 1;""")
+    after = m.js(state)
+    row = sidebar_page(m, """const r = [...doc.querySelectorAll("#tabs .tab")].find(x => x.querySelector(".title").textContent === "idle old"); return r ? r.classList.contains("unloaded") : null;""")
+    check("with two hours set, the tab not used for three is unloaded where it is, and its row dims",
+          stored == 2 and n >= 1 and after["loaded"]["old"] is False and after["keys"] == made["keys"] and after["order"] == before["order"] and row is True, f"{stored} {n} {after} {row}")
+    check("one used since, one playing, and the tab you are on stay loaded",
+          after["loaded"]["recent"] and after["loaded"]["sounding"] and after["selected"] == before["selected"] and after["selectedLoaded"], str(after))
+    back = m.js(H + """const w = main(), t = w.gBrowser.tabs.find(x => x.label === "idle old"), was = w.gBrowser.selectedTab;
+      w.gBrowser.selectedTab = t;
+      for (let i = 0; i < 100 && !(t.linkedPanel && url(t).includes("idle%20old")); i++) await wait(100);
+      const r = {loaded: !!t.linkedPanel, url: url(t).includes("idle%20old")};
+      w.gBrowser.selectedTab = was; await wait(500);
+      return r;""")
+    check("selecting it brings its page back", back == {"loaded": True, "url": True}, str(back))
+    # As it was, for the groups after this one.
+    reset = extension_message(m, {"type": "settings:unloadHours", "hours": "0"})
+    m.js(H + """const w = main(), t = w.gBrowser.tabs.find(x => x.label === "idle sounding"); t?.toggleAttribute("soundplaying", false); if (t) w.gBrowser._tabAttrModified(t, ["soundplaying"]);
+      await removeWhere((x, tab) => (tab.label || "").startsWith("idle ") || url(tab).includes("idle%20")); await wait(800); return 1;""")
+    check("and with the time back at none, nothing more is unloaded", reset == 0 and extension_message(m, {"type": "unloadIdleNow"}) == 0)
+    no_problems(m, "after unloading tabs not used for a while")
+
+
 # A folder's tabs as Firefox itself has them, in the main window and a window of this
 # group's own: hidden or not, and loaded or not (an unloaded tab has no linkedPanel).
 # `k` is a tab's key as it is stored.
