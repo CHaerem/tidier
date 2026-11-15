@@ -144,14 +144,14 @@
 
   // --- The bar follows too ------------------------------------------------------------------
   // As in Zen and Arc: the dot you are leaving lets go as far as the list has gone, and the
-  // one you are heading for takes over (sidebar.css, #spaces.swiping), so the bar says where
+  // one you are heading for takes over (sidebar.css, #spaces.following), so the bar says where
   // the fingers are taking you while they do, not only once it is decided. Towards no space
   // (the list only gives a little there) nothing on the bar moves.
   const bar = document.getElementById("spaces");
   function dotsFollow(at) {
     const to = at ? neighbour(Math.sign(at)) : null;
     if (!to) return dotsLetGo();
-    bar.classList.add("swiping");
+    bar.classList.add("following");
     bar.style.setProperty("--swipe", Math.min(1, Math.abs(at) / innerWidth).toFixed(3));
     for (const dot of bar.querySelectorAll(".space")) {
       dot.classList.toggle("swipe-from", dot.dataset.space === swipe.space);
@@ -161,8 +161,8 @@
   // Back to what the bar says by itself, by its own soft move: where you are, or where you
   // are going once that is decided (goToSpace, sidebar.js).
   function dotsLetGo() {
-    if (!bar.classList.contains("swiping")) return;
-    bar.classList.remove("swiping");
+    if (!bar.classList.contains("following")) return;
+    bar.classList.remove("following");
     bar.style.removeProperty("--swipe");
     for (const dot of bar.querySelectorAll(".swipe-from, .swipe-to")) dot.classList.remove("swipe-from", "swipe-to");
   }

@@ -317,9 +317,9 @@ html.space-arriving .folder > .children { transition: none; } /* a whole space c
  * leaving lets go as far as the list has gone (--swipe, 0 to 1), and the one you are heading
  * for takes over. With no easing of their own: the fingers are the easing. Let go, they take
  * the soft way back, or on to where you are going (above). */
-#spaces.swiping .space:is(.swipe-from, .swipe-to) .dot { transition: none; }
-#spaces.swiping .space.swipe-from .dot { background: color-mix(in srgb, var(--color) calc(100% - 40% * var(--swipe)), var(--pale)); transform: scale(calc(1.375 - .375 * var(--swipe))); }
-#spaces.swiping .space.swipe-to .dot { background: color-mix(in srgb, var(--color) calc(60% + 40% * var(--swipe)), var(--pale)); transform: scale(calc(1 + .375 * var(--swipe))); }
+#spaces.following .space:is(.swipe-from, .swipe-to) .dot { transition: none; }
+#spaces.following .space.swipe-from .dot { background: color-mix(in srgb, var(--color) calc(100% - 40% * var(--swipe)), var(--pale)); transform: scale(calc(1.375 - .375 * var(--swipe))); }
+#spaces.following .space.swipe-to .dot { background: color-mix(in srgb, var(--color) calc(60% + 40% * var(--swipe)), var(--pale)); transform: scale(calc(1 + .375 * var(--swipe))); }
 /* What a space has for you, on its own dot, so the bar stays a row of dots and nothing is
  * heavier than what it marks: news (news.js) or a tab an agent left you (agent.js) draw it
  * in its full colour, among the pale ones, and the active space's stays the larger. The
@@ -337,8 +337,8 @@ html.space-arriving .folder > .children { transition: none; } /* a whole space c
 #spaces .space:is(.active, .going, .news, .agent-left) .dot.emoji { opacity: 1; filter: none; }
 #spaces:not(.going) .space.active .dot.emoji, #spaces .space.going .dot.emoji { transform: scale(1.2); }
 /* And in a swipe (above), by what an icon has instead of a colour. */
-#spaces.swiping .space.swipe-from .dot.emoji { background: none; opacity: calc(1 - .5 * var(--swipe)); filter: grayscale(calc(.8 * var(--swipe))); transform: scale(calc(1.2 - .2 * var(--swipe))); }
-#spaces.swiping .space.swipe-to .dot.emoji { background: none; opacity: calc(.5 + .5 * var(--swipe)); filter: grayscale(calc(.8 - .8 * var(--swipe))); transform: scale(calc(1 + .2 * var(--swipe))); }
+#spaces.following .space.swipe-from .dot.emoji { background: none; opacity: calc(1 - .5 * var(--swipe)); filter: grayscale(calc(.8 * var(--swipe))); transform: scale(calc(1.2 - .2 * var(--swipe))); }
+#spaces.following .space.swipe-to .dot.emoji { background: none; opacity: calc(.5 + .5 * var(--swipe)); filter: grayscale(calc(.8 - .8 * var(--swipe))); transform: scale(calc(1 + .2 * var(--swipe))); }
 
 /* --- Notices: quiet, on the icons' edge, in the same soft shape as everything else.
  * Never a white card: that means you are here. Every line that tells you something has
