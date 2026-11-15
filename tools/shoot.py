@@ -11,7 +11,10 @@ and writes PNGs at twice the size, as on a Retina screen:
 
     sidebar-SPACE-WIDTH-SCHEME   the sidebar per space, at 220, 300 and 480 px, light and dark
     window-SPACE-SCHEME          the whole window around it, with userChrome.css
-    hover-*, menu-*, state-*     one thing at a time, at 300 px, light and dark (state-saved-tab-unloaded
+    hover-*, menu-*, state-*     one thing at a time, at 300 px, light and dark (state-folder-icons: folders
+                                 with icons of their own; -away-mark: the line at the list's edge when the tab
+                                 you are on is out of view; -restart-line: Firefox must be started again;
+                                 state-saved-tab-unloaded
                                  with the mouse where it clicked; state-swipe: a third of the way through
                                  a swipe on the trackpad to the next space; -saved-tab-away: a saved tab
                                  off the page it was saved on)
@@ -899,6 +902,63 @@ def scrolled(cam):
     in_sidebar(cam.m, """doc.getElementById("tabs").scrollTop = 0;""")
 
 
+def folder_icons(cam):
+    """Folders with icons of their own (an emoji their name starts with), one of them closed, beside
+    one with the folder sign. Named back after."""
+    if not cam.wanted("state-folder-icons"):
+        return
+    m = cam.m
+    select(m, on_tab(PERSONAL), PERSONAL["ctx"])
+    names = in_sidebar(m, """const port = await connect(), icons = ["📚", "🎧", "🧪"];
+      const folders = port.view().folders.filter(f => !f.live), was = folders.map(f => [f.key, f.name]);
+      folders.slice(0, 2).forEach((f, i) => port.send({type: "renameFolder", key: f.key, name: icons[i] + " " + f.name}));
+      await until(() => doc.querySelectorAll("#tabs .folder .chevron.emoji").length >= Math.min(2, folders.length), "the folders' icons");
+      port.close();
+      return was;""")
+    cam.shoot("state-folder-icons")
+    in_sidebar(m, """const port = await connect();
+      for (const [key, name] of args[0]) port.send({type: "renameFolder", key, name});
+      await until(() => !doc.querySelector("#tabs .folder .chevron.emoji"), "the folders as they were");
+      port.close();""", names)
+
+
+def away_mark(cam):
+    """The tab you are on, scrolled out of the part of the list you see: the line at the edge it
+    lies beyond, in the space's colour."""
+    if not cam.wanted("state-away-mark"):
+        return
+    select(cam.m, on_tab(WORK), WORK["ctx"])
+    # (The tab you are on there can be an essential, which is always in view: so one in the list.)
+    in_sidebar(cam.m, """const list = doc.getElementById("tabs"), port = await connect();
+      if (!list.querySelector(".tab.active")) port.send({type: "select", tabId: Number(list.querySelector(".tab:not(.unloaded)").dataset.tab)});
+      await until(() => list.querySelector(".tab.active"), "a tab in the list selected");
+      port.close();
+      const row = list.querySelector(".tab.active").getBoundingClientRect(), box = list.getBoundingClientRect();
+      list.scrollTop += row.top < box.top + box.height / 2 ? row.bottom - box.top + 40 : -(box.bottom - row.top + 40);
+      await until(() => !doc.getElementById("away-up").hidden || !doc.getElementById("away-down").hidden, "the line at the list's edge");""")
+    cam.shoot("state-away-mark")
+    # And at the other edge, with the list scrolled the other way from it.
+    in_sidebar(cam.m, """const list = doc.getElementById("tabs"), up = !doc.getElementById("away-up").hidden;
+      list.scrollTop = up ? 0 : list.scrollHeight;
+      const row = list.querySelector(".tab.active").getBoundingClientRect(), box = list.getBoundingClientRect();
+      if (row.bottom > box.top && row.top < box.bottom) list.scrollTop += up ? -(box.bottom - row.top + 40) : row.bottom - box.top + 40;
+      await sleep(300);""")
+    if in_sidebar(cam.m, """return !doc.getElementById("away-up").hidden || !doc.getElementById("away-down").hidden;"""):
+        cam.shoot("state-away-mark-other-edge")
+    in_sidebar(cam.m, """doc.getElementById("tabs").scrollTop = 0;""")
+
+
+def restart_line(cam):
+    """By hand: the line that says Firefox must be started again, which the real one takes a
+    changed stylesheet and Tidier's helper program to show."""
+    if not cam.wanted("state-restart-line"):
+        return
+    select(cam.m, on_tab(PERSONAL), PERSONAL["ctx"])
+    in_sidebar(cam.m, """doc.getElementById("restart").hidden = false;""")
+    cam.shoot("state-restart-line")
+    in_sidebar(cam.m, """doc.getElementById("restart").hidden = true;""")
+
+
 def swipe(cam):
     """A third of the way through a swipe on the trackpad to the next space: the list, and
     the space coming in beside it. Held there by hand: a real swipe ends when the fingers
@@ -1168,7 +1228,7 @@ def placeholder_on_show(cam):
 
 
 STEPS = (space_by_space, hover, hover_more, menus, more_menus, folders_closed, live_closed, folder_rename, marks, keyboard, agent_note, notices, space_rename, quiet_lines, picked, bar_marks,
-         little_window, little_window_real, command_bar, window_edges, archived, scrolled, swipe, away, under_the_hand, empty_spaces, few_essentials, icons_that_vanish, settings,
+         little_window, little_window_real, command_bar, window_edges, archived, scrolled, folder_icons, away_mark, restart_line, swipe, away, under_the_hand, empty_spaces, few_essentials, icons_that_vanish, settings,
          moved, no_space, placeholder_on_show)
 
 
