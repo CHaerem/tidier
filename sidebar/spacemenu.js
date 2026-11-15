@@ -13,7 +13,7 @@ function spaceMenu(space) {
   return [
     { heading: s?.name ?? "", color: s?.color },
     ["Rename", () => openSpaceBox(space)],
-    ["Icon", spaceIconMenu(space)],
+    ["Icon", iconMenu(s?.name, icon => setSpaceIcon(space, icon))],
     ["Unload this space", () => send({ type: "unloadSpace", space })],
     ["Archived tabs", () => openArchived(space)], // archived.js
     null,
@@ -22,29 +22,12 @@ function spaceMenu(space) {
   ];
 }
 
-// --- An icon of its own: an emoji at the start of the name -----------------------
-// A space's icon is the emoji its name starts with ("🏠 Home"). The name is the container's,
-// so the icon shows in Firefox's own lists too and goes to your other machines with the name,
-// and nothing more is stored. On the bar it is drawn in the dot's place (sidebar.js), as Arc
-// and Zen give a space an icon. (A flag, a keycap, or a picture with what joins and tints it.)
-const SPACE_ICON = /^((?:\p{Regional_Indicator}{2}|[#*0-9]\uFE0F?\u20E3|\p{Extended_Pictographic}(?:\uFE0F|\p{Emoji_Modifier})?(?:\u200D\p{Extended_Pictographic}(?:\uFE0F|\p{Emoji_Modifier})?)*))\s*/u;
-function spaceIcon(name) {
-  const m = SPACE_ICON.exec(name ?? "");
-  return m ? { icon: m[1], rest: name.slice(m[0].length) } : { icon: "", rest: name ?? "" };
-}
-// Chosen from a list to search in (emoji.js), drawn in the menu's place; below it, the way
-// back to the plain dot, for a space that has an icon.
-function spaceIconMenu(space) {
-  const has = spaceIcon(view.spaces.find(x => x.id === space)?.name).icon;
-  return [
-    { part: () => emojiPicker(space) },
-    ...(has ? [null, ["No icon", () => setSpaceIcon(space, "")]] : []),
-  ];
-}
+// Its icon is the emoji its name starts with (emoji.js). The name is the container's, so
+// Firefox's own lists show it too.
 function setSpaceIcon(space, icon) {
   const s = view.spaces.find(x => x.id === space);
   if (!s) return;
-  const name = `${icon} ${spaceIcon(s.name).rest}`.trim();
+  const name = withIcon(s.name, icon);
   if (name && name !== s.name) send({ type: "renameSpace", space, name });
 }
 

@@ -123,7 +123,9 @@ be done, in order, is in [PLAN.md](PLAN.md).
    in Zen and Arc. A folder is an entry in Tidier's record with no tab of its own, so no
    tab event can delete it; a tab is in it by the record. Made, renamed, folded and
    deleted in the sidebar; deleting one keeps its tabs. A closed folder rests: its tabs
-   are hidden and unloaded (`foldrest.js`).
+   are hidden and unloaded (`foldrest.js`). A folder can have an icon of its own, as a
+   space can: *Icon* in its menu, an emoji from a list to search in, which is then what its
+   name starts with and is drawn in the folder sign's place (`sidebar/emoji.js`).
 4. **Live folders** (`livefolders.js`): folders filled from a GitHub pull request
    search, such as open pull requests in your company's organisation or your own
    repositories where you are author, assignee or asked for review. Refreshed every

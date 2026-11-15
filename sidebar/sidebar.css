@@ -197,6 +197,12 @@ html.space-arriving :where(#tabs) .row { transition: none; }
  * without a fill, which would look like the mouse being there. */
 .folder.collapsed:has(.tab.active) > .row .chevron { background: var(--accent); }
 .folder.collapsed:has(.tab.active) > .row .title { color: var(--text); }
+/* A folder's own icon (an emoji its name starts with, emoji.js) in the sign's place, a live
+ * folder's too: it has its own colours, so nothing is tinted; closed, it is a little quieter,
+ * as the sign is. (After the sign's rules above, which would lay their shape over it.) */
+.folder > .row .chevron.emoji { font-size: var(--size); line-height: var(--icon); text-align: center; background: none; mask: none; transition: opacity var(--quick), filter var(--quick); }
+.folder.collapsed > .row .chevron.emoji { opacity: .8; filter: grayscale(.35); }
+.folder > .row:hover .chevron.emoji, .folder.collapsed:has(.tab.active) > .row .chevron.emoji { background: none; opacity: 1; filter: none; }
 .folder > .row .title { font-weight: 500; color: var(--heading); transition: color var(--quick); }
 .folder > .row:hover .title { color: var(--text); }
 .folder > .children .row { padding-left: calc(var(--pad) + var(--indent)); }

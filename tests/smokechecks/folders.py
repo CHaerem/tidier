@@ -62,6 +62,39 @@ def alone_folders(m):
       await sleep(1000);
       return {was, during, after, states, back: box.classList.contains("collapsed")};
     }""")
+    # An icon of its own, from the folder's menu: the emoji its name then starts with, drawn in
+    # the folder sign's place, with the name where it was.
+    icon = sidebar_page(m, """
+      const menu = doc.getElementById("menu"), until = async (f, ms = 8000) => { for (let i = 0; i < ms / 50; i++) { const v = f(); if (v) return v; await wait(50); } return null; };
+      const head = () => [...doc.querySelectorAll("#tabs .folder .head")].find(h => /Renamed$/.test(h.title));
+      const look = () => { const h = head(), c = h.querySelector(".chevron"), t = h.querySelector(".title"), b = c.getBoundingClientRect();
+        return {sign: c.classList.contains("emoji") ? c.textContent : "", name: t.textContent, whole: h.title, left: Math.round(t.getBoundingClientRect().left), box: [Math.round(b.width), Math.round(b.height)],
+                shape: page.getComputedStyle(c).maskImage, fill: page.getComputedStyle(c).backgroundColor}; };
+      const open = async label => { menu.hidden = true; const b = head().getBoundingClientRect();
+        head().dispatchEvent(new page.MouseEvent("contextmenu", {bubbles: true, cancelable: true, button: 2, clientX: b.left + 8, clientY: b.top + 8}));
+        await until(() => !menu.hidden);
+        [...menu.querySelectorAll(".item")].find(x => x.textContent === label).click(); };
+      const out = {before: look()};
+      await open("Icon");
+      const first = await until(() => menu.querySelector(".picker .emoji"));
+      out.offered = {field: !!menu.querySelector(".picker .find"), many: menu.querySelectorAll(".picker .emoji").length > 100, noIcon: [...menu.querySelectorAll(".item")].some(x => x.textContent === "No icon")};
+      out.chosen = first.textContent;
+      first.click();
+      await until(() => look().sign);
+      out.with = look();
+      out.record = (await page.browser.storage.local.get("syncedTabs")).syncedTabs[head().dataset.folderHead]?.name;
+      await open("Icon");
+      await until(() => [...menu.querySelectorAll(".item")].some(x => x.textContent === "No icon"));
+      [...menu.querySelectorAll(".item")].find(x => x.textContent === "No icon").click();
+      await until(() => !look().sign);
+      out.without = look();
+      return out;""")
+    check("a folder's menu has Icon: an emoji chosen there is drawn in the folder sign's place, the same size, and the name stays where it was",
+          icon["offered"] == {"field": True, "many": True, "noIcon": False} and icon["with"]["sign"] == icon["chosen"] and icon["with"]["name"] == "Renamed"
+          and icon["with"]["whole"] == f'{icon["chosen"]} Renamed' and icon["with"]["left"] == icon["before"]["left"] and icon["with"]["box"] == icon["before"]["box"]
+          and icon["with"]["shape"] == "none", str(icon))
+    check("the icon is the start of the folder's name in the record, and No icon takes it away again",
+          icon["record"] == f'{icon["chosen"]} Renamed' and icon["without"] == icon["before"], str(icon))
     check("a view made before a fold was heard does not undo the fold for a moment",
           stale.get("was") is False and stale.get("during") is True and stale.get("after") is True and stale.get("states") == [True] and stale.get("back") is False, str(stale))
     s = m.js(H + """const all = (await storage("%s", ["syncedTabs"])).syncedTabs, f = all[args[0]];

@@ -228,7 +228,9 @@ with where it stands. In this order, the first five being the ones that are felt
 - [x] All of a space's folders closed or opened at once, and every other space unloaded,
       from the space's More, the bar and the keys.
 
-Then the small ones, in any order: an icon on a folder, any colour for a space. And then the rest of
+- [x] An icon of its own on a folder, chosen as a space's is.
+
+Then the small ones, in any order: any colour for a space. And then the rest of
 what FEATURES.md has as Later, starting with what is missed most in use.
 
 ## Choices made

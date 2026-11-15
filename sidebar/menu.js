@@ -1,11 +1,20 @@
 // --- A small menu, drawn by Tidier ---------------------------------------------------
+// (A live folder's name is the one in its file, so it has no Rename and no Icon here.)
 function folderMenu(key, live) {
   return live ? [["Delete folder", () => send({ type: "deleteFolder", key })]] : [
     ["New tab here", () => send({ type: "newTabInFolder", key })],
     null,
     ["Rename", () => rename(key)],
+    ["Icon", iconMenu(view.folders.find(f => f.key === key)?.name, icon => setFolderIcon(key, icon))], // emoji.js
     ["Delete folder (its tabs stay)", () => send({ type: "deleteFolder", key })],
   ];
+}
+// A folder's icon is the emoji its name starts with, as a space's is (emoji.js).
+function setFolderIcon(key, icon) {
+  const f = view.folders.find(x => x.key === key);
+  if (!f) return;
+  const name = withIcon(f.name, icon);
+  if (name && name !== f.name) send({ type: "renameFolder", key, name });
 }
 
 // A folder's menu, with More at its end (moremenu.js), which needs to know what its tabs'

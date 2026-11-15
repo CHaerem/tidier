@@ -212,7 +212,7 @@ def alone_tab_menu(m):
           return 1;""", b)
         r = sidebar_page(m, MENU_PAGE + """const head = [...doc.querySelectorAll("#tabs .folder .head")].find(h => h.querySelector(".title").textContent === "Menu kept");
           await rightClick(head); const folder = shown(), list = await rightClick(doc.getElementById("tabs")); menu.hidden = true; return {folder, list};""")
-        check("a folder and the empty list keep their own short menus", r["folder"] == ["New tab here", "|", "Rename", "Delete folder (its tabs stay)", "Move to space", "|", "More"] and r["list"][0] == "New folder" and "Reload" not in r["list"], str(r))
+        check("a folder and the empty list keep their own short menus", r["folder"] == ["New tab here", "|", "Rename", "Icon", "Delete folder (its tabs stay)", "Move to space", "|", "More"] and r["list"][0] == "New folder" and "Reload" not in r["list"], str(r))
         # Rename on a tile and on a saved tab's row opens the box, ready for typing. (What you
         # then do in it is for alone_tab_names.) Esc leaves everything as it was.
         r = sidebar_page(m, MENU_PAGE + """const named = async el => {

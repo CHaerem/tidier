@@ -105,7 +105,7 @@ part C).
 | Folders first in each space | Z A | Done | the sidebar draws them first |
 | Create, rename and delete folders | Z A S | Done | checked. Deleting one keeps its tabs, with one line to undo it |
 | Folders inside folders | Z A | Later | none today, and a tree is what is left out |
-| An icon of its own on a folder | Z A | Later | a space has one; the same list of icons to choose from |
+| An icon of its own on a folder | Z A | Done | checked: Icon in the folder's menu, the same list as a space's; the emoji its name then starts with, drawn in the folder sign's place, so it goes with the folder everywhere |
 | A closed folder rests: hidden from ⌃Tab and unloaded | S | Done | checked; the selected tab, sound and unsaved input stay |
 | New folder with a good name, ready to rename | S | Done | from the menu, a key, or a selection, which names it after what the tabs share |
 | New tab in a folder | S | Done | checked: New tab here in its menu; saved there once it has a page |

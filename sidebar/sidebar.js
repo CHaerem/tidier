@@ -493,7 +493,11 @@ function folder(f) {
     b.firstChild.title = f.name;
     b.firstChild.setAttribute("aria-label", f.name);
     b.firstChild.setAttribute("aria-expanded", String(!closed));
-    b.firstChild.replaceChildren(el("span", "chevron", "▾"), el("span", "title", f.name), ...soundMark(f), el("span", "count", closed && f.tabs.length ? String(f.tabs.length) : ""));
+    // Its own icon, if its name starts with one (nameIcon, emoji.js), in the folder sign's
+    // place, and its name without it. Open or closed then shows by its tabs and its count.
+    const { icon, rest } = nameIcon(f.name);
+    b.classList.toggle("has-icon", !!icon);
+    b.firstChild.replaceChildren(el("span", icon ? "chevron emoji" : "chevron", icon || "▾"), el("span", "title", icon && rest ? rest : f.name), ...soundMark(f), el("span", "count", closed && f.tabs.length ? String(f.tabs.length) : ""));
   });
   place(box.lastChild, withRooms(box.lastChild, f.tabs.map(t => row(t, f.key))));
   return box;
@@ -504,7 +508,8 @@ function rename(key) {
   if (!box || box.classList.contains("renaming")) return;
   const head = box.firstChild, title = head.querySelector(".title");
   const input = el("input", "rename");
-  input.value = title.textContent;
+  // The whole name, its icon too, as a space's name is edited: the icon is part of it.
+  input.value = view.folders.find(f => f.key === key)?.name ?? title.textContent;
   box.classList.add("renaming");
   head.draggable = false;
   title.replaceWith(input);
@@ -624,8 +629,8 @@ function render(next) {
     b.setAttribute("aria-label", s.name);
     if (s.id === view.space) b.setAttribute("aria-current", "true"); else b.removeAttribute("aria-current");
     b.style.setProperty("--color", s.color);
-    // Its own icon, if its name starts with one (spaceIcon, spacemenu.js), in the dot's place.
-    const dot = b.querySelector(".dot"), { icon } = spaceIcon(s.name);
+    // Its own icon, if its name starts with one (nameIcon, emoji.js), in the dot's place.
+    const dot = b.querySelector(".dot"), { icon } = nameIcon(s.name);
     if (dot.textContent !== icon) dot.textContent = icon;
     dot.classList.toggle("emoji", !!icon);
     spaceSound(b, s);
