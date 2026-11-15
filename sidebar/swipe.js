@@ -132,6 +132,7 @@
     clearTimeout(swipe.giveUp);
     clearTimeout(quiet);
     swipe.anim?.cancel();
+    dotsLetGo();
     // Back where it was: the up and down in a swipe scrolled the list a little, unseen.
     if (!swipe.going && view?.space === swipe.space && Math.abs(list.scrollTop - swipe.top) <= STRAY_PX) list.scrollTop = swipe.top;
     swipe = null;
@@ -141,10 +142,36 @@
     strip.style.transform = "";
   }
 
+  // --- The bar follows too ------------------------------------------------------------------
+  // As in Zen and Arc: the dot you are leaving lets go as far as the list has gone, and the
+  // one you are heading for takes over (sidebar.css, #spaces.swiping), so the bar says where
+  // the fingers are taking you while they do, not only once it is decided. Towards no space
+  // (the list only gives a little there) nothing on the bar moves.
+  const bar = document.getElementById("spaces");
+  function dotsFollow(at) {
+    const to = at ? neighbour(Math.sign(at)) : null;
+    if (!to) return dotsLetGo();
+    bar.classList.add("swiping");
+    bar.style.setProperty("--swipe", Math.min(1, Math.abs(at) / innerWidth).toFixed(3));
+    for (const dot of bar.querySelectorAll(".space")) {
+      dot.classList.toggle("swipe-from", dot.dataset.space === swipe.space);
+      dot.classList.toggle("swipe-to", dot.dataset.space === to);
+    }
+  }
+  // Back to what the bar says by itself, by its own soft move: where you are, or where you
+  // are going once that is decided (goToSpace, sidebar.js).
+  function dotsLetGo() {
+    if (!bar.classList.contains("swiping")) return;
+    bar.classList.remove("swiping");
+    bar.style.removeProperty("--swipe");
+    for (const dot of bar.querySelectorAll(".swipe-from, .swipe-to")) dot.classList.remove("swipe-from", "swipe-to");
+  }
+
   // --- Moving it -------------------------------------------------------------------------
   const moveTo = at => {
     strip.style.transform = `translateX(${-at}px)`;
     if (at) bring(Math.sign(at));
+    dotsFollow(at);
   };
   // The rest of the way by itself, on the curve everything soft here moves on (tokens.css).
   let curve = null;
@@ -162,6 +189,7 @@
     if (!space) return back(from);
     swipe.going = space;
     bring(dir);
+    dotsLetGo();
     goToSpace(space); // sidebar.js: the bar says so at once
     // A flick goes on at the fingers' speed, or a little faster, never slower.
     const left = innerWidth - Math.abs(from);
@@ -170,6 +198,7 @@
   }
   function back(from) {
     swipe.backing = true;
+    dotsLetGo();
     slide(0, 120 + 100 * Math.min(1, Math.abs(from) / innerWidth), end);
   }
   // There, and the new space's list is drawn under the picture: they change places.

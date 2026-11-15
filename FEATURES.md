@@ -59,7 +59,7 @@ part C).
 | Switch with ⌃1/2/3 | Z A S | Done | checked: back to the tab you selected last in that space, in any window (not one opened in the background, moved there or resting in a closed folder, nor one another window is showing) |
 | Switch by swiping sideways on the trackpad | Z A | Done | checked, with wheel events made as a trackpad sends them: the list follows the fingers and the next space comes in beside it as it will be; a flick goes at once; a scroll is never a swipe, however far it drifts (which is what went wrong with Sidebery). How it feels under real fingers waits for the second Mac |
 | Switching by a click or ⌃1/2/3 slides as a swipe does | Z A | Done | checked: the new space slides in a little way from the side its dot is on, as it fades in; the bar stays. A short slide, not the whole width: calmer, and a key pressed several times does not wait for it |
-| The active space's dot follows the fingers during a swipe | Z A | Later | it moves when the swipe is decided |
+| The active space's dot follows the fingers during a swipe | Z A | Done | checked: the dot you are leaving lets go as far as the list has gone and the next one takes over, an icon by its own means; still to be seen with real fingers |
 | Colour per space, for the whole window | Z A | Done | userChrome.css and tidier.css |
 | New, edited and deleted spaces in Tidier: name, icon and colour | Z A S | Done | checked, on the settings page and from a space's menu; dropping a tab on the bar makes a new one; Firefox's container settings aren't needed |
 | Nothing goes out in the wrong container: the first request is stopped | S | Done | checked with a server recording cookies; needs the optional access to all websites |

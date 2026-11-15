@@ -442,7 +442,8 @@ it, and over another space's dot goes to that space, where a drop in the list pu
 Two fingers sideways on the trackpad, in the sidebar, take you to the space beside the
 one you are in (`sidebar/swipe.js`). The list follows the fingers, and the next space
 comes in beside it, drawn as it will be when you get there: its essentials, its folders
-and tabs where you left them, and the tab you will land on. A quick flick goes there at
+and tabs where you left them, and the tab you will land on. The bar follows too: the dot
+you are leaving lets go as far as the list has gone, and the next one takes over. A quick flick goes there at
 once; let go slowly, and it goes there if the list has come four tenths of the way, else
 back. At the first and the last space the list gives a little and comes back; nothing is
 made, and nothing wraps around. With less motion asked for in the system's settings
