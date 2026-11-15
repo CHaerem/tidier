@@ -1228,7 +1228,7 @@ def placeholder_on_show(cam):
 
 
 STEPS = (space_by_space, hover, hover_more, menus, more_menus, folders_closed, live_closed, folder_rename, marks, keyboard, agent_note, notices, space_rename, quiet_lines, picked, bar_marks,
-         little_window, little_window_real, command_bar, window_edges, archived, scrolled, folder_icons, away_mark, restart_line, swipe, away, under_the_hand, empty_spaces, few_essentials, icons_that_vanish, settings,
+         little_window, little_window_real, command_bar, window_edges, archived, scrolled, swipe, away, under_the_hand, folder_icons, away_mark, restart_line, empty_spaces, few_essentials, icons_that_vanish, settings,
          moved, no_space, placeholder_on_show)
 
 
