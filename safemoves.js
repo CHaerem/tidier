@@ -68,7 +68,7 @@ async function pageTab(tab, key) {
 // refuses. `live` is the real tab (pageTab): a row can be a placeholder, its page loaded
 // and selected in another window. `leaving`: the other tabs of one move of several. Stepping
 // onto one would select it for a moment, and a placeholder that is selected starts pulling
-// its real tab in (pull, tabsync.js), under a new id, while its own move is on the way.
+// its real tab in (pull, pull.js), under a new id, while its own move is on the way.
 async function leavesQuietly(live, key, leaving = []) {
   if (!live?.active || live.discarded || isGhostUrl(live.url)) return closesQuietly(key, live?.id);
   const last = await lastUsedIn(live.windowId, live.cookieStoreId, live.id, ...leaving) ?? await nextAfterClosing(live.windowId, live.cookieStoreId, live.id, ...leaving);

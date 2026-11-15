@@ -809,6 +809,8 @@ Not guaranteed:
 - `essentials.js` – essentials (pinned tabs) in every window.
 - `tabsync.js` – live/ghost tab sync. Roles and keys are stored per tab with
   `sessions.setTabValue`, so they survive a restart.
+- `pull.js` – what moves a page between windows: a placeholder you select pulls its page in, the
+  window it leaves shows it under a grey layer, and gets it back when the other has left it.
 - `livefolders.js` – live folders of GitHub pull requests (see above).
 - `firefoxsetup.js`, `sidebar/restart.js`, `native/firefox_setup.py` – the line that says Firefox
   must be started again to read its setup files, and its button.

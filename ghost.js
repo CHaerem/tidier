@@ -25,7 +25,7 @@ function shown(info) {
 }
 
 // The page as it was when it left this window for the one you use: shown as it was, under a
-// grey layer, as Zen and Arc show a tab that another window has (pull, tabsync.js). Asked for
+// grey layer, as Zen and Arc show a tab that another window has (pull, pull.js). Asked for
 // before anything else, and drawn while this tab is not yet the one shown, so that the window
 // goes from the page to its picture with nothing in between. None if Tidier may not take
 // pictures of pages, or if this placeholder is not one a page has just left.

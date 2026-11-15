@@ -69,7 +69,7 @@ async function restMoved(key) {
 // You left a tab in a closed folder: now it can be hidden and unloaded. (showSpace
 // runs for most selections anyway, but not for one going to a tab without a container.)
 // Looked at again in the queue: the folder may be open by then, or the tab selected in
-// another window, as a pull does (tabsync.js), which also makes this event in the
+// another window, as a pull does (pull.js), which also makes this event in the
 // window it leaves.
 browser.tabs.onActivated.addListener(async ({ previousTabId, windowId }) => {
   if (!started) return;

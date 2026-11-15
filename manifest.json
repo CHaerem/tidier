@@ -62,6 +62,7 @@
       "bridge.js",
       "essentials.js",
       "tabsync.js",
+      "pull.js",
       "livefolders.js",
       "firefoxsetup.js",
       "rulematch.js",

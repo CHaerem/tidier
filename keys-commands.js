@@ -3,7 +3,7 @@
 // Firefox's own next tab and ⌘1 count the window's tabs: other spaces' pinned tabs, and
 // tabs in the order they were opened. Here the list is what the sidebar draws, in the
 // order it draws it. Selecting a row is what a click on it does: selecting a placeholder
-// pulls its real tab in (tabsync.js).
+// pulls its real tab in (pull.js).
 
 // The tabs as drawn: the space's essentials, each folder's tabs, today's tabs. A closed
 // folder draws only the selected tab, if it holds it.

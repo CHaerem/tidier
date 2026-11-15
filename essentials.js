@@ -507,7 +507,7 @@ async function essentialShown(tab, { back = false } = {}) {
   // another window must not close this one, so here it gets its placeholder first. So does a
   // window that is on this essential, and it stays on it: its placeholder, selected, shows
   // the page under a veil until you come back to that window, and the page with you
-  // (selectedEssential), as a tab's does (pull, tabsync.js).
+  // (selectedEssential), as a tab's does (pull, pull.js).
   const others = await browser.tabs.query({ windowId: loaded.windowId, hidden: false });
   let left;
   if (loaded.active || !others.some(t => t.id !== loaded.id)) {
@@ -516,7 +516,7 @@ async function essentialShown(tab, { back = false } = {}) {
     await createEssentials(loaded.windowId, [{ entry, index: loaded.index + 1 }]);
     left = loaded.active && (await copiesOf(key)).find(t => t.windowId === loaded.windowId && t.id !== loaded.id);
     if (left) {
-      await veilFirst(loaded.windowId, left.id, picture); // tabsync.js: drawn before it is selected
+      await veilFirst(loaded.windowId, left.id, picture); // pull.js: drawn before it is selected
       await browser.tabs.update(left.id, { active: true }).catch(() => {});
     }
   }
@@ -577,7 +577,7 @@ async function showEssentialIn(placeholder, options) {
 }
 // You have left an essential (`left`, its loaded copy) for another tab, and a window you are
 // not using is still on it, showing its placeholder under a veil: the page goes back there,
-// as a tab's does (backToWhoIsOnIt, tabsync.js, which calls this in the queue). `on`: the
+// as a tab's does (backToWhoIsOnIt, pull.js, which calls this in the queue). `on`: the
 // tabs the other windows are on.
 async function essentialBackTo(left, on) {
   if (!isLoadedCopy(left)) return;
