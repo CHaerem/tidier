@@ -60,6 +60,11 @@ TEST_PREFS = {
     "xpinstall.signatures.required": False,
     # A page's leave-page handler counts without real user input (see PAGES).
     "dom.require_user_interaction_for_beforeunload": False,
+    # Firefox's own theme, which follows the system's light and dark, as the daily Firefox
+    # has it. Developer Edition starts a new profile on a dark theme of its own, where the
+    # window is dark whatever is asked: the check of light turning to dark was skipped
+    # there, and the pictures (tools/shoot.py) could not be taken at all.
+    "extensions.activeThemeID": "default-theme@mozilla.org",
 }
 
 # For the bridge: text to read, what a person cannot see, fields, and things that change.
