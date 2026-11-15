@@ -931,7 +931,9 @@ def alone_bar_edges(m):
     # from a panel as it settles, on a busy machine, and the bar then comes as a window.)
     where = m.js(BAR + "return bar().window.__extra === true || barWindows().length === 1;")
     m.js(H + """Services.prefs.setBoolPref("browser.tabs.warnOnClose", false); wins().find(w => w.__extra).close(); for (let i = 0; i < 50 && wins().some(w => w.__extra); i++) await wait(100); return 1;""")
-    gone = wait_for_bar(m, False)
+    # Gone as a panel, and as a window of its own where it was one: Tidier hears that the
+    # window has closed a moment after it has, and the key before that would only close the bar.
+    gone = wait_for_bar(m, False) and m.js(BAR + "for (let i = 0; i < 100 && barWindows().length; i++) await wait(50); return !barWindows().length;")
     ready = bar_open(m)
     bar_keys(m, "example.org/?smoke-edge-source")
     bar_rows_until(m, lambda rows: rows and rows[0]["kind"] == "address")

@@ -1496,3 +1496,54 @@ def alone_link_drop(m):
           r.get("nowhere") == {"over": True, "marks": 0, "drop": True, "opened": 0}, str(r.get("nowhere")))
     no_problems(m, "after links were dropped in the sidebar")
     close_sidebar_page(m)
+
+
+def alone_essential_links(m):
+    # A link to another site clicked in an essential opens in a tab of its own, and the
+    # essential stays on its site, as in Arc. Firefox does this itself for a pinned tab, and
+    # Tidier leans on it (an essential is a pinned tab): so it is checked, with a real click on
+    # a real link, and that the tab it opens is one of Tidier's, in the essential's space.
+    ctx = m.js(H + "return main().gBrowser.selectedTab.userContextId;")
+    tab_id = m.js(H + """const {ExtensionParent} = ChromeUtils.importESModule("resource://gre/modules/ExtensionParent.sys.mjs");
+      const w = main(), t = w.gBrowser.addTrustedTab(args[0] + "/out", {userContextId: args[1]});
+      for (let i = 0; i < 100 && !(key(w, t) && t.linkedPanel && t.label === "Out"); i++) await wait(100);
+      return ExtensionParent.apiManager.global.tabTracker.getId(t);""", m.pages, ctx)
+    sidebar_page(m, """send({type: "pin", tabId: args[0], pinned: true}); for (let i = 0; i < 80 && !doc.querySelector("#essentials .tile"); i++) await wait(100); await wait(800); return 1;""", tab_id)
+    state = H + """const w = main(), pinned = w.gBrowser.tabs.find(t => t.pinned && t.linkedPanel && (url(t).includes("/out") || url(t).includes("out%20")));
+      const far = wins().flatMap(x => x.gBrowser.tabs.filter(t => !t.pinned && t.linkedPanel && url(t).includes("out%20far")).map(t => ({x, t})));
+      for (let i = 0; i < 60 && far[0] && !key(far[0].x, far[0].t); i++) await wait(100);  // taken into the record a moment after it has loaded
+      return {essential: pinned ? url(pinned).replace(/^http:\/\/[^/]+/, "") : null, tabs: far.length, selected: url(w.gBrowser.selectedTab).replace(/^http:\/\/[^/]+/, ""),
+              space: far[0]?.t.userContextId ?? null, kept: far[0] ? !!key(far[0].x, far[0].t) : null, here: far[0] ? far[0].x === w : null, host: far[0] ? new URL(url(far[0].t)).hostname : null};"""
+    home = H + """const w = main(), t = w.gBrowser.tabs.find(x => x.pinned && x.linkedPanel && (url(x).includes("/out") || url(x).includes("out%20")));
+      w.gBrowser.selectedTab = t;
+      if (!url(t).endsWith("/out")) { t.linkedBrowser.goBack(); for (let i = 0; i < 80 && !url(t).endsWith("/out"); i++) await wait(100); }
+      await removeWhere((x, y) => !y.pinned && url(y).includes("out%20"));
+      await wait(1200); return url(t).endsWith("/out");"""
+
+    def click(selector):
+        """A real click on a link in the essential's page, which is in front."""
+        m.js(home)
+        into_page(m, "/out", focus=True)
+        found = m.cmd("WebDriver:FindElement", {"using": "css selector", "value": selector})
+        m.cmd("WebDriver:PerformActions", {"actions": [{"type": "pointer", "id": "out-mouse", "parameters": {"pointerType": "mouse"}, "actions": [
+            {"type": "pointerMove", "x": 0, "y": 0, "origin": {"element-6066-11e4-a52e-4f735466cecf": list(found.values())[0]}},
+            {"type": "pointerDown", "button": 0}, {"type": "pointerUp", "button": 0}]}]})
+        m.cmd("WebDriver:ReleaseActions")
+        m.chrome()
+        m.js(H + """for (let i = 0; i < 60 && !wins().some(w => w.gBrowser.tabs.some(t => url(t).includes("out%20"))); i++) await wait(100); await wait(1000); return 1;""")
+        return m.js(state)
+
+    try:
+        near = click("#near")
+        check("a link within its site, clicked in an essential, is the essential's own", near["essential"] == "/titled?out%20near" and near["tabs"] == 0, str(near))
+        far = click("#far")
+        check("a link to another site opens in a tab of its own, selected, in the essential's space, as one of Tidier's tabs, and the essential stays where it was",
+              far["essential"] == "/out" and far["tabs"] == 1 and far["selected"] == "/titled?out%20far" and far["space"] == ctx and far["kept"] is True and far["here"] is True and far["host"] == "localhost", str(far))
+    finally:
+        # As it was, for the groups after this one.
+        m.js(home)
+        sidebar_page(m, """const tile = [...doc.querySelectorAll("#essentials .tile")].find(t => (t.title || "").startsWith("Out"));
+          if (tile) send({type: "pin", tabId: Number(tile.dataset.tab), pinned: false});
+          await wait(1500); return 1;""")
+        m.js(H + """await removeWhere((w, t) => url(t).endsWith("/out") || url(t).includes("out%20")); await wait(800); return 1;""")
+    no_problems(m, "after links out of an essential")

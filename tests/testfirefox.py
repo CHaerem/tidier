@@ -119,6 +119,10 @@ PAGES = {
     "/pp-one": "<title>One</title><iframe sandbox='allow-top-navigation allow-scripts' srcdoc=\"<script>top.location = '/pp-two'</script>\"></iframe>",
     "/pp-two": "<title>Two</title><iframe sandbox='allow-top-navigation allow-scripts' srcdoc=\"<script>top.location = '/pp-one'</script>\"></iframe>",
     "/links": "<title>Links</title><a id='a' href='/links?little-from-a-link' style='font-size:40px'>a link</a><p><a id='new' target='_blank' href='/links?little-new-tab'>a new tab</a><p><a id='sign-in' href='#' onclick=\"window.open('/links?little-sign-in', 'sign-in', 'width=500,height=600'); return false\">sign in</a>",
+    # A page with a link within its site and one to another site (the same server by its
+    # other name), for an essential whose links out open in tabs of their own.
+    "/out": """<title>Out</title><a id="near" href="/titled?out%20near" style="font-size:40px">near</a><p><a id="far" style="font-size:40px">far</a>
+      <script>document.getElementById("far").href = "http://localhost:" + location.port + "/titled?out%20far";</script>""",
     "/long-title": "<title>" + "x" * 59 + "😀 and more</title>a character just where sync cuts a title",
     "/agent": AGENT_PAGE,
     # An app whose whole page is a fixed layer: the body has no height, and overflow hidden.
