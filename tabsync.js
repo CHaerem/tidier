@@ -243,7 +243,7 @@ browser.runtime.onMessage.addListener((msg, sender) => {
   }
   const lists = {
     toForget, tabsOnTheirWay, busy, keyByTab, ownMoves, ownPins, syncKeyByTab, syncRoleByTab,
-    syncBusy, pending, leftTabs, refreshTimers, lastRefresh, awaitingIcon, lastOrder, orderQueries, loadedSeen,
+    syncBusy, pending, leftTabs, selectedNow, refreshTimers, lastRefresh, awaitingIcon, lastOrder, orderQueries, loadedSeen,
     activeSpace, newTabs, firstPage, showTimers, closedIn, sidebarPorts, viewTimers, viewRest, viewsBuilding, requestOfTab,
     unruled,
     earlyKeys,

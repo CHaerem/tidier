@@ -62,6 +62,12 @@ function dropVeil(windowId) {
   if (veilPictures.delete(windowId)) browser.tabs.discard(tabId).catch(() => {});
 }
 
+// The tab selected in each window, as Firefox last said, for a pull to know without asking
+// whether you have gone on to another tab while it moved the page (below).
+const selectedNow = new Map(); // windowId -> tab id
+browser.tabs.onActivated.addListener(({ tabId, windowId }) => selectedNow.set(windowId, tabId));
+browser.windows.onRemoved.addListener(windowId => selectedNow.delete(windowId));
+
 // Pull the live tab for `ghostId` into the ghost's window. The part you see
 // (moving the tab in and selecting it) happens first; the bookkeeping after.
 // `back`: to a window you are not using, which is still on this page while the window that
@@ -118,13 +124,14 @@ async function pull(ghostId, { back = false } = {}) {
     // placeholder by then. Selected anyway, the page took you back from the tab you had
     // gone on to, and that one was then never pulled in, as it was no longer the one you
     // were on. Not selected, it is simply here, in its placeholder's place.
+    // (Known from what Firefox has said meanwhile, selectedNow, and not asked for now: the
+    // page is selected in the same breath as it arrives, or the list would be drawn with the
+    // page's row beside its placeholder's, still selected, and end a little off its place.)
     beingPulled.add(live.id);
+    selectedNow.set(ghost.windowId, ghostId);
     const moved = await browser.tabs.move(live.id, { windowId: ghost.windowId, index: ghost.index })
       .finally(() => beingPulled.delete(live.id))
-      .then(async () => {
-        const still = await browser.tabs.get(ghostId).catch(() => null);
-        if (!still || still.active) await browser.tabs.update(live.id, { active: true });
-      })
+      .then(() => (selectedNow.get(ghost.windowId) === ghostId ? browser.tabs.update(live.id, { active: true }) : null))
       .then(() => setRole(live.id, key, "live"), () => false);
     if (!moved) { dropVeil(fromWindow); return; }
     forget(ghostId);
