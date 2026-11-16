@@ -57,10 +57,10 @@ Rules for all of it:
       own model brought up to date (it had not been run long since Tidier came to work alone,
       and a long run stopped at seed 219). The sequences that broke something are kept and
       played every time (`tests/fixtures/chaos_found.json`). Of 16 000 sequences (seeds 1 to
-      8000 and 100000 to 108000) fourteen still break something, all of them on the last
+      8000 and 100000 to 108000) thirteen still break something, all of them on the last
       release's code too; they are listed under F. A long run in a real Firefox
       (`tests/soak.py`, 25 minutes with restarts) was made too, and what it saw is the last
-      two here:
+      two here; the same run after them passes with nothing to report:
       - An update, a crash or a quit in the moment a copy of an essential is being made no
         longer takes the essential off the list (the copy's key is written on its tab only
         once it is pinned, so an unfinished copy is told from one you unpinned), nor does a
@@ -273,15 +273,11 @@ with where it stands. In this order, the first five being the ones that are felt
 - [ ] What random use still breaks (16 November 2026; run one with
       `CHAOS_SURVEY=1 CHAOS_SHOW=6 CHAOS_FIRST=<seed> CHAOS_SEQUENCES=1 CHAOS_SECONDS=0 node --test tests/chaos.test.mjs`):
       a page under two keys, or a tab and an essential (seeds 3997, 7557, 105360); a tab of
-      a space with a placeholder in no space (6256, 6934, 104685, 105468, 106153) or in
+      a space with a tab of it in no space (6934, 104685, 105468, 106153) or in
       another (3982, 7553); a tab with two placeholders in one window and none in another
       (4133), or with no key after a restart (105405); an essential with no copy in a window
       (6960); an essential's placeholder left under Recently Closed (5406). Most have several
       things done in the same millisecond; none has been looked into.
-- [ ] What the long run in a real Firefox still sees, on the last release's code too: now
-      and then a tab with no page anywhere that is not a saved one ("a synced tab has no live
-      tab"). Its check for hidden tabs did not know of closed folders until now, so a run
-      after this is the first that says what is left.
 - [ ] After Firefox starts with no session, a window reopened (⌘⇧N) in the five seconds
       before Tidier looks is all of the session it sees: the tabs that were in other windows
       are taken for closed, and are in their spaces' archives. Rare, and nothing is gone for
