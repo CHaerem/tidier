@@ -614,8 +614,10 @@ export async function play(seq, { trace = false } = {}) {
     for (const [key, t] of Object.entries(a.tabs)) if (t.cookieStoreId === "firefox-default" && b.tabs[key]) t.cookieStoreId = b.tabs[key].cookieStoreId;
     // So is an essential outside any space (moveEssentialIntoSpace), and its place in the list
     // is then among that space's essentials: the same ones, in another order (seed 102070).
-    if (Array.from(listBefore).some(e => e.cookieStoreId === NO_CONTAINER)) { a.essentials.sort(); b.essentials.sort(); }
-    if (W.ff.refusals === 0 && JSON.stringify(a) !== JSON.stringify(b)) W.bad("changed", `by an update: ${difference(a, b)}`);
+    const outside = list => Array.from(list).some(e => e.cookieStoreId === NO_CONTAINER);
+    const anyOrder = x => ({ ...x, essentials: [...x.essentials].sort() });
+    const same = (x, y, loose) => JSON.stringify(loose ? anyOrder(x) : x) === JSON.stringify(loose ? anyOrder(y) : y);
+    if (W.ff.refusals === 0 && !same(a, b, outside(listBefore))) W.bad("changed", `by an update: ${difference(a, b)}`);
     W.x = W.ff.restart();
     await W.clock.run(8000);
     await check(W, "restart", { strong: true });
@@ -623,8 +625,7 @@ export async function play(seq, { trace = false } = {}) {
     const c = logical(await W.read("getSynced()"), await W.read("getList()"));
     // (An essential outside any space whose copies were all unloaded stayed there through the
     // update, and is moved now that Firefox has loaded one.)
-    if (Array.from(listAfter).some(e => e.cookieStoreId === NO_CONTAINER)) { b.essentials.sort(); c.essentials.sort(); }
-    if (JSON.stringify(b) !== JSON.stringify(c)) W.bad("changed", `by a restart: ${difference(b, c)}`);
+    if (!same(b, c, outside(listAfter))) W.bad("changed", `by a restart: ${difference(b, c)}`);
     return W.violations;
   } catch (err) {
     return [{ cat: "crash", msg: `crash: ${err?.stack ?? err}` }];
