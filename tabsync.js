@@ -1010,7 +1010,12 @@ async function adoptRestored(windowId) {
     found = true;
     if (all[key]) {
       syncKeyByTab.set(t.id, key); syncRoleByTab.set(t.id, role);
-      if (t.pinned) await leaveSync(t.id, key); // pinned the moment it came back: not a synced tab any more
+      // Pinned the moment it came back: an essential, and not a synced tab any more. Made one
+      // here, before the tab leaves the record, as its own pin would have it (onPinned,
+      // essentials.js, which reads the record for a placeholder's page): that pin's turn
+      // comes after this look, which was asked for first, and found the record gone. The tab
+      // was then closed in every window, and nothing was an essential.
+      if (t.pinned) { await onPinned(t); await leaveSync(t.id, key); }
       continue;
     }
     if (isGhostUrl(t.url)) { removed.push(key); await removeTabs([t.id], syncBusy); }

@@ -2036,6 +2036,36 @@ test("a placeholder brought back with ⌘⇧T before Recently Closed has forgott
   x.kill();
 });
 
+// Found by the random sequences (seed 2946): the tab was closed in every window and no
+// essential made; what was left was a pinned placeholder with nothing to show.
+test("a placeholder pinned the moment its window came back makes its tab an essential", async () => {
+  const { ff, x, windows: [a, b] } = await chaosStart();
+  ff.openTab(a.id, { url: "https://a.example/", cookieStoreId: C1, active: true });
+  await ff.clock.idle(60000);
+  ff.closeWindow(b.id);
+  await ff.clock.idle(60000);
+  // Tidier is busy with something else for a moment, as on a machine with much to do: its
+  // look at the window that comes back waits, and the pin comes after that look was asked for.
+  let goOn;
+  x.js("serial")(() => new Promise(resolve => { goOn = resolve; }));
+  const back = ff.reopenLast(); // ⌘⇧N
+  const placeholder = ff.list(back.id).find(y => isPlaceholder(y.url));
+  assert.ok(placeholder, "the window came back with its placeholder");
+  await ff.clock.run(400);
+  ff.pinTab(ff.tabs.get(placeholder.id));
+  await ff.clock.run(50);
+  goOn();
+  await ff.clock.idle(60000);
+  assert.deepEqual(ff.store.essentials.map(e => e.url), ["https://a.example/"], "the page is an essential");
+  assert.deepEqual(Object.values(ff.store.syncedTabs).filter(e => e.url === "https://a.example/"), [], "and no longer a tab");
+  for (const w of [a, back]) {
+    const pinned = ff.list(w.id).filter(y => y.pinned);
+    assert.deepEqual(pinned.map(y => ff.values.get(y.id)?.essentialKey), [ff.store.essentials[0].key], `one copy of it in window ${w.id}`);
+  }
+  assert.deepEqual([...x.js("problems")], []);
+  x.kill();
+});
+
 test("a window opened while Tidier is starting gets its tabs when it has started", async () => {
   const ff = new ChaosFirefox();
   ff.store.syncedTabs = { a: entry("https://a.example/") };
