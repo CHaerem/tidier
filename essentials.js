@@ -530,6 +530,7 @@ async function essentialShown(tab, { back = false } = {}) {
   if (back && loaded?.active) return false; // that window is on it again
   veilPictures.delete(tab.windowId); // of the page as it was when it left this window
   if (!loaded) return true;
+  if (await staysInFullscreen(tab, loaded)) return false; // fullscreen.js: a page in its own fullscreen stays there
   // Firefox closes a window when the last tab it can show leaves it. Using an essential in
   // another window must not close this one, so here it gets its placeholder first. So does a
   // window that is on this essential, and it stays on it: its placeholder, selected, shows
@@ -590,7 +591,7 @@ async function oneLoadedEach() {
 
 browser.runtime.onMessage.addListener((msg, sender) => {
   if (msg?.type !== "essentialShown" || !sender.tab || sender.id !== browser.runtime.id) return;
-  return serial(() => essentialShown(sender.tab)).then(load => ({ load }), () => ({ load: true }));
+  return serial(() => essentialShown(sender.tab)).then(load => ({ load, fullscreen: !load && keptByFullscreen.has(sender.tab.id) }), () => ({ load: true }));
 });
 
 // Switching to a window whose selected tab is an essential's placeholder.

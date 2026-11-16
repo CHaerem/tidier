@@ -92,6 +92,7 @@ async function pull(ghostId, { back = false } = {}) {
     await openIfBlank(ghost.windowId, back);
     return;
   }
+  if (await staysInFullscreen(ghost, live)) return; // fullscreen.js: a page in its own fullscreen stays there
   pulling++;
   syncBusy.add(live.id); syncBusy.add(ghostId);
   try {

@@ -794,7 +794,7 @@ browser.runtime.onMessage.addListener((msg, sender) => {
       // Its live tab comes here, also if nothing else is going to bring it: a window reopened
       // and focused before its tabs were known has had its selection and focus events already.
       await pull(tab.id);
-      return { load: false };
+      return { load: false, fullscreen: keptByFullscreen.has(tab.id) }; // fullscreen.js: why it does not come
     });
   }
 });

@@ -5,7 +5,7 @@ import time
 from testfirefox import EXT_ID
 from smokechecks.base import (
     CTRL, ENTER, ESC, H, SNAP_ALONE, check, choose, ext_page,
-    extension_message, in_sidebar, look_in_sidebar, menu_on, no_problems, press, seen, sidebar_key, sidebar_mouse,
+    extension_message, in_sidebar, into_page, look_in_sidebar, menu_on, no_problems, press, seen, sidebar_key, sidebar_mouse,
     sidebar_page, sidebar_until, until,
 )
 from smokechecks.core import essentials
@@ -779,3 +779,80 @@ def alone_space_colour(m):
         m.js(H + "Services.prefs.clearUserPref('ui.systemUsesDarkTheme'); await wait(300); return 1;")
         sidebar_key(m, ESC)
     no_problems(m, "after a space's colour")
+
+
+def alone_fullscreen(m):
+    # A page in its own fullscreen stays in its window when its tab is selected in another
+    # (fullscreen.js): pulled, it left fullscreen as it moved. In a real fullscreen, which only a
+    # real Firefox has: the page is asked whether it is in it, and stays in it.
+    all_sites = """const {ExtensionPermissions} = ChromeUtils.importESModule("resource://gre/modules/ExtensionPermissions.sys.mjs");
+      const ext = WebExtensionPolicy.getByID(args[0]).extension, sites = {permissions: [], origins: ["*://*/*"]};"""
+    gave = m.js(H + all_sites + """if (ext.allowedOrigins.subsumes(new MatchPattern("*://*/*"))) return false;
+      await ExtensionPermissions.add(args[0], sites, ext); await wait(800); return true;""", EXT_ID)
+    film = m.pages + "/titled?film"
+    opened = m.js(H + """Services.prefs.setBoolPref("full-screen-api.allow-trusted-requests-only", false);
+      const a = main(), made = !other(), b = other() ?? a.OpenBrowserWindow(); b.__smoke = true;
+      for (let i = 0; i < 200 && !b.gBrowser; i++) await wait(50);
+      if (made) await wait(3000);
+      a.focus(); await wait(300);
+      const t = a.gBrowser.addTrustedTab(args[0], {userContextId: a.gBrowser.selectedTab.userContextId || 1}); a.gBrowser.selectedTab = t;
+      for (let i = 0; i < 100 && !(key(a, t) && b.gBrowser.tabs.some(x => key(b, x) === key(a, t))); i++) await wait(100);
+      await wait(1000); return made;""", film)
+    STATE = H + """const a = main(), b = other(), page = w => w.gBrowser.tabs.find(t => url(t) === args[0]);
+      const at = page(a) ? a : page(b) ? b : null, k = at && key(at, page(at));
+      const placeholder = w => k && w.gBrowser.tabs.find(t => t !== page(w) && key(w, t) === k);
+      return {film: at === a ? "first" : at === b ? "second" : null, fullscreen: a.document.documentElement.hasAttribute("inDOMFullscreen"), window: a.fullScreen,
+        second: b.gBrowser.selectedTab === placeholder(b) ? "placeholder" : b.gBrowser.selectedTab === page(b) ? "film" : "other", front: Services.focus.activeWindow === a ? "first" : Services.focus.activeWindow === b ? "second" : null};"""
+    # In the second window's sidebar, a click on the film's row: as its own sidebar says it.
+    CLICK = """const obj = o => page.JSON.parse(JSON.stringify(o)), here = (await page.browser.windows.getCurrent()).id;
+      const film = (await page.browser.tabs.query(obj({}))).find(t => t.url === args[0]);
+      const ghost = (await page.browser.tabs.query(obj({}))).find(t => t.windowId !== film.windowId && t.url.includes("ghost.html") && t.title === film.title);
+      const p = page.browser.runtime.connect(obj({name: "sidebar"}));
+      p.postMessage(obj({type: "hello", windowId: ghost.windowId})); await wait(200);
+      p.postMessage(obj({type: "select", tabId: ghost.id})); await wait(2500); p.disconnect(); return 1;"""
+    in_film = lambda script: (into_page(m, film, exact=True), m.cmd("WebDriver:ExecuteAsyncScript", {"script": "const done = arguments[arguments.length - 1]; " + script, "args": []}), m.chrome())[1]  # noqa: E731
+    try:
+        sidebar_page(m, "return 1;")  # (its tab is opened now, not over a page in fullscreen)
+        m.js(H + """const a = main(); a.gBrowser.selectedTab = a.gBrowser.tabs.find(t => url(t) === args[0]); a.focus(); await wait(500); return 1;""", film)
+        entered = in_film("""document.documentElement.requestFullscreen().then(() => done("entered"), e => done("refused: " + e));""")
+        time.sleep(1.5)
+        before = m.js(STATE, film)
+        check("a page asks for fullscreen and has it, with its tab's placeholder in the second window", entered == "entered" and before["film"] == "first" and before["fullscreen"] and before["window"], f"{entered} {before}")
+
+        # Its placeholder selected in the second window, as closing the tab beside it would select it.
+        m.js(H + """const a = main(), b = other(), k = key(a, a.gBrowser.tabs.find(t => url(t) === args[0]));
+          b.focus(); await wait(400); b.gBrowser.selectedTab = b.gBrowser.tabs.find(t => key(b, t) === k); await wait(3000); return 1;""", film)
+        r = m.js(STATE, film)
+        still = in_film("done(!!document.fullscreenElement);")
+        check("selected in another window, the page stays where it is, in fullscreen, and you stay where you are",
+              r == {"film": "first", "fullscreen": True, "window": True, "second": "placeholder", "front": "second"} and still is True, f"{r} {still}")
+        into_page(m, "ghost.html?kind=ghost")
+        words = m.cmd("WebDriver:ExecuteAsyncScript", {"script": """const done = arguments[arguments.length - 1];
+          (async () => { for (let i = 0; i < 50 && !document.querySelector("main .when"); i++) await new Promise(r => setTimeout(r, 100)); done(document.querySelector("main .when")?.textContent ?? null); })();""", "args": []})
+        m.chrome()
+        check("its placeholder says that it is in fullscreen in another window", (words or "").startswith("In fullscreen in another window"), str(words))
+
+        # A click on its row in that window's sidebar: you are taken to the window that has it.
+        sidebar_page(m, CLICK, film)
+        r = m.js(STATE, film)
+        still = in_film("done(!!document.fullscreenElement);")
+        check("clicked in the sidebar, it stays in fullscreen too, and you are taken to its window",
+              r == {"film": "first", "fullscreen": True, "window": True, "second": "placeholder", "front": "first"} and still is True, f"{r} {still}")
+
+        # Out of fullscreen, and clicked again, selected as it is: it comes.
+        in_film("""document.exitFullscreen().then(() => done("left"), e => done("refused: " + e));""")
+        m.js(H + "other().focus(); await wait(1500); return 1;")
+        r = m.js(STATE, film)
+        if r["film"] != "second":  # (coming to the window brings it already; else the click does)
+            sidebar_page(m, CLICK, film)
+            r = m.js(STATE, film)
+        check("once it has left fullscreen it comes to the window that asks for it", r["film"] == "second" and r["second"] == "film" and not r["fullscreen"] and not r["window"], str(r))
+    finally:
+        m.chrome()
+        m.js(H + all_sites + """Services.prefs.clearUserPref("full-screen-api.allow-trusted-requests-only");
+          for (const w of wins()) if (w.fullScreen) w.fullScreen = false;
+          await removeWhere((w, t) => url(t) === args[1]);
+          if (args[2]) await close(other());
+          if (args[3]) { await ExtensionPermissions.remove(args[0], sites, ext); await wait(500); }
+          main().focus(); await wait(500); return 1;""", EXT_ID, film, opened, gave)
+    no_problems(m, "after a page in fullscreen was asked for by another window")

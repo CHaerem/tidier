@@ -283,6 +283,7 @@ browser.runtime.onConnect.addListener(port => {
     } else if (msg.type === "trace") {
       trace(`sidebar ${windowId}: ${String(msg.what).slice(0, 120)}`); // common.js
     } else if (msg.type === "select") {
+      clickedInSidebar(windowId, msg.tabId); // fullscreen.js: a page in fullscreen elsewhere stays, and you go to it
       await browser.tabs.update(msg.tabId, { active: true }).catch(() => {});
     } else if (msg.type === "close") {
       await closeFromSidebar(windowId, msg.tabId); // quiet.js: remembered for undo

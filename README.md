@@ -114,7 +114,14 @@ be done, in order, is in [PLAN.md](PLAN.md).
    it was, under a grey layer (without, its placeholder names the page and says it is in
    another window now), and the page comes back when you use that window again, or as soon
    as the window that took it leaves it for another tab: a window stays grey only while
-   another window really shows that page. An essential's page does the same. Opening a tab adds it everywhere, half a second after its
+   another window really shows that page. An essential's page does the same. A page in
+   its own fullscreen (a video, a presentation) is not taken from its window (`fullscreen.js`):
+   moved, it would leave fullscreen. Its placeholder says so, a click on its row or tile
+   in another window takes you to the window that has it, and it comes as ever once it has
+   left fullscreen and is selected again. Firefox says "fullscreen" of a window for the
+   page's fullscreen and for the window's own alike, so the page is asked, which takes
+   access to all websites; without it, or with the choice turned off on the settings
+   page, the page moves as before. Opening a tab adds it everywhere, half a second after its
    page has loaded (a page still loading waits a little longer, since it may yet be sent
    somewhere else); closing it closes it everywhere;
    moving it into or out of a folder is the same in every window, since a folder is
@@ -690,7 +697,7 @@ list to the manifest, both ways.
 | `tabHide` | Hiding other spaces' tabs from Firefox's tab bar and ⌃Tab. Without it they are only left out of the sidebar. |
 | `webRequest` | Seeing a page's address before it loads, to keep spaces apart (Isolation, below). |
 | `webRequestBlocking` | Stopping that page before it loads in the wrong space. |
-| `*://*/*` | Every website, for the two above, for reading a page when you ask (Copy for Claude, the bridge), ⌥-click on a link, the keys typed right after the command bar's key, and pausing what plays in a page when you ask. |
+| `*://*/*` | Every website, for the two above, for reading a page when you ask (Copy for Claude, the bridge), ⌥-click on a link, the keys typed right after the command bar's key, pausing what plays in a page when you ask, and asking a page whether it is in fullscreen before it is moved to another window. |
 | `<all_urls>` | Pictures of pages, when you allow them on the settings page: a window whose page another window has taken keeps showing it under a grey layer, and the bridge's screenshot. Firefox gives pictures with nothing less. |
 | `proxy` | A space's own proxy, when you give it one. |
 | `browsingData` | Signing out of everything in one space, when you ask. |
@@ -878,6 +885,7 @@ Not guaranteed:
 - `spaceactions.js`, `sidebar/spacemenu.js` – a space's menu and what it does (rename,
   unload, clear).
 - `spacelook.js` – a space's colour, and each window tinted in it.
+- `fullscreen.js`, `settings/fullscreen.js` – a page in its own fullscreen stays in its window.
 - `newtabs.js`, `sidebar/newtab.js` – one place for new tabs.
 - `safemoves.js`, `sidebar/reconnect.js` – moves to another space that cannot lose
   anything; the sidebar connecting again after its background part has come back.

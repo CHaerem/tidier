@@ -21,7 +21,7 @@ function shown(info) {
   // An essential opens its page itself only if no other window has it loaded
   // (essentialShown, essentials.js); a ghost only if there is no live tab.
   const type = kind === "essential" ? "essentialShown" : "ghostShown";
-  browser.runtime.sendMessage({ type }).then(r => { if (r?.load) location.replace(info.url); else face(info); });
+  browser.runtime.sendMessage({ type }).then(r => { if (r?.load) location.replace(info.url); else face(info, r?.fullscreen); });
 }
 
 // The page as it was when it left this window for the one you use: shown as it was, under a
@@ -43,7 +43,11 @@ const veiled = browser.runtime.sendMessage({ type: "ghostPicture" }).then(async 
 // here (or it is on its way). Its name, site and icon say which page this is: a blank page
 // with "Extension (Tidier)" in the address bar, beside the window you use, looked broken.
 // Not over the picture of the page: that says it better, and words on top were one thing more.
-async function face(info) {
+// `fullscreen`: the page is in fullscreen in its window, and stays there (fullscreen.js).
+async function face(info, fullscreen) {
+  // (Asked again while it shows: what it says may be another thing now.)
+  const said = document.querySelector("main .when");
+  if (said) said.textContent = whenWords(fullscreen);
   if (await veiled || document.querySelector("main") || !document.body) return;
   let site = "";
   try { site = new URL(info.url).host; } catch { /* no address to show */ }
@@ -52,9 +56,11 @@ async function face(info) {
   if (/^data:/.test(info.icon || "")) main.append(Object.assign(document.createElement("img"), { src: info.icon, alt: "" }));
   main.append(Object.assign(document.createElement("div"), { className: "title", textContent: info.title || site }));
   if (site && site !== info.title) main.append(Object.assign(document.createElement("div"), { className: "site", textContent: site }));
-  main.append(Object.assign(document.createElement("div"), { className: "when", textContent: "In another window now. It comes here when you use this one." }));
+  main.append(Object.assign(document.createElement("div"), { className: "when", textContent: whenWords(fullscreen) }));
   document.body.append(main);
 }
+const whenWords = fullscreen => (fullscreen ? "In fullscreen in another window, where it stays. Select it again once it has left fullscreen."
+  : "In another window now. It comes here when you use this one.");
 
 // The first icon that loads: the one saved for the page, else the site's
 // /favicon.ico. (Firefox's own icon cache, page-icon:, cannot be loaded from

@@ -64,6 +64,7 @@
       "essentials.js",
       "tabsync.js",
       "pull.js",
+      "fullscreen.js",
       "livefolders.js",
       "firefoxsetup.js",
       "rulematch.js",
