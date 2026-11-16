@@ -358,10 +358,25 @@ async function reconcileAll({ firefoxStart = false } = {}) {
       await browser.tabs.update(t.id, { url: ghostUrl("ghost", key) }).catch(ifGone);
       await pull(t.id);
     }
+    // The record and its tab in different spaces: a move into a space, or on to another, cut
+    // off (by an update, or its window closing) after the page was there and before the
+    // record had followed (recordIntoSpace, isolation.js; reopenIn, safemoves.js). Where a
+    // page is is a fact, since a page never changes container, so the record follows it,
+    // and out of a folder that is another space's. A placeholder is only told where it is to
+    // open: one in another space than the record's goes, and its window gets a new one below
+    // (fillWindow). Left as it was, the tab was listed in one space and opened in another,
+    // for good.
+    if (isWeb(keep.url) && keep.cookieStoreId !== NO_CONTAINER && keep.cookieStoreId !== all[key].cookieStoreId) {
+      all[key].cookieStoreId = keep.cookieStoreId;
+      if (all[all[key].parentKey] && all[all[key].parentKey].cookieStoreId !== keep.cookieStoreId) all[key].parentKey = null;
+    }
+    const astray = reps.filter(t => t.id !== keep.id && isGhostUrl(t.url) && t.cookieStoreId !== all[key].cookieStoreId);
+    for (const t of astray) { forget(t.id); await removeTabs([t.id], syncBusy); }
+    if (astray.length) await forgetClosedReps(key, astray);
     for (const w of wins) {
       // More than one representation in a window: remove the extra ghosts.
       // A live tab is never removed here; it may hold your page.
-      const here = reps.filter(t => t.windowId === w.id);
+      const here = reps.filter(t => t.windowId === w.id && !astray.includes(t));
       const ghosts = here.filter(t => syncRoleByTab.get(t.id) === "ghost");
       const extra = here.length > ghosts.length ? ghosts : ghosts.slice(1);
       for (const t of extra) { forget(t.id); await removeTabs([t.id], syncBusy); }
