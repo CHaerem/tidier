@@ -1081,7 +1081,11 @@ async function seeUnseenTabs() {
       // must not pass for a copy: no sidebar would show it (reopenedEssential, essentials.js).
       // (Asked again in its turn: a job before it may have replaced it, as moving a pinned
       // page into its space does, isolation.js.)
-      if (isWeb(t.url)) serial(async () => { const now = await browser.tabs.get(t.id).catch(() => null); if (now?.pinned && !keyByTab.has(now.id)) await reopenedEssential(now); });
+      // (Not known by keyByTab alone: a look at its key meanwhile has put it there, on the list or not.)
+      if (isWeb(t.url)) serial(async () => {
+        const now = await browser.tabs.get(t.id).catch(() => null), key = keyByTab.get(t.id);
+        if (now?.pinned && !(key && (await getList()).some(e => e.key === key))) await reopenedEssential(now);
+      });
     } else if (!seenLateInSpace(t) && syncable(t)) registerSoon(t.id); // seenLateInSpace: spaces.js
   }
 }

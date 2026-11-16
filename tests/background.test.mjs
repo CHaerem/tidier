@@ -1942,6 +1942,31 @@ test("an essential you had unpinned, brought back with ⌘⇧T while Tidier is s
   x.kill();
 });
 
+// Found by the random sequences (seed 101943).
+test("a window closed in the moment an essential's page is on its way to it leaves the page where it was, with one copy there", async () => {
+  const { ff, x, windows: [a, b] } = await chaosStart();
+  const t = ff.openTab(a.id, { url: "https://e.example/", cookieStoreId: C1, active: true });
+  await ff.clock.run(3000);
+  ff.pinTab(t);
+  await ff.clock.idle(60000);
+  const copies = id => ff.list(id).filter(y => ff.values.get(y.id)?.essentialKey);
+  assert.deepEqual([copies(a.id).length, copies(b.id).length], [1, 1]);
+  // The other window, and its placeholder selected there: the page is to come to it, and the
+  // window it leaves gets a placeholder first, since it is on the page. Then this window closes.
+  const move = x.b.tabs.move;
+  let closed = false;
+  x.b.tabs.move = (id, to) => { if (to.windowId === b.id && !closed) { closed = true; ff.closeWindow(b.id); } return move(id, to); };
+  ff.focusWindow(b.id);
+  ff.select(copies(b.id)[0].id);
+  await ff.clock.idle(60000);
+  assert.ok(closed, "the page was on its way");
+  const left = copies(a.id);
+  assert.deepEqual(left.map(y => [y.id, y.pinned, y.url]), [[t.id, true, "https://e.example/"]], "one copy, the page itself");
+  assert.equal(ff.tabs.get(t.id).active, true, "selected as it was");
+  assert.deepEqual([...x.js("problems")], []);
+  x.kill();
+});
+
 test("a window opened while Tidier is starting gets its tabs when it has started", async () => {
   const ff = new ChaosFirefox();
   ff.store.syncedTabs = { a: entry("https://a.example/") };

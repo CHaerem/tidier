@@ -533,8 +533,16 @@ async function essentialShown(tab, { back = false } = {}) {
     }
   }
   // Moved into the placeholder's place; onDetached gives the old window one.
-  // Refused if you have just closed it: this placeholder then opens the page itself.
-  if (await browser.tabs.move(loaded.id, { windowId: tab.windowId, index: tab.index }).then(() => false, err => { ifGone(err); return true; })) { dropVeil(loaded.windowId); return true; }
+  // Refused if you have just closed it: this placeholder then opens the page itself. Refused
+  // too if this window has closed, or the placeholder has left it, in this moment: the page
+  // then stays where it was, selected as it was, and the placeholder made to stand in for it
+  // there is one copy too many, which nothing else would take away.
+  if (await browser.tabs.move(loaded.id, { windowId: tab.windowId, index: tab.index }).then(() => false, err => { ifGone(err); return true; })) {
+    dropVeil(loaded.windowId);
+    if (left) await browser.tabs.update(loaded.id, { active: true }).catch(() => {});
+    await dropDoubleCopies(loaded.id, loaded.windowId);
+    return true;
+  }
   await browser.tabs.update(loaded.id, { active: true }).catch(() => {});
   await dropDoubleCopies(loaded.id, tab.windowId); // here, in case its arrival was not looked at
   return false;
