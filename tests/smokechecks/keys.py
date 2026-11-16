@@ -930,6 +930,11 @@ def alone_bar_edges(m):
     # (In it, or as a window of its own over it: a window this new can still take the keyboard
     # from a panel as it settles, on a busy machine, and the bar then comes as a window.)
     where = m.js(BAR + "return bar().window.__extra === true || barWindows().length === 1;")
+    # Not in the very moment it has the keyboard: a panel that goes that soon is to Tidier one
+    # Firefox never showed (BAR_UNSEEN_MS, commandbar.js), and it then makes the bar a window,
+    # which goes again when Tidier hears that this window closed (tried without a Firefox,
+    # commandbar.test.mjs); the key pressed below while that is under way would only close it.
+    time.sleep(0.5)
     m.js(H + """Services.prefs.setBoolPref("browser.tabs.warnOnClose", false); wins().find(w => w.__extra).close(); for (let i = 0; i < 50 && wins().some(w => w.__extra); i++) await wait(100); return 1;""")
     # Gone as a panel, and as a window of its own where it was one: Tidier hears that the
     # window has closed a moment after it has, and the key before that would only close the bar.

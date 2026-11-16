@@ -124,6 +124,9 @@ async function barOpenAsWindow(bar) {
   const { url, ...place } = bar.asWindow;
   const win = await browser.windows.create({ type: "popup", url, allowScriptsToClose: true, ...place });
   bar.ownWindow = win.id;
+  // Closed while Firefox was making it (the window it was opened from has closed, below):
+  // nobody has this bar any more, so nothing else would take its window away.
+  if (bar.closed) { barForgetUntil = Date.now() + BAR_FORGET_MS; await browser.windows.remove(win.id).catch(() => {}); return; }
   if (bar.closeOnOpen) await barClose(bar, true);
 }
 // The panel did not show: no more of it for this bar, which is a window now. A page of it
@@ -247,8 +250,10 @@ browser.sessions.onChanged.addListener(barForgetClosed);
 browser.windows.onRemoved.addListener(id => {
   // The window the bar was opened from has closed: what it would act on is gone. A panel
   // goes with its window; a bar that is a window of its own stayed, over nothing, and the
-  // key in another window then only closed it.
-  if (commandBar?.from === id && !barInPanel(commandBar)) return void barClose(commandBar, false).catch(noteError);
+  // key in another window then only closed it. So did one on its way to being a window: a
+  // panel that goes with its window, a moment after it came, looks like one Firefox never
+  // showed (BAR_UNSEEN_MS), and its window was being made as this was heard.
+  if (commandBar?.from === id) return void barClose(commandBar, false).catch(noteError);
   if (commandBar?.ownWindow !== id) return;
   commandBar = null; // closed by something else than the bar itself: ⌘W, say
   barForgetUntil = Date.now() + BAR_FORGET_MS;
