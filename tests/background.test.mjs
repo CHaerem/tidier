@@ -1241,6 +1241,29 @@ test("a placeholder that came back with its window and is closed before Tidier h
   x.kill();
 });
 
+// Found by the random sequences (seed 1886), with Firefox made to refuse a call now and then:
+// the tab's record was gone after the restart, as if you had closed it.
+test("a tab whose key Firefox would not say at a start is asked for again, and is not taken for closed", async () => {
+  const ff = new ChaosFirefox();
+  ff.store.syncedTabs = { a: entry("https://a.example/"), b: entry("https://b.example/") };
+  const w = ff.addWindow({ focused: true });
+  const a = ff.addTab(w.id, { url: "https://a.example/", active: true, cookieStoreId: C1 }, { syncKey: "a", syncRole: "live" });
+  ff.addTab(w.id, { url: "https://b.example/", cookieStoreId: C1 }, { syncKey: "b", syncRole: "live" });
+  let refused = 0;
+  ff.adapt = (adapt => function (b) {
+    adapt.call(this, b);
+    const get = b.sessions.getTabValue;
+    b.sessions.getTabValue = async (id, name) => { if (id === a.id && name === "syncRole" && !refused++) throw new Error("refused for a reason of Firefox's own"); return get(id, name); };
+  })(ff.adapt);
+  const x = ff.boot();
+  x.b.runtime.onStartup.fire();
+  await ff.clock.idle(120000);
+  assert.ok(refused >= 2, "it was refused, and asked again");
+  assert.deepEqual(Object.keys(ff.store.syncedTabs).sort(), ["a", "b"], "both are still in the record");
+  assert.equal(ff.values.get(a.id).syncKey, "a", "and the tab is still that tab");
+  x.kill();
+});
+
 // Found by the random sequences (seed 323), with Firefox made to refuse a call now and then.
 test("a tab that has closed is forgotten also when Firefox refuses the first of the two values for another reason", async () => {
   const { ff, x, windows: [w] } = await chaosStart({ windows: 1 });

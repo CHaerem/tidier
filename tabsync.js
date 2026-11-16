@@ -158,10 +158,12 @@ async function loadRoles() {
   await Promise.all(tabs.map(async t => {
     // Firefox refuses a tab closed since the query. That tab is simply gone;
     // the others must still be read, or reconcileAll would see half the roles.
-    const [key, role] = await Promise.all([
-      browser.sessions.getTabValue(t.id, SYNC_KEY),
-      browser.sessions.getTabValue(t.id, SYNC_ROLE),
-    ]).catch(() => []);
+    // Refused for any other reason, it is asked once more, and if that fails too this start
+    // goes on without the look that follows (start, below): a tab taken for unknown here is
+    // a tab with no copy anywhere to that look, which right after Firefox starts means
+    // closed, and its record went with it.
+    const read = () => Promise.all([browser.sessions.getTabValue(t.id, SYNC_KEY), browser.sessions.getTabValue(t.id, SYNC_ROLE)]);
+    const [key, role] = await read().catch(err => (isGone(err) ? [] : read().catch(again => { ifGone(again); return []; })));
     if (key && role) { syncKeyByTab.set(t.id, key); syncRoleByTab.set(t.id, role); return; }
     // A value that did not get written, or was lost. Left unknown, a placeholder stays for
     // good beside the new one the window then gets, and a page is not synced.
