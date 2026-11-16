@@ -53,6 +53,11 @@ Rules for all of it:
       no copy anywhere is taken for closed only right after Firefox starts, and a saved tab
       closed within half a second of another close goes back to its saved address instead
       of being removed. The Sidebery checks and a long run with Sidebery pass.
+- [x] What random use found on 16 November 2026: an update (or a crash, or a quit) in the
+      moment a copy of an essential is being made no longer takes the essential off the list
+      (the copy's key is written on its tab only once it is pinned, so an unfinished copy is
+      told from one you unpinned); and a placeholder closed while a new window is being
+      filled is not written down as an error.
 
 ## B. Tidier alone (once behind a setting, now the only way)
 

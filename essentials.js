@@ -110,15 +110,17 @@ async function createEssentials(windowId, items) { // [{ entry, index }]
       }
       busy.add(tab.id);
       tabs.push({ tab, entry });
-      // (Refused, it is still known by its address, and must still be pinned: left unpinned it
-      // would be closed as a stray, and made again, and closed.)
+      // Whose it is, known here at once, and written on the tab only when it is pinned: an
+      // update, a crash or a quit can come between the two, and a copy with its key written
+      // and no pin is what an essential you unpinned in such a moment looks like, which takes
+      // the essential off the list everywhere (essentialsAgree). One without is only unfinished.
+      // (A key refused, the copy is still known by its address.)
+      keyByTab.set(tab.id, entry.key);
+      ownPins.add(tab.id);
+      await browser.tabs.update(tab.id, { pinned: true }).catch(() => {}).finally(() => ownPins.delete(tab.id));
       await tagTab(tab.id, entry.key);
       // Closed by you before it could be told apart: nothing brought it back.
       if (!keyByTab.has(tab.id)) closedAlready.push(entry.key);
-      else {
-        ownPins.add(tab.id);
-        await browser.tabs.update(tab.id, { pinned: true }).catch(() => {}).finally(() => ownPins.delete(tab.id));
-      }
     }
     if (closedAlready.length) {
       await ensureWindow(windowId);
@@ -627,10 +629,19 @@ async function essentialsAgree() {
     await removeTabs([t.id], busy);
     await forgetClosedPlaceholders("essential", [keys[i]]);
   }
-  // A copy not pinned. Tidier creates them pinned, so you unpinned it, in the moment of an
-  // update, and this is the rest of that.
+  // A copy not pinned. One with its key written was pinned (createEssentials writes it last),
+  // so you unpinned it, in the moment of an update, and this is the rest of that. One without
+  // was being made when the update came: it goes, and its window gets the copy it lacks
+  // (ensureWindow), as if nothing had come between.
   for (const t of await browser.tabs.query({ pinned: false })) {
-    if (placeholderOf(t.url).kind === "essential") await onUnpinned(t);
+    const shown = placeholderOf(t.url);
+    if (shown.kind !== "essential") continue;
+    const written = await browser.sessions.getTabValue(t.id, TAB_KEY).catch(err => { ifGone(err); return null; });
+    if (written === null) continue; // closed meanwhile
+    if (written) { await onUnpinned(t); continue; }
+    keyByTab.delete(t.id);
+    await removeTabs([t.id], busy);
+    await forgetClosedPlaceholders("essential", [shown.key]);
   }
   // And a move in the moment a copy appeared is not looked at (see onMoved): the list decides.
   for (const w of await normalWindows()) await sortEssentials(w.id, await getList());

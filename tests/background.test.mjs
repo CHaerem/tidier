@@ -1807,6 +1807,33 @@ test("a copy not pinned at an update was unpinned by you: the essential goes", a
   x.kill();
 });
 
+// Found by the random sequences (seed 100072): the essential was taken off the list, in every
+// window, by an update that came between a copy being made and it being pinned.
+test("a copy still being made at an update is no essential you unpinned: the essential stays, and its window has its copy", async () => {
+  const ff = new ChaosFirefox();
+  const a = ff.addWindow({ focused: true });
+  ff.addTab(a.id, { url: "about:home", active: true });
+  ff.boot().b.runtime.onInstalled.fire({ reason: "install" });
+  await ff.clock.run(3000);
+  const t = ff.openTab(a.id, { url: "https://e.example/", cookieStoreId: C1 });
+  await ff.clock.run(3000);
+  ff.pinTab(t);
+  await ff.clock.idle(60000);
+  assert.deepEqual(ff.store.essentials.map(e => e.url), ["https://e.example/"]);
+  // ⌘W on it: its window gets a placeholder in its place, made unpinned and pinned next.
+  ff.closeTab(t.id);
+  const unfinished = () => ff.list(a.id).find(y => y.url.includes("kind=essential") && !y.pinned);
+  for (let i = 0; i < 5000 && !unfinished(); i++) await ff.clock.step();
+  assert.ok(unfinished(), "the copy is there, not pinned yet");
+  const x = ff.update();
+  await ff.clock.idle(60000);
+  assert.deepEqual(ff.store.essentials.map(e => e.url), ["https://e.example/"], "still an essential");
+  const copies = ff.list(a.id).filter(y => y.url.includes("kind=essential"));
+  assert.deepEqual(copies.map(y => y.pinned), [true], "with one copy here, pinned");
+  assert.deepEqual([...x.js("problems")], []);
+  x.kill();
+});
+
 test("a window opened while Tidier is starting gets its tabs when it has started", async () => {
   const ff = new ChaosFirefox();
   ff.store.syncedTabs = { a: entry("https://a.example/") };
