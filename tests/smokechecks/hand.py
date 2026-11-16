@@ -256,7 +256,10 @@ def alone_quiet_undo(m):
       const items = [...doc.querySelectorAll("#menu .item")];
       const labels = items.map(b => b.textContent), n = plainTabs().length;
       items.find(b => b.textContent === "Clear today's tabs")?.click();
-      await wait(1500);
+      // Until Clear's own line is there: the folder's "Folder deleted" is on it until then, and
+      // on a busy machine the queue can still be on the delete after a second and a half.
+      for (let i = 0; i < 80 && !doc.querySelector("#note .text").textContent.endsWith("closed"); i++) await wait(100);
+      await wait(300);
       const line = doc.querySelector("#note .text").textContent, left = plainTabs().length;
       doc.querySelector("#note .act").click();
       for (let i = 0; i < 50 && plainTabs().length < n; i++) await wait(100);
