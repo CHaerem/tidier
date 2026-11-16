@@ -72,7 +72,7 @@ async function tabMenuFacts(tabIds) {
 // Whether a kept tab is somewhere other than the address kept for it. A saved tab by its
 // record (leftSaved, common.js). An essential's address never follows its page, so it is
 // its loaded copy that says where it is; one that is not loaded is nowhere else.
-const awayFromSaved = r => (r.own.pinned ? r.loaded && !!r.entry && isWeb(r.tab.url) && !samePage(r.tab.url, r.entry.url) : leftSaved(r.entry));
+const awayFromSaved = r => (r.own.pinned ? r.loaded && offItsAddress(r.tab, r.entry) : leftSaved(r.entry));
 
 browser.runtime.onMessage.addListener((msg, sender) => {
   if (msg?.type !== "tabMenu" || sender.id !== browser.runtime.id || !sender.url?.startsWith(browser.runtime.getURL(""))) return;
@@ -141,7 +141,9 @@ const TAB_ACTIONS = {
   },
   space: (windowId, reals, { space, newSpace, at }) => moveRealsToSpace(windowId, reals, space, { newSpace, at }),
   backToSaved: async (windowId, reals) => { for (const r of reals) await backToSaved(r); },
-  saveHere: (windowId, reals) => saveHere(windowId, reals[0]),
+  // One tab's: the menu offers it for one, but a key can be pressed with several selected,
+  // and which of them was meant nobody could say.
+  saveHere: async (windowId, reals) => { if (reals.length === 1) await saveHere(windowId, reals[0]); },
   rule: (windowId, reals) => alwaysOpenHere(windowId, reals[0]),
   // What More holds, the folder's and the space's menus, the command bar and the keys
   // (listactions.js). They go by the rows: what is drawn where, and in which order.

@@ -229,22 +229,34 @@ function tile(item) {
     t.dataset.tab = item.id;
     t.setAttribute("role", "option"); // the essentials are a list to choose from (sidebar.html)
     t.draggable = true;
-    t.onclick = () => { showSelected(t); send({ type: "select", tabId: item.id }); };
+    // A click on the essential you are on, when you have browsed on in it, takes it back to
+    // its own page, as in Arc: the tile is the way home. Not the later clicks of a double
+    // click, whose first one selected it: that would send away the page it had just shown.
+    t.onclick = e => {
+      if (t.classList.contains("active") && t.classList.contains("away")) { if (e.detail <= 1) backToSaved(item.id); return; }
+      showSelected(t);
+      send({ type: "select", tabId: item.id });
+    };
     t.onmousedown = noAutoscroll;
     t.onauxclick = e => { if (e.button === 1) send({ type: "close", tabId: item.id }); };
     t.oncontextmenu = e => openTabMenu(e, item.id);
     t.ondragstart = e => startDrag(e, { kind: "essential", tabId: item.id });
     return t;
   }, { ...item, tip: undefined }, t => {
-    t.className = "tile" + (item.active ? " active" : "") + (item.loaded ? "" : " unloaded");
+    t.className = "tile" + (item.active ? " active" : "") + (item.loaded ? "" : " unloaded") + (item.away ? " away" : "");
     // Named by its title alone: the tooltip with the address is its description.
     t.setAttribute("aria-label", item.title || "");
     t.setAttribute("aria-selected", String(!!item.active));
-    t.replaceChildren(icon(item), ...soundMark(item));
+    // Off its own page: a small stroke beside the icon of the one you are on, as a saved
+    // tab's row has, and under the mouse an arrow in the icon's place (sidebar.css). Last, so
+    // they are not in the way of what looks at a tile's parts.
+    t.replaceChildren(icon(item), ...soundMark(item), ...(item.away ? [el("span", "away"), el("span", "back")] : []));
   });
-  setIf(e, "title", item.tip || item.title);
+  setIf(e, "title", (item.tip || item.title) + (item.away && item.active ? "\nClick to go back to: " + item.away : ""));
   return e;
 }
+// A kept tab back on the address kept for it (backToSaved, tabactions.js).
+const backToSaved = tabId => send({ type: "tabAction", action: "backToSaved", tabIds: [tabId] });
 
 // --- Tabs ----------------------------------------------------------------------
 function row(item, folderKey) {
@@ -253,7 +265,14 @@ function row(item, folderKey) {
     e.dataset.tab = item.id;
     e.setAttribute("role", "treeitem"); // a flat tree, by level: folders' heads and loose tabs 1, their tabs 2
     e.draggable = true;
-    e.onclick = ev => { if (byHand(ev)) pickedByHand = true; showSelected(e); send({ type: "select", tabId: item.id }); };
+    e.onclick = ev => {
+      if (byHand(ev)) pickedByHand = true;
+      // On its icon while that shows the way back (below): back first, and then selected as by
+      // any click on a row, so you see the page you asked for.
+      if (ev.target.closest?.(".back")) backToSaved(item.id);
+      showSelected(e);
+      send({ type: "select", tabId: item.id });
+    };
     e.onmousedown = noAutoscroll;
     e.onmouseleave = () => { if (stillDim.delete(e.dataset.tab)) e.classList.remove("still-dim"); };
     e.onauxclick = secondClick.acts(ev => { if (ev.button === 1) closeByPointer(item.id, ev); });
@@ -284,7 +303,14 @@ function row(item, folderKey) {
     // A saved tab you have browsed on in: a small stroke between its icon and its title,
     // as a path has one. Out of the flow (sidebar.css), in the room that is there already,
     // so no title moves for it; last, so it is not in the way of what looks at a row's parts.
-    if (item.away) parts.push(el("span", "away"));
+    // And over its icon, under the mouse, the way back there, as in Arc and Zen (the row's
+    // click, above). No button: by its icon a row is also grabbed to be dragged, and ⌘-clicked
+    // to be picked, and both go on as on any row.
+    if (item.away) {
+      const back = el("span", "back");
+      back.title = "Back to: " + item.away;
+      parts.push(el("span", "away"), back);
+    }
     e.replaceChildren(...parts);
   });
   setIf(r, "title", (item.pr ? (PR_WORDS[item.pr] ?? PR_WORDS.open) + "\n" : "") + (item.tip || item.title) + (item.away ? "\nSaved on: " + item.away : ""));

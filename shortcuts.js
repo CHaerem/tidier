@@ -95,6 +95,8 @@ const COMMANDS = [
   { name: "move-up", label: "Move up one place", key: "", action: onPicked("step", { by: -1 }) },
   { name: "move-down", label: "Move down one place", key: "", action: onPicked("step", { by: 1 }) },
   { name: "take-out", label: "Take out of its folder", key: "", action: onPicked("takeOut") },
+  { name: "back-to-saved", label: "Back to saved address", key: "", action: onPicked("backToSaved") },
+  { name: "save-here", label: "Save this address", key: "", action: onPicked("saveHere") },
   { name: "folder-from-selection", label: "New folder with these tabs", key: "", action: oncePerPress(async windowId => {
     const tabIds = await pickedIn(windowId);
     await tabAction(windowId, { action: "newFolder", tabIds, space: activeSpace.get(windowId) });

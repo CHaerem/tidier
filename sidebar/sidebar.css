@@ -179,6 +179,31 @@ html.space-arriving :where(#tabs) .row { transition: none; }
   position: absolute; left: calc(var(--pad) + var(--indent) + var(--icon) + (var(--icon-gap) - 6px) / 2); top: calc((var(--row) - 12px) / 2);
   width: 6px; height: 12px; background: var(--faint); mask: var(--icon-stroke) center / contain no-repeat; pointer-events: none;
 }
+/* And the way back (sidebar.js): under the mouse an arrow takes the icon's place, and a
+ * click there takes the tab back to its saved page, as in Arc and Zen. Shown for the whole
+ * row, as the × is, so it is found; lit when the pointer is on it, so you see what a click
+ * will do. Out of the flow, over the icon. */
+.row .back {
+  position: absolute; left: calc(var(--pad) + var(--indent) + (var(--icon) - var(--button)) / 2); top: calc((var(--row) - var(--button)) / 2);
+  width: var(--button); height: var(--button); border-radius: var(--radius-sm); color: var(--muted);
+  display: flex; align-items: center; justify-content: center; opacity: 0;
+  transition: background-color var(--quick), color var(--quick), opacity var(--quick);
+}
+.row .back::before, .tile .back {
+  content: ""; width: var(--icon); height: var(--icon); background: currentColor;
+  mask: var(--icon-arrow-left) center / 14px no-repeat;
+}
+.row:hover .back { opacity: 1; }
+.row .back:hover { background: var(--press); color: var(--text); }
+:is(.row, .tile):has(> .back) > :is(img, .letter) { transition: opacity var(--quick); }
+.row:hover:has(> .back) > :is(img, .letter) { opacity: 0; }
+/* An essential has both on the tile you are on only: a click on that one goes back, a click
+ * on another selects it, where it was. */
+.tile .away, .tile .back { position: absolute; top: 50%; left: 50%; pointer-events: none; opacity: 0; transition: opacity var(--quick); }
+.tile .away { width: 6px; height: 12px; margin: -6px 0 0 13px; background: var(--faint); mask: var(--icon-stroke) center / contain no-repeat; }
+.tile .back { margin: calc(var(--icon) / -2) 0 0 calc(var(--icon) / -2); color: var(--text); }
+.tile.active .away, .tile.active:hover .back { opacity: 1; }
+.tile.active.away:hover > :is(img, .letter) { opacity: 0; }
 .row .close:hover, .row .sound:hover, #new-folder:hover { background: var(--press); color: var(--text); }
 
 /* Sound: one place in from the end, where it always is, so the close button has the end to

@@ -505,6 +505,10 @@ async function dropDoubleCopies(tabId, windowId) {
 // and selected again) makes the other copies placeholders (oneLoaded).
 
 const isLoadedCopy = t => !t.discarded && isWeb(t.url); // (not one still on about:blank, on its way to a page or its placeholder)
+// Whether an essential's page is somewhere other than the essential's address, which never
+// follows its page: you browsed on in it. Its tile then takes it back (sidebar.js), and its
+// menu can keep where it is instead (tabactions.js).
+const offItsAddress = (tab, entry) => isWeb(entry?.url) && isWeb(tab.url) && !samePage(tab.url, entry.url);
 
 async function copiesOf(key) {
   const pinned = await browser.tabs.query({ pinned: true });

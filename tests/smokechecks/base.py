@@ -235,14 +235,15 @@ def sidebar_until(m, source, *args, timeout=15):
         time.sleep(0.1)
 
 
-def sidebar_mouse(m, target, button=0):
-    """A real click (button 2: right) on the middle of what the script `target` finds."""
+def sidebar_mouse(m, target, button=0, clicks=1):
+    """A real click (button 2: right) on the middle of what the script `target` finds.
+    `clicks`: 2 for a double click, 0 to only move the pointer there."""
     x, y = m.js(H + IN_SIDEBAR + """const b = main().SidebarController.browser.getBoundingClientRect();
       const [x, y] = await inSidebar(args[0]); return [b.x + x, b.y + y];""",
       f"() => {{ const r = ({target}).getBoundingClientRect(); return [r.x + r.width / 2, r.y + r.height / 2]; }}")
     m.cmd("WebDriver:PerformActions", {"actions": [{"type": "pointer", "id": "mouse", "parameters": {"pointerType": "mouse"}, "actions": [
         {"type": "pointerMove", "x": int(x), "y": int(y), "origin": "viewport", "duration": 0},
-        {"type": "pointerDown", "button": button}, {"type": "pointerUp", "button": button}]}]})
+        *[{"type": "pointerDown", "button": button}, {"type": "pointerUp", "button": button}] * clicks]}]})
     m.cmd("WebDriver:ReleaseActions")
 
 

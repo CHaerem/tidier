@@ -868,7 +868,8 @@ async function kept(ff) {
   const x = await alone(ff);
   const facts = async id => (await x.send({ type: "tabMenu", tabIds: [id] }))[0];
   const rowOf = async id => JSON.parse(JSON.stringify(await x.ctx.viewFor(w.id))).folders[0].tabs.find(t => t.id === id);
-  return { x, w, tile, saved, facts, rowOf };
+  const tileOf = async id => JSON.parse(JSON.stringify(await x.ctx.viewFor(w.id))).essentials.find(t => t.id === id);
+  return { x, w, tile, saved, facts, rowOf, tileOf };
 }
 
 test("a saved tab you browse on in is away from its address, in its row and in its menu, until it is back", async () => {
@@ -935,14 +936,19 @@ test("a saved tab with no page anywhere goes back in the record, and its placeho
 
 test("an essential on another address: back to its own, or that one saved instead, with Undo", async () => {
   const ff = new FakeFirefox();
-  const { x, w, tile, facts } = await kept(ff);
+  const { x, w, tile, facts, tileOf } = await kept(ff);
   assert.equal((await facts(tile.id)).away, false);
+  assert.equal((await tileOf(tile.id)).away, undefined);
   ff.navigate(tile.id, "https://e.example/#inbox", "E");
   await wait(600);
   assert.equal((await facts(tile.id)).away, false);
-  ff.navigate(tile.id, "https://e.example/channel/2", "Channel 2");
+  assert.equal((await tileOf(tile.id)).away, undefined, "the part after # is the same page");
+  ff.navigate(tile.id, "https://e.example/channel/2?token=1", "Channel 2");
   await wait(600);
   assert.equal((await facts(tile.id)).away, true);
+  assert.equal((await tileOf(tile.id)).away, "https://e.example/", "its tile knows where a click takes it back to");
+  ff.navigate(tile.id, "https://e.example/channel/2", "Channel 2");
+  await wait(600);
   assert.equal((await x.js("getList")())[0].url, "https://e.example/", "its own address never follows the page");
 
   await act(x, w.id, "saveHere", [tile.id]);
@@ -962,18 +968,81 @@ test("an essential on another address: back to its own, or that one saved instea
   // Unloaded, it is nowhere else.
   ff.navigate(tile.id, "https://e.example/channel/3", "Channel 3");
   await wait(600);
+  assert.equal((await tileOf(tile.id)).away, "https://e.example/");
   tile.discarded = true;
   assert.equal((await facts(tile.id)).away, false);
+  assert.equal((await tileOf(tile.id)).away, undefined);
+  x.kill();
+});
+
+test("an essential kept with a query in its address says where it goes back to without it", async () => {
+  const ff = new FakeFirefox();
+  ff.store.essentials = [{ key: "e", url: "https://e.example/app?session=secret#start", cookieStoreId: C1, title: "E" }];
+  const w = ff.addWindow({ focused: true });
+  const tile = ff.addTab(w.id, { url: "https://e.example/elsewhere", title: "E", pinned: true, active: true, cookieStoreId: C1 }, { essentialKey: "e" });
+  const x = await alone(ff);
+  const item = JSON.parse(JSON.stringify(await x.ctx.viewFor(w.id))).essentials.find(t => t.id === tile.id);
+  assert.equal(item.away, "https://e.example/app#start", "a tooltip is no place for a token");
+  x.kill();
+});
+
+test("the command bar and the keys have the way back and Save this address, for a kept tab that is away", async () => {
+  const ff = new FakeFirefox();
+  const { x, w, tile, saved } = await kept(ff);
+  const names = async () => x.js("barCommandRows")(await x.js("barContext")(w.id), {}, new Map()).map(r => r.name);
+  assert.ok(!(await names()).some(n => n === "back-to-saved" || n === "save-here"), "on its address there is nothing to offer");
+  ff.navigate(saved.id, "https://a.example/issue/7", "Issue 7");
+  ff.navigate(tile.id, "https://e.example/channel/2", "Channel 2");
+  await wait(600);
+  const ctx = await x.js("barContext")(w.id), rows = x.js("barCommandRows")(ctx, {}, new Map());
+  assert.deepEqual(["back-to-saved", "save-here"].map(n => rows.find(r => r.name === n)?.title), ["Back to saved address", "Save this address"]);
+  await x.js("barRunCommand")(ctx, rows.find(r => r.name === "back-to-saved"));
+  await wait(300);
+  assert.deepEqual(ff.log.filter(l => l[0] === "update-url").at(-1), ["update-url", saved.id, "https://a.example/board"]);
+  // The essential, once it is the tab you are on; by a key this time.
+  await wait(600);
+  ff.select(tile.id);
+  await wait(300);
+  assert.ok((await names()).includes("back-to-saved"));
+  const key = name => x.js("COMMANDS").find(c => c.name === name);
+  assert.deepEqual(["back-to-saved", "save-here"].map(n => key(n)?.key), ["", ""], "listed on the settings page, with no key until you give one");
+  await key("save-here").action(w.id);
+  assert.equal((await x.js("getList")())[0].url, "https://e.example/channel/2");
+  await x.said.at(-1).undo();
+  await key("back-to-saved").action(w.id);
+  assert.deepEqual(ff.log.filter(l => l[0] === "update-url").at(-1), ["update-url", tile.id, "https://e.example/"]);
+  // Save this address is one tab's: with two selected, nobody could say which was meant.
+  ff.navigate(saved.id, "https://a.example/issue/8", "Issue 8");
+  ff.navigate(tile.id, "https://e.example/channel/3", "Channel 3");
+  await wait(600);
+  const said = x.said.length;
+  await act(x, w.id, "saveHere", [tile.id, saved.id]);
+  assert.equal(x.said.length, said);
+  assert.equal((await x.js("getList")())[0].url, "https://e.example/");
   x.kill();
 });
 
 test("the row draws the mark and the line for closing only where they are true", () => {
   const page = readFileSync(new URL("../sidebar/sidebar.js", import.meta.url), "utf8"), css = readFileSync(new URL("../sidebar/sidebar.css", import.meta.url), "utf8");
-  assert.match(page, /if \(item\.away\) parts\.push\(el\("span", "away"\)\);/);
+  assert.match(page, /if \(item\.away\) \{\s*const back = el\("span", "back"\);[^}]*parts\.push\(el\("span", "away"\), back\);/);
   assert.match(page, /item\.loaded && savedIn\(folderKey\) \? "close unloads" : "close"/, "a line only where the button unloads, as its tooltip says");
   assert.match(css, /\.row \.close\.unloads::before \{ mask-image: var\(--icon-line\); \}/);
   // Out of the flow, so no title moves for it, and it takes no click.
   assert.match(css, /\.row \.away \{\s*position: absolute;[^}]*pointer-events: none;/);
+});
+
+test("the way back is the row's icon and the tile you are on, and never a click that only selects", () => {
+  const page = readFileSync(new URL("../sidebar/sidebar.js", import.meta.url), "utf8"), css = readFileSync(new URL("../sidebar/sidebar.css", import.meta.url), "utf8");
+  // A row: back and selected, in that order, so the page that comes is the one asked for.
+  assert.match(page, /if \(ev\.target\.closest\?\.\("\.back"\)\) backToSaved\(item\.id\);\s*showSelected\(e\);\s*send\(\{ type: "select", tabId: item\.id \}\);/);
+  // No button, which would stop a drag by the icon and a ⌘-click there (drag.js, selection.js).
+  assert.ok(!/el\("button", "back"\)/.test(page));
+  // A tile: only the one you are on, and not the second click of the double click that selected it.
+  assert.match(page, /if \(t\.classList\.contains\("active"\) && t\.classList\.contains\("away"\)\) \{ if \(e\.detail <= 1\) backToSaved\(item\.id\); return; \}/);
+  assert.match(css, /\.tile \.away, \.tile \.back \{[^}]*pointer-events: none; opacity: 0;/);
+  assert.match(css, /\.tile\.active \.away, \.tile\.active:hover \.back \{ opacity: 1; \}/);
+  // Out of the flow, over the icon: no title moves for it.
+  assert.match(css, /\.row \.back \{\s*position: absolute;/);
 });
 
 // --- Pause and play (tabactions.js, sounds.js) ---------------------------------------------------

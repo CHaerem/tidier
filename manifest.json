@@ -134,6 +134,8 @@
     "move-up": { "description": "Move up one place" },
     "move-down": { "description": "Move down one place" },
     "take-out": { "description": "Take out of its folder" },
+    "back-to-saved": { "description": "Back to saved address" },
+    "save-here": { "description": "Save this address" },
     "folder-from-selection": { "description": "New folder with these tabs" },
     "copy-markdown": { "description": "Copy as Markdown links" },
     "close-duplicates": { "description": "Close duplicate tabs" },

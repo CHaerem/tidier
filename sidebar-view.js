@@ -31,9 +31,22 @@ function tabTip(t, entry) {
   const placeholder = isGhostUrl(t.url);
   const url = (placeholder ? entry?.url : t.url) || "";
   const title = entry?.name || entry?.title || (placeholder ? "" : t.title) || "";
-  const bare = url.replace(/\?[^#]*/, "");
-  const address = bare.length > TIP_ADDRESS_MAX ? bare.slice(0, TIP_ADDRESS_MAX) + "…" : bare;
+  const address = tipAddress(url);
   return (title === url || title === address ? [address] : [title, address]).filter(Boolean).join("\n");
+}
+function tipAddress(url) {
+  const bare = url.replace(/\?[^#]*/, "");
+  return bare.length > TIP_ADDRESS_MAX ? bare.slice(0, TIP_ADDRESS_MAX) + "…" : bare;
+}
+
+// What a kept tab has left, if it has left it, for its row or tile to say and to offer the
+// way back to (sidebar.js). A saved tab by its record (leftSaved, common.js), so every
+// window's row says the same: what the page it was saved on is called. An essential by this
+// window's copy, if that is the loaded one (offItsAddress, essentials.js): its own address,
+// since its tile's name is the essential's already.
+function awayFrom(t, entry) {
+  if (t.pinned) return isLoadedCopy(t) && offItsAddress(t, entry) ? tipAddress(entry.url) : undefined;
+  return leftSaved(entry) ? entry.saved.title || entry.saved.url : undefined;
 }
 
 // Firefox's own spinner goes by the same thing (status is the tab's busy attribute). A
@@ -56,7 +69,7 @@ const tabItem = (t, title, entry) => ({
   blank: NEW_TAB_PAGES.has(t.url) || undefined, // an empty new tab: no page yet, so no letter of a name that is not one (sidebar.js icon)
   note: forYouNotes.get(syncKeyByTab.get(t.id)), // bridge.js
   pr: entry?.liveFolder ? entry.pr || "open" : undefined, // a live folder's row: what a pull request waits for, or that it is an issue or from a feed (liveState, livefolders.js)
-  away: leftSaved(entry) ? entry.saved.title || entry.saved.url : undefined, // a saved tab off its saved page (common.js): what that page is called
+  away: awayFrom(t, entry),
 });
 
 // The icon in the record, for a placeholder that has none of its own (createRep,

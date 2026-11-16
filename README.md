@@ -170,10 +170,15 @@ be done, in order, is in [PLAN.md](PLAN.md).
    or a middle click), or drag it out of the folder, which makes it an ordinary tab
    again. A saved tab you have browsed on in says so: a small stroke between its icon and
    its title, and the page it is saved on in its tooltip (what comes after # in an address
-   is the same page). Its menu has *Back to saved address*, which closing it would also
-   do, but with the page still loaded, and *Save this address*, which makes where it is
-   now the page it goes back to (one line, with Undo). An essential's menu has the same
-   two while its page is on another address. The close button is a line, not a cross,
+   is the same page). Under the mouse an arrow takes its icon's place, and a click there
+   takes it back, as in Arc and Zen. Its menu has *Back to saved address*, which closing
+   it would also do, but with the page still loaded, and *Save this address*, which makes
+   where it is now the page it goes back to (one line, with Undo); the command bar has
+   both too, and they can be given keys on the settings page. An essential that has left
+   its own page says so on the tile you are on (the same stroke, beside its icon), and a
+   click on that tile takes it back there, as a click on its icon does in Arc; its menu
+   and the bar have the same two. A click that selects another essential only selects
+   it, where it was, and so does a double click. The close button is a line, not a cross,
    where it only unloads. Every other tab is temporary: closing it closes it everywhere, and archiving
    closes it when unused. A live folder's pull requests are not saved (the search decides
    what is in them).

@@ -5,8 +5,8 @@ import time
 from testfirefox import EXT_ID
 from smokechecks.base import (
     CMD, CTRL, ENTER, ESC, H, bar_keys, bar_open, bar_rows_until,
-    check, choose, close_sidebar_page, ext_page, extension_message, in_sidebar, into_page, menu_on,
-    more_tabs_here, no_problems, press, seen, sidebar_page, to_folder, wait_for_bar,
+    check, choose, close_sidebar_page, ext_page, extension_message, in_sidebar, into_page, look_in_sidebar, menu_on,
+    more_tabs_here, no_problems, press, seen, sidebar_mouse, sidebar_page, to_folder, wait_for_bar,
 )
 
 
@@ -1405,6 +1405,103 @@ def alone_away(m):
           r.get("saved") is True and (r.get("said") or "").startswith("Saved here") and r.get("savedFacts") is False and r.get("undone") is True, str(r))
     check("Back to saved address takes the page back, loaded, and the mark goes", r.get("back") is True and r.get("backFacts") is False, str(r))
     no_problems(m, "after a saved tab left its address and came back")
+    close_sidebar_page(m)
+
+
+def alone_way_back(m):
+    # A kept tab you have browsed on in goes back by its icon (sidebar.js, sidebar.css): a
+    # saved tab's row has an arrow over its icon under the mouse, and an essential's tile takes
+    # it back with a click on the one you are on. With real clicks in the real sidebar, since
+    # what matters is which click does what.
+    ctx = m.js(H + "return main().gBrowser.selectedTab.userContextId;")
+    home, saved, other = (m.pages + "/titled?way%20" + name for name in ("home", "saved", "other"))
+    m.js(H + """const w = main(); for (const a of args[0]) { w.gBrowser.addTrustedTab(a, {userContextId: args[1], inBackground: true}); await wait(300); }
+      for (let i = 0; i < 100 && !args[0].every(a => w.gBrowser.tabs.some(t => url(t) === a && key(w, t))); i++) await wait(100);
+      return 1;""", [home, saved, other], ctx)
+    sidebar_page(m, """send({type: "newFolder", space: args[0], name: "Way folder"}); await wait(1500); return 1;""", f"firefox-container-{ctx}")
+    to_folder(m, saved, "Way folder")
+    PAGE = """const obj = o => page.JSON.parse(JSON.stringify(o)), windowId = (await page.browser.windows.getCurrent()).id;
+      const until = async (test, ms = 8000) => { for (const t0 = Date.now(); Date.now() - t0 < ms; await wait(50)) if (await test()) return true; return false; };
+      const tabs = async () => page.browser.tabs.query(obj({windowId})), idOf = async part => (await tabs()).find(t => t.url.endsWith(part))?.id;
+      const select = id => page.browser.tabs.update(id, obj({active: true})), go = (id, url) => page.browser.tabs.update(id, obj({url}));
+      const at = async id => { const t = await page.browser.tabs.get(id); return {on: decodeURIComponent(t.url.split("?")[1] ?? t.url), active: t.active}; };
+      """
+    ids = sidebar_page(m, PAGE + """const out = {home: await idOf("way%20home"), saved: await idOf("way%20saved"), other: await idOf("way%20other")};
+      send({type: "pin", tabId: out.home, pinned: true});
+      await until(async () => (await page.browser.tabs.get(out.home)).pinned); await wait(1500); return out;""")
+    tile, row = f"""doc.querySelector('#essentials .tile[data-tab="{ids["home"]}"]')""", f"""doc.querySelector('#tabs .tab[data-tab="{ids["saved"]}"]')"""
+    # What the real sidebar shows of the tile or the row, once it has stood still: its fades
+    # run late in a test Firefox that is not in front.
+    shown = """async (id) => { await sleep(300); await Promise.race([Promise.all(doc.getAnimations().map(a => a.finished)), sleep(3000)]); const e = doc.querySelector('[data-tab="' + id + '"]'), part = c => e.querySelector(c), see = c => part(c) ? Number(css(part(c)).opacity) : null;
+      return {active: e.classList.contains("active"), away: !!part(".away"), stroke: see(".away"), arrow: see(".back"), icon: see("img, .letter"), tip: e.title.split("\\n").at(-1), back: part(".back")?.title ?? null}; }"""
+    look = lambda tab: look_in_sidebar(m, shown, ids[tab])  # noqa: E731
+
+    def pointer_away():
+        """The pointer out of the sidebar, onto the page: a move inside the sidebar alone was not
+        always taken for one by the headless Firefox, which then kept the last row hovered."""
+        x, y = m.js(H + "const b = main().SidebarController.browser.getBoundingClientRect(); return [b.right + 200, b.y + 200];")
+        m.cmd("WebDriver:PerformActions", {"actions": [{"type": "pointer", "id": "mouse", "parameters": {"pointerType": "mouse"}, "actions": [
+            {"type": "pointerMove", "x": int(x), "y": int(y), "origin": "viewport", "duration": 0}]}]})
+        m.cmd("WebDriver:ReleaseActions")
+
+    def pointer_on(target):
+        """The pointer onto `target` in the sidebar, from outside it, so the move is seen."""
+        pointer_away()
+        sidebar_mouse(m, target, clicks=0)
+    try:
+        # The essential. On its own page nothing is marked, and a click only selects it.
+        sidebar_page(m, PAGE + "await select(args[0]); await wait(800); return 1;", ids["other"])
+        r = look("home")
+        check("an essential on its own page has no mark", r.get("away") is False and r.get("arrow") is None, str(r))
+        sidebar_page(m, PAGE + """await go(args[0], args[1]); await until(async () => (await at(args[0])).on === "way further"); await wait(800); return 1;""", ids["home"], m.pages + "/titled?way%20further")
+        r = look("home")
+        check("browsed on in but not the tab you are on, its tile shows nothing: a click there only selects it", r.get("away") is True and r.get("stroke") == 0 and r.get("arrow") == 0 and r.get("icon") == 1, str(r))
+        sidebar_mouse(m, tile)
+        r = sidebar_page(m, PAGE + "await until(async () => (await at(args[0])).active); await wait(1200); return at(args[0]);", ids["home"])
+        check("a click on an essential you are not on selects it, where it was", r == {"on": "way further", "active": True}, str(r))
+        r = look("home")
+        check("the tile you are on, off its own page, has a small stroke, and under the mouse an arrow in the icon's place; its tooltip says where a click goes",
+              r.get("active") and r.get("stroke") == 1 and r.get("arrow") == 1 and r.get("icon") == 0 and r.get("tip") == "Click to go back to: " + m.pages + "/titled", str(r))
+        pointer_away()
+        r = look("home")
+        check("with the pointer elsewhere the icon is the icon again, and the stroke stays", r.get("stroke") == 1 and r.get("arrow") == 0 and r.get("icon") == 1, str(r))
+        sidebar_mouse(m, tile)
+        r = sidebar_page(m, PAGE + """const back = await until(async () => (await at(args[0])).on === "way home"); await wait(800); return {back, ...(await at(args[0]))};""", ids["home"])
+        check("a click on the essential you are on takes it back to its own page", r == {"back": True, "on": "way home", "active": True}, str(r))
+        r = look("home")
+        check("back on its page, the mark is gone", r.get("away") is False, str(r))
+        # A double click that selects it must not also send away the page it has just shown.
+        sidebar_page(m, PAGE + """await go(args[0], args[2]); await until(async () => (await at(args[0])).on === "way further"); await select(args[1]); await wait(1000); return 1;""",
+                     ids["home"], ids["other"], m.pages + "/titled?way%20further")
+        sidebar_mouse(m, tile, clicks=2)
+        r = sidebar_page(m, PAGE + "await until(async () => (await at(args[0])).active); await wait(1500); return at(args[0]);", ids["home"])
+        check("a double click on an essential you are not on selects it and leaves it where it was", r == {"on": "way further", "active": True}, str(r))
+
+        # The saved tab, from another tab: its icon is the way back, and selects it as a click on a row does.
+        sidebar_page(m, PAGE + """await select(args[0]); await go(args[0], args[2]); await until(async () => (await at(args[0])).on === "way deeper");
+          await select(args[1]); await wait(1000); return 1;""", ids["saved"], ids["other"], m.pages + "/titled?way%20deeper")
+        pointer_away()
+        r = look("saved")
+        check("a saved tab browsed on in keeps its icon while the pointer is elsewhere", r.get("away") is True and r.get("arrow") == 0 and r.get("icon") == 1, str(r))
+        pointer_on(f"{row}.querySelector('.title')")
+        r = look("saved")
+        check("under the mouse an arrow takes its icon's place, and says where it goes", r.get("arrow") == 1 and r.get("icon") == 0 and r.get("back") == "Back to: way saved", str(r))
+        sidebar_mouse(m, f"{row}.querySelector('.title')")
+        r = sidebar_page(m, PAGE + "await until(async () => (await at(args[0])).active); await wait(1200); return at(args[0]);", ids["saved"])
+        check("a click on the rest of its row only selects it, where it is", r == {"on": "way deeper", "active": True}, str(r))
+        sidebar_page(m, PAGE + "await select(args[0]); await wait(800); return 1;", ids["other"])
+        sidebar_mouse(m, f"{row}.querySelector('.back')")
+        r = sidebar_page(m, PAGE + """const back = await until(async () => { const now = await at(args[0]); return now.on === "way saved" && now.active; }); await wait(800); return {back, ...(await at(args[0]))};""", ids["saved"])
+        check("a click on the arrow takes it back to its saved page, and selects it", r == {"back": True, "on": "way saved", "active": True}, str(r))
+        r = look("saved")
+        check("back on its saved page, the arrow and the stroke are gone", r.get("away") is False and r.get("arrow") is None and r.get("icon") == 1, str(r))
+    finally:
+        sidebar_page(m, PAGE + """if ((await page.browser.tabs.get(args[0]).catch(() => null))?.pinned) { send({type: "pin", tabId: args[0], pinned: false}); await wait(1500); }
+          const key = [...doc.querySelectorAll("#tabs .folder .head")].find(h => h.title === "Way folder")?.dataset.folderHead;
+          if (key) send({type: "deleteFolder", key});
+          await wait(800); return 1;""", ids["home"])
+        m.js(H + """await removeWhere((w, t) => url(t).includes("/titled?way%20")); await wait(800); return 1;""")
+    no_problems(m, "after a kept tab went back by its icon")
     close_sidebar_page(m)
 
 
