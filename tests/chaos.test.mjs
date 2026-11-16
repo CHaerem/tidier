@@ -201,6 +201,9 @@ const OPS = {
     // And a tab Tidier closed a moment ago, opening it elsewhere, cannot be told from what you
     // closed until Recently Closed has been told: no hand is that quick.
     else if (back && W.clock.now - closedAt < 1000) W.broughtBack.add(back.url);
+    // And a page closed and pinned in one breath (its row's close and its pin, seed 1277) is
+    // an essential and is under Recently Closed too, from where it comes back as a tab.
+    else if (back && W.closedAddresses.has(back.url) && [...W.essentials.values()].includes(back.url)) W.broughtBack.add(back.url);
   } },
   // A sign-in popup: not a tab you keep.
   // (window.open from the page you are on: Firefox gives the popup that page's container, and
@@ -599,7 +602,8 @@ export async function play(seq, { trace = false } = {}) {
     await check(W, "settled", { strong: false });
     if (W.violations.length) return W.violations;
     // Nothing may be lost across an update, or a restart. All is written by now.
-    const a = logical(await W.read("getSynced()"), await W.read("getList()"));
+    const listBefore = await W.read("getList()");
+    const a = logical(await W.read("getSynced()"), listBefore);
     W.x = W.ff.update();
     await W.clock.run(5000);
     await check(W, "update", { strong: true });
@@ -607,6 +611,9 @@ export async function play(seq, { trace = false } = {}) {
     const b = logical(await W.read("getSynced()"), await W.read("getList()"));
     // A page outside any space is moved into one when Tidier starts (moveStragglers, isolation.js).
     for (const [key, t] of Object.entries(a.tabs)) if (t.cookieStoreId === "firefox-default" && b.tabs[key]) t.cookieStoreId = b.tabs[key].cookieStoreId;
+    // So is an essential outside any space (moveEssentialIntoSpace), and its place in the list
+    // is then among that space's essentials: the same ones, in another order (seed 102070).
+    if (Array.from(listBefore).some(e => e.cookieStoreId === NO_CONTAINER)) { a.essentials.sort(); b.essentials.sort(); }
     if (W.ff.refusals === 0 && JSON.stringify(a) !== JSON.stringify(b)) W.bad("changed", `by an update: ${difference(a, b)}`);
     W.x = W.ff.restart();
     await W.clock.run(8000);
