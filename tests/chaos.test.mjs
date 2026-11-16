@@ -200,7 +200,12 @@ const OPS = {
     if (back?.order) for (const t of W.tabsOf(back)) W.broughtBack.add(t.url);
     // And a tab Tidier closed a moment ago, opening it elsewhere, cannot be told from what you
     // closed until Recently Closed has been told: no hand is that quick.
-    else if (back && W.clock.now - closedAt < 1000) W.broughtBack.add(back.url);
+    // (A placeholder that came back so is its tab's page, as far as what is doubled goes: seed 1828.)
+    else if (back && W.clock.now - closedAt < 1000) {
+      W.broughtBack.add(back.url);
+      const key = isPlaceholder(back.url) ? new URLSearchParams(back.url.split("?")[1]).get("key") : null;
+      for (const u of W.known.get(key)?.urls ?? []) W.broughtBack.add(u);
+    }
     // And a page closed and pinned in one breath (its row's close and its pin, seed 1277) is
     // an essential and is under Recently Closed too, from where it comes back as a tab.
     else if (back && W.closedAddresses.has(back.url) && [...W.essentials.values()].includes(back.url)) W.broughtBack.add(back.url);
