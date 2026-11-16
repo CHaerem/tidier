@@ -216,7 +216,10 @@ async function fillWindow(windowId) {
     let refused = null;
     const tab = await createRep(windowId, key, all[key]).catch(err => { refused = err; return null; });
     if (!tab) {
-      if (await refusedInWindow(windowId, refused)) continue;
+      // No tab and nothing refused: it was closed before it had its key (createRep), by you or
+      // with its window. That is no error to write down; the window, if it is still there,
+      // gets the rest, and this one at the next look.
+      if (refused === null ? await browser.windows.get(windowId).catch(() => null) : await refusedInWindow(windowId, refused)) continue;
       return;
     }
     reps.set(key, tab.id);

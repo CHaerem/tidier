@@ -3,7 +3,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { FakeFirefox, wait, GHOST } from "./fake_firefox.mjs";
-import { ChaosFirefox } from "./chaos_firefox.mjs";
+import { ChaosFirefox, isPlaceholder } from "./chaos_firefox.mjs";
 
 const C1 = "firefox-container-1", GONE = "firefox-container-9";
 const FOLDER = "moz-extension://sb/sidebery/group.html#F"; // a folder of Sidebery's, as a browser that never moved over has it
@@ -1219,6 +1219,28 @@ test("a window closed while it is being filled is not an error", async () => {
   ff.closeWindow(fresh.id);
   await ff.clock.idle(60000);
   assert.deepEqual([...x.js("problems")], []);
+  x.kill();
+});
+
+test("a placeholder closed as a new window is being filled is not an error, and the window gets the rest", async () => {
+  const { ff, x, windows: [w] } = await chaosStart({ windows: 1 });
+  for (const site of ["a", "b", "c"]) ff.openTab(w.id, { url: `https://${site}.example/`, cookieStoreId: "firefox-container-1" });
+  await ff.clock.run(3000);
+  const { window: fresh } = ff.openWindow();
+  // Its first placeholder, closed the moment Firefox has made it: before Tidier has given it
+  // its key, so Firefox refuses that, and Tidier has no tab and no refusal to show for it.
+  let closed = null;
+  for (let i = 0; i < 2000 && closed === null; i++) {
+    await ff.clock.run(2);
+    const first = ff.list(fresh.id).find(t => isPlaceholder(t.url));
+    if (first) { ff.closeTab(first.id); closed = first.id; }
+  }
+  assert.notEqual(closed, null, "the window was being filled");
+  await ff.clock.idle(60000);
+  assert.deepEqual([...x.js("problems")], []);
+  const keys = id => ff.list(id).map(t => ff.values.get(t.id)?.syncKey).filter(Boolean).sort();
+  assert.equal(keys(fresh.id).length, 2, "the two after it are there");
+  assert.ok(keys(fresh.id).every(k => keys(w.id).includes(k)));
   x.kill();
 });
 
