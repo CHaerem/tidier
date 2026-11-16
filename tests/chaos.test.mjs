@@ -517,8 +517,9 @@ async function check(W, phase, { strong }) {
 
   // Nothing you did not close is gone. After a hard stop the last moment's change may not have
   // been written; such a tab is then known again by its address.
-  // (Pinned, it is an essential now, at that address.)
-  const addresses = new Set([...Object.values(all).flatMap(e => [e.url, e.saved?.url].filter(Boolean)), ...W.essentials.values()]);
+  // (Pinned, it is an essential now, at that address: also one made since the last look,
+  // by a pin that waited in the queue until this check let it through.)
+  const addresses = new Set([...Object.values(all).flatMap(e => [e.url, e.saved?.url].filter(Boolean)), ...W.essentials.values(), ...list.map(e => e.url)]);
   // (A tab opened again in its space is the same page under a new key: what you did to the
   // new one goes for the old one.)
   for (const [key, k] of W.known) if (W.excused.has(key)) for (const u of k.urls) W.closedAddresses.add(u);
