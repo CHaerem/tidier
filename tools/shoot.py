@@ -18,7 +18,7 @@ and writes PNGs at twice the size, as on a Retina screen:
                                  state-saved-tab-unloaded
                                  with the mouse where it clicked; state-swipe: a third of the way through
                                  a swipe on the trackpad to the next space; -saved-tab-away: a saved tab
-                                 off the page it was saved on)
+                                 off the page it was saved on; -essential-away: an essential off its own)
     keys-*                       with the keyboard in the sidebar, for real: the cursor, a menu by key
     state-essentials-N-WIDTH     one, two and three essentials, at each width
     bar-empty-SCHEME, bar-typed-SCHEME   the command bar's page
@@ -999,7 +999,10 @@ def swipe(cam):
 
 def away(cam):
     """A saved tab that has been browsed on in, off the page it was saved on: the stroke before its
-    title, and under the mouse the line that says closing only unloads it. Taken back after."""
+    title, and under the mouse the arrow over its icon that takes it back and the line that says
+    closing only unloads it. Then an essential off its page: the stroke beside the icon of the tile
+    you are on, and the arrow in the icon's place under the mouse. Taken back after."""
+    essential_away(cam)
     if not (cam.wanted("state-saved-tab-away") or cam.wanted("hover-saved-tab-away")):
         return
     m, moving, elsewhere = cam.m, PERSONAL["folders"][0]["tabs"][0], PERSONAL["tabs"][0]
@@ -1017,6 +1020,28 @@ def away(cam):
       port.send({type: "tabAction", action: "backToSaved", tabIds: [args[0]]});
       await until(() => !doc.querySelector(`#tabs .tab[data-tab="${args[0]}"] .away`), "the saved tab back on its page");
       port.close();""", tab)
+
+
+def essential_away(cam):
+    if not (cam.wanted("state-essential-away") or cam.wanted("hover-essential-away")):
+        return
+    m, mail, elsewhere = cam.m, PERSONAL["essentials"][0], PERSONAL["tabs"][0]
+    select(m, on_tab(PERSONAL), PERSONAL["ctx"])
+    tab = in_sidebar(m, """const t = (await page.browser.tabs.query(clone({windowId: (await page.browser.windows.getCurrent()).id, pinned: true}))).find(x => x.url === args[0]);
+      await page.browser.tabs.update(t.id, clone({active: true}));
+      await page.browser.tabs.update(t.id, clone({url: args[1] + "?elsewhere"}));
+      await until(() => doc.querySelector(`#essentials .tile.active.away[data-tab="${t.id}"]`), "the essential off its page");
+      return t.id;""", m.pages + mail["path"], m.pages + elsewhere["path"])
+    cam.mouse_away()
+    cam.shoot("state-essential-away")
+    if cam.wanted("hover-essential-away") and cam.point_at(f'#essentials .tile[data-tab="{tab}"]'):
+        cam.shoot("hover-essential-away")
+    cam.mouse_away()
+    in_sidebar(m, """const port = await connect();
+      port.send({type: "tabAction", action: "backToSaved", tabIds: [args[0]]});
+      await until(() => !doc.querySelector(`#essentials .tile.away[data-tab="${args[0]}"]`), "the essential back on its page");
+      port.close();""", tab)
+    select(m, on_tab(PERSONAL), PERSONAL["ctx"])
 
 
 def under_the_hand(cam):
