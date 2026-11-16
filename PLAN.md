@@ -54,9 +54,11 @@ Rules for all of it:
       closed within half a second of another close goes back to its saved address instead
       of being removed. The Sidebery checks and a long run with Sidebery pass.
 - [x] What random use found on 16 November 2026, from seeds not tried before and with its
-      own model brought up to date (it had not been run long since Tidier came to work alone;
-      16 000 sequences now pass, and the ones that broke something are kept and played every
-      time, `tests/fixtures/chaos_found.json`):
+      own model brought up to date (it had not been run long since Tidier came to work alone,
+      and a long run stopped at seed 219). The sequences that broke something are kept and
+      played every time (`tests/fixtures/chaos_found.json`). Of 16 000 sequences (seeds 1 to
+      8000 and 100000 to 108000) eleven still break something, all of them on the last
+      release's code too; they are listed under F:
       - An update, a crash or a quit in the moment a copy of an essential is being made no
         longer takes the essential off the list (the copy's key is written on its tab only
         once it is pinned, so an unfinished copy is told from one you unpinned), nor does a
@@ -73,6 +75,9 @@ Rules for all of it:
         tab's placeholder again, not the page a second time; ones closed before Tidier has
         looked at them, or while it starts, or under another address, leave Recently Closed;
         and ⌘⇧T twice after closing a page does not give the page twice.
+      - A stray placeholder of an essential, back unpinned with ⌘⇧T, is never given the
+        essential's key (written on a pinned tab only), and an essential's doubles are
+        looked for in the window its copy is in now.
       - No error is written down for a placeholder closed while a new window is filled, or
         a window closed while its tab moves to another space; and a closed tab is not kept
         in memory when the first of two refusals says something else.
@@ -256,6 +261,18 @@ with where it stands. In this order, the first five being the ones that are felt
 - [x] Tabs not used for a while can be unloaded where they are (off until a time is set).
 - [x] A live folder can be a search for issues, or a feed's newest entries (the helper reads
       the feed; set up in its file, and it reaches a machine by `git pull`).
+
+- [ ] What random use still breaks (16 November 2026; run one with
+      `CHAOS_SURVEY=1 CHAOS_SHOW=6 CHAOS_FIRST=<seed> CHAOS_SEQUENCES=1 CHAOS_SECONDS=0 node --test tests/chaos.test.mjs`):
+      a page under two keys, or a tab and an essential (seeds 3997, 7557, 105360); a tab of
+      another space left shown (5363, twice); a tab with two placeholders in one window and
+      none in another (4133), or with no key after a restart (4294, 105405); an essential with
+      no copy in a window (6960); an essential's placeholder left under Recently Closed (5406).
+      Most have several things done in the same millisecond; none has been looked into.
+- [ ] After Firefox starts with no session, a window reopened (⌘⇧N) in the five seconds
+      before Tidier looks is all of the session it sees: the tabs that were in other windows
+      are taken for closed, and are in their spaces' archives. Rare, and nothing is gone for
+      good, but the record could be kept whole here as it is when nothing comes back.
 
 Then the small ones, in any order: any colour for a space. And then the rest of
 what FEATURES.md has as Later, starting with what is missed most in use.
