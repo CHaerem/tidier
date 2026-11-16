@@ -2066,6 +2066,27 @@ test("a placeholder pinned the moment its window came back makes its tab an esse
   x.kill();
 });
 
+// Found by the random sequences (seed 2822).
+test("a placeholder you close while Tidier is starting is back in its window, and not under Recently Closed", async () => {
+  const { ff, windows: [a, b] } = await chaosStart();
+  ff.openTab(a.id, { url: "https://a.example/", cookieStoreId: C1, active: true });
+  await ff.clock.idle(60000);
+  const x = ff.update();
+  // After the start's own look at Recently Closed, and before Tidier listens again.
+  const look = x.b.sessions.getRecentlyClosed;
+  let looked = false;
+  x.b.sessions.getRecentlyClosed = () => { looked = true; return look(); };
+  for (let i = 0; i < 20000 && !looked; i++) await ff.clock.step();
+  for (let i = 0; i < 3; i++) await ff.clock.step();
+  assert.ok(looked && !x.js("started"), "Tidier is starting, and hears nothing");
+  ff.closeTab(ff.list(b.id).find(y => isPlaceholder(y.url)).id);
+  await ff.clock.idle(60000);
+  assert.equal(ff.list(b.id).filter(y => isPlaceholder(y.url)).length, 1, "the window has the tab's placeholder again");
+  assert.deepEqual(ff.closedItems.filter(c => c.kind === "tab" && isPlaceholder(c.state.url)).map(c => c.state.url), [], "and ⌘⇧T will not bring back the one you closed");
+  assert.deepEqual([...x.js("problems")], []);
+  x.kill();
+});
+
 test("a window opened while Tidier is starting gets its tabs when it has started", async () => {
   const ff = new ChaosFirefox();
   ff.store.syncedTabs = { a: entry("https://a.example/") };

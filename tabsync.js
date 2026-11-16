@@ -1075,6 +1075,7 @@ async function start(delayMs) {
   // what to do and been told to wait, or not been answered, and waits blank.
   if (focusedWindowId !== browser.windows.WINDOW_ID_NONE) { pullSelected(focusedWindowId); selectedEssential(focusedWindowId); }
   await step(seeUnseenTabs);
+  await step(forgetClosedGhosts); // once more: a placeholder you closed while Tidier was starting went unheard, and nothing else would take it out of Recently Closed
   await step(startSync); // sync.js
   await step(afterMoving); // moveover.js: the settings page, if this start moved the browser over from Sidebery
 }
