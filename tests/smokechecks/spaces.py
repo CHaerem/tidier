@@ -826,7 +826,8 @@ def alone_fullscreen(m):
         still = in_film("done(!!document.fullscreenElement);")
         check("selected in another window, the page stays where it is, in fullscreen, and you stay where you are",
               r == {"film": "first", "fullscreen": True, "window": True, "second": "placeholder", "front": "second"} and still is True, f"{r} {still}")
-        into_page(m, "ghost.html?kind=ghost")
+        # (Its own placeholder, by its address: the first window has other tabs' placeholders.)
+        into_page(m, m.js(H + """const a = main(), b = other(), k = key(a, a.gBrowser.tabs.find(t => url(t) === args[0])); return url(b.gBrowser.tabs.find(t => key(b, t) === k));""", film), exact=True)
         words = m.cmd("WebDriver:ExecuteAsyncScript", {"script": """const done = arguments[arguments.length - 1];
           (async () => { for (let i = 0; i < 50 && !document.querySelector("main .when"); i++) await new Promise(r => setTimeout(r, 100)); done(document.querySelector("main .when")?.textContent ?? null); })();""", "args": []})
         m.chrome()
