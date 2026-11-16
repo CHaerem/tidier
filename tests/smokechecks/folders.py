@@ -2,6 +2,7 @@
 nothing, and archiving.
 """
 import json
+import os
 import re
 import time
 from testfirefox import EXT_ID
@@ -199,6 +200,39 @@ def alone_live_folders(m):
     check("a pull request that leaves the search is removed, and the folder stays", r["tabs"] == 0 and r["left"] == 0 and r["folder"], str(r))
     r = sidebar_page(m, RECENTLY_CLOSED_PLACEHOLDERS)
     check("and it leaves no placeholder in Recently Closed, for ⌘⇧T to bring back", not r["left"], str(r))
+
+    # One set up on the settings page, by hand: a name, what it is filled from and the search's
+    # words. The helper is asked for those words alone, and the folder fills.
+    open(m.fake_prs, "w").write(json.dumps({"folders": [], "asks": {"org:smoke -label:wip": [{"url": "https://example.org/?smoke-own-1", "title": "Mine", "number": 4, "repo": "r"}]}}))
+    if os.path.exists(m.fake_prs + ".asked"):
+        os.remove(m.fake_prs + ".asked")
+    r = ext_page(m, "/settings/settings.html", """await wait(800);
+      const type = (input, text) => { input.focus(); input.value = text; input.dispatchEvent(new page.Event("input", page.JSON.parse('{"bubbles": true}'))); input.dispatchEvent(new page.Event("change", page.JSON.parse('{"bubbles": true}'))); };
+      doc.getElementById("add-live").click(); await wait(200);
+      const line = doc.querySelector("#live-folders .line"), [name, text] = line.querySelectorAll("input"), [space, what] = line.querySelectorAll("select");
+      const first = {focus: doc.activeElement === name, kinds: [...what.options].map(o => o.textContent), hint: text.placeholder};
+      type(text, "org:smoke OR is:pr"); type(name, "Mine to do"); await wait(1200);
+      const refused = {why: line.querySelector(".rule-problem").textContent, hidden: line.querySelector(".rule-problem").hidden, kept: (await page.browser.storage.local.get("liveOwnFolders")).liveOwnFolders?.length ?? 0};
+      space.value = "firefox-container-1"; type(text, "org:smoke -label:wip"); await wait(2500);
+      return {first, refused, why: line.querySelector(".rule-problem").hidden, state: doc.getElementById("live-state").textContent,
+        kept: JSON.parse(JSON.stringify((await page.browser.storage.local.get("liveOwnFolders")).liveOwnFolders ?? []))};""")
+    check("Add a live folder gives a line to fill in, with the keyboard in its name", r.get("first", {}).get("focus") and r["first"]["kinds"] == ["Pull requests", "Issues", "A feed"] and "org:" in r["first"]["hint"], str(r.get("first")))
+    check("a search with a word that could widen it is not kept, and the line says so", r.get("refused", {}).get("kept") == 0 and r["refused"]["hidden"] is False and "narrow" in r["refused"]["why"], str(r.get("refused")))
+    kept = r.get("kept") or [{}]
+    check("words that narrow are kept, as typed", len(kept) == 1 and [kept[0].get(k) for k in ("name", "space", "what", "search")] == ["Mine to do", "firefox-container-1", "prs", "org:smoke -label:wip"] and r["why"] is True, str(r))
+    r = m.js(H + """let f, tabs; for (let i = 0; i < 60; i++) { const all = (await storage("%s", ["syncedTabs"])).syncedTabs;
+        f = Object.entries(all).find(([, e]) => e.live && e.name === "Mine to do"); tabs = f ? Object.values(all).filter(e => e.parentKey === f[0]) : [];
+        if (tabs.length) break; await wait(200); }
+      return {folder: !!f, tabs: tabs.map(e => [e.title, e.url])};""" % EXT_ID)
+    asked = [json.loads(line) for line in open(m.fake_prs + ".asked")] if os.path.exists(m.fake_prs + ".asked") else []
+    check("its folder is there, filled from the search", r == {"folder": True, "tabs": [["r#4 Mine", "https://example.org/?smoke-own-1"]]}, str(r))
+    check("the helper is asked for the words and the kind alone", asked and all(a == {"search": "org:smoke -label:wip", "what": "prs"} for a in asked), str(asked))
+    r = ext_page(m, "/settings/settings.html", """doc.querySelector("#live-folders .line button").click(); await wait(2500);
+      const all = (await page.browser.storage.local.get("syncedTabs")).syncedTabs;
+      return {lines: doc.querySelectorAll("#live-folders .line").length, kept: (await page.browser.storage.local.get("liveOwnFolders")).liveOwnFolders.length,
+        left: Object.values(all).filter(e => (e.live && e.name === "Mine to do") || (e.url ?? "").includes("smoke-own")).length};""")
+    check("removed on the settings page, it goes with its folder and its tabs", r == {"lines": 0, "kept": 0, "left": 0}, str(r))
+    open(m.fake_prs, "w").write(json.dumps({}))
 
 
 def alone_safe_moves(m):

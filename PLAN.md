@@ -236,8 +236,12 @@ Code can work in the browser, local only. Agents get a space of their own with i
 logins, see and touch only that, unless you allow more. What they do shows, and one
 click stops it.
 
-- [x] All of it is there, off by default, and checked; not yet tried with
-      Claude Code itself.
+- [x] All of it is there, off by default, and checked.
+- [x] Tried with Claude Code itself (16 November 2026, Claude Code 2.1.303, against a test
+      Firefox with the bridge turned on as the settings page does): it listed its space,
+      opened and read a page, clicked, waited, typed, took a picture and left a tab with a
+      note, nineteen calls with none refused or failed; it said by itself that the page
+      had tried to give it instructions, and that it had not followed them.
 - [x] The log says what happened, once, and what was refused, in plain words with the space
       it tried, file: addresses included; closing a space ends what waits there; each agent
       has its own last tab; with agents off, what an agent left you stays on the bar.
@@ -285,8 +289,8 @@ with where it stands. In this order, the first five being the ones that are felt
 
 Then the small ones, in any order. A space's colour is done (`spacelook.js`, and the
 dotfiles take the window's tint from Tidier since 16 November), and sync carries a chosen
-colour, the settings and the keys (`syncprefs.js`). What sync does not carry yet: the live
-folders' searches, which are in the helper's file. And then the rest of
+colour, the settings, the keys and the live folders set up on the settings page
+(`syncprefs.js`). And then the rest of
 what FEATURES.md has as Later, starting with what is missed most in use.
 
 ## Choices made

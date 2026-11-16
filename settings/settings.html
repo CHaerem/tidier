@@ -54,6 +54,14 @@
     <button id="add-rule">Add a rule</button>
   </section>
 
+  <section id="live-section">
+    <h2>Live folders</h2>
+    <p class="hint">A folder that fills itself: your open pull requests or issues on GitHub, or a feed's newest entries. GitHub is asked by a small helper on this machine, with the login its own tool (gh) has there; nothing of that login comes to Tidier. A search is always among what is open and yours, and its words only narrow it.</p>
+    <div id="live-folders"></div>
+    <p class="hint" id="live-state" hidden></p>
+    <button id="add-live">Add a live folder</button>
+  </section>
+
   <section>
     <h2>Tabs that tidy themselves</h2>
     <label>Close tabs not used for <input type="number" id="archive-hours" min="0" max="8760" step="1" required> <span class="nowrap">hours (0: never)</span></label>
@@ -123,6 +131,7 @@
   <script src="settings.js"></script>
   <script src="littlewindow.js"></script>
   <script src="fullscreen.js"></script>
+  <script src="livefolders.js"></script>
   <script src="pictures.js"></script>
   <script src="keys.js"></script>
   <script src="sync.js"></script>

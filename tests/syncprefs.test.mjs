@@ -204,3 +204,36 @@ test("a key this Firefox refuses stays as it was here, and is not sent back as a
   assert.equal(B.ff.keys["next-tab"], "Alt+Shift+J");
   A.x.kill(); B.x.kill();
 });
+
+// --- Live folders set up on the settings page --------------------------------------------------
+const live = (m, folders) => set(m, "live:set", { folders });
+const liveHere = async m => plain(await set(m, "live:get")).folders;
+
+test("a live folder set up on one machine is set up on the other, in its own container of that space, and goes from both when removed", async () => {
+  const { A, B, server } = await two();
+  await live(A, [{ id: "l1", name: "Reviews", space: c(1), what: "prs", search: "org:acme" }, { id: "l2", name: "News", space: c(2), what: "feed", feed: "https://news.example/feed.xml" }]);
+  await syncAround(server, [A, B]);
+  assert.deepEqual(await liveHere(B), [{ id: "l1", name: "Reviews", space: c(2), what: "prs", search: "org:acme" }, { id: "l2", name: "News", space: c(1), what: "feed", feed: "https://news.example/feed.xml" }]);
+  assert.ok(!JSON.stringify(server["p/1"]).includes("firefox-container"), "no container number is shared");
+  // Changed on one, removed on the other.
+  await live(B, [{ id: "l1", name: "To review", space: c(2), what: "prs", search: "org:acme -label:wip" }]);
+  await syncAround(server, [A, B]);
+  assert.deepEqual(await liveHere(A), [{ id: "l1", name: "To review", space: c(1), what: "prs", search: "org:acme -label:wip" }]);
+  assert.equal(server["p/1"]["live:l2"][0], null, "said as gone, so that it goes everywhere");
+  const writes = [A.ff.syncWrites, B.ff.syncWrites];
+  await syncAround(server, [A, B], 2);
+  assert.deepEqual([A.ff.syncWrites, B.ff.syncWrites], writes);
+  A.x.kill(); B.x.kill();
+});
+
+test("a live folder in a space this machine does not have is left as it came, and one that cannot be a folder is not taken", async () => {
+  const { A, B, server } = await two();
+  server["p/1"] = {
+    "live:far": [{ name: "Elsewhere", space: "a-space-not-here", what: "prs", search: "org:acme" }, 5],
+    "live:wide": [{ name: "Wide", space: Object.keys(plain(A.x.js("syncMemory")).map)[0], what: "prs", search: "org:acme OR is:pr" }, 6],
+  };
+  await syncAround(server, [A, B]);
+  assert.deepEqual([await liveHere(A), await liveHere(B)], [[], []]);
+  assert.deepEqual(plain(server["p/1"]["live:far"]), [{ name: "Elsewhere", space: "a-space-not-here", what: "prs", search: "org:acme" }, 5]);
+  A.x.kill(); B.x.kill();
+});

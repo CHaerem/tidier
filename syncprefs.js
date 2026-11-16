@@ -1,8 +1,8 @@
 // What you have chosen follows you too, through Firefox Sync, beside what sync.js carries:
 // the colour chosen for a space, and the settings that are about how Tidier behaves and not
 // about a machine (the times for archiving and unloading, a page in fullscreen staying in
-// its window, links from other apps in a small window), and the keys you gave Tidier's
-// commands. What is a machine's own stays there: which spaces are hidden, what Claude and
+// its window, links from other apps in a small window), the keys you gave Tidier's
+// commands, and the live folders set up on the settings page. What is a machine's own stays there: which spaces are hidden, what Claude and
 // agents may do, and every permission.
 //
 // One item of its own in storage.sync, apart from sync.js's document: a version of Tidier
@@ -20,6 +20,7 @@ const SYNC_PREF_COLOUR = "colour:"; // + a space's id among the machines (sid, s
 // + the system and a command's name: a key is written another way on a Mac than elsewhere
 // (⌃ is only there), so machines share the keys of their own kind.
 const SYNC_PREF_KEY = "key:";
+const SYNC_PREF_LIVE = "live:"; // + the id of a live folder set up on the settings page (livefolders.js)
 const syncBool = v => typeof v === "boolean";
 const syncSame = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 // How each is read and set here, what it is when nobody has chosen (`plain`), and what a
@@ -37,7 +38,7 @@ const SYNC_PREFS = {
 // is told of), and the key of each command that has a line on the settings page (not Copy
 // for Claude's, which is turned on per machine). A key as it was given at the first start
 // (firstKeys, keys-commands.js) is nobody's choice; one you removed is ("").
-async function syncPrefsHere(st) {
+async function syncPrefsHere(st, theirs) {
   const prefs = { ...SYNC_PREFS };
   for (const [sid, space] of Object.entries(st.map)) {
     if (space === agentSpaceId) continue;
@@ -50,6 +51,25 @@ async function syncPrefsHere(st) {
     prefs[`${SYNC_PREF_KEY}${os}:${name}`] = {
       get: () => command.shortcut ?? "", plain: first.get(name) ?? "", same: (a, b) => keyId(a, os) === keyId(b, os), // (one key, written two ways)
       ok: v => typeof v === "string" && /^[A-Za-z0-9+]{0,40}$/.test(v), set: v => browser.commands.update({ name, shortcut: v }),
+    };
+  }
+  // The live folders set up on the settings page, each by its id, with its space as the
+  // machines know it. One that is gone is "none" (null), so that it goes everywhere. One from
+  // another machine in a space this machine does not have is not looked at here at all: it
+  // is carried along as it came, since "not here" would read as removed.
+  const sidOf = new Map(Object.entries(st.map).filter(([, id]) => id !== agentSpaceId).map(([sid, id]) => [id, sid]));
+  const shared = f => (f && sidOf.has(f.space) ? { name: f.name, space: sidOf.get(f.space), what: f.what, ...(f.what === "feed" ? { feed: f.feed } : { search: f.search }) } : null);
+  const local = (id, v) => v && liveFolderFrom({ ...v, id, space: st.map[v.space] });
+  const own = await liveOwn.get();
+  const came = Object.keys(theirs).filter(k => k.startsWith(SYNC_PREF_LIVE)).map(k => k.slice(SYNC_PREF_LIVE.length));
+  for (const id of new Set([...own.map(f => f.id), ...came])) {
+    const here = own.find(f => f.id === id), remote = syncPrefEntry(theirs[SYNC_PREF_LIVE + id])?.[0];
+    if (here ? !sidOf.has(here.space) : !(remote && typeof remote === "object" && sidOf.has(st.map[remote.space]))) continue;
+    prefs[SYNC_PREF_LIVE + id] = {
+      get: async () => shared((await liveOwn.get()).find(f => f.id === id)), plain: null,
+      same: (a, b) => JSON.stringify(a && [a.name, a.space, a.what, a.feed ?? a.search]) === JSON.stringify(b && [b.name, b.space, b.what, b.feed ?? b.search]),
+      ok: v => v === null || (!!v && typeof v === "object" && (!st.map[v.space] || !!local(id, v))),
+      set: async v => setLiveOwnFolders([...(await liveOwn.get()).filter(f => f.id !== id), ...(local(id, v) ? [local(id, v)] : [])]),
     };
   }
   return prefs;
@@ -66,7 +86,7 @@ async function syncPrefsMerge(st, remote, stamp) {
   const theirs = remote && typeof remote === "object" && !Array.isArray(remote) ? remote : {};
   const first = !st.prefs, agreed = st.prefs ?? {}, merged = { ...theirs }; // (what is not known here is carried along)
   const refused = {};
-  for (const [name, pref] of Object.entries(await syncPrefsHere(st))) {
+  for (const [name, pref] of Object.entries(await syncPrefsHere(st, theirs))) {
     const now = await pref.get(), was = syncPrefEntry(agreed[name]), same = pref.same ?? syncSame;
     // Changed here since the last round: chosen now. Else as agreed. With nothing agreed about
     // it, it counts only if it is not as it came: chosen now, or, in the first round of all,

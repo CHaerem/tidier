@@ -3,9 +3,11 @@
 //
 // The search runs in a native messaging host (native/github-prs.py) with your
 // existing gh login, so no GitHub token reaches the browser; a feed is fetched
-// there too, so Tidier needs no access to its site. The folders (name, container,
-// and the search or the feed's address) are set up in the host's config file, not
-// here; the extension only gets each folder's id, name and container.
+// there too, so Tidier needs no access to its site. The folders (name, space, and
+// the search or the feed's address) are set up on the settings page (below: with
+// sync on they are the same on every machine, syncprefs.js), or in the host's own
+// file on a machine, of which the extension only gets each folder's id, name and
+// container.
 //
 // Every few minutes (and at startup) each folder is brought in line with the
 // search: what is new in it gets a tab (an unloaded placeholder that opens its
@@ -23,6 +25,51 @@ const GITHUB_ICON = "https://github.githubassets.com/favicons/favicon.svg";
 const LIVE_REFRESH_MINUTES = 15;
 
 const liveFolderState = storedValue("liveFolders", () => ({})); // { [id]: { groupKey, dismissed: [url] } }
+
+// --- The folders set up on the settings page -------------------------------------------
+// { id, name, space, what: "prs" | "issues" | "feed", search | feed }. A search is what
+// narrows within "open, and yours", which the helper adds: qualifiers alone (org:, repo:,
+// label:, -label:), so that no word of it can widen the search. The helper refuses anything
+// else (asked(), native/github-prs.py); refused here too, so that the settings page can say
+// so as it is typed.
+const LIVE_OWN = "liveOwnFolders";
+const liveOwn = storedValue(LIVE_OWN, () => []);
+const LIVE_KINDS = ["prs", "issues", "feed"];
+const LIVE_QUALIFIERS = /^(-?[A-Za-z][A-Za-z-]*:[A-Za-z0-9_.@/*,<>=+-]+( |$))*$/;
+// A folder as it may be kept, or null for what is none.
+function liveFolderFrom(f) {
+  if (!f || typeof f !== "object" || typeof f.id !== "string" || !/^[A-Za-z0-9-]{1,64}$/.test(f.id)) return null;
+  const name = typeof f.name === "string" ? f.name.trim().slice(0, 80) : "";
+  if (!name || !LIVE_KINDS.includes(f.what) || typeof f.space !== "string" || !f.space.startsWith("firefox-container-")) return null;
+  const folder = { id: f.id, name, space: f.space, what: f.what };
+  if (f.what === "feed") return isWeb(f.feed) && f.feed.length <= 2000 && !/\s/.test(f.feed) ? { ...folder, feed: f.feed } : null;
+  const search = typeof f.search === "string" ? f.search.trim().replace(/\s+/g, " ") : "";
+  return search.length <= 300 && LIVE_QUALIFIERS.test(search) ? { ...folder, search } : null;
+}
+// What the helper is asked for one of them.
+const liveAsk = f => (f.what === "feed" ? { feed: f.feed } : { search: f.search, what: f.what });
+
+// The list as the settings page (or another machine) has it now. One that is gone takes
+// its folder and tabs along, as deleting a live folder does; one whose space changed is
+// made anew there. Then all of them are looked at again.
+async function setLiveOwnFolders(list) {
+  const next = (Array.isArray(list) ? list : []).map(liveFolderFrom).filter(Boolean).filter((f, i, all) => all.findIndex(x => x.id === f.id) === i);
+  const before = await liveOwn.get(), states = await liveFolderState.get();
+  for (const was of before) {
+    const now = next.find(f => f.id === was.id), state = states[was.id];
+    if (now && now.space === was.space) {
+      if (now.name !== was.name && state?.groupKey) await renameFolder(state.groupKey, now.name); // ownfolders.js
+      continue;
+    }
+    if (state?.groupKey) await deleteFolder(state.groupKey);
+    delete states[was.id];
+  }
+  await saveFolderState();
+  liveOwn.set(next);
+  viewAllSoon();
+  if (started) refreshAllLiveFolders();
+  return next;
+}
 
 async function folderState(id) {
   const all = await liveFolderState.get();
@@ -95,15 +142,18 @@ async function createLiveItem(folder, groupKey, item) {
 // The search, outside the queue: it can take up to the host's 30 s timeout,
 // and tab sync (selecting a ghost, closing a tab) must not wait for it.
 function searchLiveFolder(folder) {
-  return browser.runtime.sendNativeMessage(NATIVE_HOST, { folder: folder.id }).catch(err => ({ error: String(err) }));
+  return browser.runtime.sendNativeMessage(NATIVE_HOST, folder.ask ? { ask: folder.ask } : { folder: folder.id }).catch(err => ({ error: String(err) }));
 }
 
 // Why a live folder stopped, in words for the one who reads the sidebar; the helper's own
 // words (native/github-prs.py) go to the console above, for whoever fixes it.
-function liveTrouble(error) {
+// `own`: one set up on the settings page, which a helper from before that takes for a folder
+// of its file that is not there.
+function liveTrouble(error, own = false) {
   const text = String(error ?? "");
   if (!error || /no host|native application|disconnected/i.test(text)) return "its helper does not answer";
-  if (text === "unknown folder") return "it is no longer in the helper's list of folders";
+  if (text === "unknown folder") return own ? "its helper is older than Tidier (git pull where it is installed)" : "it is no longer in the helper's list of folders";
+  if (/^not a search or a feed/.test(text)) return "its search is not one the helper runs";
   if (text === "gh not found") return "GitHub's own tool (gh) is not installed";
   if (/auth|log ?in|token|credential|401|403/i.test(text)) return "GitHub wants you to sign in again (gh auth login)";
   if (/live-folders\.json/.test(text)) return "the helper's list of folders could not be read";
@@ -117,7 +167,7 @@ async function refreshLiveFolder(folder, res) {
   if (!res || res.error || !Array.isArray(res.items)) {
     console.warn("Tidier: live folder", folder.id, res?.error);
     // A live folder that has stopped keeps its tabs, so it looks as if nothing has happened.
-    setNotice("live", `Live folder "${folder.name}" is not updating: ${liveTrouble(res?.error)}`);
+    setNotice("live", `Live folder "${folder.name}" is not updating: ${liveTrouble(res?.error, !!folder.ask)}`);
     return;
   }
   // The host's file still names a space that was removed, with its folder and tabs
@@ -188,17 +238,22 @@ async function noteLiveFolderDismissed(entry) {
   await saveFolderState();
 }
 
-// The folders from the host's config; none if the host is not installed, which is
-// only a problem if there have been live folders here.
+// The folders: those set up on the settings page, and those of the host's own file. With no
+// host on this machine there are none to fill, which is only a problem if there have been
+// live folders here: one that came from another machine, to a machine with no helper, is
+// simply not there (`helper`: whether it answered).
 async function liveFolders() {
   const res = await browser.runtime.sendNativeMessage(NATIVE_HOST, { list: true }).catch(() => null);
-  if (!res && Object.keys(await liveFolderState.get()).length) setNotice("live", "Live folders are not updating: their helper does not answer (native/install.sh)");
-  return Array.isArray(res?.folders) ? res.folders.map(f => ({ id: f.id, name: f.name, cookieStoreId: f.container })) : [];
+  const states = await liveFolderState.get();
+  if (!res && Object.values(states).some(s => s.groupKey)) setNotice("live", "Live folders are not updating: their helper does not answer (native/install.sh)");
+  const own = (await liveOwn.get()).map(f => ({ id: f.id, name: f.name, cookieStoreId: f.space, ask: liveAsk(f) }));
+  const file = Array.isArray(res?.folders) ? res.folders.map(f => ({ id: f.id, name: f.name, cookieStoreId: f.container })) : [];
+  return { helper: !!res, folders: [...file.filter(f => !own.some(o => o.id === f.id)), ...own].filter(f => res || states[f.id]?.groupKey) };
 }
 
 async function refreshAllLiveFolders() {
-  const folders = await liveFolders();
-  if (folders.length) setNotice("live", null);
+  const { helper, folders } = await liveFolders();
+  if (helper && folders.length) setNotice("live", null);
   for (const f of folders) {
     if (isHiddenSpace(f.cookieStoreId)) continue; // a hidden space gets no tabs; the search is done again when it shows
     const res = await searchLiveFolder(f);
@@ -209,10 +264,19 @@ async function refreshAllLiveFolders() {
 browser.alarms.create("liveFolders", { periodInMinutes: LIVE_REFRESH_MINUTES });
 browser.alarms.onAlarm.addListener(alarm => { if (alarm.name === "liveFolders" && started) refreshAllLiveFolders(); });
 
-// From the extension's own pages only (the smoke test refreshes with this).
+// From the extension's own pages only (the smoke test refreshes with this). The settings
+// page's list (settings/livefolders.js): what is set up here, what the host's file has, and
+// whether there is a host at all.
 browser.runtime.onMessage.addListener((msg, sender) => {
-  if (msg?.type !== "refreshLiveFolders" || sender.id !== browser.runtime.id || !sender.url?.startsWith(browser.runtime.getURL(""))) return;
-  return refreshAllLiveFolders().then(() => true);
+  if (sender.id !== browser.runtime.id || !sender.url?.startsWith(browser.runtime.getURL(""))) return;
+  if (msg?.type === "refreshLiveFolders") return refreshAllLiveFolders().then(() => true);
+  if (msg?.type !== "live:get" && msg?.type !== "live:set") return;
+  return serial(async () => {
+    if (msg.type === "live:set") await setLiveOwnFolders(msg.folders);
+    const res = await browser.runtime.sendNativeMessage(NATIVE_HOST, { list: true }).catch(() => null);
+    const own = await liveOwn.get();
+    return { folders: own, helper: !!res, file: Array.isArray(res?.folders) ? res.folders.filter(f => !own.some(o => o.id === f.id)).map(f => ({ name: f.name, space: f.container })) : [] };
+  });
 });
 
 // First refresh once tab sync has started.

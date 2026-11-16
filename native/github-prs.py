@@ -1,15 +1,18 @@
 #!/usr/bin/python3
 # Native messaging host for Tidier: its live folders, and its daily copy.
 #
-# The folders are set up in a local file, not in the extension or this
-# repository: $XDG_CONFIG_HOME/tidier/live-folders.json (default
-# ~/.config/tidier/), see live-folders.example.json. The extension can
-# ask for the list of folders ({"list": true}) and for what is in one of them
-# ({"folder": id}); it cannot run any other search or gh command, or name an
-# address to fetch, and no GitHub token ever reaches the browser. A folder is
-# a GitHub search for pull requests, or for issues ("what": "issues"), which
-# runs with the gh CLI and your existing gh login; or a feed ("feed": its
-# address, feeds.py), which needs neither.
+# A folder is a GitHub search for pull requests, or for issues ("what": "issues"),
+# which runs with the gh CLI and your existing gh login; or a feed ("feed": its
+# address, feeds.py), which needs neither. No GitHub token ever reaches the browser.
+#
+# The folders are set up on Tidier's settings page, or in a local file here:
+# $XDG_CONFIG_HOME/tidier/live-folders.json (default ~/.config/tidier/), see
+# live-folders.example.json. The extension can ask for the file's list of folders
+# ({"list": true}) and for what is in one of them ({"folder": id}), and for what is in
+# one of its own ({"ask": {...}}, see asked()): only your own open pull requests and
+# issues, as every folder has them, narrowed by plain qualifiers (org:, repo:, label:),
+# or a feed on the web. It cannot run any other search or gh command: what it sends is
+# never more than words in the one search this file writes.
 #
 # The extension can also hand over a copy of its own data ({"backup": ...}), since
 # it cannot write files itself: kept next to the config, the last COPIES days. It
@@ -56,6 +59,27 @@ def folders():
     ok = lambda f: isinstance(f, dict) and all(text(f, k) for k in ("id", "name", "container")) and (
         text(f, "search") or (text(f, "feed") and re.match(r"https?://", f["feed"]) is not None))
     return [f for f in items if ok(f) and f["container"].startswith("firefox-")] if isinstance(items, list) else []
+
+
+# What the extension may ask for a folder of its own: the same as a line of the file, with
+# only what narrows. A search is qualifiers alone (name:value, or -name:value), so no word
+# of it can be OR, a bracket or a quote, which could reach outside "open, and yours" (BASE,
+# ISSUES); a feed is an address on the web, as in the file.
+QUALIFIER = re.compile(r"-?[A-Za-z][A-Za-z-]*:[A-Za-z0-9_.@/*,<>=+-]+")
+
+
+def asked(ask):
+    """The folder asked for, as the file would have it; None for what is not to be asked."""
+    if not isinstance(ask, dict):
+        return None
+    feed, search = ask.get("feed"), ask.get("search")
+    if feed is not None:
+        if not (isinstance(feed, str) and len(feed) <= 2000 and re.fullmatch(r"https?://\S+", feed)):
+            return None
+        return {"feed": feed, "count": ask.get("count")}
+    if not isinstance(search, str) or len(search) > 300 or not all(QUALIFIER.fullmatch(word) for word in search.split()):
+        return None
+    return {"search": " ".join(search.split()), "what": "issues" if ask.get("what") == "issues" else "prs"}
 
 
 def gh():
@@ -142,11 +166,18 @@ def main():
     if msg.get("list"):
         send({"folders": [{k: f[k] for k in ("id", "name", "container")} for f in configured]})
         return
-    folder = next((f for f in configured if f["id"] == msg.get("folder")), None)
-    if not folder:
-        send({"error": "unknown folder"})
-        return
-    if not (isinstance(folder.get("search"), str) and folder["search"]):
+    if "ask" in msg:
+        folder = asked(msg["ask"])
+        if not folder:
+            send({"error": "not a search or a feed this helper answers"})
+            return
+    else:
+        folder = next((f for f in configured if f["id"] == msg.get("folder")), None)
+        if not folder:
+            send({"error": "unknown folder"})
+            return
+    # (One asked for may be a search of no words at all: everything open that is yours.)
+    if "feed" in folder if "ask" in msg else not (isinstance(folder.get("search"), str) and folder["search"]):
         import feeds  # beside this file; only for a folder that is one
         send(feeds.answer(folder))
         return
@@ -156,7 +187,7 @@ def main():
     issues = folder.get("what") == "issues"
     try:
         result = subprocess.run(
-            [gh(), "api", "-X", "GET", "search/issues", "-f", f"q={ISSUES if issues else BASE} {folder['search']}",
+            [gh(), "api", "-X", "GET", "search/issues", "-f", f"q={ISSUES if issues else BASE} {folder['search']}".strip(),
              "-f", "advanced_search=true", "-f", "per_page=100", "--jq", JQ],
             capture_output=True, text=True, timeout=30,
         )

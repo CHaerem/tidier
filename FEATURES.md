@@ -111,6 +111,7 @@ part C).
 | A closed folder rests: hidden from ⌃Tab and unloaded | S | Done | checked; the selected tab, sound and unsaved input stay |
 | New folder with a good name, ready to rename | S | Done | from the menu, a key, or a selection, which names it after what the tabs share |
 | New tab in a folder | S | Done | checked: New tab here in its menu; saved there once it has a page |
+| Live folders set up in Tidier, and the same on every machine | | Done | checked: on the settings page (a name, a space, pull requests, issues or a feed, and the words that narrow the search); the helper is asked for those words alone and refuses any that could widen it; carried by sync; the helper must be pulled (`git pull`) where it is used |
 | Live folders for GitHub issues and feeds | Z | Done | checked: a folder of issues (`"what": "issues"`) or of a feed's newest entries (`"feed"`), set up in the helper's file as the pull requests are; the helper must be pulled (`git pull`) where it is used |
 | Live folders (GitHub pull requests) | A | Done | checked: each row's icon says what the pull request waits for (your review, draft, failing checks, conflict, changes asked for, approved, running, open) |
 | Folder state (open/closed) kept per space and window | Z A S | Partly | kept per folder, the same in every window |
@@ -183,6 +184,6 @@ agents' space goes into sync or copies.
 | Feature | From | Status | Notes |
 |---|---|---|---|
 | Copy a page or a list of tabs as clean text for Claude; ask Claude about a page | | Done | checked; from the tab menu, the space's menu and the command bar |
-| An MCP server, so Claude Code can work in the browser | | Done | checked: local only, a socket only you can reach, and nothing runs while it is off; each agent's last tab is its own; not yet tried with Claude Code itself |
+| An MCP server, so Claude Code can work in the browser | | Done | checked: local only, a socket only you can reach, and nothing runs while it is off; each agent's last tab is its own; tried with Claude Code itself on 16 November 2026 (every tool, none refused or failed, and it named the page's attempt to steer it) |
 | Agents have a space of their own, with its own logins | | Done | checked: they see and touch only that space, unless you allow another |
 | What an agent does is visible, and one click stops it | | Done | checked: a line and a ring while it works; a log with each call once, how it went, and what was refused, file: addresses included; with agents off, what it left you stays on the bar |

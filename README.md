@@ -236,12 +236,24 @@ settings page's Keys section.
 
 The pull request search runs in `native/github-prs.py`, a Firefox native
 messaging host that calls the `gh` CLI with your existing login. No GitHub
-token is stored in the browser. The folders are set up in a local file, not in
-this repository: `~/.config/tidier/live-folders.json` (see
+token is stored in the browser.
+
+**The folders are set up on the settings page**, under *Live folders*: a name, a space,
+what it is filled from (pull requests, issues, or a feed) and the search's words or the
+feed's address. With sync on they are the same on every machine (`syncprefs.js`), each
+in its own container of that space; a machine with no helper simply has none of them.
+A search is always among what is open and yours, which the host adds itself; the words
+you give only narrow it (`org:…`, `repo:…`, `label:…`, `-label:…`), and no words at all is
+everything open that is yours. The host refuses a search with anything else in it (a
+bare word, OR, a bracket, a quote: `asked()` in `native/github-prs.py`), so what the
+extension sends is never more than words in the one search the host writes, and the
+settings page says so under the line as it is typed. A feed is an address on the web.
+
+They can also be set up in a local file on a machine, as before the settings page had
+them: `~/.config/tidier/live-folders.json` (see
 `native/live-folders.example.json`), one entry per folder with its name, its
 container (so its space) and a GitHub search (`org:…`, `user:…`, `repo:…`).
-The extension only learns each folder's id, name and container, and the host
-only runs those searches; anything else is refused. For each pull request found it
+Of those the extension only learns each folder's id, name and container. For each pull request found the host
 also asks GitHub what it waits for (review, checks, a conflict), which the rows show;
 if that question fails, the rows only tell a draft from an open one.
 
@@ -256,8 +268,9 @@ entries, `"count"` of them (ten if it is not there, thirty at the most); it need
 ```
 
 (They are not in the example file, which a new machine starts from as it is.) The host fetches the feed itself (`native/feeds.py`), so Tidier needs no
-access to the feed's site, and the extension cannot name an address to fetch: only the ones
-in your file are. A feed is a stranger's words, so only http and https are followed, also
+access to the feed's site. The address is one you gave, on the settings page or in the
+file, and the extension can ask for it by itself: what comes back is only a feed's titles
+and web addresses, never a page. A feed is a stranger's words, so only http and https are followed, also
 after a redirect, no more than 2 MB is read, a feed that declares entities of its own is
 refused, and of each entry only a plain title and a web address are taken (the extension
 looks at the address once more itself). A page that is no feed, or a feed that does not
@@ -273,7 +286,9 @@ native/install.sh
 It writes `~/Library/Application Support/Mozilla/NativeMessagingHosts/tidier_github.json`,
 which only allows this extension to start the host. The `native/` folder is not
 part of the signed extension: Firefox does not update it, so a change to it reaches a
-machine when this folder is pulled there (`git pull`).
+machine when this folder is pulled there (`git pull`). A host from before the settings
+page had live folders does not know the question, and the folder then says that its
+helper is older than Tidier.
 
 ## When Firefox must be started again
 
@@ -546,11 +561,13 @@ colour chosen for a space, and the settings that are about how Tidier behaves an
 about a machine (the times for archiving and unloading, a page in fullscreen staying in
 its window, links from other apps in a small window), and the keys you gave Tidier's
 commands, among machines of the same kind (a key is written another way on a Mac than
-elsewhere). These are in an item of their own,
+elsewhere), and the live folders set up on the settings page. These are in an item of
+their own,
 each with the time it was chosen, the newest winning per thing; a setting nobody has
 touched is not there at all, so a machine with everything as it came overrules nothing.
 Ordinary tabs, what is open, icons, which folders are closed and which spaces are hidden
-stay on each machine, and so do every permission, which of Firefox's own keys are cleared
+stay on each machine, and so do the live folders of the helper's own file (those of the
+settings page are carried), every permission, which of Firefox's own keys are cleared
 (about:keyboard), and everything of the agents' space and its settings. No container number is shared: a space is matched to a container by
 name, so logins cannot mix. The newest change wins per thing; something merely missing
 never counts as deleted, and a page you have open is never closed by another machine.

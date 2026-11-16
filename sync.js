@@ -26,7 +26,7 @@ const SYNC_DELAY_MS = 5000;
 const SYNC_COPY_WAIT_MS = 10000; // for the helper that writes a copy to a file; the queue waits meanwhile
 const SYNC_BIG_REMOVAL = 5; // removed from elsewhere in one go: a copy is taken first
 const SYNC_WATCHED = ["essentials", "syncedTabs", "rules", "spaceOrder", // what a round reads from storage.local
-  "archiveAfterHours", "unloadAfterHours", "fullscreenStays", "littleWindow", "spaceColours"]; // (and syncprefs.js: what you have chosen)
+  "archiveAfterHours", "unloadAfterHours", "fullscreenStays", "littleWindow", "spaceColours", "liveOwnFolders"]; // (and syncprefs.js: what you have chosen)
 let syncIsOn = false;
 let syncMemory = null;
 let syncTimer = null;

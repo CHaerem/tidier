@@ -96,6 +96,100 @@ test("a feed that does not answer leaves the folder as it is, and says which it 
   x.kill();
 });
 
+// --- Folders set up on the settings page ------------------------------------------------------
+const SETTINGS = { url: "moz-extension://tidier/settings/settings.html" };
+const plain = value => JSON.parse(JSON.stringify(value));
+// A machine with a helper that answers what it is asked as `answers` says: by the search's
+// words or the feed's address. `helper: false`: none installed.
+async function own({ helper = true, answers = {} } = {}) {
+  const ff = new FakeFirefox();
+  ff.store.syncedTabs = { here: entry("https://here.example/") };
+  const w = ff.addWindow({ focused: true });
+  ff.addTab(w.id, { url: "https://here.example/", cookieStoreId: C1, active: true }, { syncKey: "here", syncRole: "live" });
+  const asked = [];
+  ff.adapt = b => {
+    b.runtime.sendNativeMessage = async (host, msg) => {
+      if (!helper) throw new Error("No such native application tidier_github");
+      asked.push(plain(msg));
+      if (msg.list) return { folders: [] };
+      if (msg.ask) return answers[msg.ask.feed ?? msg.ask.search] ?? { error: "not a search or a feed this helper answers" };
+      return { error: "unknown folder" };
+    };
+  };
+  const x = ff.boot();
+  x.b.runtime.onStartup.fire();
+  await wait(1200);
+  for (let i = 0; i < 300 && !x.started(); i++) await wait(1000);
+  await wait(1000);
+  const set = async folders => { const r = plain(await x.send({ type: "live:set", folders }, SETTINGS)); await wait(1500); return r; };
+  const view = async () => plain(await x.js("viewFor")(w.id)).folders.map(f => [f.name, !!f.live, f.tabs.map(t => t.title)]);
+  return { ff, x, w, asked, set, view, answers };
+}
+const pr = n => ({ url: `https://github.com/acme/app/pull/${n}`, repo: "app", number: n, title: `Pull ${n}` });
+
+test("a live folder set up on the settings page is asked for by its search, and filled", async () => {
+  const { x, asked, set, view } = await own({ answers: { "org:acme": { items: [pr(1), pr(2)] }, "https://news.example/feed.xml": { items: [{ url: "https://news.example/1", title: "Story 1", what: "feed" }] } } });
+  const r = await set([{ id: "a1", name: "Reviews", space: C1, what: "prs", search: "  org:acme " },
+    { id: "a2", name: "News", space: C1, what: "feed", feed: "https://news.example/feed.xml" }]);
+  assert.deepEqual(r.folders.map(f => [f.id, f.search ?? f.feed]), [["a1", "org:acme"], ["a2", "https://news.example/feed.xml"]]);
+  assert.equal(r.helper, true);
+  assert.deepEqual(asked.filter(m => m.ask).map(m => m.ask), [{ search: "org:acme", what: "prs" }, { feed: "https://news.example/feed.xml" }], "what narrows, and what it is; no id, name or space");
+  assert.deepEqual(await view(), [["Reviews", true, ["app#1 Pull 1", "app#2 Pull 2"]], ["News", true, ["Story 1"]]]);
+  assert.deepEqual(x.errors, []);
+  x.kill();
+});
+
+test("only what can be a folder is kept: a name, a space, and a search of words that narrow or a feed on the web", async () => {
+  const { x, set } = await own();
+  const ok = { id: "ok", name: "All mine", space: C1, what: "issues", search: "" };
+  const r = await set([ok,
+    { id: "b1", name: "Wide", space: C1, what: "prs", search: "org:acme OR is:pr" },
+    { id: "b2", name: "Brackets", space: C1, what: "prs", search: ") OR (author:someone" },
+    { id: "b3", name: "Words", space: C1, what: "prs", search: "secret plans" },
+    { id: "b4", name: "A file", space: C1, what: "feed", feed: "file:///etc/passwd" },
+    { id: "b5", name: "", space: C1, what: "prs", search: "org:acme" },
+    { id: "b6", name: "No space", space: "firefox-default", what: "prs", search: "org:acme" },
+    { id: "b7", name: "No kind", space: C1, what: "everything", search: "org:acme" },
+    { id: "ok", name: "Twice", space: C1, what: "prs", search: "org:acme" },
+    "not a folder", null]);
+  assert.deepEqual(r.folders, [ok], "a search of no words is everything open that is yours");
+  assert.equal(x.send({ type: "live:set", folders: [] }, { url: "https://elsewhere.example/" }), undefined, "from Tidier's own pages only");
+  x.kill();
+});
+
+test("renamed, its folder is renamed; removed, or moved to another space, its folder goes with its tabs", async () => {
+  const { ff, set, view } = await own({ answers: { "org:acme": { items: [pr(1)] } } });
+  const f = { id: "a1", name: "Reviews", space: C1, what: "prs", search: "org:acme" };
+  await set([f]);
+  assert.deepEqual(await view(), [["Reviews", true, ["app#1 Pull 1"]]]);
+  await set([{ ...f, name: "To review" }]);
+  assert.deepEqual(await view(), [["To review", true, ["app#1 Pull 1"]]], "the same folder, by another name");
+  await set([]);
+  assert.deepEqual(await view(), []);
+  assert.deepEqual(Object.values(ff.store.syncedTabs).filter(e => e.liveFolder || e.live), [], "nothing of it is left in the record");
+  assert.deepEqual(ff.store.liveFolders ?? {}, {});
+  x_kill(ff);
+});
+const x_kill = ff => ff.ext.kill();
+
+test("on a machine with no helper a folder that came from another machine is simply not there, and nothing is said", async () => {
+  const { x, set, view } = await own({ helper: false });
+  const r = await set([{ id: "a1", name: "Reviews", space: C1, what: "prs", search: "org:acme" }]);
+  assert.equal(r.helper, false, "the settings page says that nothing fills them here");
+  assert.equal(r.folders.length, 1, "kept, for the machines that have one");
+  assert.deepEqual(await view(), []);
+  assert.deepEqual(plain(await x.send({ type: "settings:get" }, SETTINGS)).notices.filter(n => n.kind === "live"), []);
+  x.kill();
+});
+
+test("a helper from before this says so, in words that tell what to do", async () => {
+  const { x, set } = await own({ answers: { "org:acme": { error: "unknown folder" } } });
+  await set([{ id: "a1", name: "Reviews", space: C1, what: "prs", search: "org:acme" }]);
+  const notice = plain(await x.send({ type: "settings:get" }, SETTINGS)).notices.find(n => n.kind === "live");
+  assert.match(notice?.text ?? "", /Live folder "Reviews" is not updating: its helper is older than Tidier \(git pull where it is installed\)/);
+  x.kill();
+});
+
 test("the helper (tests/test_helper.py)", () => {
   const run = spawnSync("python3", ["-I", fileURLToPath(new URL("./test_helper.py", import.meta.url))], { encoding: "utf8", timeout: 120000, env: { ...process.env, PYTHONWARNINGS: "ignore" } });
   if (run.error?.code === "ENOENT") return; // no python3 here: the helper is for a Mac, which has one

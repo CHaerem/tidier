@@ -252,6 +252,36 @@ class Host(unittest.TestCase):
             self.assertIn("gh auth login", self.ask({"folder": folder})["error"])
         self.assertEqual(self.ask({"folder": "nobody's"}), {"error": "unknown folder"})
 
+    def test_a_folder_of_the_extensions_own_is_the_same_search_with_only_what_narrows(self):
+        # No file at all: the folder is set up on Tidier's settings page, and described in the question.
+        self.answers({"search": {"incomplete": False, "items": [
+            {"id": "PR_1", "url": "https://github.com/acme/app/pull/7", "title": "Seven", "number": 7, "draft": False, "repo": "app"}]}})
+        got = self.ask({"ask": {"search": "  org:acme   -label:wip repo:acme/app ", "what": "prs"}})
+        self.assertEqual([i["url"] for i in got["items"]], ["https://github.com/acme/app/pull/7"])
+        self.assertIn("q=is:open is:pr archived:false (review-requested:@me OR author:@me OR assignee:@me) org:acme -label:wip repo:acme/app", self.asked()[0])
+        os.remove(os.path.join(self.bin, "asked.jsonl"))
+        self.ask({"ask": {"search": "org:acme", "what": "issues"}})
+        self.assertIn("q=is:open is:issue archived:false (assignee:@me OR author:@me) org:acme", self.asked()[0])
+        os.remove(os.path.join(self.bin, "asked.jsonl"))
+        self.ask({"ask": {"search": ""}})
+        self.assertIn("q=is:open is:pr archived:false (review-requested:@me OR author:@me OR assignee:@me)", self.asked()[0], "no words: everything open that is yours")
+        os.remove(os.path.join(self.bin, "asked.jsonl"))
+        # Nothing that could reach outside "open, and yours", or be more than words of the search.
+        for search in ("org:acme OR is:pr", ") OR (is:issue", "org:acme) OR (author:someone", 'label:"a b"', "secret words", "org:acme\nrepo:x --jq .", "org:" + "a" * 400, 7, None, ["org:acme"]):
+            self.assertEqual(self.ask({"ask": {"search": search}}), {"error": "not a search or a feed this helper answers"}, repr(search))
+        for ask in ("org:acme", None, [], {"what": "prs"}, {"folder": "prs"}):
+            self.assertEqual(self.ask({"ask": ask}), {"error": "not a search or a feed this helper answers"}, repr(ask))
+        self.assertEqual(self.asked(), [], "and gh is asked nothing for any of them")
+
+    def test_a_feed_of_the_extensions_own_is_fetched_as_one_in_the_file_is(self):
+        self.server.pages["/feed.xml"] = (200, {"Content-Type": "application/rss+xml"}, MANY)
+        got = self.ask({"ask": {"feed": self.server.at + "/feed.xml", "count": 2}})
+        self.assertEqual(got, {"items": [{"url": "https://many.example/0", "title": "N0", "what": "feed"}, {"url": "https://many.example/1", "title": "N1", "what": "feed"}]})
+        self.assertEqual(len(self.ask({"ask": {"feed": self.server.at + "/feed.xml"}})["items"]), 10)
+        for feed in ("file:///etc/passwd", "ftp://127.0.0.1/feed.xml", "https://a.example/ feed", "javascript:1", 7, "", "https://" + "a" * 2000):
+            self.assertEqual(self.ask({"ask": {"feed": feed}}), {"error": "not a search or a feed this helper answers"}, repr(feed))
+        self.assertEqual(self.asked(), [])
+
     def test_a_feed_gives_its_newest_entries_and_asks_nothing_of_github(self):
         self.server.pages["/feed.xml"] = (200, {"Content-Type": "application/rss+xml"}, MANY)
         self.config([self.feed()])
