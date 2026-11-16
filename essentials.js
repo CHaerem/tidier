@@ -470,6 +470,9 @@ browser.contextualIdentities.onRemoved.addListener(({ contextualIdentity }) => {
 async function dropDoubleCopies(tabId, windowId) {
   const key = keyByTab.get(tabId);
   const tab = await browser.tabs.get(tabId).catch(() => null);
+  // (Closed meanwhile: its close was told before it was known here as this essential's, as
+  // one brought back with ⌘⇧T and closed again at once, so nothing else would forget it.)
+  if (!tab) keyByTab.delete(tabId);
   if (!key || !tab?.pinned) return;
   await tagTab(tabId, key); // a tab dragged from the tab bar may arrive without its sessions values
   // An unloaded copy arrives without its title (Firefox shows its address):
