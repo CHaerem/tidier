@@ -779,7 +779,9 @@ INVARIANTS = LIB + r"""
     if (space) {
       for (const x of tabs.filter(x => x.wi === wi && !x.pinned)) {
         if (x.ctx !== space && x.ctx !== "firefox-default" && !x.hidden && !x.selected) bad("another space's tab is shown", x.label, x.ctx + " in " + space);
-        if (x.ctx === space && x.hidden) bad("a tab of the active space is hidden", x.label);
+        // (A closed folder's tabs rest: hidden in every window, but for the one you are on. foldrest.js.)
+        const rests = k => { const e = all[k], f = e && all[e.parentKey]; return !!(f && f.group && f.collapsed); };
+        if (x.ctx === space && x.hidden && !rests(x.key)) bad("a tab of the active space is hidden", x.label);
       }
     }
     if (sidebarShown(w)) {

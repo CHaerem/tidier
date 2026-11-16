@@ -455,6 +455,9 @@ async function check(W, phase, { strong }) {
       }
       const live = reps.filter(t => W.value(t, "syncRole") === "live");
       if (live.length > 1) bad("two-live", `${key} ${e.url} is live in ${live.map(t => t.id)}`);
+      // In the space the record says, each of them (the long run in a real Firefox saw one
+      // left in the space its tab had been moved from).
+      for (const t of reps) if (t.cookieStoreId !== e.cookieStoreId) bad("other-space", `${key} ${e.url} is of ${e.cookieStoreId}, and tab ${t.id} in window ${t.windowId} is in ${t.cookieStoreId}`);
       // None is fine, as long as nothing shows the page: a saved tab you closed, or tabs
       // brought back after a start with no session, have none until you select one.
       for (const t of reps) {

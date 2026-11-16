@@ -3296,6 +3296,86 @@ test("the space you switched to is kept, and an update shows the selected tab's 
   y.kill();
 });
 
+// Found by the random sequences (seed 5363), and by the long run in a real Firefox as tabs of
+// the space you are in left hidden: Firefox refuses the whole list for one tab that has gone.
+test("a tab closed as the space changes does not leave the rest of its space shown, or of the new one hidden", async () => {
+  const ff = new FakeFirefox();
+  const C2 = "firefox-container-2";
+  ff.store.syncedTabs = {
+    a: entry("https://a.example/"), a2: entry("https://a2.example/"), a3: entry("https://a3.example/"),
+    b: entry("https://b.example/", { cookieStoreId: C2 }), b2: entry("https://b2.example/", { cookieStoreId: C2 }), b3: entry("https://b3.example/", { cookieStoreId: C2 }),
+  };
+  const w = ff.addWindow({ focused: true });
+  const one = Object.fromEntries(["a", "a2", "a3"].map((k, i) => [k, ff.addTab(w.id, { url: `https://${k}.example/`, active: i === 0, cookieStoreId: C1 }, { syncKey: k, syncRole: "live" })]));
+  const two = Object.fromEntries(["b", "b2", "b3"].map(k => [k, ff.addTab(w.id, { url: `https://${k}.example/`, cookieStoreId: C2, hidden: true }, { syncKey: k, syncRole: "live" })]));
+  const x = await alone(ff);
+  // As Firefox does it: every tab in the list is looked up first, and one that is gone refuses them all.
+  const gone = new Set([one.a2.id, two.b2.id]);
+  for (const what of ["hide", "show"]) {
+    const call = x.b.tabs[what];
+    x.b.tabs[what] = async ids => { const missing = [ids].flat().find(id => gone.has(id)); if (missing !== undefined) throw new Error(`Invalid tab ID: ${missing}`); return call(ids); };
+  }
+  await x.js(`switchSpace(${w.id}, "${C2}")`);
+  await wait(500);
+  assert.deepEqual([two.b, two.b3].map(t => ff.tabs.get(t.id).hidden), [false, false], "the space you came to is shown, but for the tab that has gone");
+  assert.deepEqual([one.a3].map(t => ff.tabs.get(t.id).hidden), [true], "and the one you left is hidden");
+  assert.equal(x.js("problems.join()"), "");
+  x.kill();
+});
+
+// Found by the long run in a real Firefox, and then by the random sequences once they looked
+// for it (seeds 100250 and 300): one tab in sixty-odd runs was listed in one space and open in another.
+test("a record and its page in different spaces: the record follows the page, and a placeholder left in another space is made again in the record's", async () => {
+  const C2 = "firefox-container-2", NONE = "firefox-default";
+  const spaces = (ff, w, key) => ff.list(w.id).filter(t => ff.values.get(t.id)?.syncKey === key).map(t => t.cookieStoreId);
+  // Into a space, cut off: the page is in its space, the record and the other window's placeholder in none.
+  {
+    const ff = new FakeFirefox();
+    ff.store.syncedTabs = { a: entry("https://a.example/", { cookieStoreId: NONE }), here: entry("https://here.example/") };
+    const w = ff.addWindow({ focused: true }), v = ff.addWindow();
+    ff.addTab(w.id, { url: "https://here.example/", active: true, cookieStoreId: C1 }, { syncKey: "here", syncRole: "live" });
+    ff.addTab(w.id, { url: "https://a.example/", cookieStoreId: C1 }, { syncKey: "a", syncRole: "live" });
+    ff.addTab(v.id, { url: GHOST("ghost", "here"), active: true, cookieStoreId: C1 }, { syncKey: "here", syncRole: "ghost" });
+    ff.addTab(v.id, { url: GHOST("ghost", "a"), discarded: true, cookieStoreId: NONE }, { syncKey: "a", syncRole: "ghost" });
+    const x = await alone(ff);
+    assert.equal(ff.store.syncedTabs.a.cookieStoreId, C1, "the record is in the page's space");
+    assert.deepEqual([spaces(ff, w, "a"), spaces(ff, v, "a")], [[C1], [C1]], "and so is every tab of it, once in each window");
+    assert.equal(x.js("problems.join()"), "");
+    x.kill();
+  }
+  // On to another space, cut off either way: the page moved and the record did not, or the
+  // record and the page did and a placeholder did not.
+  for (const [recorded, page] of [[C1, C2], [C2, C2]]) {
+    const ff = new FakeFirefox();
+    ff.store.syncedTabs = { a: entry("https://a.example/", { cookieStoreId: recorded }), here: entry("https://here.example/") };
+    const w = ff.addWindow({ focused: true }), v = ff.addWindow();
+    ff.addTab(w.id, { url: "https://here.example/", active: true, cookieStoreId: C1 }, { syncKey: "here", syncRole: "live" });
+    ff.addTab(w.id, { url: "https://a.example/", cookieStoreId: page }, { syncKey: "a", syncRole: "live" });
+    ff.addTab(v.id, { url: GHOST("ghost", "here"), active: true, cookieStoreId: C1 }, { syncKey: "here", syncRole: "ghost" });
+    ff.addTab(v.id, { url: GHOST("ghost", "a"), discarded: true, cookieStoreId: C1 }, { syncKey: "a", syncRole: "ghost" });
+    const x = await alone(ff);
+    assert.equal(ff.store.syncedTabs.a.cookieStoreId, C2, `recorded in ${recorded}, the page in ${page}`);
+    assert.deepEqual([spaces(ff, w, "a"), spaces(ff, v, "a")], [[C2], [C2]]);
+    assert.equal(ff.store.syncedTabs.here.cookieStoreId, C1, "another tab is left as it is");
+    assert.equal(x.js("problems.join()"), "");
+    x.kill();
+  }
+  // In a folder of the space it is no longer in, it is out of the folder: a folder's tabs are its space's.
+  {
+    const ff = new FakeFirefox();
+    ff.store.syncedTabs = {
+      F: { group: true, own: true, name: "F", cookieStoreId: C1, parentKey: null, rank: 1, added: 1 },
+      a: entry("https://a.example/", { parentKey: "F", saved: { url: "https://a.example/", title: "a" } }), here: entry("https://here.example/"),
+    };
+    const w = ff.addWindow({ focused: true });
+    ff.addTab(w.id, { url: "https://here.example/", active: true, cookieStoreId: C1 }, { syncKey: "here", syncRole: "live" });
+    ff.addTab(w.id, { url: "https://a.example/", cookieStoreId: C2 }, { syncKey: "a", syncRole: "live" });
+    const x = await alone(ff);
+    assert.deepEqual([ff.store.syncedTabs.a.cookieStoreId, ff.store.syncedTabs.a.parentKey, ff.store.syncedTabs.a.saved], [C2, null, undefined]);
+    x.kill();
+  }
+});
+
 test("a tab closed just as it is synced leaves no record, and stops nothing", async () => {
   const ff = new FakeFirefox();
   const w = ff.addWindow({ focused: true });
