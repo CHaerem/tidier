@@ -177,10 +177,25 @@ def alone_live_folders(m):
       return {folder: f && {own: f[1].own, name: f[1].name}, tabs: tabs.map(([, e]) => [e.parentKey === f[0], !!e.saved]), reps: tabs.map(([k]) => find(JSON.stringify(k)))};""" % EXT_ID)
     check("a live folder is Tidier's own folder, with its pull requests unloaded in every window", r["folder"] == {"own": True, "name": "Pull requests"}
           and r["tabs"] == [[True, False], [True, False]] and all(all(len(x) == 1 and x[0].endswith("/unloaded") for x in rep) for rep in r["reps"]), str(r))
+    # An issue, and a feed's entry (the helper says which each is): named and marked as what
+    # they are, each an unloaded placeholder as a pull request is.
+    open(m.fake_prs, "w").write(json.dumps({"folders": [{"id": "prs", "name": "Pull requests", "container": "firefox-container-1"}],
+                                            "items": {"prs": [{"url": "https://example.org/?smoke-pr-1", "title": "One", "number": 1, "repo": "r"},
+                                                              {"url": "https://example.org/?smoke-pr-3", "title": "Three", "number": 3, "repo": "r", "what": "issue"},
+                                                              {"url": "https://example.org/?smoke-pr-feed", "title": "A story from a feed", "what": "feed"},
+                                                              {"url": "file:///etc/hosts", "title": "No web address", "what": "feed"}]}}))
+    extension_message(m, {"type": "refreshLiveFolders"})
+    r = m.js(H + """await wait(1500); const all = (await storage("%s", ["syncedTabs"])).syncedTabs;
+      const tabs = Object.entries(all).filter(([, e]) => e.liveFolder === "prs");
+      return {marks: Object.fromEntries(tabs.map(([, e]) => [e.title, [e.pr, !!e.icon]])), reps: tabs.map(([k]) => find(JSON.stringify(k))),
+              labels: main().gBrowser.tabs.map(t => t.label).filter(l => /r#|story|No web/.test(l)).sort()};""" % EXT_ID)
+    check("an issue and a feed's entry are in the folder as what they are, each unloaded in every window, and what is no web address gets no tab",
+          r["marks"] == {"r#1 One": ["open", True], "r#3 Three": ["issue", True], "A story from a feed": ["feed", False]}
+          and r["labels"] == ["A story from a feed", "r#1 One", "r#3 Three"] and all(all(len(x) == 1 and x[0].endswith("/unloaded") for x in rep) for rep in r["reps"]), str(r))
     open(m.fake_prs, "w").write(json.dumps({"folders": [{"id": "prs", "name": "Pull requests", "container": "firefox-container-1"}], "items": {"prs": []}}))
     extension_message(m, {"type": "refreshLiveFolders"})
     r = m.js(H + """await wait(1500); const all = (await storage("%s", ["syncedTabs"])).syncedTabs;
-      return {tabs: Object.values(all).filter(e => e.liveFolder === "prs").length, left: wins().flatMap(w => w.gBrowser.tabs).filter(t => t.label.includes("r#")).length, folder: Object.values(all).some(e => e.live === "prs")};""" % EXT_ID)
+      return {tabs: Object.values(all).filter(e => e.liveFolder === "prs").length, left: wins().flatMap(w => w.gBrowser.tabs).filter(t => /r#|story/.test(t.label)).length, folder: Object.values(all).some(e => e.live === "prs")};""" % EXT_ID)
     check("a pull request that leaves the search is removed, and the folder stays", r["tabs"] == 0 and r["left"] == 0 and r["folder"], str(r))
     r = sidebar_page(m, RECENTLY_CLOSED_PLACEHOLDERS)
     check("and it leaves no placeholder in Recently Closed, for ⌘⇧T to bring back", not r["left"], str(r))

@@ -109,7 +109,7 @@ part C).
 | A closed folder rests: hidden from ⌃Tab and unloaded | S | Done | checked; the selected tab, sound and unsaved input stay |
 | New folder with a good name, ready to rename | S | Done | from the menu, a key, or a selection, which names it after what the tabs share |
 | New tab in a folder | S | Done | checked: New tab here in its menu; saved there once it has a page |
-| Live folders for GitHub issues and feeds | Z | Later | pull requests only today |
+| Live folders for GitHub issues and feeds | Z | Done | checked: a folder of issues (`"what": "issues"`) or of a feed's newest entries (`"feed"`), set up in the helper's file as the pull requests are; the helper must be pulled (`git pull`) where it is used |
 | Live folders (GitHub pull requests) | A | Done | checked: each row's icon says what the pull request waits for (your review, draft, failing checks, conflict, changes asked for, approved, running, open) |
 | Folder state (open/closed) kept per space and window | Z A S | Partly | kept per folder, the same in every window |
 

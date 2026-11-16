@@ -150,10 +150,12 @@ const roomFor = list => { if (list.size >= ICONS_REMEMBERED) list.clear(); };
 // empty tile, as quiet as can be.
 const letterOf = title => (String(title || "").match(/\p{L}/u) ?? String(title || "").match(/\p{N}/u))?.[0] ?? "";
 // A live folder's pull request shows what it waits for where its icon would be (liveState,
-// livefolders.js): they would all have GitHub's mark. Said in words in its tooltip.
+// livefolders.js): they would all have GitHub's mark. Said in words in its tooltip. An
+// issue and a feed's entry say what they are, the entry quietly: it waits for nothing.
 const PR_WORDS = {
   review: "Waits for your review", draft: "A draft", failing: "Its checks fail", conflict: "Conflicts with its base branch",
   changes: "Changes are asked for", approved: "Approved", running: "Its checks are running", open: "Open",
+  issue: "An open issue", feed: "From this folder's feed",
 };
 function icon(item) {
   if (item.pr) return el("span", "pr " + (PR_WORDS[item.pr] ? item.pr : "open"));

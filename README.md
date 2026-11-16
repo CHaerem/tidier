@@ -134,7 +134,11 @@ be done, in order, is in [PLAN.md](PLAN.md).
    unloaded tabs take the new title. A pull request tab you close stays closed until it
    leaves the search. Each row's icon says what the pull request waits for, by shape and
    colour, with the words in its tooltip: your review, a draft, failing checks, a
-   conflict, changes asked for, approved, checks running, or simply open.
+   conflict, changes asked for, approved, checks running, or simply open. A folder can
+   instead be a search for issues (the open ones that are assigned to you or that you
+   wrote), or a feed (RSS or Atom): its newest entries, ten unless you say another number,
+   each an unloaded tab until you select it, and gone again when the feed has let it go.
+   An issue's row has a mark that says it is one, and a feed's entry a quiet one.
 5. **⇧⌘C copies the address** of the current tab, as in Arc and Zen
    (`shortcuts.js`), and a word at the top of the page says so. Every other way of copying says the same word, in the
    same place: Copy address and Copy as Markdown link in the menus, and the command bar's
@@ -208,6 +212,24 @@ The extension only learns each folder's id, name and container, and the host
 only runs those searches; anything else is refused. For each pull request found it
 also asks GitHub what it waits for (review, checks, a conflict), which the rows show;
 if that question fails, the rows only tell a draft from an open one.
+
+An entry with `"what": "issues"` beside its search is a folder of issues. An entry with
+`"feed"` (the feed's address) in place of a search is a folder of that feed's newest
+entries, `"count"` of them (ten if it is not there, thirty at the most); it needs neither
+`gh` nor GitHub:
+
+```json
+{ "id": "own-issues", "name": "Issues", "container": "firefox-container-1", "search": "user:your-github-name", "what": "issues" },
+{ "id": "news", "name": "News", "container": "firefox-container-1", "feed": "https://example.org/feed.xml", "count": 10 }
+```
+
+(They are not in the example file, which a new machine starts from as it is.) The host fetches the feed itself (`native/feeds.py`), so Tidier needs no
+access to the feed's site, and the extension cannot name an address to fetch: only the ones
+in your file are. A feed is a stranger's words, so only http and https are followed, also
+after a redirect, no more than 2 MB is read, a feed that declares entities of its own is
+refused, and of each entry only a plain title and a web address are taken (the extension
+looks at the address once more itself). A page that is no feed, or a feed that does not
+answer, leaves the folder as it is and says so under the list.
 
 Install the host once (and again if this folder moves); it also creates the
 config file from the example if there is none:
@@ -811,7 +833,8 @@ Not guaranteed:
   `sessions.setTabValue`, so they survive a restart.
 - `pull.js` – what moves a page between windows: a placeholder you select pulls its page in, the
   window it leaves shows it under a grey layer, and gets it back when the other has left it.
-- `livefolders.js` – live folders of GitHub pull requests (see above).
+- `livefolders.js` – live folders of GitHub pull requests, issues and feeds (see above); the
+  search and the feed are read by `native/github-prs.py` and `native/feeds.py`.
 - `firefoxsetup.js`, `sidebar/restart.js`, `native/firefox_setup.py` – the line that says Firefox
   must be started again to read its setup files, and its button.
 - `ghost.html` / `ghost.js` – placeholder page for ghosts, essential copies and never-loaded live tabs.
@@ -1018,7 +1041,9 @@ profile is deleted afterwards. It is built the same way every time, from:
 - test tabs in each space: essentials and ordinary tabs;
 - a stand-in for the live folders' native host (`tests/fake_github_host.py`),
   which answers from a file the test writes, so live folders are tested
-  everywhere without your `gh` login or GitHub.
+  everywhere without your `gh` login or GitHub. (The real host is tried by itself in
+  `tests/test_helper.py`, which `node --test` runs: with a stand-in for `gh`, and a feed
+  served from the machine it runs on.)
 
 The list of what it checks is at the top of `tests/smoke.py`. Each group of
 checks runs on its own; a check that crashes counts as failed. Run it after

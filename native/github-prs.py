@@ -4,10 +4,12 @@
 # The folders are set up in a local file, not in the extension or this
 # repository: $XDG_CONFIG_HOME/tidier/live-folders.json (default
 # ~/.config/tidier/), see live-folders.example.json. The extension can
-# ask for the list of folders ({"list": true}) and for one folder's pull
-# requests ({"folder": id}); it cannot run any other search or gh command, and
-# no GitHub token ever reaches the browser. The search runs with the gh CLI
-# and your existing gh login.
+# ask for the list of folders ({"list": true}) and for what is in one of them
+# ({"folder": id}); it cannot run any other search or gh command, or name an
+# address to fetch, and no GitHub token ever reaches the browser. A folder is
+# a GitHub search for pull requests, or for issues ("what": "issues"), which
+# runs with the gh CLI and your existing gh login; or a feed ("feed": its
+# address, feeds.py), which needs neither.
 #
 # The extension can also hand over a copy of its own data ({"backup": ...}), since
 # it cannot write files itself: kept next to the config, the last COPIES days. It
@@ -31,8 +33,10 @@ import time
 HOME = os.path.join(os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~/.config"), "tidier")
 CONFIG = os.path.join(HOME, "live-folders.json")
 COPIES = 14
-# Every folder shows open pull requests you are involved in, within its search.
+# A folder of pull requests shows the open ones you are involved in, within its search;
+# one of issues, the open ones that are yours to do or that you wrote.
 BASE = "is:open is:pr archived:false (review-requested:@me OR author:@me OR assignee:@me)"
+ISSUES = "is:open is:issue archived:false (assignee:@me OR author:@me)"
 JQ = '{incomplete: .incomplete_results, items: [.items[] | {id: .node_id, url: .html_url, title, number, draft, repo: (.repository_url | split("/") | .[-1])}]}'
 # What each of them waits for, for the icon before its name: the search does not say.
 STATE = """{nodes(ids:%s){... on PullRequest{id viewerDidAuthor reviewDecision mergeable
@@ -47,8 +51,11 @@ def folders():
         items = json.load(open(CONFIG))
     except FileNotFoundError:
         return []
-    ok = lambda f: all(isinstance(f.get(k), str) and f[k] for k in ("id", "name", "container", "search"))
-    return [f for f in items if ok(f) and f["container"].startswith("firefox-")]
+    text = lambda f, k: isinstance(f.get(k), str) and bool(f[k])
+    # A search, or a feed's address; an entry with neither is left out, as one without a name is.
+    ok = lambda f: isinstance(f, dict) and all(text(f, k) for k in ("id", "name", "container")) and (
+        text(f, "search") or (text(f, "feed") and re.match(r"https?://", f["feed"]) is not None))
+    return [f for f in items if ok(f) and f["container"].startswith("firefox-")] if isinstance(items, list) else []
 
 
 def gh():
@@ -139,12 +146,17 @@ def main():
     if not folder:
         send({"error": "unknown folder"})
         return
+    if not (isinstance(folder.get("search"), str) and folder["search"]):
+        import feeds  # beside this file; only for a folder that is one
+        send(feeds.answer(folder))
+        return
     if not gh():
         send({"error": "gh not found"})
         return
+    issues = folder.get("what") == "issues"
     try:
         result = subprocess.run(
-            [gh(), "api", "-X", "GET", "search/issues", "-f", f"q={BASE} {folder['search']}",
+            [gh(), "api", "-X", "GET", "search/issues", "-f", f"q={ISSUES if issues else BASE} {folder['search']}",
              "-f", "advanced_search=true", "-f", "per_page=100", "--jq", JQ],
             capture_output=True, text=True, timeout=30,
         )
@@ -159,6 +171,9 @@ def main():
     # Taken as complete, tabs of pull requests that are still open would be closed.
     if answer.get("incomplete") or not isinstance(answer.get("items"), list):
         send({"error": "GitHub's search answered with only part of the result"})
+    elif issues:
+        # An issue waits for nothing the search does not say: it is open, and it is yours.
+        send({"items": [{**{k: v for k, v in i.items() if k not in ("id", "draft")}, "what": "issue"} for i in answer["items"]]})
     else:
         more = states([i.get("id") for i in answer["items"]])
         send({"items": [{**{k: v for k, v in i.items() if k != "id"}, **more.get(i.get("id"), {})} for i in answer["items"]]})

@@ -231,6 +231,8 @@ with where it stands. In this order, the first five being the ones that are felt
 - [x] An icon of its own on a folder, chosen as a space's is.
 - [x] The bar of spaces follows the fingers during a swipe.
 - [x] Tabs not used for a while can be unloaded where they are (off until a time is set).
+- [x] A live folder can be a search for issues, or a feed's newest entries (the helper reads
+      the feed; set up in its file, and it reaches a machine by `git pull`).
 
 Then the small ones, in any order: any colour for a space. And then the rest of
 what FEATURES.md has as Later, starting with what is missed most in use.

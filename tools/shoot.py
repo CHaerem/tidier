@@ -14,6 +14,7 @@ and writes PNGs at twice the size, as on a Retina screen:
     hover-*, menu-*, state-*     one thing at a time, at 300 px, light and dark (state-folder-icons: folders
                                  with icons of their own; -away-mark: the line at the list's edge when the tab
                                  you are on is out of view; -restart-line: Firefox must be started again;
+                                 -live-kinds: an issue and a feed's entry in a live folder;
                                  state-saved-tab-unloaded
                                  with the mouse where it clicked; state-swipe: a third of the way through
                                  a swipe on the trackpad to the next space; -saved-tab-away: a saved tab
@@ -277,18 +278,19 @@ def make_folders(m, space):
         make_live_folder(m, space)
 
 
-def make_live_folder(m, space):
+def make_live_folder(m, space, more=()):
     """A live folder, through the stand-in for the search (fake_github_host.py), so its
-    tabs are the real placeholders Tidier makes for a pull request. Their icon is GitHub's own."""
+    tabs are the real placeholders Tidier makes for a pull request. Their icon is GitHub's own.
+    `more`: what else the helper answers with, as it is (an issue, a feed's entry)."""
     live = space["live"]
     json.dump({"folders": [{"id": "shoot", "name": live["name"], "container": f"firefox-container-{space['ctx']}"}],
-               "items": {"shoot": [{"url": f"https://example.org/?pr={number}", "title": title, "number": number, "repo": repo} for repo, number, title in live["items"]]}},
+               "items": {"shoot": [{"url": f"https://example.org/?pr={number}", "title": title, "number": number, "repo": repo} for repo, number, title in live["items"]] + list(more)}},
               open(m.fake_prs, "w"))
     in_sidebar(m, """const [name, count] = args, port = await connect();
       await page.browser.runtime.sendMessage(clone({type: "refreshLiveFolders"}));
       await until(() => port.view().folders.find(f => f.name === name)?.tabs.length === count, "the live folder");
       await sleep(1000);  // the placeholders ask to be unloaded
-      port.close();""", live["name"], len(live["items"]))
+      port.close();""", live["name"], len(live["items"]) + len(more))
 
 
 # --- Pictures ---------------------------------------------------------------------------
@@ -569,6 +571,16 @@ def live_closed(cam):
     fold(cam.m, {WORK["live"]["name"]: True})
     cam.shoot("state-live-folder-closed")
     fold(cam.m, {WORK["live"]["name"]: False})
+
+
+def live_kinds(cam):
+    """What a live folder's rows can be besides a pull request: an issue, and a feed's entry."""
+    select(cam.m, on_tab(WORK), WORK["ctx"])
+    make_live_folder(cam.m, WORK, [
+        {"url": "https://example.org/?issue=311", "title": "The start page is slow on a phone", "number": 311, "repo": "app", "what": "issue"},
+        {"url": "https://example.org/?story=1", "title": "What changed in the release this week", "what": "feed"}])
+    cam.shoot("state-live-kinds")
+    make_live_folder(cam.m, WORK)
 
 
 def folder_rename(cam):
@@ -1228,7 +1240,7 @@ def placeholder_on_show(cam):
 
 
 STEPS = (space_by_space, hover, hover_more, menus, more_menus, folders_closed, live_closed, folder_rename, marks, keyboard, agent_note, notices, space_rename, quiet_lines, picked, bar_marks,
-         little_window, little_window_real, command_bar, window_edges, archived, scrolled, swipe, away, under_the_hand, folder_icons, away_mark, restart_line, empty_spaces, few_essentials, icons_that_vanish, settings,
+         little_window, little_window_real, command_bar, window_edges, archived, scrolled, swipe, away, under_the_hand, folder_icons, away_mark, restart_line, live_kinds, empty_spaces, few_essentials, icons_that_vanish, settings,
          moved, no_space, placeholder_on_show)
 
 
