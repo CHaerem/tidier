@@ -180,7 +180,8 @@ be done, in order, is in [PLAN.md](PLAN.md).
    its own page says so on the tile you are on (the same stroke, beside its icon), and a
    click on that tile takes it back there, as a click on its icon does in Arc; its menu
    and the bar have the same two. A click that selects another essential only selects
-   it, where it was, and so does a double click. The close button is a line, not a cross,
+   it, where it was; a double click on any essential selects it and takes it back to its
+   own address. The close button is a line, not a cross,
    where it only unloads. Every other tab is temporary: closing it closes it everywhere, and archiving
    closes it when unused. A live folder's pull requests are not saved (the search decides
    what is in them).

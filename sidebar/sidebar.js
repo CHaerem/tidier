@@ -229,11 +229,16 @@ function tile(item) {
     t.dataset.tab = item.id;
     t.setAttribute("role", "option"); // the essentials are a list to choose from (sidebar.html)
     t.draggable = true;
-    // A click on the essential you are on, when it is off its own address, takes it back
-    // there, as in Arc: the tile is the way home. Not the later clicks of a double click,
-    // whose first one selected it: that would send away the page it had just shown.
+    // The tile is the way home. A click on the essential you are on, when it is off its own
+    // address, takes it back there, as in Arc; and so does a double click on any essential,
+    // which selects it with its first click. (Asked for by the tab alone: the page may be in
+    // another window until that first click has brought it here, and this tile cannot know
+    // where it is. On its address, nothing is done: tabactions.js.) Once for a double click on
+    // the one you are on, whose first click went back already.
     t.onclick = e => {
-      if (t.classList.contains("active") && t.classList.contains("off")) { if (e.detail <= 1) backToSaved(item.id); return; }
+      if (e.detail > 2) return;
+      if (e.detail === 2) { if (performance.now() - wentBack > DOUBLE_CLICK_MS) backToSaved(item.id); return; }
+      if (t.classList.contains("active") && t.classList.contains("off")) { wentBack = performance.now(); backToSaved(item.id); return; }
       showSelected(t);
       send({ type: "select", tabId: item.id });
     };
@@ -257,6 +262,7 @@ function tile(item) {
 }
 // A kept tab back on the address kept for it (backToSaved, tabactions.js).
 const backToSaved = tabId => send({ type: "tabAction", action: "backToSaved", tabIds: [tabId] });
+let wentBack = -Infinity; // when a click on the essential you are on last took it back
 
 // --- Tabs ----------------------------------------------------------------------
 function row(item, folderKey) {

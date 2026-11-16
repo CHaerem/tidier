@@ -1483,12 +1483,25 @@ def alone_way_back(m):
         sidebar_mouse(m, tile)
         r = sidebar_page(m, PAGE + """const back = await until(async () => (await at(args[0])).on === "way home"); await wait(800); return {back, ...(await at(args[0]))};""", ids["home"])
         check("and a click takes it back to its very address", r == {"back": True, "on": "way home", "active": True}, str(r))
-        # A double click that selects it must not also send away the page it has just shown.
+        # A double click on an essential you are not on: selected by its first click, and back on its
+        # own address by its second.
         sidebar_page(m, PAGE + """await go(args[0], args[2]); await until(async () => (await at(args[0])).on === "way further"); await select(args[1]); await wait(1000); return 1;""",
                      ids["home"], ids["other"], m.pages + "/titled?way%20further")
         sidebar_mouse(m, tile, clicks=2)
+        r = sidebar_page(m, PAGE + """const back = await until(async () => { const now = await at(args[0]); return now.active && now.on === "way home"; }); await wait(800); return {back, ...(await at(args[0]))};""", ids["home"])
+        check("a double click on an essential you are not on selects it and takes it back to its own address", r == {"back": True, "on": "way home", "active": True}, str(r))
+        # On its address there is nothing to go back to: a double click only selects, and loads nothing again.
+        sidebar_page(m, PAGE + "await select(args[1]); await wait(800); return 1;", ids["home"], ids["other"])
+        before = m.js(H + """const t = main().gBrowser.tabs.find(t => url(t).endsWith("/titled?way%20home")); return t.linkedBrowser.browsingContext.currentWindowGlobal.innerWindowId;""")
+        sidebar_mouse(m, tile, clicks=2)
         r = sidebar_page(m, PAGE + "await until(async () => (await at(args[0])).active); await wait(1500); return at(args[0]);", ids["home"])
-        check("a double click on an essential you are not on selects it and leaves it where it was", r == {"on": "way further", "active": True}, str(r))
+        after = m.js(H + """const t = main().gBrowser.tabs.find(t => url(t).endsWith("/titled?way%20home")); return t?.linkedBrowser.browsingContext.currentWindowGlobal.innerWindowId;""")
+        check("a double click on an essential that is on its address only selects it: its page is not loaded again", r == {"on": "way home", "active": True} and before == after, f"{r}, {before} {after}")
+        # One on the essential you are on, off its address: back, once.
+        sidebar_page(m, PAGE + """await go(args[0], args[1]); await until(async () => (await at(args[0])).on === "way further"); await wait(1000); return 1;""", ids["home"], m.pages + "/titled?way%20further")
+        sidebar_mouse(m, tile, clicks=2)
+        r = sidebar_page(m, PAGE + """const back = await until(async () => (await at(args[0])).on === "way home"); await wait(800); return {back, ...(await at(args[0]))};""", ids["home"])
+        check("a double click on the essential you are on takes it back too", r == {"back": True, "on": "way home", "active": True}, str(r))
 
         # The saved tab, from another tab: its icon is the way back, and selects it as a click on a row does.
         sidebar_page(m, PAGE + """await select(args[0]); await go(args[0], args[2]); await until(async () => (await at(args[0])).on === "way deeper");

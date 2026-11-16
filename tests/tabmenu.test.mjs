@@ -994,6 +994,26 @@ test("an essential on another address: back to its own, or that one saved instea
   x.kill();
 });
 
+test("an essential's copy in another window takes the page back where it is: a double click there need not wait for it to come", async () => {
+  const ff = new FakeFirefox();
+  ff.store.essentials = [{ key: "e", url: "https://e.example/", cookieStoreId: C1, title: "E" }];
+  const a = ff.addWindow({ focused: true }), b = ff.addWindow();
+  const page = ff.addTab(a.id, { url: "https://e.example/channel/2", title: "Channel 2", pinned: true, active: true, cookieStoreId: C1 }, { essentialKey: "e" });
+  const copy = ff.addTab(b.id, { url: GHOST("essential", "e"), title: "E", pinned: true, discarded: true, cookieStoreId: C1 }, { essentialKey: "e" });
+  ff.addTab(b.id, { url: "https://other.example/", active: true, cookieStoreId: C1 });
+  const x = await alone(ff);
+  assert.equal((await x.send({ type: "tabMenu", tabIds: [copy.id] }))[0].away, true, "its menu knows, from the page wherever it is");
+  await act(x, b.id, "backToSaved", [copy.id]);
+  assert.deepEqual(ff.log.filter(l => l[0] === "update-url").at(-1), ["update-url", page.id, "https://e.example/"]);
+  // On its address, a double click finds nothing to do: no page is loaded again.
+  await wait(600);
+  const updates = ff.log.filter(l => l[0] === "update-url").length;
+  await act(x, b.id, "backToSaved", [copy.id]);
+  await act(x, a.id, "backToSaved", [page.id]);
+  assert.equal(ff.log.filter(l => l[0] === "update-url").length, updates);
+  x.kill();
+});
+
 test("an essential kept with a query in its address says where it goes back to without it", async () => {
   const ff = new FakeFirefox();
   ff.store.essentials = [{ key: "e", url: "https://e.example/app?session=secret#start", cookieStoreId: C1, title: "E" }];
@@ -1057,8 +1077,9 @@ test("the way back is the row's icon and the tile you are on, and never a click 
   assert.match(page, /if \(ev\.target\.closest\?\.\("\.back"\)\) backToSaved\(item\.id\);\s*showSelected\(e\);\s*send\(\{ type: "select", tabId: item\.id \}\);/);
   // No button, which would stop a drag by the icon and a ⌘-click there (drag.js, selection.js).
   assert.ok(!/el\("button", "back"\)/.test(page));
-  // A tile: only the one you are on, and not the second click of the double click that selected it.
-  assert.match(page, /if \(t\.classList\.contains\("active"\) && t\.classList\.contains\("off"\)\) \{ if \(e\.detail <= 1\) backToSaved\(item\.id\); return; \}/);
+  // A tile: a click on the one you are on, or a double click on any, whose first click selected it;
+  // once for a double click on the one you are on, and nothing for a third click.
+  assert.match(page, /if \(e\.detail > 2\) return;\s*if \(e\.detail === 2\) \{ if \(performance\.now\(\) - wentBack > DOUBLE_CLICK_MS\) backToSaved\(item\.id\); return; \}\s*if \(t\.classList\.contains\("active"\) && t\.classList\.contains\("off"\)\) \{ wentBack = performance\.now\(\); backToSaved\(item\.id\); return; \}/);
   assert.match(page, /\(item\.back \? " off" : ""\)/);
   assert.match(css, /\.tile \.away, \.tile \.back \{[^}]*pointer-events: none; opacity: 0;/);
   assert.match(css, /\.tile\.active \.away, \.tile\.active:hover \.back \{ opacity: 1; \}/);
