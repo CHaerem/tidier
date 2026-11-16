@@ -225,17 +225,17 @@ function sidebar({ active = C1, tabs = [{ id: 1, active: true }, { id: 2 }], fol
 // A space is only a dot on the bar, so its menu says which one it is first; Clear, which
 // closes tabs, is apart after the rest, as Close is in the tab menu, and More comes last, as
 // it does there (the space you see has tabs to sort, so it has More).
-const OWN = ["(One)", "Rename", "Icon", "Unload this space", "Archived tabs", "|", "Settings", "|", "Clear today's tabs", "|", "More"];
+const OWN = ["(One)", "Rename", "Icon", "Colour", "Unload this space", "Archived tabs", "|", "Settings", "|", "Clear today's tabs", "|", "More"];
 test("a space's menu: its name first, then in groups; Clear apart, only for the space you are in, and only with something to clear", async () => {
   const s = sidebar();
   assert.ok(await s.rightClick("#spaces .space", { space: C1 }));
   assert.deepEqual(s.labels(s.menus.at(-1)), OWN);
   assert.ok(await s.rightClick("#spaces .space", { space: C2 }));
-  assert.deepEqual(s.labels(s.menus.at(-1)), ["(Two)", "Rename", "Icon", "Unload this space", "Archived tabs", "|", "Settings"]);
+  assert.deepEqual(s.labels(s.menus.at(-1)), ["(Two)", "Rename", "Icon", "Colour", "Unload this space", "Archived tabs", "|", "Settings"]);
   assert.equal(s.menus.at(-1)[0].color, "#000", "with its dot's colour");
   const lone = sidebar({ tabs: [{ id: 1, active: true }] });
   await lone.rightClick("#spaces .space", { space: C1 });
-  assert.deepEqual(lone.labels(lone.menus.at(-1)), ["(One)", "Rename", "Icon", "Unload this space", "Archived tabs", "|", "Settings"]);
+  assert.deepEqual(lone.labels(lone.menus.at(-1)), ["(One)", "Rename", "Icon", "Colour", "Unload this space", "Archived tabs", "|", "Settings"]);
 });
 
 // A space's icon is the emoji its name starts with, so it is set by renaming the container:

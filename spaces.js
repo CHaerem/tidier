@@ -32,7 +32,10 @@ async function spaceList(used) {
   const rank = new Map([...new Set(first)].map((id, i) => [id, i]));
   const resting = await bridgeRestingSpace(); // bridge.js
   const listed = s => used.has(s.id) || (s.id !== resting && (!Array.isArray(declared) || rank.has(s.id)));
-  return all.filter(listed).sort((a, b) => (rank.get(a.id) ?? Infinity) - (rank.get(b.id) ?? Infinity));
+  // In the colour each has (spacelook.js): the one chosen in Tidier, else its container's. `frame`:
+  // the sidebar's surface in it, light and dark.
+  const coloured = s => { const color = spaceColour(s.id, s.color) ?? s.color; return { ...s, color, frame: frameOfSpace(color), ownColour: s.id in chosenColours }; };
+  return all.filter(listed).sort((a, b) => (rank.get(a.id) ?? Infinity) - (rank.get(b.id) ?? Infinity)).map(coloured);
 }
 
 // The window's active space: the one it has, else the selected tab's (`tabs`: the
@@ -78,6 +81,7 @@ async function showSpace(windowId) {
   if (hidingHeld) return 0;
   const space = activeSpace.get(windowId);
   if (!space) return 0;
+  tintWindow(windowId, space).catch(noteError); // spacelook.js: the window in the space's colour, if that changed
   // Only tabs that may have to change, as this runs for every burst of new tabs: the hidden
   // ones that may show here (usually none), and those shown (not the other spaces' hidden ones).
   const tabs = (await Promise.all([

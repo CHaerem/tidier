@@ -26,7 +26,8 @@
     "activeTab",
     "contextualIdentities",
     "menus",
-    "menus.overrideContext"
+    "menus.overrideContext",
+    "theme"
   ],
   "optional_permissions": [
     "tabHide",
@@ -67,6 +68,7 @@
       "firefoxsetup.js",
       "rulematch.js",
       "spaces.js",
+      "spacelook.js",
       "spaceactions.js",
       "newtabs.js",
       "ownfolders.js",

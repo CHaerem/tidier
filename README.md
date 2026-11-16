@@ -202,6 +202,16 @@ be done, in order, is in [PLAN.md](PLAN.md).
    shown what a dragged tab is shown (the line where it lands, a closed folder that opens,
    a space gone to). Only what is surely a link counts: text may be anything, and a file's
    address is none a tab here can open.
+10. **Any colour for a space** (`spacelook.js`, *Colour* in a space's menu): one of a short
+   list, or any colour typed (`#4a90d9`, or a name), and back to its container's. It is
+   the dot's colour, and the window takes a soft tint of it, the sidebar and the frame
+   around the page alike, light or dark as the system is. A container can only have one of
+   Firefox's eight colours, so the chosen one is Tidier's own, on this machine (sync does
+   not carry it yet). The window is tinted by a theme for that window alone, which Firefox
+   asks nothing for: it gives the frame its colour and Firefox's own colours for the rest,
+   and a smoke check holds those to what Firefox draws without a theme. For the frame to
+   take it, `userChrome.css` takes `--lwt-accent-color` as its surface; a `tidier.css` that
+   sets a tint per space keeps its own. A private window keeps Firefox's look.
 
 Compact mode and the window's look are set up in the dotfiles (`userChrome.css`, Firefox
 settings, `about:keyboard`). Switching to a tab in another window needs no command: every
@@ -651,7 +661,7 @@ None of this is measured on a real Mac yet: that is for the second Mac (PLAN.md)
 
 ## What Tidier may do in the browser
 
-Every right in `manifest.json`, and what it is for. The first eleven are had from the start;
+Every right in `manifest.json`, and what it is for. The first twelve are had from the start;
 Firefox showed its list once, at the install. The rest are asked for by your click, each
 when it is first of use, and everything else works without them. A unit test holds this
 list to the manifest, both ways.
@@ -669,6 +679,7 @@ list to the manifest, both ways.
 | `activeTab` | The page you pressed one of Tidier's keys in, for that moment: ⇧⌘C and the menus' Copy address say *Address copied* on the page itself. Firefox asks nothing for it and lists nothing. |
 | `menus` | Tidier's own menu in its sidebar, and "Open link in" on a link's menu. |
 | `menus.overrideContext` | That menu instead of Firefox's, in Tidier's own sidebar only. |
+| `theme` | Each window in the colour of the space it shows (a theme of its own for that window, which gives only its frame a tint). Firefox asks nothing for it and lists nothing. |
 | `tabHide` | Hiding other spaces' tabs from Firefox's tab bar and ⌃Tab. Without it they are only left out of the sidebar. |
 | `webRequest` | Seeing a page's address before it loads, to keep spaces apart (Isolation, below). |
 | `webRequestBlocking` | Stopping that page before it loads in the wrong space. |
@@ -859,6 +870,7 @@ Not guaranteed:
 - `spaces.js` – spaces: hiding, switching, new tabs and links, rules.
 - `spaceactions.js`, `sidebar/spacemenu.js` – a space's menu and what it does (rename,
   unload, clear).
+- `spacelook.js` – a space's colour, and each window tinted in it.
 - `newtabs.js`, `sidebar/newtab.js` – one place for new tabs.
 - `safemoves.js`, `sidebar/reconnect.js` – moves to another space that cannot lose
   anything; the sidebar connecting again after its background part has come back.

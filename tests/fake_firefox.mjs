@@ -261,6 +261,12 @@ export class FakeFirefox {
     b.menus = { onShown: ev(), onHidden: ev(), onClicked: ev(), removeAll: async () => {}, create() {}, remove: async () => {}, refresh() {} };
     b.browserAction = { onClicked: ev(), setBadgeText: async o => { ff.badge = o.text; }, setTitle: async () => {} };
     b.permissions = { onAdded: ev(), onRemoved: ev(), contains: async () => false };
+    // A theme for one window (spacelook.js): what each window was given last, and how often.
+    b.theme = {
+      onUpdated: ev(),
+      update: async (windowId, theme) => { if (!ff.wins.has(windowId)) throw new Error(`Invalid window ID: ${windowId}`); (ff.themes ??= {})[windowId] = JSON.parse(JSON.stringify(theme)); ff.themeUpdates = (ff.themeUpdates || 0) + 1; b.theme.onUpdated.fire({ theme: JSON.parse(JSON.stringify(theme)), windowId }); },
+      reset: async windowId => { delete (ff.themes ??= {})[windowId]; ff.themeUpdates = (ff.themeUpdates || 0) + 1; b.theme.onUpdated.fire({ theme: {}, windowId }); },
+    };
     // Which windows have Tidier's sidebar open: all of them unless a test says otherwise.
     b.sidebarAction = { toggle: async () => {}, open: async () => { ff.log.push(["sidebarOpen"]); }, isOpen: async ({ windowId }) => !ff.noSidebar?.has(windowId), setPanel: async o => { ff.sidebarPanel = o.panel; } };
     addIsolationApis(ff, b);

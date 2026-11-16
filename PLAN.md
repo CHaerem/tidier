@@ -283,7 +283,10 @@ with where it stands. In this order, the first five being the ones that are felt
       are taken for closed, and are in their spaces' archives. Rare, and nothing is gone for
       good, but the record could be kept whole here as it is when nothing comes back.
 
-Then the small ones, in any order: any colour for a space. And then the rest of
+Then the small ones, in any order. A space's colour is done (`spacelook.js`); what is left
+of it: the dotfiles taking the window's tint from Tidier (`--zen-frame:
+var(--lwt-accent-color, …)` in `userChrome.css`, and the tints per container out of
+`userChrome.css` and `tidier.css`), and sync carrying a chosen colour. And then the rest of
 what FEATURES.md has as Later, starting with what is missed most in use.
 
 ## Choices made

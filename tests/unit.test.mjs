@@ -122,7 +122,8 @@ test("the manifest asks for no new permission that would hold updates", () => {
   const manifest = JSON.parse(readFileSync(new URL("../manifest.json", import.meta.url), "utf8"));
   const allowed = ["tabs", "sessions", "storage", "cookies", "nativeMessaging", "alarms", "clipboardWrite",
     "contextualIdentities", "menus", "menus.overrideContext", // the prompts already approved, and those without one
-    "activeTab"]; // none either (Firefox lists it as OptionalPermissionNoPrompt): the tab a key of Tidier's was pressed in, for a word on the page (pagenote.js)
+    "activeTab", // none either (Firefox lists it as OptionalPermissionNoPrompt): the tab a key of Tidier's was pressed in, for a word on the page (pagenote.js)
+    "theme"]; // none either (PermissionNoPrompt in Firefox's theme.json): each window in its space's colour (spacelook.js)
   assert.deepEqual(manifest.permissions.filter(p => !allowed.includes(p)), []);
 });
 

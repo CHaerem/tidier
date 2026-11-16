@@ -37,6 +37,11 @@ const readLook = () => { try { return JSON.parse(localStorage.getItem(LAST_LOOK)
 const showLook = look => {
   const root = document.documentElement;
   if (root.style.getPropertyValue("--accent") !== look.accent) root.style.setProperty("--accent", look.accent);
+  // The surface in the space's colour (spacelook.js), under a tidier.css that sets its own.
+  if (root.style.getPropertyValue("--space-frame") !== (look.frame ?? "")) {
+    if (look.frame) root.style.setProperty("--space-frame", look.frame);
+    else root.style.removeProperty("--space-frame");
+  }
   if (root.getAttribute("data-space") !== look.space) root.setAttribute("data-space", look.space);
 };
 const keptLook = readLook();
@@ -609,7 +614,7 @@ function render(next) {
   const space = view.spaces.find(s => s.id === view.space), root = document.documentElement;
   foldsRows = view.space === spaceDrawn; // another space's list is not this one with rows gone
   if (!foldsRows) { spaceDrawn = view.space; letHeldGo(); } // another list: nothing in it was where you pointed
-  const look = { space: view.space || "", accent: space?.color || "#7a7a80" };
+  const look = { space: view.space || "", accent: space?.color || "#7a7a80", frame: space?.frame ?? null };
   // A space comes in as one piece: a folder drawn for it now does not fade in on its own,
   // after everything else (sidebar.css, html.space-arriving), as a folder that appears does.
   // The class goes once what is new has its style, also when drawing stops half way (a

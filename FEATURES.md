@@ -60,7 +60,7 @@ part C).
 | Switch by swiping sideways on the trackpad | Z A | Done | checked, with wheel events made as a trackpad sends them: the list follows the fingers and the next space comes in beside it as it will be; a flick goes at once; a scroll is never a swipe, however far it drifts (which is what went wrong with Sidebery). How it feels under real fingers waits for the second Mac |
 | Switching by a click or ⌃1/2/3 slides as a swipe does | Z A | Done | checked: the new space slides in a little way from the side its dot is on, as it fades in; the bar stays. A short slide, not the whole width: calmer, and a key pressed several times does not wait for it |
 | The active space's dot follows the fingers during a swipe | Z A | Done | checked: the dot you are leaving lets go as far as the list has gone and the next one takes over, an icon by its own means; still to be seen with real fingers |
-| Colour per space, for the whole window | Z A | Done | userChrome.css and tidier.css |
+| Colour per space, for the whole window | Z A | Done | Tidier tints each window with a theme of its own (spacelook.js), and the sidebar the same; userChrome.css lays it out |
 | New, edited and deleted spaces in Tidier: name, icon and colour | Z A S | Done | checked, on the settings page and from a space's menu; dropping a tab on the bar makes a new one; Firefox's container settings aren't needed |
 | Nothing goes out in the wrong container: the first request is stopped | S | Done | checked with a server recording cookies; needs the optional access to all websites |
 | A space's own proxy and user agent | S | Done | checked; on the settings page, under More. No address bar button, and no IP lookups |
@@ -76,7 +76,7 @@ part C).
 | The same essentials, folders and spaces on every machine, by sync | A | Done | checked in a test Firefox, off by default, on the settings page; real Firefox Sync between two machines is not tried yet |
 | Hide a space on a given machine | | Done | checked: on the settings page, or for a machine in managed storage; hidden, not kept away |
 | Remove a space from every machine | | Later | today removing a container on one machine is local to it |
-| Any colour for a space | Z A | Later | Firefox's eight container colours today; Zen and Arc take any colour, and gradients |
+| Any colour for a space | Z A | Done | checked: Colour in a space's menu, a list or any colour typed; the dot, the sidebar and the window in it (a theme per window, with Firefox's own text and icon colours, held by a smoke check). Not yet carried by sync; no gradients |
 | All of a space's folders closed, or opened, at once | Z | Done | checked: in the space's More, as a command in the bar and as a key you can give; Zen has it on a click on the space's name, which here opens nothing by itself |
 | Unload every other space | Z | Done | checked: in the space's More, the bar and the keys; by the rules of Unload this space, and not a space hidden on this machine |
 

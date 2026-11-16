@@ -40,8 +40,8 @@ test("what moves stops for those who ask for no motion", () => {
   assert.match(read("sidebar/tokens.css"), /prefers-reduced-motion: reduce[^}]*transition: none !important; animation: none !important;/);
 });
 
-test("the surface stays a plain :root name, which the owner's tidier.css overrides per space", () => {
-  assert.match(read("sidebar/tokens.css"), /:root \{[^}]*--frame: light-dark\(#ececf0, #1f1f23\);/s);
+test("the surface stays a plain :root name, in the space's tint, which a tidier.css of one's own can override per space", () => {
+  assert.match(read("sidebar/tokens.css"), /:root \{[^}]*--frame: var\(--space-frame, light-dark\(#ececf0, #1f1f23\)\);/s);
   assert.match(read("sidebar/sidebar.css"), /html \{ background: var\(--frame\);/);
 });
 

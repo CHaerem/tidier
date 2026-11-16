@@ -14,6 +14,7 @@ function spaceMenu(space) {
     { heading: s?.name ?? "", color: s?.color },
     ["Rename", () => openSpaceBox(space)],
     ["Icon", iconMenu(s?.name, icon => setSpaceIcon(space, icon))],
+    ["Colour", colourMenu(space)],
     ["Unload this space", () => send({ type: "unloadSpace", space })],
     ["Archived tabs", () => openArchived(space)], // archived.js
     null,
@@ -29,6 +30,54 @@ function setSpaceIcon(space, icon) {
   if (!s) return;
   const name = withIcon(s.name, icon);
   if (name && name !== s.name) send({ type: "renameSpace", space, name });
+}
+
+// Its colour (spacelook.js): one of a few, or any you type, and back to its container's.
+// Firefox's eight first, which a container can have too, then a few quieter ones.
+const SWATCHES = [
+  ["Blue", "#37adff"], ["Turquoise", "#00c79a"], ["Green", "#51cd00"], ["Yellow", "#ffcb00"],
+  ["Orange", "#ff9f00"], ["Red", "#ff613d"], ["Pink", "#ff4bda"], ["Purple", "#af51f5"],
+  ["Slate", "#64748b"], ["Brown", "#a1724e"], ["Grey", "#8f8f9d"],
+];
+function colourMenu(space) {
+  const s = view.spaces.find(x => x.id === space);
+  const set = colour => send({ type: "spaceColour", space, colour });
+  return [
+    { part: () => colourField(set) },
+    ...SWATCHES.map(([name, hex]) => [name, () => set(hex), { color: hex }]),
+    ...(s?.ownColour ? [null, ["Its container's colour", () => set(null)]] : []),
+  ];
+}
+// Any colour CSS knows, a name or #4a90d9, as #rrggbb; null for what is none. Read back from
+// an element, as the page draws it (see-through is left out: a surface cannot be).
+function asHex(text) {
+  const probe = el("i");
+  probe.style.color = String(text ?? "").trim();
+  if (!probe.style.color) return null;
+  document.body.append(probe);
+  const drawn = getComputedStyle(probe).color;
+  probe.remove();
+  const scale = drawn.startsWith("color(") ? 255 : 1; // color(srgb …) counts from 0 to 1, rgb() to 255
+  const rgb = drawn.replace(/^color\(srgb/, "").match(/[\d.]+/g)?.slice(0, 3).map(v => Math.round(Math.min(255, Number(v) * scale)));
+  return rgb?.length === 3 ? "#" + rgb.map(v => v.toString(16).padStart(2, "0")).join("") : null;
+}
+function colourField(set) {
+  const box = el("div", "picker"), field = el("input", "find");
+  field.placeholder = "Any colour: #4a90d9, or a name";
+  field.setAttribute("aria-label", "Any colour, as #4a90d9 or by name");
+  field.spellcheck = false;
+  field.onkeydown = e => {
+    if (e.key !== "Enter") return;
+    e.preventDefault();
+    e.stopPropagation();
+    const hex = asHex(field.value);
+    if (!hex) return void field.classList.add("wrong");
+    closeMenu();
+    set(hex);
+  };
+  field.oninput = () => field.classList.remove("wrong");
+  box.append(field); // with the keyboard in it, as the menu gives a field (drawMenu, menu.js)
+  return box;
 }
 
 // Clear closes today's tabs but the selected one, so with no other tab it has nothing

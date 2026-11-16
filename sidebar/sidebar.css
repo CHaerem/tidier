@@ -496,6 +496,8 @@ html.space-arriving .folder > .children { transition: none; } /* a whole space c
   font: inherit; font-size: var(--size-small); color: var(--text); background: var(--selected);
   border: 0; border-radius: var(--radius-sm); box-shadow: 0 0 0 1.5px var(--accent-line); outline: none; user-select: text;
 }
+/* A colour typed that is none (spacemenu.js): the field's line is the text's, until you type on. */
+#menu .find.wrong { box-shadow: 0 0 0 1.5px var(--text); }
 #menu .found {
   display: grid; grid-template-columns: repeat(auto-fill, minmax(var(--row), 1fr));
   max-height: calc(var(--row) * 7); overflow-y: auto; scrollbar-width: thin;

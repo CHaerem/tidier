@@ -1508,7 +1508,10 @@ test("a page that has loaded in its space is in the other window within a second
   // One that has an address and is still loading: nothing says yet where it will end up.
   const slow = ff.openTab(a.id, { url: "about:newtab", active: true, cookieStoreId: C1 });
   await ff.clock.run(3000);
-  ff.loadFactor = 40; // a slow site: each step of its load takes about a second
+  // A slow site: each step of its load takes a second or more. (Its steps are drawn from the fake's
+  // dice, which every call Tidier makes also draws from: a factor that left the slowest draw under
+  // 600 ms in all made the test pass or fail by what else Tidier asked.)
+  ff.loadFactor = 400;
   ff.load(slow, "https://slow.example/");
   await ff.clock.run(600);
   assert.equal(ff.tabs.get(slow.id).status, "loading");

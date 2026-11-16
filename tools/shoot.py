@@ -10,6 +10,7 @@ worktree shoots its own code. It fills it with made-up tabs, none of them yours,
 and writes PNGs at twice the size, as on a Retina screen:
 
     sidebar-SPACE-WIDTH-SCHEME   the sidebar per space, at 220, 300 and 480 px, light and dark
+                                 (menu-space-colour: a space's Colour list)
     window-SPACE-SCHEME          the whole window around it, with userChrome.css
     hover-*, menu-*, state-*     one thing at a time, at 300 px, light and dark (state-folder-icons: folders
                                  with icons of their own; -away-mark: the line at the list's edge when the tab
@@ -528,6 +529,13 @@ def menus(cam):
             cam.close_menus()
             cam.mouse_away()
     cam.width(WIDTH)
+    # A space's Colour: the field for any colour, and the list, in the menu's place.
+    at = cam.wanted("menu-space-colour") and cam.point_at("#spaces .space.active")
+    if at and cam.right_click(*at):
+        in_sidebar(cam.m, """[...doc.querySelectorAll("#menu .item")].find(b => b.textContent === "Colour")?.click();""")
+        cam.shoot("menu-space-colour")
+    cam.close_menus()
+    cam.mouse_away()
     at = cam.wanted("menu-tab-move-list") and cam.point_at(ROW)
     if at and cam.right_click(*at):
         in_sidebar(cam.m, """[...doc.querySelectorAll("#menu .item")].find(b => b.textContent === "Move to space")?.click();""")

@@ -18,10 +18,11 @@
 :root {
   color-scheme: light dark;
 
-  /* The surface. The window's own colour (userChrome.css's --zen-frame): a sidebar
-   * cannot be transparent, so the owner's tidier.css repeats the tint per space, keyed
-   * on html[data-space], which is why this stays a plain :root rule it can override. */
-  --frame: light-dark(#ececf0, #1f1f23);
+  /* The surface. The window's own colour: the tint of the space's colour that the window
+   * has too (spacelook.js gives it to both; sidebar.js sets --space-frame). A tidier.css
+   * of one's own may set a tint per space, keyed on html[data-space], which is why this
+   * stays a plain :root rule it can override. */
+  --frame: var(--space-frame, light-dark(#ececf0, #1f1f23));
 
   /* The one colour: the active space's, set by sidebar.js. For what must be found at
    * a glance (the active space, where a drop lands, the keyboard's place), not for decoration. */

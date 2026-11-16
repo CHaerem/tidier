@@ -453,7 +453,7 @@ def alone_space_menu(m):
     # What it offers.
     # Clear, which closes tabs, comes on its own after the rest (spacemenu.js), and More last,
     # as in a tab's menu (both spaces have pages loaded, so both have it).
-    ELSEWHERE, IN_SPACE = ["Rename", "Icon", "Unload this space", "Archived tabs", "New space", "Settings", "More"], ["Rename", "Icon", "Unload this space", "Archived tabs", "New space", "Settings", "Clear today's tabs", "More"]
+    ELSEWHERE, IN_SPACE = ["Rename", "Icon", "Colour", "Unload this space", "Archived tabs", "New space", "Settings", "More"], ["Rename", "Icon", "Colour", "Unload this space", "Archived tabs", "New space", "Settings", "Clear today's tabs", "More"]
     r = menu_on(m, f"dot({json.dumps(there)})", ELSEWHERE)
     place = in_sidebar(m, """(id) => ({menuBottom: doc.getElementById("menu").getBoundingClientRect().bottom, bar: doc.getElementById("spaces").getBoundingClientRect().top, marked: dot(id).classList.contains("menu-for"), active: doc.querySelector("#spaces .space.active").dataset.space,
       heading: doc.querySelector("#menu .heading")?.textContent, name: dot(id).title, lines: doc.querySelectorAll("#menu .line").length})""", there)
@@ -663,3 +663,97 @@ def alone_space_menu(m):
     m.js(H + """const w = main(); w.gBrowser.removeTab(w.gBrowser.selectedTab); await wait(1000); return 1;""")
     in_sidebar(m, """() => { doc.getElementById("tabs").style.paddingBottom = ""; return 1; }""")
     no_problems(m, "after a space's menu")
+
+
+def alone_space_colour(m):
+    # A space's colour (spacelook.js): the window takes a soft tint of it, as a theme of its own,
+    # the sidebar's surface the same tint, and the dot the colour itself; any colour, chosen in
+    # the space's menu. A theme makes Firefox draw its text and icons in the theme's colours,
+    # so they are held to what Firefox draws without one, light and dark.
+    WINDOW = H + """const w = main(), root = w.document.documentElement, q = s => w.document.querySelector(s), cs = e => e ? w.getComputedStyle(e) : {};
+      return {lwt: root.hasAttribute("lwtheme"), frame: w.getComputedStyle(root).getPropertyValue("--lwt-accent-color").trim(),
+        text: cs(q("#nav-bar")).color, icons: cs(q("#back-button")?.querySelector(".toolbarbutton-icon")).fill, field: cs(q("#urlbar-input") ?? q(".urlbar-input")).color,
+        border: (() => { const probe = w.document.createElement("box"); probe.style.color = "var(--toolbar-field-border-color)"; q("#nav-bar").append(probe); const c = cs(probe).color; probe.remove(); return c; })(),
+        side: cs(q("#sidebar-box")).color};"""
+    # From the background part: what it works out, and what it is told to do again.
+    BG = """const bg = page.browser.extension.getBackgroundPage(), windowId = (await page.browser.windows.getCurrent()).id;
+      const rgb = hex => "rgb(" + [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16)).join(", ") + ")";
+      const spaces = await bg.spaceList(new Set((await bg.containerSpaces()).map(s => s.id)));
+      const tint = (space, scheme) => rgb(bg.tintsOf(spaces.find(s => s.id === space).color)[scheme]);"""
+    here = sidebar_until(m, """() => doc.querySelector("#spaces .space.active")?.dataset.space""")
+    there = in_sidebar(m, """(here) => [...doc.querySelectorAll("#spaces .space")].map(b => b.dataset.space).find(s => s !== here)""", here)
+    try:
+        for scheme in ("light", "dark"):
+            m.js(H + "Services.prefs.setIntPref('ui.systemUsesDarkTheme', args[0]); await wait(1500); return 1;", 1 if scheme == "dark" else 0)
+            want = sidebar_page(m, BG + "return tint(args[0], args[1]);", here, scheme)
+            r = m.js(WINDOW)
+            check(f"the window has a soft tint of the space's colour as its frame ({scheme})", r["lwt"] and r["frame"] == want, f"{r}, want {want}")
+            # Without a theme: what Firefox's own style gives, with what a theme puts on the window
+            # (its attributes and the colours set on the window's root) taken off for a moment.
+            plain = m.js(H + """const root = main().document.documentElement;
+              const theme = [...root.attributes].filter(a => a.name === "style" || a.name.startsWith("lwt")).map(a => [a.name, a.value]);
+              for (const [name] of theme) root.removeAttribute(name);
+              try { return await (async () => { """ + WINDOW[len(H):] + """ })(); } finally { for (const [name, value] of theme) root.setAttribute(name, value); }""")
+            same = {k: (r[k], plain[k]) for k in ("text", "icons", "field", "border", "side") if r[k] != plain[k]}
+            check(f"with it, Firefox's text and icons are as without a theme ({scheme})", not plain["lwt"] and not same, f"{same}, without: {plain}")
+            # A theme from elsewhere on the window: the tint comes back.
+            sidebar_page(m, BG + "await page.browser.theme.reset(windowId); await wait(800); return 1;")
+            again = m.js(WINDOW)
+            check(f"a theme put on the window from elsewhere does not take the tint away ({scheme})", again["lwt"] and again["frame"] == want, str(again))
+        m.js(H + "Services.prefs.setIntPref('ui.systemUsesDarkTheme', 0); await wait(1500); return 1;")
+
+        # Chosen in the space's menu: one of the list, then any colour typed, then its container's again.
+        dot_colour = """(id) => { const d = dot(id).querySelector(".dot"); return d ? content.getComputedStyle(d).backgroundColor : null; }"""
+        before = in_sidebar(m, dot_colour, here)
+        menu_on(m, f"dot({json.dumps(here)})")
+        sidebar_mouse(m, 'item("Colour")')
+        offered = sidebar_until(m, """() => { const l = labels(); return l.includes("Brown") ? {labels: l, field: !!doc.querySelector("#menu .find"), focus: doc.activeElement === doc.querySelector("#menu .find")} : {wait: 1}; }""")
+        check("Colour lists colours with their dots, and a field for any other, with the keyboard in it",
+              offered.get("labels", [])[:3] == ["Colour", "Blue", "Turquoise"] and offered.get("field") and offered.get("focus") and "Its container's colour" not in offered.get("labels", []), str(offered))
+        choose(m, "Brown")
+        BROWN = "rgb(161, 114, 78)"
+        r = sidebar_until(m, """(id, want) => { const now = content.getComputedStyle(dot(id).querySelector(".dot")).backgroundColor;
+          return now === want ? {dot: now, surface: doc.documentElement.style.getPropertyValue("--space-frame")} : {wait: now}; }""", here, BROWN)
+        want = sidebar_page(m, BG + "const t = bg.tintsOf('#a1724e'); return {window: rgb(t.light), sidebar: `light-dark(${t.light}, ${t.dark})`};")
+        for _ in range(50):
+            w = m.js(WINDOW)
+            if w["frame"] == want["window"]:
+                break
+            time.sleep(0.1)
+        check("a colour from the list is the dot's, the sidebar's surface's and the window's", r.get("dot") == BROWN and r.get("surface") == want["sidebar"] and w["frame"] == want["window"], f"{r}, {w['frame']}, want {want}")
+        menu_on(m, f"dot({json.dumps(here)})")
+        sidebar_mouse(m, 'item("Colour")')
+        sidebar_until(m, """() => doc.activeElement === doc.querySelector("#menu .find") || {wait: 1}""")
+        for ch in "nope":
+            sidebar_key(m, ch)
+        sidebar_key(m, ENTER)
+        wrong = sidebar_until(m, """() => doc.querySelector("#menu .find.wrong") ? {open: labels().length > 0} : {wait: 1}""")
+        check("a word that is no colour is marked, and the menu stays", wrong.get("open") is True, str(wrong))
+        in_sidebar(m, """() => { const f = doc.querySelector("#menu .find"); f.value = ""; f.dispatchEvent(new content.Event("input")); return 1; }""")
+        for ch in "#2f6f4f":
+            sidebar_key(m, ch)
+        sidebar_key(m, ENTER)
+        typed = sidebar_until(m, """(id) => { const now = content.getComputedStyle(dot(id).querySelector(".dot")).backgroundColor; return now === "rgb(47, 111, 79)" && !labels().length ? {dot: now} : {wait: now}; }""", here)
+        check("any colour typed in the field, and Enter, makes it the space's", typed.get("dot") == "rgb(47, 111, 79)", str(typed))
+        menu_on(m, f"dot({json.dumps(here)})")
+        sidebar_mouse(m, 'item("Colour")')
+        sidebar_until(m, """() => labels().includes("Its container's colour") || {wait: 1}""")
+        choose(m, "Its container's colour")
+        back = sidebar_until(m, """(id, want) => { const now = content.getComputedStyle(dot(id).querySelector(".dot")).backgroundColor; return now === want ? {dot: now} : {wait: now}; }""", here, before)
+        stored = sidebar_page(m, "return (await page.browser.storage.local.get('spaceColours')).spaceColours;")
+        check("Its container's colour takes the space back to the colour it had", back.get("dot") == before and stored == {}, f"{back}, {stored}")
+
+        # Another space shown: the window takes its tint.
+        sidebar_page(m, """send({type: "space", space: args[0]}); await wait(1500); return 1;""", there)
+        want = sidebar_page(m, BG + "return tint(args[0], 'light');", there)
+        for _ in range(50):
+            w = m.js(WINDOW)
+            if w["frame"] == want:
+                break
+            time.sleep(0.1)
+        check("the window takes the tint of the space it goes to", w["frame"] == want, f"{w['frame']}, want {want}")
+        sidebar_page(m, """send({type: "space", space: args[0]}); await wait(1500); return 1;""", here)
+    finally:
+        m.js(H + "Services.prefs.clearUserPref('ui.systemUsesDarkTheme'); await wait(300); return 1;")
+        sidebar_key(m, ESC)
+    no_problems(m, "after a space's colour")
