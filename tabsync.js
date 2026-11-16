@@ -1076,9 +1076,12 @@ async function seeUnseenTabs() {
     if (key) {
       if (t.pinned) serial(async () => { await onPinned(t); await leaveSync(t.id, key); });
     } else if (t.pinned) {
-      // Opened pinned, or its address known only now. (Asked again in its turn: a job before
-      // it may have replaced it, as moving a pinned page into its space does, isolation.js.)
-      if (isWeb(t.url)) serial(async () => { const now = await browser.tabs.get(t.id).catch(() => null); if (now?.pinned && !(await keyOf(now))) await onPinned(now); });
+      // Opened pinned, or its address known only now, or brought back with ⌘⇧T: with the key
+      // of an essential that is on the list (its copy), or of one that no longer is, which
+      // must not pass for a copy: no sidebar would show it (reopenedEssential, essentials.js).
+      // (Asked again in its turn: a job before it may have replaced it, as moving a pinned
+      // page into its space does, isolation.js.)
+      if (isWeb(t.url)) serial(async () => { const now = await browser.tabs.get(t.id).catch(() => null); if (now?.pinned && !keyByTab.has(now.id)) await reopenedEssential(now); });
     } else if (!seenLateInSpace(t) && syncable(t)) registerSoon(t.id); // seenLateInSpace: spaces.js
   }
 }
