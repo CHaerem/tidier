@@ -1587,9 +1587,13 @@ def alone_link_drop(m):
       out.onFolder = {taken: drag("dragover", head, link("folder"), 0.5), into: head.classList.contains("drop-into")};
       drag("drop", head, link("folder"), 0.5);
       out.inFolder = await until(async () => (await rowOf("folder"))?.closest(".folder") === head.parentElement);
-      await page.browser.runtime.sendMessage(obj({type: "flush"}));
-      const all = (await page.browser.storage.local.get("syncedTabs")).syncedTabs;
-      out.saved = Object.values(all).find(e => (e.saved?.url ?? "").endsWith("smoke-drop-folder"))?.parentKey === head.dataset.folderHead;
+      // Its row is in the folder before its record is (comingIntoFolder, listactions.js): the record
+      // comes once the page has its address, which on a busy machine is a moment later.
+      out.saved = await until(async () => {
+        await page.browser.runtime.sendMessage(obj({type: "flush"}));
+        const all = (await page.browser.storage.local.get("syncedTabs")).syncedTabs;
+        return Object.values(all).find(e => (e.saved?.url ?? "").endsWith("smoke-drop-folder"))?.parentKey === head.dataset.folderHead;
+      });
 
       // On the left half of the first tile: an essential before it.
       const tile = sdoc.querySelector("#essentials .tile"), tiles = sdoc.querySelectorAll("#essentials .tile").length;
