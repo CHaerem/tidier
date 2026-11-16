@@ -594,9 +594,14 @@ def alone_new_tab(m):
     check("once it has one, the other window shows the same order", s["me"] and s["main"] == s["other"], str(s))
 
     # ⌘T, through Firefox's own key. The tab comes without a container, and is opened again here.
+    # Where Firefox has let go of ⌘T (customKeys.json in the dotfiles) the key is the command
+    # bar's, and Firefox's own new tab is the one its menu has (File, New Tab).
     before = sidebar_page(m, rows + "return ids();")
-    m.js(H + "main().focus(); await wait(300); return 1;")
-    press(m, "t", CMD)
+    freed = m.js(H + "main().focus(); await wait(300); return !main().document.getElementById('key_newNavigatorTab')?.getAttribute('key');")
+    if freed:
+        m.js(H + "main().document.getElementById('cmd_newNavigatorTab').doCommand(); await wait(300); return 1;")
+    else:
+        press(m, "t", CMD)
     r = sidebar_page(m, new_first, before)
     t = m.js(H + "const t = main().gBrowser.selectedTab; return {ctx: t.userContextId, page: url(t)};")
     check("⌘T opens the tab first among today's tabs, in the space, selected",
