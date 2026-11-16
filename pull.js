@@ -133,7 +133,20 @@ async function pull(ghostId, { back = false } = {}) {
       .finally(() => beingPulled.delete(live.id))
       .then(() => (selectedNow.get(ghost.windowId) === ghostId ? browser.tabs.update(live.id, { active: true }) : null))
       .then(() => setRole(live.id, key, "live"), () => false);
-    if (!moved) { dropVeil(fromWindow); return; }
+    if (!moved) {
+      dropVeil(fromWindow);
+      // Not moved (the window it was to come to has closed in this moment, say): the page
+      // stays where it was, selected as it was, and the placeholder made to stand in for it
+      // there goes. Left, it was a second tab of the page in one window; selected, as it was
+      // made, it then loaded as the page itself, beside the page.
+      if (leftBehind) {
+        if (live.active) await browser.tabs.update(live.id, { active: true }).catch(() => {});
+        forget(leftBehind.id);
+        await removeTabs([leftBehind.id], syncBusy);
+        await forgetClosedReps(key, [leftBehind]);
+      }
+      return;
+    }
     forget(ghostId);
     const all = await getSynced();
     const entry = all[key];

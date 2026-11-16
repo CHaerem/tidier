@@ -1967,6 +1967,28 @@ test("a window closed in the moment an essential's page is on its way to it leav
   x.kill();
 });
 
+// Found by the random sequences (seed 1072): the page was then loaded twice in the window it never left.
+test("a window closed in the moment a page is on its way to it leaves the page where it was, once", async () => {
+  const { ff, x, windows: [a, b] } = await chaosStart();
+  const t = ff.openTab(a.id, { url: "https://a.example/", cookieStoreId: C1, active: true });
+  await ff.clock.idle(60000);
+  const key = ff.values.get(t.id).syncKey;
+  const reps = id => ff.list(id).filter(y => ff.values.get(y.id)?.syncKey === key);
+  assert.deepEqual([reps(a.id).length, reps(b.id).length], [1, 1]);
+  // Its placeholder selected in the other window: the page is to come to it, and the window it
+  // leaves, which is on the page, gets a placeholder first. Then the other window closes.
+  const move = x.b.tabs.move;
+  let closed = false;
+  x.b.tabs.move = (id, to) => { if (to.windowId === b.id && !closed) { closed = true; ff.closeWindow(b.id); } return move(id, to); };
+  ff.focusWindow(b.id);
+  ff.select(reps(b.id)[0].id);
+  await ff.clock.idle(60000);
+  assert.ok(closed, "the page was on its way");
+  assert.deepEqual(reps(a.id).map(y => [y.id, ff.values.get(y.id).syncRole, y.url, y.active]), [[t.id, "live", "https://a.example/", true]], "one tab of it, the page itself, selected as it was");
+  assert.deepEqual([...x.js("problems")], []);
+  x.kill();
+});
+
 test("a window opened while Tidier is starting gets its tabs when it has started", async () => {
   const ff = new ChaosFirefox();
   ff.store.syncedTabs = { a: entry("https://a.example/") };
