@@ -291,14 +291,17 @@ async function reconcileAll({ firefoxStart = false } = {}) {
 
   // Drop tabs whose key is no longer synced (e.g. state from an old install).
   // A placeholder of such a tab has nothing to show, so it is closed.
-  const gone = [];
+  const gone = [], addresses = [];
   for (const t of tabs) {
     const key = syncKeyByTab.get(t.id);
     if (!key || all[key]) continue;
-    if (isGhostUrl(t.url)) { gone.push(key); forget(t.id); await removeTabs([t.id], syncBusy); }
+    if (isGhostUrl(t.url)) { gone.push(key); addresses.push(t.url); forget(t.id); await removeTabs([t.id], syncBusy); }
     else await clearRole(t.id);
   }
   if (gone.length) await forgetClosedPlaceholders("ghost", gone);
+  // By the address it had too: it can be another placeholder than its key says (a ghost
+  // pinned and dragged to another window in one breath is an essential's by then).
+  forgetClosed(addresses, FORGET_MS, false); // common.js
 
   // No synced tab at all means the session is not here, not that every tab was
   // closed: on a Mac, closing the last window and quitting restores no windows,
