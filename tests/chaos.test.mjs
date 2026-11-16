@@ -285,6 +285,7 @@ const OPS = {
     if (!t) return;
     await W.closing(t);
     if (W.isLastShown(w, t)) W.windowClosing(w);
+    W.rowClosed = { key: W.keyOf(t), at: W.clock.now };
     W.ff.sidebarSays(w.id, { type: "close", tabId: item.id });
   } },
   space: { weight: 7, run(W, { a, b }) {
@@ -305,6 +306,10 @@ const OPS = {
     const w = pick(W.windows(), a), rows = w && W.shownRows(w.id), f = rows && pick(rows.folders, b);
     if (!f) return;
     W.excused.add(f.key);
+    // A row of it closed in the same breath (seed 106718: the same millisecond): its close is
+    // looked at after the folder has gone, when the tab is no saved tab any more, and closes
+    // as any tab does, into the archive. A moment later it would have been unloaded and kept.
+    if (W.rowClosed?.key && W.clock.now - W.rowClosed.at < 1000) W.excused.add(W.rowClosed.key);
     W.ff.sidebarSays(w.id, { type: "deleteFolder", key: f.key });
   } },
   renameFolder: { weight: 1, run(W, { a, b }) {
