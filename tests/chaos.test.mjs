@@ -104,8 +104,10 @@ class World {
       this.closedAddresses.add(t.url);
       const on = this.ff.pages.get(t)?.url; // on its way there
       if (on) this.closedAddresses.add(on);
-      // (A ghost that has just been made is known to Tidier already, and closes its tab everywhere.)
-      if (isPlaceholder(on)) this.excused.add(new URLSearchParams(on.split("?")[1]).get("key"));
+      // (A ghost that has just been made is known to Tidier already, and closes its tab everywhere:
+      // one still loading, and one made unloaded, whose key Tidier has in memory by the time it
+      // hears of the close, on a machine where that takes a moment. Seed 1041.)
+      for (const u of [on, t.url]) if (isPlaceholder(u)) this.excused.add(new URLSearchParams(u.split("?")[1]).get("key"));
       return;
     }
     const e = all[key];
