@@ -1989,6 +1989,30 @@ test("a window closed in the moment a page is on its way to it leaves the page w
   x.kill();
 });
 
+// Found by the random sequences (seed 102370): the page was then open twice, under two keys.
+test("a placeholder brought back with ⌘⇧T before Recently Closed has forgotten it is its tab's placeholder, not the page a second time", async () => {
+  const { ff, x, windows: [a, b] } = await chaosStart();
+  const t = ff.openTab(a.id, { url: "https://a.example/", cookieStoreId: C1, active: true });
+  await ff.clock.idle(60000);
+  const key = ff.values.get(t.id).syncKey;
+  // Its placeholder selected in the other window: the page comes there, and the placeholder,
+  // which was loading as the tab you were on, is closed and is under Recently Closed a moment.
+  ff.focusWindow(b.id);
+  ff.select(ff.list(b.id).find(y => ff.values.get(y.id)?.syncKey === key).id);
+  const closedPlaceholder = () => ff.closedItems.some(c => c.kind === "tab" && isPlaceholder(c.state.url));
+  for (let i = 0; i < 5000 && !closedPlaceholder(); i++) await ff.clock.step();
+  assert.ok(closedPlaceholder(), "it is there for a moment");
+  const back = ff.reopenLast();
+  assert.ok(isPlaceholder(back.url), "and ⌘⇧T brings it back");
+  await ff.clock.idle(60000);
+  const pages = [...ff.tabs.values()].filter(y => y.url === "https://a.example/");
+  assert.equal(pages.length, 1, "the page is open once");
+  assert.deepEqual(Object.values(ff.store.syncedTabs).filter(e => e.url === "https://a.example/").length, 1, "under one key");
+  for (const w of [a, b]) assert.equal(ff.list(w.id).filter(y => ff.values.get(y.id)?.syncKey === key).length, 1, `one tab of it in window ${w.id}`);
+  assert.deepEqual([...x.js("problems")], []);
+  x.kill();
+});
+
 test("a window opened while Tidier is starting gets its tabs when it has started", async () => {
   const ff = new ChaosFirefox();
   ff.store.syncedTabs = { a: entry("https://a.example/") };

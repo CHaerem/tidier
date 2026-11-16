@@ -750,8 +750,18 @@ browser.runtime.onMessage.addListener((msg, sender) => {
   // no live tab to pull in (the pull runs from onActivated, in the queue).
   if (msg.type === "ghostShown") {
     return serial(async () => {
-      const key = syncKeyByTab.get(tab.id);
-      if (!key) return { load: true };
+      let key = syncKeyByTab.get(tab.id);
+      if (!key) {
+        // One Tidier has not looked at yet: brought back by ⌘⇧T in the moment before Recently
+        // Closed forgot it, or with its window. If its tab is still in the record it is that
+        // tab's placeholder, and is taken back as one now (register: a double of it in this
+        // window goes). Told to open, it was the page a second time, under a key of its own.
+        const shown = placeholderOf(sender.url);
+        if (shown.kind !== "ghost" || !(await getSynced())[shown.key]) return { load: true };
+        await register(tab.id);
+        key = syncKeyByTab.get(tab.id);
+        if (!key) return { load: false }; // it was the double
+      }
       if (syncRoleByTab.get(tab.id) === "live" || liveTabId(key) === undefined) {
         await setRole(tab.id, key, "live");
         return { load: true };
