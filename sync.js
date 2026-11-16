@@ -25,7 +25,8 @@
 const SYNC_DELAY_MS = 5000;
 const SYNC_COPY_WAIT_MS = 10000; // for the helper that writes a copy to a file; the queue waits meanwhile
 const SYNC_BIG_REMOVAL = 5; // removed from elsewhere in one go: a copy is taken first
-const SYNC_WATCHED = ["essentials", "syncedTabs", "rules", "spaceOrder"]; // what a round reads from storage.local
+const SYNC_WATCHED = ["essentials", "syncedTabs", "rules", "spaceOrder", // what a round reads from storage.local
+  "archiveAfterHours", "unloadAfterHours", "fullscreenStays", "littleWindow", "spaceColours"]; // (and syncprefs.js: what you have chosen)
 let syncIsOn = false;
 let syncMemory = null;
 let syncTimer = null;
@@ -499,7 +500,7 @@ async function syncRound() {
     const st = await syncStateNow();
     const items = await browser.storage.sync.get(null);
     const remote = docFromItems(items);
-    st.clock = Math.max(st.clock, syncHighest(remote));
+    st.clock = Math.max(st.clock, syncHighest(remote), syncPrefsHighest(items[SYNC_PREFS_KEY])); // syncprefs.js
     const stamp = () => (st.clock = Math.max(Date.now(), st.clock + 1));
     if (!st.seen) await syncKeepCopy(); // the first merge: there is a way back from it
     const dropped = await syncMatchSpaces(st, remote);
@@ -511,6 +512,7 @@ async function syncRound() {
     st.clock = Math.max(st.clock, syncHighest(merged));
     st.seen = syncSeen(await syncApply(merged, here, st));
     st.doc = merged;
+    const prefs = await syncPrefsMerge(st, items[SYNC_PREFS_KEY], stamp); // syncprefs.js: the colours and settings chosen
     // What was applied first, and only then that it was seen: the record is written a moment
     // after a change, and a state that is ahead of it (a crash, a quit, an update just now) would
     // at the next start read as you having deleted all that just came, on every machine.
@@ -518,6 +520,7 @@ async function syncRound() {
     const text = JSON.stringify(st);
     if (text !== syncStateWritten) { await browser.storage.local.set({ syncState: st }); syncStateWritten = text; }
     await syncWrite(merged, items);
+    await syncPrefsWrite(prefs, items);
     syncProblem = null;
     setNotice("sync", null);
   } catch (err) {
@@ -540,6 +543,7 @@ async function syncTurn(on) {
   const st = await syncStateNow();
   st.doc = emptySyncDoc();
   st.seen = null;
+  delete st.prefs; // syncprefs.js: what was agreed is not known any more either
   await browser.storage.local.set({ syncState: st });
   syncStateWritten = null;
   if (syncIsOn) await syncRound();

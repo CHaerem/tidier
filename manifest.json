@@ -92,6 +92,7 @@
       "archivelist.js",
       "archive.js",
       "unloadidle.js",
+      "syncprefs.js",
       "keys-commands.js",
       "pagenote.js",
       "shortcuts.js",

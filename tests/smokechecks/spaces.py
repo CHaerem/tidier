@@ -246,6 +246,23 @@ def alone_sync_hide(m):
     r = until(m, """const got = wins().map(w => w.gBrowser.tabs.filter(t => t.pinned && ek(w, t) === "smoke-synced").map(t => [t.userContextId, !!t.linkedPanel && !t.selected]));
       return {ok: got.every(g => g.length === 1) && got.every(g => !g[0][1]), got};""")
     check("an essential from another machine arrives in every window, in the right container, and unloads", r["ok"] and all(g[0][0] == 2 for g in r["got"]), str(r))
+
+    # What you have chosen follows too (syncprefs.js), in an item of its own: a colour for a space and
+    # a setting chosen on another machine are taken here, and one chosen here goes out beside them.
+    from_elsewhere({"p/1": {f"colour:{sid}": ["#2f6f4f", now], "unload": [3, now], "later": ["kept", 1]}})
+    r = ext_page(m, settings, """let got; for (let i = 0; i < 100; i++) { got = await page.browser.storage.local.get(page.JSON.parse('["spaceColours", "unloadAfterHours"]'));
+        if (got.unloadAfterHours === 3 && got.spaceColours?.["firefox-container-2"]) break; await wait(200); }
+      return JSON.parse(JSON.stringify(got));""")
+    check("a space's colour and a setting chosen on another machine are taken here, the colour on the container called that here",
+          r.get("unloadAfterHours") == 3 and r.get("spaceColours") == {"firefox-container-2": "#2f6f4f"}, str(r))
+    r = ext_page(m, settings, """await page.browser.runtime.sendMessage(page.JSON.parse('{"type": "settings:unloadHours", "hours": 5}'));
+      let item; for (let i = 0; i < 100; i++) { item = (await page.browser.storage.sync.get("p/1"))["p/1"]; if (item?.unload?.[0] === 5) break; await wait(200); }
+      return JSON.parse(JSON.stringify(item ?? null));""")
+    check("a setting changed here goes out with its time, and what this version does not know is left as it came",
+          bool(r) and r.get("unload", [None, 0])[0] == 5 and r["unload"][1] > now and r.get(f"colour:{sid}") == ["#2f6f4f", now] and r.get("later") == ["kept", 1], str(r))
+    # As it was, for the groups after this one (and the other machine is told so too).
+    sidebar_page(m, """send({type: "spaceColour", space: "firefox-container-2", colour: null}); await wait(500); return 1;""")
+    ext_page(m, settings, """await page.browser.runtime.sendMessage(page.JSON.parse('{"type": "settings:unloadHours", "hours": 0}')); await wait(7000); return 1;""")
     r = ext_page(m, settings, """
       for (let i = 0; i < 100; i++) { const items = await page.browser.storage.sync.get(null); if (!Object.keys(items).some(k => k.endsWith(".77"))) break; await wait(200); }
       const items = await page.browser.storage.sync.get(null);

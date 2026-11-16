@@ -77,7 +77,7 @@ part C).
 | Hide a space on a given machine | | Done | checked: on the settings page, or for a machine in managed storage; hidden, not kept away |
 | Remove a space from every machine | | Later | today removing a container on one machine is local to it |
 | A page in fullscreen stays in its window when its tab is selected in another | – | Done | checked in a real fullscreen: the page is asked (with access to all websites), stays in it, its placeholder says so, a click on its row takes you to its window, and it comes once it has left fullscreen; a choice on the settings page |
-| Any colour for a space | Z A | Done | checked: Colour in a space's menu, a list or any colour typed; the dot, the sidebar and the window in it (a theme per window, with Firefox's own text and icon colours, held by a smoke check). Not yet carried by sync; no gradients |
+| Any colour for a space | Z A | Done | checked: Colour in a space's menu, a list or any colour typed; the dot, the sidebar and the window in it (a theme per window, with Firefox's own text and icon colours, held by a smoke check). With sync on, the same on every machine; no gradients |
 | All of a space's folders closed, or opened, at once | Z | Done | checked: in the space's More, as a command in the bar and as a key you can give; Zen has it on a click on the space's name, which here opens nothing by itself |
 | Unload every other space | Z | Done | checked: in the space's More, the bar and the keys; by the rules of Unload this space, and not a space hidden on this machine |
 

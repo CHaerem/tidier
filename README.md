@@ -213,8 +213,8 @@ be done, in order, is in [PLAN.md](PLAN.md).
    list, or any colour typed (`#4a90d9`, or a name), and back to its container's. It is
    the dot's colour, and the window takes a soft tint of it, the sidebar and the frame
    around the page alike, light or dark as the system is. A container can only have one of
-   Firefox's eight colours, so the chosen one is Tidier's own, on this machine (sync does
-   not carry it yet). The window is tinted by a theme for that window alone, which Firefox
+   Firefox's eight colours, so the chosen one is Tidier's own; with sync on it is the same
+   on every machine. The window is tinted by a theme for that window alone, which Firefox
    asks nothing for: it gives the frame its colour and Firefox's own colours for the rest
    (text, icons, the address bar and its list, panels), and a smoke check holds those to
    what Firefox draws without a theme. What a theme has no say over is Firefox's accent:
@@ -537,13 +537,19 @@ trackpad; how it feels under real fingers is still to be tried (PLAN.md, part C)
 
 ## The same on every machine, and spaces hidden on one
 
-`sync.js`, `syncmerge.js`, `hiddenspaces.js`.
+`sync.js`, `syncmerge.js`, `syncprefs.js`, `hiddenspaces.js`.
 
 **Sync** is off until you tick it on the settings page. Essentials, folders, saved tabs,
 short names, rules, and spaces with their names, colours, icons and order then go into
-Firefox Sync's storage for add-ons. Ordinary tabs, what is open, icons, which folders are
-closed and which spaces are hidden stay on each machine, and so does everything of the
-agents' space. No container number is shared: a space is matched to a container by
+Firefox Sync's storage for add-ons. So does what you have chosen (`syncprefs.js`): the
+colour chosen for a space, and the settings that are about how Tidier behaves and not
+about a machine (the times for archiving and unloading, a page in fullscreen staying in
+its window, links from other apps in a small window). These are in an item of their own,
+each with the time it was chosen, the newest winning per thing; a setting nobody has
+touched is not there at all, so a machine with everything as it came overrules nothing.
+Ordinary tabs, what is open, icons, which folders are closed and which spaces are hidden
+stay on each machine, and so do the keys, every permission, and everything of the agents'
+space and its settings. No container number is shared: a space is matched to a container by
 name, so logins cannot mix. The newest change wins per thing; something merely missing
 never counts as deleted, and a page you have open is never closed by another machine.
 Turning it on takes a copy first. Firefox Sync must carry add-on data: tick Add-ons in its
@@ -898,7 +904,8 @@ Not guaranteed:
   small window for links from other apps, "Open link in", and ⌥-click.
 - `hiddenspaces.js`, `syncmerge.js`, `sync.js`, `settings/sync.js` – spaces hidden on one
   machine, and the same essentials, folders and spaces on every machine through Firefox Sync
-  (`syncmerge.js` is how two versions become one, with no Firefox needed to test it).
+  (`syncmerge.js` is how two versions become one, with no Firefox needed to test it;
+  `syncprefs.js` carries what you have chosen: a space's colour and the settings).
 - `bridge.js`, `bridge-page.js`, `sidebar/agent.js`, `settings/bridge.js`,
   `native/tidier-mcp.py`, `native/tidier-bridge.py` – Copy for Claude and the bridge for
   agents (above).
