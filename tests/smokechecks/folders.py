@@ -1300,14 +1300,20 @@ def alone_drag_details(m):
 
     try:
         # A click whose hand shakes, on ×: past the distance that starts a drag, still on the button.
-        at = here("""const [row] = rows(), b = row.querySelector(".close").getBoundingClientRect();
-          return {n: rows().length, id: row.dataset.tab, order: rows().slice(1).map(r => r.dataset.tab), x: Math.round(b.left + b.width / 2), y: Math.round(b.top + b.height / 2)};""")
+        # (Once the list is at rest: this page was selected a moment ago, and its list goes to
+        # the row of the tab you are on in its own time, on a busy machine after the place of
+        # × was read. The click then landed on the next row's ×, or on none.)
+        at = here("""const place = () => rows()[0].querySelector(".close").getBoundingClientRect().top + ":" + list.scrollTop;
+          for (let was = null, same = 0, i = 0; i < 100 && same < 6; i++) { const now = place(); same = now === was ? same + 1 : 0; was = now; await wait(50); }
+          const [row] = rows(), b = row.querySelector(".close").getBoundingClientRect();
+          return {n: rows().length, id: row.dataset.tab, order: rows().slice(1).map(r => r.dataset.tab), x: Math.round(b.left + b.width / 2), y: Math.round(b.top + b.height / 2), scrolled: list.scrollTop};""")
         pointer(to(at["x"] - 40, at["y"]), pause, to(at["x"], at["y"]), pause)
         here("""window.__heard = 0; window.addEventListener("dragstart", () => window.__heard++, {capture: true, once: true}); return 1;""")
+        under = here("""const e = document.elementFromPoint(%d, %d); return {on: e?.className ?? null, row: e?.closest?.(".tab")?.dataset.tab ?? null, scrolled: list.scrollTop};""" % (at["x"], at["y"]))
         pointer(down, to(at["x"] + 3, at["y"] + 3), to(at["x"] + 6, at["y"] + 6), pause, up)
         r = here("""await until(() => rows().length < arguments[0]); return {n: rows().length, heard: window.__heard, order: rows().map(r => r.dataset.tab)};""".replace("arguments[0]", str(at["n"])))
         check("a click on × that shakes (Firefox starts a drag) stays a click, and closes the tab",
-              r["heard"] == 1 and r["n"] == at["n"] - 1 and r["order"] == at["order"], f"{at} -> {r}")
+              r["heard"] == 1 and r["n"] == at["n"] - 1 and r["order"] == at["order"], f"{at} -> {r}, under the pointer before it: {under}")
 
         # A long list: the pointer resting at its edge in a real drag session. Firefox's own
         # scrolling takes one step at most here, so anything more is Tidier's (drag.js).

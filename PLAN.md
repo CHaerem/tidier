@@ -53,11 +53,29 @@ Rules for all of it:
       no copy anywhere is taken for closed only right after Firefox starts, and a saved tab
       closed within half a second of another close goes back to its saved address instead
       of being removed. The Sidebery checks and a long run with Sidebery pass.
-- [x] What random use found on 16 November 2026: an update (or a crash, or a quit) in the
-      moment a copy of an essential is being made no longer takes the essential off the list
-      (the copy's key is written on its tab only once it is pinned, so an unfinished copy is
-      told from one you unpinned); and a placeholder closed while a new window is being
-      filled is not written down as an error.
+- [x] What random use found on 16 November 2026, from seeds not tried before and with its
+      own model brought up to date (it had not been run long since Tidier came to work alone;
+      16 000 sequences now pass, and the ones that broke something are kept and played every
+      time, `tests/fixtures/chaos_found.json`):
+      - An update, a crash or a quit in the moment a copy of an essential is being made no
+        longer takes the essential off the list (the copy's key is written on its tab only
+        once it is pinned, so an unfinished copy is told from one you unpinned), nor does a
+        pin Firefox refuses.
+      - A placeholder pinned the moment its window came back (⌘⇧N) makes its tab an
+        essential; it closed the tab in every window and made none.
+      - A tab whose key Firefox would not say at a start is asked for again, and not taken
+        for closed.
+      - A page pulled, or an essential's page moved, to a window that closes in that moment
+        stays once where it was, not twice.
+      - A pinned tab that comes back while Tidier is starting, with the key of an essential
+        that is gone, is an essential again, not a tab no sidebar shows.
+      - A placeholder that comes back with ⌘⇧T before Recently Closed has forgotten it is its
+        tab's placeholder again, not the page a second time; ones closed before Tidier has
+        looked at them, or while it starts, or under another address, leave Recently Closed;
+        and ⌘⇧T twice after closing a page does not give the page twice.
+      - No error is written down for a placeholder closed while a new window is filled, or
+        a window closed while its tab moves to another space; and a closed tab is not kept
+        in memory when the first of two refusals says something else.
 
 ## B. Tidier alone (once behind a setting, now the only way)
 
