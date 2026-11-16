@@ -497,9 +497,9 @@ function folder(f) {
     b.firstChild.setAttribute("aria-expanded", String(!closed));
     // Its own icon, if its name starts with one (nameIcon, emoji.js), in the folder sign's
     // place, and its name without it. Open or closed then shows by its tabs and its count.
-    const { icon, rest } = nameIcon(f.name);
-    b.classList.toggle("has-icon", !!icon);
-    b.firstChild.replaceChildren(el("span", icon ? "chevron emoji" : "chevron", icon || "▾"), el("span", "title", icon && rest ? rest : f.name), ...soundMark(f), el("span", "count", closed && f.tabs.length ? String(f.tabs.length) : ""));
+    // A name that is only an emoji is a name: drawn as the icon too, it would be there twice.
+    const { icon: first, rest } = nameIcon(f.name), icon = rest ? first : "";
+    b.firstChild.replaceChildren(el("span", icon ? "chevron emoji" : "chevron", icon || "▾"), el("span", "title", icon ? rest : f.name), ...soundMark(f), el("span", "count", closed && f.tabs.length ? String(f.tabs.length) : ""));
   });
   place(box.lastChild, withRooms(box.lastChild, f.tabs.map(t => row(t, f.key))));
   return box;

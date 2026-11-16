@@ -283,6 +283,9 @@ test("a folder's menu has Icon too: choosing one renames the folder, and No icon
   assert.deepEqual({ ...s.sent.at(-1) }, { type: "renameFolder", key: "G", name: "Books" });
   vm.runInContext(`setFolderIcon("G", "🎧")`, s.ctx);
   assert.deepEqual({ ...s.sent.at(-1) }, { type: "renameFolder", key: "G", name: "🎧 Books" }, "another icon takes the first one's place");
+  // A name that is only an emoji has nothing to be left with: no way back is offered.
+  const only = sidebar({ folders: [{ key: "E", name: "📚", collapsed: false, tabs: [] }] });
+  assert.equal(vm.runInContext(`folderMenu("E", null)`, only.ctx).find(i => i?.[0] === "Icon")[1].length, 1);
   // A live folder's name is its file's: no Rename, and no Icon.
   assert.deepEqual(s.labels(vm.runInContext(`folderMenu("F", "prs")`, s.ctx)), ["Delete folder"]);
 });

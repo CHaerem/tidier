@@ -12,10 +12,11 @@ function nameIcon(name) {
 // The name with that icon, or with none ("").
 const withIcon = (name, icon) => `${icon} ${nameIcon(name).rest}`.trim();
 // A menu's Icon: chosen from a list to search in (below), drawn in the menu's place; under
-// it, the way back to no icon, for a name that has one. `set`: what to do with the one chosen.
+// it, the way back to no icon, for a name that has one and something after it (a name that
+// is only an emoji would be left with nothing). `set`: what to do with the one chosen.
 const iconMenu = (name, set) => [
   { part: () => emojiPicker(set) },
-  ...(nameIcon(name).icon ? [null, ["No icon", () => set("")]] : []),
+  ...(nameIcon(name).icon && nameIcon(name).rest ? [null, ["No icon", () => set("")]] : []),
 ];
 
 // --- The icons to choose from ------------------------------------------------------------
