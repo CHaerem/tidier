@@ -608,7 +608,8 @@ export async function play(seq, { trace = false } = {}) {
     await W.clock.run(5000);
     await check(W, "update", { strong: true });
     if (W.violations.length) return W.violations;
-    const b = logical(await W.read("getSynced()"), await W.read("getList()"));
+    const listAfter = await W.read("getList()");
+    const b = logical(await W.read("getSynced()"), listAfter);
     // A page outside any space is moved into one when Tidier starts (moveStragglers, isolation.js).
     for (const [key, t] of Object.entries(a.tabs)) if (t.cookieStoreId === "firefox-default" && b.tabs[key]) t.cookieStoreId = b.tabs[key].cookieStoreId;
     // So is an essential outside any space (moveEssentialIntoSpace), and its place in the list
@@ -620,6 +621,9 @@ export async function play(seq, { trace = false } = {}) {
     await check(W, "restart", { strong: true });
     if (W.violations.length) return W.violations;
     const c = logical(await W.read("getSynced()"), await W.read("getList()"));
+    // (An essential outside any space whose copies were all unloaded stayed there through the
+    // update, and is moved now that Firefox has loaded one.)
+    if (Array.from(listAfter).some(e => e.cookieStoreId === NO_CONTAINER)) { b.essentials.sort(); c.essentials.sort(); }
     if (JSON.stringify(b) !== JSON.stringify(c)) W.bad("changed", `by a restart: ${difference(b, c)}`);
     return W.violations;
   } catch (err) {
