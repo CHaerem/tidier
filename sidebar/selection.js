@@ -88,7 +88,7 @@
 
   // One close per tab, the selected tab last. Closed first, it would make Firefox select
   // another that may be about to close too, and a placeholder that is selected starts
-  // pulling its real tab in (pull, tabsync.js), under a new id, while its close is on the way.
+  // pulling its real tab in (pull, pull.js), under a new id, while its close is on the way.
   function closePicked() {
     const selected = id => Number(element(id).classList.contains("active"));
     const ids = inOrder().sort((a, b) => selected(a) - selected(b));

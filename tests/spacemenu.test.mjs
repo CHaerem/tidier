@@ -242,7 +242,7 @@ test("a space's menu: its name first, then in groups; Clear apart, only for the 
 // nothing more is stored, and it follows the name to Firefox's own lists and to other machines.
 test("a space's icon is the emoji its name starts with, and choosing one renames the space", async () => {
   const s = sidebar();
-  const icon = name => { const r = vm.runInContext(`spaceIcon(${JSON.stringify(name)})`, s.ctx); return [r.icon, r.rest]; };
+  const icon = name => { const r = vm.runInContext(`nameIcon(${JSON.stringify(name)})`, s.ctx); return [r.icon, r.rest]; };
   assert.deepEqual(icon("🏠 Home"), ["🏠", "Home"]);
   assert.deepEqual(icon("✈️Travel"), ["✈️", "Travel"], "with or without a space after it");
   assert.deepEqual(icon("👩‍💻 Work"), ["👩‍💻", "Work"], "a joined one is one icon");
@@ -266,6 +266,30 @@ test("a space's icon is the emoji its name starts with, and choosing one renames
   assert.deepEqual({ ...s.sent.at(-1) }, { type: "renameSpace", space: C1, name: "One" });
 });
 
+// A folder has one the same way: the emoji its name starts with, so it goes with the folder to
+// every window and machine, and nothing more is stored.
+test("a folder's menu has Icon too: choosing one renames the folder, and No icon takes it away", () => {
+  const s = sidebar({ folders: [{ key: "F", name: "Reading", collapsed: false, tabs: [] }, { key: "G", name: "📚 Books", collapsed: false, tabs: [] }] });
+  const menu = key => vm.runInContext(`folderMenu(${JSON.stringify(key)}, null)`, s.ctx);
+  assert.deepEqual(s.labels(menu("F")), ["New tab here", "|", "Rename", "Icon", "Delete folder (its tabs stay)"]);
+  const plain = menu("F").find(i => i?.[0] === "Icon")[1];
+  assert.equal(plain.length, 1, "no icon yet: only the ones to choose from");
+  assert.equal(typeof plain[0].part, "function");
+  vm.runInContext(`setFolderIcon("F", "📖")`, s.ctx);
+  assert.deepEqual({ ...s.sent.at(-1) }, { type: "renameFolder", key: "F", name: "📖 Reading" });
+  const has = menu("G").find(i => i?.[0] === "Icon")[1];
+  assert.deepEqual(s.labels(has).slice(1), ["|", "No icon"]);
+  has.at(-1)[1]();
+  assert.deepEqual({ ...s.sent.at(-1) }, { type: "renameFolder", key: "G", name: "Books" });
+  vm.runInContext(`setFolderIcon("G", "🎧")`, s.ctx);
+  assert.deepEqual({ ...s.sent.at(-1) }, { type: "renameFolder", key: "G", name: "🎧 Books" }, "another icon takes the first one's place");
+  // A name that is only an emoji has nothing to be left with: no way back is offered.
+  const only = sidebar({ folders: [{ key: "E", name: "📚", collapsed: false, tabs: [] }] });
+  assert.equal(vm.runInContext(`folderMenu("E", null)`, only.ctx).find(i => i?.[0] === "Icon")[1].length, 1);
+  // A live folder's name is its file's: no Rename, and no Icon.
+  assert.deepEqual(s.labels(vm.runInContext(`folderMenu("F", "prs")`, s.ctx)), ["Delete folder"]);
+});
+
 // The ones to choose from are a list of Tidier's own, searched by English words. Each must be
 // an icon as a space's name has one, or choosing it would only add a sign to the name.
 test("the icons to choose from are each one whole emoji, found by its words", () => {
@@ -274,7 +298,7 @@ test("the icons to choose from are each one whole emoji, found by its words", ()
   assert.ok(list.length > 250, `${list.length} to choose from`);
   assert.equal(new Set(list.map(e => e.icon)).size, list.length, "none twice");
   for (const { icon, words } of list) {
-    const r = vm.runInContext(`spaceIcon(${JSON.stringify(icon + " Name")})`, s.ctx);
+    const r = vm.runInContext(`nameIcon(${JSON.stringify(icon + " Name")})`, s.ctx);
     assert.deepEqual([r.icon, r.rest], [icon, "Name"], `${icon} is one icon`);
     // A sign like ✈ is text by itself: with the mark that makes it a picture, or drawn as one anyway.
     assert.match(icon, /^(\p{Emoji_Presentation}|\p{Regional_Indicator})|\uFE0F/u, `${icon} is drawn as a picture`);

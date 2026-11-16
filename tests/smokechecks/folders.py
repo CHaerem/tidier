@@ -62,6 +62,39 @@ def alone_folders(m):
       await sleep(1000);
       return {was, during, after, states, back: box.classList.contains("collapsed")};
     }""")
+    # An icon of its own, from the folder's menu: the emoji its name then starts with, drawn in
+    # the folder sign's place, with the name where it was.
+    icon = sidebar_page(m, """
+      const menu = doc.getElementById("menu"), until = async (f, ms = 8000) => { for (let i = 0; i < ms / 50; i++) { const v = f(); if (v) return v; await wait(50); } return null; };
+      const head = () => [...doc.querySelectorAll("#tabs .folder .head")].find(h => /Renamed$/.test(h.title));
+      const look = () => { const h = head(), c = h.querySelector(".chevron"), t = h.querySelector(".title"), b = c.getBoundingClientRect();
+        return {sign: c.classList.contains("emoji") ? c.textContent : "", name: t.textContent, whole: h.title, left: Math.round(t.getBoundingClientRect().left), box: [Math.round(b.width), Math.round(b.height)],
+                shape: page.getComputedStyle(c).maskImage, fill: page.getComputedStyle(c).backgroundColor}; };
+      const open = async label => { menu.hidden = true; const b = head().getBoundingClientRect();
+        head().dispatchEvent(new page.MouseEvent("contextmenu", {bubbles: true, cancelable: true, button: 2, clientX: b.left + 8, clientY: b.top + 8}));
+        await until(() => !menu.hidden);
+        [...menu.querySelectorAll(".item")].find(x => x.textContent === label).click(); };
+      const out = {before: look()};
+      await open("Icon");
+      const first = await until(() => menu.querySelector(".picker .emoji"));
+      out.offered = {field: !!menu.querySelector(".picker .find"), many: menu.querySelectorAll(".picker .emoji").length > 100, noIcon: [...menu.querySelectorAll(".item")].some(x => x.textContent === "No icon")};
+      out.chosen = first.textContent;
+      first.click();
+      await until(() => look().sign);
+      out.with = look();
+      out.record = (await page.browser.storage.local.get("syncedTabs")).syncedTabs[head().dataset.folderHead]?.name;
+      await open("Icon");
+      await until(() => [...menu.querySelectorAll(".item")].some(x => x.textContent === "No icon"));
+      [...menu.querySelectorAll(".item")].find(x => x.textContent === "No icon").click();
+      await until(() => !look().sign);
+      out.without = look();
+      return out;""")
+    check("a folder's menu has Icon: an emoji chosen there is drawn in the folder sign's place, the same size, and the name stays where it was",
+          icon["offered"] == {"field": True, "many": True, "noIcon": False} and icon["with"]["sign"] == icon["chosen"] and icon["with"]["name"] == "Renamed"
+          and icon["with"]["whole"] == f'{icon["chosen"]} Renamed' and icon["with"]["left"] == icon["before"]["left"] and icon["with"]["box"] == icon["before"]["box"]
+          and icon["with"]["shape"] == "none", str(icon))
+    check("the icon is the start of the folder's name in the record, and No icon takes it away again",
+          icon["record"] == f'{icon["chosen"]} Renamed' and icon["without"] == icon["before"], str(icon))
     check("a view made before a fold was heard does not undo the fold for a moment",
           stale.get("was") is False and stale.get("during") is True and stale.get("after") is True and stale.get("states") == [True] and stale.get("back") is False, str(stale))
     s = m.js(H + """const all = (await storage("%s", ["syncedTabs"])).syncedTabs, f = all[args[0]];
@@ -144,10 +177,25 @@ def alone_live_folders(m):
       return {folder: f && {own: f[1].own, name: f[1].name}, tabs: tabs.map(([, e]) => [e.parentKey === f[0], !!e.saved]), reps: tabs.map(([k]) => find(JSON.stringify(k)))};""" % EXT_ID)
     check("a live folder is Tidier's own folder, with its pull requests unloaded in every window", r["folder"] == {"own": True, "name": "Pull requests"}
           and r["tabs"] == [[True, False], [True, False]] and all(all(len(x) == 1 and x[0].endswith("/unloaded") for x in rep) for rep in r["reps"]), str(r))
+    # An issue, and a feed's entry (the helper says which each is): named and marked as what
+    # they are, each an unloaded placeholder as a pull request is.
+    open(m.fake_prs, "w").write(json.dumps({"folders": [{"id": "prs", "name": "Pull requests", "container": "firefox-container-1"}],
+                                            "items": {"prs": [{"url": "https://example.org/?smoke-pr-1", "title": "One", "number": 1, "repo": "r"},
+                                                              {"url": "https://example.org/?smoke-pr-3", "title": "Three", "number": 3, "repo": "r", "what": "issue"},
+                                                              {"url": "https://example.org/?smoke-pr-feed", "title": "A story from a feed", "what": "feed"},
+                                                              {"url": "file:///etc/hosts", "title": "No web address", "what": "feed"}]}}))
+    extension_message(m, {"type": "refreshLiveFolders"})
+    r = m.js(H + """await wait(1500); const all = (await storage("%s", ["syncedTabs"])).syncedTabs;
+      const tabs = Object.entries(all).filter(([, e]) => e.liveFolder === "prs");
+      return {marks: Object.fromEntries(tabs.map(([, e]) => [e.title, [e.pr, !!e.icon]])), reps: tabs.map(([k]) => find(JSON.stringify(k))),
+              labels: main().gBrowser.tabs.map(t => t.label).filter(l => /r#|story|No web/.test(l)).sort()};""" % EXT_ID)
+    check("an issue and a feed's entry are in the folder as what they are, each unloaded in every window, and what is no web address gets no tab",
+          r["marks"] == {"r#1 One": ["open", True], "r#3 Three": ["issue", True], "A story from a feed": ["feed", False]}
+          and r["labels"] == ["A story from a feed", "r#1 One", "r#3 Three"] and all(all(len(x) == 1 and x[0].endswith("/unloaded") for x in rep) for rep in r["reps"]), str(r))
     open(m.fake_prs, "w").write(json.dumps({"folders": [{"id": "prs", "name": "Pull requests", "container": "firefox-container-1"}], "items": {"prs": []}}))
     extension_message(m, {"type": "refreshLiveFolders"})
     r = m.js(H + """await wait(1500); const all = (await storage("%s", ["syncedTabs"])).syncedTabs;
-      return {tabs: Object.values(all).filter(e => e.liveFolder === "prs").length, left: wins().flatMap(w => w.gBrowser.tabs).filter(t => t.label.includes("r#")).length, folder: Object.values(all).some(e => e.live === "prs")};""" % EXT_ID)
+      return {tabs: Object.values(all).filter(e => e.liveFolder === "prs").length, left: wins().flatMap(w => w.gBrowser.tabs).filter(t => /r#|story/.test(t.label)).length, folder: Object.values(all).some(e => e.live === "prs")};""" % EXT_ID)
     check("a pull request that leaves the search is removed, and the folder stays", r["tabs"] == 0 and r["left"] == 0 and r["folder"], str(r))
     r = sidebar_page(m, RECENTLY_CLOSED_PLACEHOLDERS)
     check("and it leaves no placeholder in Recently Closed, for ⌘⇧T to bring back", not r["left"], str(r))
@@ -1252,14 +1300,20 @@ def alone_drag_details(m):
 
     try:
         # A click whose hand shakes, on ×: past the distance that starts a drag, still on the button.
-        at = here("""const [row] = rows(), b = row.querySelector(".close").getBoundingClientRect();
-          return {n: rows().length, id: row.dataset.tab, order: rows().slice(1).map(r => r.dataset.tab), x: Math.round(b.left + b.width / 2), y: Math.round(b.top + b.height / 2)};""")
+        # (Once the list is at rest: this page was selected a moment ago, and its list goes to
+        # the row of the tab you are on in its own time, on a busy machine after the place of
+        # × was read. The click then landed on the next row's ×, or on none.)
+        at = here("""const place = () => rows()[0].querySelector(".close").getBoundingClientRect().top + ":" + list.scrollTop;
+          for (let was = null, same = 0, i = 0; i < 100 && same < 6; i++) { const now = place(); same = now === was ? same + 1 : 0; was = now; await wait(50); }
+          const [row] = rows(), b = row.querySelector(".close").getBoundingClientRect();
+          return {n: rows().length, id: row.dataset.tab, order: rows().slice(1).map(r => r.dataset.tab), x: Math.round(b.left + b.width / 2), y: Math.round(b.top + b.height / 2), scrolled: list.scrollTop};""")
         pointer(to(at["x"] - 40, at["y"]), pause, to(at["x"], at["y"]), pause)
         here("""window.__heard = 0; window.addEventListener("dragstart", () => window.__heard++, {capture: true, once: true}); return 1;""")
+        under = here("""const e = document.elementFromPoint(%d, %d); return {on: e?.className ?? null, row: e?.closest?.(".tab")?.dataset.tab ?? null, scrolled: list.scrollTop};""" % (at["x"], at["y"]))
         pointer(down, to(at["x"] + 3, at["y"] + 3), to(at["x"] + 6, at["y"] + 6), pause, up)
         r = here("""await until(() => rows().length < arguments[0]); return {n: rows().length, heard: window.__heard, order: rows().map(r => r.dataset.tab)};""".replace("arguments[0]", str(at["n"])))
         check("a click on × that shakes (Firefox starts a drag) stays a click, and closes the tab",
-              r["heard"] == 1 and r["n"] == at["n"] - 1 and r["order"] == at["order"], f"{at} -> {r}")
+              r["heard"] == 1 and r["n"] == at["n"] - 1 and r["order"] == at["order"], f"{at} -> {r}, under the pointer before it: {under}")
 
         # A long list: the pointer resting at its edge in a real drag session. Firefox's own
         # scrolling takes one step at most here, so anything more is Tidier's (drag.js).
@@ -1405,6 +1459,50 @@ def alone_archive(m):
     now = int(time.time() * 1000)
     late = extension_message(m, {"type": "archiveNow", "now": now + 13 * 3600 * 1000, "keys": [s["kept"]], "explain": True})
     check("archiving keeps a tab in a folder", late.get("kept", {}).get(s["kept"]) == "folder", str(late))
+
+
+def alone_unload_idle(m):
+    # Tabs not used for a while are unloaded where they are (unloadidle.js): a real Firefox
+    # frees the page, the row dims, and selecting it brings the page back.
+    ctx = m.js(H + "return main().gBrowser.selectedTab.userContextId;")
+    made = m.js(H + """const w = main(), ctx = args[0];
+      const tabs = ["old", "recent", "sounding"].map(n => w.gBrowser.addTrustedTab(args[1] + "/titled?idle%20" + n, {userContextId: ctx, inBackground: true}));
+      for (let i = 0; i < 100 && !tabs.every(t => key(w, t) && t.linkedPanel && t.label.startsWith("idle ")); i++) await wait(100);
+      await wait(1500);
+      // Used three hours ago, as far as Firefox knows: its own record of it, set by hand.
+      const ago = h => Date.now() - h * 3600e3;
+      tabs[0]._lastAccessed = ago(3); tabs[2]._lastAccessed = ago(3);
+      tabs[2].toggleAttribute("soundplaying", true); w.gBrowser._tabAttrModified(tabs[2], ["soundplaying"]);
+      return {keys: tabs.map(t => key(w, t)), loaded: tabs.map(t => !!t.linkedPanel), selected: w.gBrowser.selectedTab.label};""", ctx, m.pages)
+    state = H + """const w = main(), t = n => w.gBrowser.tabs.find(x => x.label === "idle " + n);
+      return {loaded: Object.fromEntries(["old", "recent", "sounding"].map(n => [n, !!t(n)?.linkedPanel])), keys: ["old", "recent", "sounding"].map(n => key(w, t(n))),
+              order: w.gBrowser.tabs.filter(x => x.label.startsWith("idle ")).map(x => x.label), selected: w.gBrowser.selectedTab.label, selectedLoaded: !!w.gBrowser.selectedTab.linkedPanel};"""
+    was = extension_message(m, {"type": "settings:get"}).get("unloadHours")
+    off = extension_message(m, {"type": "unloadIdleNow"})
+    before = m.js(state)
+    check("with no time set, a tab not used for hours stays loaded", was == 0 and off == 0 and before["loaded"] == {"old": True, "recent": True, "sounding": True}, f"{was} {off} {before}")
+    stored = extension_message(m, {"type": "settings:unloadHours", "hours": "2"})
+    n = extension_message(m, {"type": "unloadIdleNow"})
+    m.js(H + """const w = main(); for (let i = 0; i < 50 && w.gBrowser.tabs.find(x => x.label === "idle old")?.linkedPanel; i++) await wait(100); return 1;""")
+    after = m.js(state)
+    row = sidebar_page(m, """const r = [...doc.querySelectorAll("#tabs .tab")].find(x => x.querySelector(".title").textContent === "idle old"); return r ? r.classList.contains("unloaded") : null;""")
+    check("with two hours set, the tab not used for three is unloaded where it is, and its row dims",
+          stored == 2 and n >= 1 and after["loaded"]["old"] is False and after["keys"] == made["keys"] and after["order"] == before["order"] and row is True, f"{stored} {n} {after} {row}")
+    check("one used since, one playing, and the tab you are on stay loaded",
+          after["loaded"]["recent"] and after["loaded"]["sounding"] and after["selected"] == before["selected"] and after["selectedLoaded"], str(after))
+    back = m.js(H + """const w = main(), t = w.gBrowser.tabs.find(x => x.label === "idle old"), was = w.gBrowser.selectedTab;
+      w.gBrowser.selectedTab = t;
+      for (let i = 0; i < 100 && !(t.linkedPanel && url(t).includes("idle%20old")); i++) await wait(100);
+      const r = {loaded: !!t.linkedPanel, url: url(t).includes("idle%20old")};
+      w.gBrowser.selectedTab = was; await wait(500);
+      return r;""")
+    check("selecting it brings its page back", back == {"loaded": True, "url": True}, str(back))
+    # As it was, for the groups after this one.
+    reset = extension_message(m, {"type": "settings:unloadHours", "hours": "0"})
+    m.js(H + """const w = main(), t = w.gBrowser.tabs.find(x => x.label === "idle sounding"); t?.toggleAttribute("soundplaying", false); if (t) w.gBrowser._tabAttrModified(t, ["soundplaying"]);
+      await removeWhere((x, tab) => (tab.label || "").startsWith("idle ") || url(tab).includes("idle%20")); await wait(800); return 1;""")
+    check("and with the time back at none, nothing more is unloaded", reset == 0 and extension_message(m, {"type": "unloadIdleNow"}) == 0)
+    no_problems(m, "after unloading tabs not used for a while")
 
 
 # A folder's tabs as Firefox itself has them, in the main window and a window of this

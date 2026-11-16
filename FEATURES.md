@@ -59,7 +59,7 @@ part C).
 | Switch with ⌃1/2/3 | Z A S | Done | checked: back to the tab you selected last in that space, in any window (not one opened in the background, moved there or resting in a closed folder, nor one another window is showing) |
 | Switch by swiping sideways on the trackpad | Z A | Done | checked, with wheel events made as a trackpad sends them: the list follows the fingers and the next space comes in beside it as it will be; a flick goes at once; a scroll is never a swipe, however far it drifts (which is what went wrong with Sidebery). How it feels under real fingers waits for the second Mac |
 | Switching by a click or ⌃1/2/3 slides as a swipe does | Z A | Done | checked: the new space slides in a little way from the side its dot is on, as it fades in; the bar stays. A short slide, not the whole width: calmer, and a key pressed several times does not wait for it |
-| The active space's dot follows the fingers during a swipe | Z A | Later | it moves when the swipe is decided |
+| The active space's dot follows the fingers during a swipe | Z A | Done | checked: the dot you are leaving lets go as far as the list has gone and the next one takes over, an icon by its own means; still to be seen with real fingers |
 | Colour per space, for the whole window | Z A | Done | userChrome.css and tidier.css |
 | New, edited and deleted spaces in Tidier: name, icon and colour | Z A S | Done | checked, on the settings page and from a space's menu; dropping a tab on the bar makes a new one; Firefox's container settings aren't needed |
 | Nothing goes out in the wrong container: the first request is stopped | S | Done | checked with a server recording cookies; needs the optional access to all websites |
@@ -94,7 +94,7 @@ part C).
 | Clear today's tabs in one go | A | Done | checked: from the list's menu, the space's menu and the line between folders and tabs; one line to undo it, no question |
 | A saved tab or an essential that has left its address says so, and can go back or keep the new one | Z A | Done | checked: a saved tab you browse on in has a small stroke between its icon and its title, and its tooltip names the page it is saved on; Back to saved address and Save this address in its menu, an essential's too, the second with one line and Undo. What comes after # is the same page. A tile has no mark: it is only an icon |
 | The close button says when it only unloads | Z | Done | checked: a line where it unloads a saved tab in its place, a cross where it closes or removes |
-| A link to another site from an essential opens as a tab of its own | A | Later | today the essential follows the link; a choice on the settings page, off by default |
+| A link to another site from an essential opens as a tab of its own | A | Done | checked with a real click: Firefox does this itself for a pinned tab, which an essential is; the new tab is in the essential's space and is one of Tidier's. (This table said for a while that the essential followed the link: it never did.) |
 | Undo after closing several tabs or deleting a folder | S | Done | checked: one quiet line, in a room of its own above the bar, that waits while the pointer or the keyboard is on it; ⌘Z in the sidebar and Undo in the command bar while it shows |
 
 ## Folders
@@ -105,11 +105,11 @@ part C).
 | Folders first in each space | Z A | Done | the sidebar draws them first |
 | Create, rename and delete folders | Z A S | Done | checked. Deleting one keeps its tabs, with one line to undo it |
 | Folders inside folders | Z A | Later | none today, and a tree is what is left out |
-| An icon of its own on a folder | Z A | Later | a space has one; the same list of icons to choose from |
+| An icon of its own on a folder | Z A | Done | checked: Icon in the folder's menu, the same list as a space's; the emoji its name then starts with, drawn in the folder sign's place, so it goes with the folder everywhere |
 | A closed folder rests: hidden from ⌃Tab and unloaded | S | Done | checked; the selected tab, sound and unsaved input stay |
 | New folder with a good name, ready to rename | S | Done | from the menu, a key, or a selection, which names it after what the tabs share |
 | New tab in a folder | S | Done | checked: New tab here in its menu; saved there once it has a page |
-| Live folders for GitHub issues and feeds | Z | Later | pull requests only today |
+| Live folders for GitHub issues and feeds | Z | Done | checked: a folder of issues (`"what": "issues"`) or of a feed's newest entries (`"feed"`), set up in the helper's file as the pull requests are; the helper must be pulled (`git pull`) where it is used |
 | Live folders (GitHub pull requests) | A | Done | checked: each row's icon says what the pull request waits for (your review, draft, failing checks, conflict, changes asked for, approved, running, open) |
 | Folder state (open/closed) kept per space and window | Z A S | Partly | kept per folder, the same in every window |
 
@@ -120,7 +120,7 @@ part C).
 | Every tab in every window, loaded only once | Z | Done | |
 | Archive tabs unused for 12 hours | A | Done | |
 | Find archived tabs again | A | Done | checked: Tidier's own list per space, from the list's menu, the space's menu and the command bar |
-| Unload tabs unused for a while (keep them, free memory) | Z S | Later | Firefox unloads on low memory; closed folders and whole spaces unload in Tidier |
+| Unload tabs unused for a while (keep them, free memory) | Z S | Done | checked: a time on the settings page, off until set; tabs in folders too; essentials, selected tabs, sound, calls and unsaved input stay loaded |
 | Nothing works when nothing happens (no idle work) | | Done | checked by the smoke test, also with 300 tabs |
 | Fast with many tabs | | Done | checked with 300 tabs, measured up to 1000: a new window has them all in about 7 s |
 | Random use never breaks what Tidier promises | | Done | checked: random sequences on the real background scripts, and a long random run in a real test Firefox |

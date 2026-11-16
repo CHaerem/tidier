@@ -960,11 +960,22 @@ def alone_swipe(m):
         nextX: next && Math.round(next.getBoundingClientRect().x) - width,
         found: doc.querySelectorAll("#swipe [data-tab], #swipe [id], #swipe [draggable], #swipe [tabindex]").length,
         tint: next && css(next.querySelector(".space-name")).color !== css(home.querySelector(".space-name")).color};
+      // The bar follows the fingers too: the dot you are leaving lets go as far as the list
+      // has gone, and the one you are heading for takes over, with no easing of their own.
+      const bar = doc.getElementById("spaces"), dotOf = id => bar.querySelector(`.space[data-space="${id}"]`);
+      const size = id => Math.round(dotOf(id).querySelector(".dot").getBoundingClientRect().width * 100) / 100;
+      const dots = () => ({following: bar.classList.contains("following"), share: Number(bar.style.getPropertyValue("--swipe")),
+        from: dotOf(ids[0]).classList.contains("swipe-from"), to: dotOf(ids[1]).classList.contains("swipe-to"),
+        others: bar.querySelectorAll(".swipe-from, .swipe-to").length, sizes: [size(ids[0]), size(ids[1])],
+        eased: css(dotOf(ids[1]).querySelector(".dot")).transitionDuration});
+      out.dots = {...dots(), expected: Math.round(40 / width * 1000) / 1000, rest: size(ids[2] ?? ids[1])};
       // A click on what is passing by is no click on a tab: the space coming in is drawn by what draws the list.
       next?.querySelector(".tab, .tile")?.click();
       out.clicked = !!next?.querySelector(".tab, .tile");
       await settled();
       out.back = {...state(), here: here() === ids[0], top: list.scrollTop === top, list: css(list).opacity};
+      await wait(500);  // the dots' own soft way back
+      out.dotsBack = dots();
 
       // Further than four tenths of the way: it goes there, and what came in is what is there.
       fingers(times(far, [1, 0]));
@@ -1018,6 +1029,12 @@ def alone_swipe(m):
           and follows.get("dy") == 0 and follows.get("wide") and follows.get("found") == 0, f"{began} {follows}")
     check("the list follows the fingers, and the next space comes in beside it, in its own colour",
           follows.get("x") == -40 and follows.get("dx") == -40 and follows.get("next") and follows.get("nextX") == -40 and not follows.get("previous") and follows.get("tint"), str(follows))
+    d, back = r.get("dots") or {}, r.get("dotsBack") or {}
+    active, pale = (back.get("sizes") or [0, 0])
+    check("the bar follows the fingers too: the dot you are leaving lets go as far as the list has gone, and the next one takes over",
+          d.get("following") and d.get("from") and d.get("to") and d.get("others") == 2 and abs(d.get("share", 0) - d.get("expected", -1)) < 0.002 and d.get("eased") == "0s"
+          and pale < d["sizes"][1] < d["sizes"][0] < active, f"{d} {back}")
+    check("and let go, the bar is as it was", back.get("following") is False and back.get("others") == 0 and back.get("from") is False and active > pale > 0, str(back))
     check("let go after a little way, it comes back, and the list is as it was; a click on the space passing by did nothing",
           r.get("clicked") is True and r.get("back") == {**idle, "here": True, "top": True, "list": "1"}, f"{r.get('clicked')} {r.get('back')}")
     far, landed = r.get("far") or {}, r.get("landed") or {}

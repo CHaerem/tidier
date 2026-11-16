@@ -127,7 +127,7 @@ test("a saved tab outside any container stays what it is: its record, folder and
   ff.addTab(other.id, { url: "https://b.example/", cookieStoreId: B }, { syncKey: "b", syncRole: "live" });
   const placeThere = ff.index(ghostFirst);
   // The other window in use: a placeholder selected in the window you use is opened at a start
-  // (pullSelected, tabsync.js), and here its page asks itself, as when you select it.
+  // (pullSelected, pull.js), and here its page asks itself, as when you select it.
   ff.wins.get(w.id).focused = false; ff.wins.get(other.id).focused = true; ff.focused = other.id;
   const x = await run(ff);
   assert.equal((await ff.request({ tabId: t.id, url: "https://saved.example/", originUrl: GHOST("ghost", "s") })).cancel, true);

@@ -10,7 +10,7 @@
 // Looking at a tab means it is selected in the window you are using. Selected in another
 // window is not enough: that window may be behind this one, and every window has a
 // selected tab that nobody chose, since Firefox and Tidier pick one there when its tab
-// is closed or pulled away (pull, tabsync.js). Taking that as seen would eat a dot and
+// is closed or pulled away (pull, pull.js). Taking that as seen would eat a dot and
 // leave that tab without one for as long as it stays selected there.
 //
 // A mark belongs to the tab record or the essential, not to the Firefox tab: the other

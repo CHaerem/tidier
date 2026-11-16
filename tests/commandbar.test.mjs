@@ -342,6 +342,32 @@ test("the window the bar was opened from closes: a bar that is a window of its o
   x.kill();
 });
 
+test("the window the bar was opened in closes a moment after its panel came: no window comes in its place, and the key opens a bar at once in another", async () => {
+  const ff = new FakeFirefox();
+  const { w, v } = world(ff);
+  const x = await started(ff);
+  const panel = withPanel(x);
+  // Firefox takes its time making a window, as it does on a busy machine.
+  const create = x.b.windows.create;
+  x.b.windows.create = async given => { await wait(400); return create(given); };
+  await panel.open(ff, v.id);
+  const shown = connectPanel(x, panel.url());
+  await wait(50);
+  // The panel goes with its window, which Tidier hears of a moment later: to Tidier the
+  // panel went as soon as it came, and the bar's own window is being made by then.
+  shown.close();
+  await x.b.windows.remove(v.id);
+  await wait(1500);
+  assert.equal(barWindows(ff).length, 0, "nothing stays over a window that has gone");
+  await panel.open(ff, w.id);
+  assert.equal(panel.opened.at(-1), w.id, "and the key opens the bar here, it does not close one that is gone");
+  const next = connectPanel(x, panel.url());
+  for (let i = 0; i < 100 && !next.sent.length; i++) await wait(100);
+  assert.ok(next.sent[0].items.length > 0, "with its rows");
+  assert.deepEqual(x.errors, []);
+  x.kill();
+});
+
 test("the key pressed again before the window is there leaves no window behind", async () => {
   const ff = new FakeFirefox();
   const { w } = world(ff);

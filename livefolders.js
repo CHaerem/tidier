@@ -1,18 +1,22 @@
-// Live folders: folders filled from a GitHub pull request search, like Zen's
-// live folders.
+// Live folders: folders filled from a GitHub search (pull requests, or issues) or
+// from a feed's newest entries, like Zen's live folders.
 //
 // The search runs in a native messaging host (native/github-prs.py) with your
-// existing gh login, so no GitHub token reaches the browser. The folders
-// (name, container, search) are set up in the host's config file, not here;
-// the extension only gets each folder's id, name and container.
+// existing gh login, so no GitHub token reaches the browser; a feed is fetched
+// there too, so Tidier needs no access to its site. The folders (name, container,
+// and the search or the feed's address) are set up in the host's config file, not
+// here; the extension only gets each folder's id, name and container.
 //
 // Every few minutes (and at startup) each folder is brought in line with the
-// search: new pull requests get a tab (an unloaded placeholder that opens the
-// pull request when you select it), merged or closed ones are removed (the
-// one you are looking at only once you have left it). A live folder is one of
-// Tidier's own (ownfolders.js), with `live` set to its id, and tab sync shows its
-// tabs in every window. A tab you close stays closed until the pull request leaves
-// the search.
+// search: what is new in it gets a tab (an unloaded placeholder that opens its
+// page when you select it), what has left it (merged, closed, or out of
+// the feed's newest) is removed (the one you are looking at only once you have
+// left it). A live folder is one of Tidier's own (ownfolders.js), with `live` set
+// to its id, and tab sync shows its tabs in every window. A tab you close stays
+// closed until what it shows leaves the search.
+//
+// Most of the names here say pull request, which is what they were all once; an
+// issue and a feed's entry go the same way, and differ only in what their rows show.
 
 const NATIVE_HOST = "tidier_github";
 const GITHUB_ICON = "https://github.githubassets.com/favicons/favicon.svg";
@@ -46,13 +50,16 @@ async function ensureFolderGroup(folder, state) {
   return state.groupKey;
 }
 
-const liveTitle = item => `${item.repo}#${item.number} ${item.title}`;
+// A feed's entry has only its title; what GitHub has is also told apart by where it is.
+const liveTitle = item => item.repo ? `${item.repo}#${item.number} ${item.title}` : String(item.title);
 
 // What a pull request waits for, which its row shows as its icon (sidebar.js): a row of
 // GitHub's mark said nothing. One word, the most pressing first: someone waits for your
 // review; then, of your own, what stops it. An older helper says only whether it is a
-// draft, and then that is all the icon says.
+// draft, and then that is all the icon says. An issue or a feed's entry waits for
+// nothing, and says only what it is.
 function liveState(item) {
+  if (item.what === "issue" || item.what === "feed") return item.what;
   const mine = item.mine !== false;
   if (!mine && item.asked) return "review";
   if (item.draft) return "draft";
@@ -69,7 +76,8 @@ async function createLiveItem(folder, groupKey, item) {
   const all = await getSynced();
   const key = crypto.randomUUID();
   const entry = {
-    url: item.url, liveUrl: item.url, title: liveTitle(item), icon: GITHUB_ICON, pr: liveState(item),
+    url: item.url, liveUrl: item.url, title: liveTitle(item), pr: liveState(item),
+    ...(item.what === "feed" ? {} : { icon: GITHUB_ICON }), // a feed's entries can be on any site
     cookieStoreId: folder.cookieStoreId, parentKey: groupKey, group: false, liveFolder: folder.id,
   };
   all[key] = entry;
@@ -100,6 +108,8 @@ function liveTrouble(error) {
   if (/auth|log ?in|token|credential|401|403/i.test(text)) return "GitHub wants you to sign in again (gh auth login)";
   if (/live-folders\.json/.test(text)) return "the helper's list of folders could not be read";
   if (/only part of the result/.test(text)) return "GitHub answered with only part of the list";
+  if (/^feed: not a feed/.test(text)) return "what its address answers with is not a feed";
+  if (/^feed:/.test(text)) return "its feed did not answer";
   return "GitHub did not answer as it should";
 }
 
@@ -120,7 +130,10 @@ async function refreshLiveFolder(folder, res) {
   const groupKey = await ensureFolderGroup(folder, state);
   if (!groupKey) return;
 
-  const wanted = new Map(res.items.map(i => [i.url, i]));
+  // Only what is a web page gets a tab: a feed is a stranger's words, and the helper that
+  // reads it (native/feeds.py) is not updated with Tidier, so it is not left to that alone.
+  const items = res.items.filter(i => isWeb(i?.url));
+  const wanted = new Map(items.map(i => [i.url, i]));
   state.dismissed = state.dismissed.filter(u => wanted.has(u)); // closed PRs may come back if reopened
   await saveFolderState();
 
@@ -133,7 +146,7 @@ async function refreshLiveFolder(folder, res) {
   for (const [url, k] of have) {
     if (!wanted.has(url) && !repsOf(k, tabs).some(t => t.active) && await closesQuietly(k)) await closeEverywhere(k, { dismiss: false });
   }
-  for (const item of res.items) {
+  for (const item of items) {
     if (have.has(item.url)) { await renameLiveItem(have.get(item.url), item); await markLiveItem(have.get(item.url), item); }
     else if (!state.dismissed.includes(item.url)) await createLiveItem(folder, groupKey, item);
   }

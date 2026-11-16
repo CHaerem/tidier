@@ -645,8 +645,12 @@ ACTIONS = r"""
       const w = here(), v = await sb(w, "view"), id = v && pick(rowsOf(v)), s = v && pick(v.spaces.filter(x => x !== v.space)), t = id && inThisSidebar(w, id);
       if (!t || !s || !/^http/.test(url(t)) && !isGhost(t)) return null;
       closing(w, t);
+      // It arrives as it left: one that was unloaded has no page anywhere there either, until
+      // you select it (reopenIn, safemoves.js).
+      if (!t.linkedPanel || isGhost(t)) note.noLiveOk = [keyOf(w, t)].filter(Boolean);
+      const what = `${(t.label || "").slice(0, 24)} (${roleOf(w, t) || "no role"}, ${t.linkedPanel && !isGhost(t) ? "loaded" : "unloaded"}${t.selected ? ", selected" : ""})`;
       await sb(w, "drag", {from: row(id), to: `#spaces .space[data-space="${s}"]`});
-      return "sidebar: drag a tab to another space";
+      return `sidebar: drag a tab to another space: ${what} to ${s}`;
     },
     async sb_drag_to_essentials() {
       const w = here(), v = await sb(w, "view"), id = v && pick(rowsOf(v)), t = id && inThisSidebar(w, id);
@@ -779,7 +783,9 @@ INVARIANTS = LIB + r"""
     if (space) {
       for (const x of tabs.filter(x => x.wi === wi && !x.pinned)) {
         if (x.ctx !== space && x.ctx !== "firefox-default" && !x.hidden && !x.selected) bad("another space's tab is shown", x.label, x.ctx + " in " + space);
-        if (x.ctx === space && x.hidden) bad("a tab of the active space is hidden", x.label);
+        // (A closed folder's tabs rest: hidden in every window, but for the one you are on. foldrest.js.)
+        const rests = k => { const e = all[k], f = e && all[e.parentKey]; return !!(f && f.group && f.collapsed); };
+        if (x.ctx === space && x.hidden && !rests(x.key)) bad("a tab of the active space is hidden", x.label);
       }
     }
     if (sidebarShown(w)) {

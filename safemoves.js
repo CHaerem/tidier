@@ -68,14 +68,17 @@ async function pageTab(tab, key) {
 // refuses. `live` is the real tab (pageTab): a row can be a placeholder, its page loaded
 // and selected in another window. `leaving`: the other tabs of one move of several. Stepping
 // onto one would select it for a moment, and a placeholder that is selected starts pulling
-// its real tab in (pull, tabsync.js), under a new id, while its own move is on the way.
+// its real tab in (pull, pull.js), under a new id, while its own move is on the way.
 async function leavesQuietly(live, key, leaving = []) {
   if (!live?.active || live.discarded || isGhostUrl(live.url)) return closesQuietly(key, live?.id);
   const last = await lastUsedIn(live.windowId, live.cookieStoreId, live.id, ...leaving) ?? await nextAfterClosing(live.windowId, live.cookieStoreId, live.id, ...leaving);
-  const step = last ?? await browser.tabs.create({ windowId: live.windowId, cookieStoreId: live.cookieStoreId, active: false });
-  await browser.tabs.update(step.id, { active: true });
+  // (createTab, common.js: nothing if the window closes meanwhile. A window you close at any
+  // moment is no error: the page then goes with it, which asks nothing either.)
+  const step = last ?? await createTab({ windowId: live.windowId, cookieStoreId: live.cookieStoreId, active: false });
+  if (!step) return closesQuietly(key, live.id);
+  await browser.tabs.update(step.id, { active: true }).catch(ifGone);
   if (await closesQuietly(key, live.id)) return true;
-  await browser.tabs.update(live.id, { active: true });
+  await browser.tabs.update(live.id, { active: true }).catch(ifGone);
   if (!last) await browser.tabs.remove(step.id).catch(() => {});
   return false;
 }

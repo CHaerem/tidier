@@ -50,11 +50,13 @@
       mark.hidden = !show;
     }
     if (!way) return;
-    // Over the list, at the edge the row lies beyond: placed from the list itself, which
-    // moves with the notices and the quiet line's room under it.
+    // On the list's very edge, the one the row lies beyond: there the list's fade has taken
+    // the rows away, so the line is on no row's words (a little further in, it struck through
+    // the title of the row fading out under it). Placed from the list itself, which moves
+    // with the notices and the quiet line's room under it.
     const mark = marks[way];
     mark.style.left = `${box.left + box.width / 2}px`;
-    mark.style.top = way === "up" ? `${box.top + 4}px` : `${box.bottom - 6}px`;
+    mark.style.top = way === "up" ? `${box.top - 1}px` : `${box.bottom - 1}px`;
   }
 
   list.addEventListener("scroll", draw, { passive: true });

@@ -3,7 +3,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { FakeFirefox, wait, GHOST } from "./fake_firefox.mjs";
-import { ChaosFirefox } from "./chaos_firefox.mjs";
+import { ChaosFirefox, isPlaceholder } from "./chaos_firefox.mjs";
 
 const C1 = "firefox-container-1", GONE = "firefox-container-9";
 const FOLDER = "moz-extension://sb/sidebery/group.html#F"; // a folder of Sidebery's, as a browser that never moved over has it
@@ -1222,6 +1222,90 @@ test("a window closed while it is being filled is not an error", async () => {
   x.kill();
 });
 
+// Found by the random sequences (seed 100427).
+test("a placeholder that came back with its window and is closed before Tidier has looked at it is not left under Recently Closed", async () => {
+  const { ff, x, windows: [w] } = await chaosStart({ windows: 1 });
+  ff.openTab(w.id, { url: "https://a.example/", cookieStoreId: "firefox-container-1" });
+  await ff.clock.run(3000);
+  const { window: other } = ff.openWindow();
+  await ff.clock.idle(60000);
+  assert.ok(ff.list(other.id).some(t => isPlaceholder(t.url)), "the second window has its placeholder");
+  ff.closeWindow(other.id);
+  await ff.clock.run(1000);
+  const back = ff.reopenLast();
+  ff.closeTab(ff.list(back.id).find(t => isPlaceholder(t.url)).id); // in the same breath
+  await ff.clock.idle(60000);
+  assert.deepEqual(ff.closedItems.filter(c => c.kind === "tab" && isPlaceholder(c.state.url)).map(c => c.state.url), []);
+  assert.equal(x.js("cameBack").size, 0, "and nothing is kept of it");
+  assert.deepEqual([...x.js("problems")], []);
+  x.kill();
+});
+
+// Found by the random sequences (seed 1886), with Firefox made to refuse a call now and then:
+// the tab's record was gone after the restart, as if you had closed it.
+test("a tab whose key Firefox would not say at a start is asked for again, and is not taken for closed", async () => {
+  const ff = new ChaosFirefox();
+  ff.store.syncedTabs = { a: entry("https://a.example/"), b: entry("https://b.example/") };
+  const w = ff.addWindow({ focused: true });
+  const a = ff.addTab(w.id, { url: "https://a.example/", active: true, cookieStoreId: C1 }, { syncKey: "a", syncRole: "live" });
+  ff.addTab(w.id, { url: "https://b.example/", cookieStoreId: C1 }, { syncKey: "b", syncRole: "live" });
+  let refused = 0;
+  ff.adapt = (adapt => function (b) {
+    adapt.call(this, b);
+    const get = b.sessions.getTabValue;
+    b.sessions.getTabValue = async (id, name) => { if (id === a.id && name === "syncRole" && !refused++) throw new Error("refused for a reason of Firefox's own"); return get(id, name); };
+  })(ff.adapt);
+  const x = ff.boot();
+  x.b.runtime.onStartup.fire();
+  await ff.clock.idle(120000);
+  assert.ok(refused >= 2, "it was refused, and asked again");
+  assert.deepEqual(Object.keys(ff.store.syncedTabs).sort(), ["a", "b"], "both are still in the record");
+  assert.equal(ff.values.get(a.id).syncKey, "a", "and the tab is still that tab");
+  x.kill();
+});
+
+// Found by the random sequences (seed 323), with Firefox made to refuse a call now and then.
+test("a tab that has closed is forgotten also when Firefox refuses the first of the two values for another reason", async () => {
+  const { ff, x, windows: [w] } = await chaosStart({ windows: 1 });
+  const t = ff.openTab(w.id, { url: "https://a.example/", cookieStoreId: "firefox-container-1" });
+  await ff.clock.run(3000);
+  const key = ff.values.get(t.id).syncKey;
+  ff.closeTab(t.id);
+  await ff.clock.run(3000);
+  let asked = 0;
+  x.b.sessions.setTabValue = async id => { throw new Error(asked++ ? `Invalid tab ID: ${id}` : "refused for a reason of Firefox's own"); };
+  assert.equal(await ff.clock.settled(x.js("setRole")(t.id, key, "ghost")), false);
+  assert.equal(asked, 2, "both were asked");
+  assert.ok(!x.js("syncKeyByTab").has(t.id) && !x.js("syncRoleByTab").has(t.id), "and it is in neither list");
+  // A refusal that is not about a closed tab is still one.
+  x.b.sessions.setTabValue = async () => { throw new Error("refused for a reason of Firefox's own"); };
+  await assert.rejects(ff.clock.settled(x.js("setRole")(t.id, key, "ghost")), /Firefox's own/);
+  x.js("forget")(t.id);
+  x.kill();
+});
+
+test("a placeholder closed as a new window is being filled is not an error, and the window gets the rest", async () => {
+  const { ff, x, windows: [w] } = await chaosStart({ windows: 1 });
+  for (const site of ["a", "b", "c"]) ff.openTab(w.id, { url: `https://${site}.example/`, cookieStoreId: "firefox-container-1" });
+  await ff.clock.run(3000);
+  const { window: fresh } = ff.openWindow();
+  // Its first placeholder, closed the moment Firefox has made it: before Tidier has given it
+  // its key, so Firefox refuses that, and Tidier has no tab and no refusal to show for it.
+  let closed = null;
+  for (let i = 0; i < 2000 && closed === null; i++) {
+    await ff.clock.run(2);
+    const first = ff.list(fresh.id).find(t => isPlaceholder(t.url));
+    if (first) { ff.closeTab(first.id); closed = first.id; }
+  }
+  assert.notEqual(closed, null, "the window was being filled");
+  await ff.clock.idle(60000);
+  assert.deepEqual([...x.js("problems")], []);
+  const keys = id => ff.list(id).map(t => ff.values.get(t.id)?.syncKey).filter(Boolean).sort();
+  assert.equal(keys(fresh.id).length, 2, "the two after it are there");
+  assert.ok(keys(fresh.id).every(k => keys(w.id).includes(k)));
+  x.kill();
+});
+
 test("a tab opened while Tidier is starting is seen when it has started", async () => {
   const ff = new ChaosFirefox();
   ff.store.syncedTabs = { a: entry("https://a.example/") };
@@ -1783,6 +1867,250 @@ test("a copy not pinned at an update was unpinned by you: the essential goes", a
   assert.deepEqual(ff.store.essentials, []);
   assert.ok(![...ff.tabs.values()].some(y => y.url.includes("kind=essential")));
   x.kill();
+});
+
+// Found by the random sequences (seed 100072): the essential was taken off the list, in every
+// window, by an update that came between a copy being made and it being pinned.
+test("a copy still being made at an update is no essential you unpinned: the essential stays, and its window has its copy", async () => {
+  const ff = new ChaosFirefox();
+  const a = ff.addWindow({ focused: true });
+  ff.addTab(a.id, { url: "about:home", active: true });
+  ff.boot().b.runtime.onInstalled.fire({ reason: "install" });
+  await ff.clock.run(3000);
+  const t = ff.openTab(a.id, { url: "https://e.example/", cookieStoreId: C1 });
+  await ff.clock.run(3000);
+  ff.pinTab(t);
+  await ff.clock.idle(60000);
+  assert.deepEqual(ff.store.essentials.map(e => e.url), ["https://e.example/"]);
+  // ⌘W on it: its window gets a placeholder in its place, made unpinned and pinned next.
+  ff.closeTab(t.id);
+  const unfinished = () => ff.list(a.id).find(y => y.url.includes("kind=essential") && !y.pinned);
+  for (let i = 0; i < 5000 && !unfinished(); i++) await ff.clock.step();
+  assert.ok(unfinished(), "the copy is there, not pinned yet");
+  const x = ff.update();
+  await ff.clock.idle(60000);
+  assert.deepEqual(ff.store.essentials.map(e => e.url), ["https://e.example/"], "still an essential");
+  const copies = ff.list(a.id).filter(y => y.url.includes("kind=essential"));
+  assert.deepEqual(copies.map(y => y.pinned), [true], "with one copy here, pinned");
+  assert.deepEqual([...x.js("problems")], []);
+  x.kill();
+});
+
+// (Seed 100391, with Firefox made to refuse a call now and then: the copy had its key and no pin.)
+test("a copy Firefox would not pin gets no key and goes: the essential stays, and the window has its copy after the next start", async () => {
+  const { ff, x, windows: [a] } = await chaosStart({ windows: 1 });
+  const t = ff.openTab(a.id, { url: "https://e.example/", cookieStoreId: C1 });
+  await ff.clock.run(3000);
+  ff.pinTab(t);
+  await ff.clock.idle(60000);
+  const update = x.b.tabs.update;
+  x.b.tabs.update = async (id, change) => { if (change.pinned) throw new Error("refused for a reason of Firefox's own"); return update(id, change); };
+  const { window: fresh } = ff.openWindow();
+  await ff.clock.idle(60000);
+  const copies = id => ff.list(id).filter(y => y.url.includes("kind=essential"));
+  assert.deepEqual(copies(fresh.id), [], "nothing is left of the copy that could not be pinned");
+  assert.deepEqual(ff.store.essentials.map(e => e.url), ["https://e.example/"]);
+  const again = ff.update();
+  await ff.clock.idle(60000);
+  assert.deepEqual(ff.store.essentials.map(e => e.url), ["https://e.example/"], "still an essential after an update");
+  assert.deepEqual(copies(fresh.id).map(y => y.pinned), [true], "and the window has its copy");
+  again.kill();
+});
+
+// Found by the random sequences (seed 429).
+test("a window closed while its tab is on its way to another space is not an error", async () => {
+  const { ff, x, windows: [a, b] } = await chaosStart();
+  // The only tab of its space in the second window, and selected: to see whether it can
+  // leave quietly, Tidier first makes a tab to step onto, in that window.
+  const t = ff.openTab(b.id, { url: "https://a.example/", cookieStoreId: C1, active: true });
+  await ff.clock.idle(60000);
+  ff.connectSidebar(b.id);
+  await ff.clock.run(1000);
+  // The window closes in the moment before Firefox is asked for that tab.
+  const create = x.b.tabs.create;
+  let closed = false;
+  x.b.tabs.create = given => { if (given.windowId === b.id && !given.url && !closed) { closed = true; ff.closeWindow(b.id); } return create(given); };
+  ff.sidebarSays(b.id, { type: "moveToSpace", tabId: t.id, space: "firefox-container-2" });
+  await ff.clock.idle(60000);
+  assert.ok(closed, "it was on its way");
+  assert.deepEqual([...x.js("problems")], []);
+  assert.ok(ff.wins.has(a.id));
+  x.kill();
+});
+
+// Found by the random sequences (seed 980): the pinned tab was no essential, so no window's
+// sidebar had it anywhere, until the next start.
+test("an essential you had unpinned, brought back with ⌘⇧T while Tidier is starting, is an essential again", async () => {
+  const { ff, windows: [a] } = await chaosStart({ windows: 1 });
+  const t = ff.openTab(a.id, { url: "https://e.example/", cookieStoreId: C1 });
+  await ff.clock.run(3000);
+  ff.pinTab(t);
+  await ff.clock.idle(60000);
+  ff.closeTab(t.id); // ⌘W: under Recently Closed, pinned, with the essential's key
+  await ff.clock.idle(60000);
+  ff.unpinTab(ff.tabs.get(ff.list(a.id).find(y => y.pinned).id)); // and the essential itself taken off the list
+  await ff.clock.idle(60000);
+  assert.deepEqual(ff.store.essentials, []);
+  const x = ff.update();
+  await ff.clock.run(1200); // Tidier is starting: it hears nothing of what happens now
+  let back = null;
+  for (let i = 0; i < 20 && !back?.pinned; i++) back = ff.reopenLast();
+  assert.ok(back?.pinned && back.url === "https://e.example/", "the pinned tab came back");
+  assert.equal(x.js("started"), false, "before Tidier had started");
+  await ff.clock.idle(60000);
+  const pinned = ff.list(a.id).filter(y => y.pinned);
+  assert.deepEqual(ff.store.essentials.map(e => e.url), ["https://e.example/"], "pinned again, so an essential again");
+  assert.deepEqual(pinned.map(y => ff.values.get(y.id)?.essentialKey), [ff.store.essentials[0].key], "and the tab is its one copy here");
+  assert.deepEqual([...x.js("problems")], []);
+  x.kill();
+});
+
+// Found by the random sequences (seed 101943).
+test("a window closed in the moment an essential's page is on its way to it leaves the page where it was, with one copy there", async () => {
+  const { ff, x, windows: [a, b] } = await chaosStart();
+  const t = ff.openTab(a.id, { url: "https://e.example/", cookieStoreId: C1, active: true });
+  await ff.clock.run(3000);
+  ff.pinTab(t);
+  await ff.clock.idle(60000);
+  const copies = id => ff.list(id).filter(y => ff.values.get(y.id)?.essentialKey);
+  assert.deepEqual([copies(a.id).length, copies(b.id).length], [1, 1]);
+  // The other window, and its placeholder selected there: the page is to come to it, and the
+  // window it leaves gets a placeholder first, since it is on the page. Then this window closes.
+  const move = x.b.tabs.move;
+  let closed = false;
+  x.b.tabs.move = (id, to) => { if (to.windowId === b.id && !closed) { closed = true; ff.closeWindow(b.id); } return move(id, to); };
+  ff.focusWindow(b.id);
+  ff.select(copies(b.id)[0].id);
+  await ff.clock.idle(60000);
+  assert.ok(closed, "the page was on its way");
+  const left = copies(a.id);
+  assert.deepEqual(left.map(y => [y.id, y.pinned, y.url]), [[t.id, true, "https://e.example/"]], "one copy, the page itself");
+  assert.equal(ff.tabs.get(t.id).active, true, "selected as it was");
+  assert.deepEqual([...x.js("problems")], []);
+  x.kill();
+});
+
+// Found by the random sequences (seed 1072): the page was then loaded twice in the window it never left.
+test("a window closed in the moment a page is on its way to it leaves the page where it was, once", async () => {
+  const { ff, x, windows: [a, b] } = await chaosStart();
+  const t = ff.openTab(a.id, { url: "https://a.example/", cookieStoreId: C1, active: true });
+  await ff.clock.idle(60000);
+  const key = ff.values.get(t.id).syncKey;
+  const reps = id => ff.list(id).filter(y => ff.values.get(y.id)?.syncKey === key);
+  assert.deepEqual([reps(a.id).length, reps(b.id).length], [1, 1]);
+  // Its placeholder selected in the other window: the page is to come to it, and the window it
+  // leaves, which is on the page, gets a placeholder first. Then the other window closes.
+  const move = x.b.tabs.move;
+  let closed = false;
+  x.b.tabs.move = (id, to) => { if (to.windowId === b.id && !closed) { closed = true; ff.closeWindow(b.id); } return move(id, to); };
+  ff.focusWindow(b.id);
+  ff.select(reps(b.id)[0].id);
+  await ff.clock.idle(60000);
+  assert.ok(closed, "the page was on its way");
+  assert.deepEqual(reps(a.id).map(y => [y.id, ff.values.get(y.id).syncRole, y.url, y.active]), [[t.id, "live", "https://a.example/", true]], "one tab of it, the page itself, selected as it was");
+  assert.deepEqual([...x.js("problems")], []);
+  x.kill();
+});
+
+// Found by the random sequences (seed 102370): the page was then open twice, under two keys.
+test("a placeholder brought back with ⌘⇧T before Recently Closed has forgotten it is its tab's placeholder, not the page a second time", async () => {
+  const { ff, x, windows: [a, b] } = await chaosStart();
+  const t = ff.openTab(a.id, { url: "https://a.example/", cookieStoreId: C1, active: true });
+  await ff.clock.idle(60000);
+  const key = ff.values.get(t.id).syncKey;
+  // Its placeholder selected in the other window: the page comes there, and the placeholder,
+  // which was loading as the tab you were on, is closed and is under Recently Closed a moment.
+  ff.focusWindow(b.id);
+  ff.select(ff.list(b.id).find(y => ff.values.get(y.id)?.syncKey === key).id);
+  const closedPlaceholder = () => ff.closedItems.some(c => c.kind === "tab" && isPlaceholder(c.state.url));
+  for (let i = 0; i < 5000 && !closedPlaceholder(); i++) await ff.clock.step();
+  assert.ok(closedPlaceholder(), "it is there for a moment");
+  const back = ff.reopenLast();
+  assert.ok(isPlaceholder(back.url), "and ⌘⇧T brings it back");
+  await ff.clock.idle(60000);
+  const pages = [...ff.tabs.values()].filter(y => y.url === "https://a.example/");
+  assert.equal(pages.length, 1, "the page is open once");
+  assert.deepEqual(Object.values(ff.store.syncedTabs).filter(e => e.url === "https://a.example/").length, 1, "under one key");
+  for (const w of [a, b]) assert.equal(ff.list(w.id).filter(y => ff.values.get(y.id)?.syncKey === key).length, 1, `one tab of it in window ${w.id}`);
+  assert.deepEqual([...x.js("problems")], []);
+  x.kill();
+});
+
+// Found by the random sequences (seed 2946): the tab was closed in every window and no
+// essential made; what was left was a pinned placeholder with nothing to show.
+test("a placeholder pinned the moment its window came back makes its tab an essential", async () => {
+  const { ff, x, windows: [a, b] } = await chaosStart();
+  ff.openTab(a.id, { url: "https://a.example/", cookieStoreId: C1, active: true });
+  await ff.clock.idle(60000);
+  ff.closeWindow(b.id);
+  await ff.clock.idle(60000);
+  // Tidier is busy with something else for a moment, as on a machine with much to do: its
+  // look at the window that comes back waits, and the pin comes after that look was asked for.
+  let goOn;
+  x.js("serial")(() => new Promise(resolve => { goOn = resolve; }));
+  const back = ff.reopenLast(); // ⌘⇧N
+  const placeholder = ff.list(back.id).find(y => isPlaceholder(y.url));
+  assert.ok(placeholder, "the window came back with its placeholder");
+  await ff.clock.run(400);
+  ff.pinTab(ff.tabs.get(placeholder.id));
+  await ff.clock.run(50);
+  goOn();
+  await ff.clock.idle(60000);
+  assert.deepEqual(ff.store.essentials.map(e => e.url), ["https://a.example/"], "the page is an essential");
+  assert.deepEqual(Object.values(ff.store.syncedTabs).filter(e => e.url === "https://a.example/"), [], "and no longer a tab");
+  for (const w of [a, back]) {
+    const pinned = ff.list(w.id).filter(y => y.pinned);
+    assert.deepEqual(pinned.map(y => ff.values.get(y.id)?.essentialKey), [ff.store.essentials[0].key], `one copy of it in window ${w.id}`);
+  }
+  assert.deepEqual([...x.js("problems")], []);
+  x.kill();
+});
+
+// Found by the random sequences (seed 2822).
+test("a placeholder you close while Tidier is starting is back in its window, and not under Recently Closed", async () => {
+  const { ff, windows: [a, b] } = await chaosStart();
+  ff.openTab(a.id, { url: "https://a.example/", cookieStoreId: C1, active: true });
+  await ff.clock.idle(60000);
+  const x = ff.update();
+  // After the start's own look at Recently Closed, and before Tidier listens again.
+  const look = x.b.sessions.getRecentlyClosed;
+  let looked = false;
+  x.b.sessions.getRecentlyClosed = () => { looked = true; return look(); };
+  for (let i = 0; i < 20000 && !looked; i++) await ff.clock.step();
+  for (let i = 0; i < 3; i++) await ff.clock.step();
+  assert.ok(looked && !x.js("started"), "Tidier is starting, and hears nothing");
+  ff.closeTab(ff.list(b.id).find(y => isPlaceholder(y.url)).id);
+  await ff.clock.idle(60000);
+  assert.equal(ff.list(b.id).filter(y => isPlaceholder(y.url)).length, 1, "the window has the tab's placeholder again");
+  assert.deepEqual(ff.closedItems.filter(c => c.kind === "tab" && isPlaceholder(c.state.url)).map(c => c.state.url), [], "and ⌘⇧T will not bring back the one you closed");
+  assert.deepEqual([...x.js("problems")], []);
+  x.kill();
+});
+
+// Found by the random sequences (seed 4014): looked at by its address, the stray was given
+// the essential's key, and the next look took it for an essential you had unpinned.
+test("an essential's placeholder that comes back unpinned while Tidier is starting goes, and the essential stays", async () => {
+  const { ff, windows: [a, b] } = await chaosStart();
+  const t = ff.openTab(a.id, { url: "https://e.example/", cookieStoreId: C1 });
+  await ff.clock.run(3000);
+  ff.pinTab(t);
+  await ff.clock.idle(60000);
+  const key = ff.store.essentials[0].key, placeholder = `moz-extension://tidier/ghost.html?kind=essential&key=${key}`;
+  const x = ff.update();
+  await ff.clock.run(1200);
+  assert.equal(x.js("started"), false, "Tidier is starting");
+  // ⌘⇧T in the other window, which you then leave: one Tidier closed before it was pinned, so
+  // with no key of its own and not pinned, and selected there, where Tidier looks at the tab
+  // a window is on (to remember it for its space).
+  const stray = ff.openTab(b.id, { url: placeholder, cookieStoreId: C1, active: true, restored: { tab: { url: placeholder, title: "Page e.example/" }, values: {} } });
+  await ff.clock.idle(60000);
+  assert.deepEqual(ff.store.essentials.map(e => e.url), ["https://e.example/"], "still an essential");
+  assert.notEqual(ff.values.get(stray.id)?.essentialKey, key, "and the stray, if it is still there, was not given its key");
+  const again = ff.update();
+  await ff.clock.idle(60000);
+  assert.deepEqual(ff.store.essentials.map(e => e.url), ["https://e.example/"], "and after the next start");
+  for (const w of [a, b]) assert.equal(ff.list(w.id).filter(y => y.pinned).length, 1, `one copy in window ${w.id}`);
+  again.kill();
 });
 
 test("a window opened while Tidier is starting gets its tabs when it has started", async () => {
@@ -2966,6 +3294,86 @@ test("the space you switched to is kept, and an update shows the selected tab's 
   assert.equal(y.js(`activeSpace.get(${w.id})`), C2);
   assert.equal(ff.tabs.get(inTwo.id).hidden, false);
   y.kill();
+});
+
+// Found by the random sequences (seed 5363), and by the long run in a real Firefox as tabs of
+// the space you are in left hidden: Firefox refuses the whole list for one tab that has gone.
+test("a tab closed as the space changes does not leave the rest of its space shown, or of the new one hidden", async () => {
+  const ff = new FakeFirefox();
+  const C2 = "firefox-container-2";
+  ff.store.syncedTabs = {
+    a: entry("https://a.example/"), a2: entry("https://a2.example/"), a3: entry("https://a3.example/"),
+    b: entry("https://b.example/", { cookieStoreId: C2 }), b2: entry("https://b2.example/", { cookieStoreId: C2 }), b3: entry("https://b3.example/", { cookieStoreId: C2 }),
+  };
+  const w = ff.addWindow({ focused: true });
+  const one = Object.fromEntries(["a", "a2", "a3"].map((k, i) => [k, ff.addTab(w.id, { url: `https://${k}.example/`, active: i === 0, cookieStoreId: C1 }, { syncKey: k, syncRole: "live" })]));
+  const two = Object.fromEntries(["b", "b2", "b3"].map(k => [k, ff.addTab(w.id, { url: `https://${k}.example/`, cookieStoreId: C2, hidden: true }, { syncKey: k, syncRole: "live" })]));
+  const x = await alone(ff);
+  // As Firefox does it: every tab in the list is looked up first, and one that is gone refuses them all.
+  const gone = new Set([one.a2.id, two.b2.id]);
+  for (const what of ["hide", "show"]) {
+    const call = x.b.tabs[what];
+    x.b.tabs[what] = async ids => { const missing = [ids].flat().find(id => gone.has(id)); if (missing !== undefined) throw new Error(`Invalid tab ID: ${missing}`); return call(ids); };
+  }
+  await x.js(`switchSpace(${w.id}, "${C2}")`);
+  await wait(500);
+  assert.deepEqual([two.b, two.b3].map(t => ff.tabs.get(t.id).hidden), [false, false], "the space you came to is shown, but for the tab that has gone");
+  assert.deepEqual([one.a3].map(t => ff.tabs.get(t.id).hidden), [true], "and the one you left is hidden");
+  assert.equal(x.js("problems.join()"), "");
+  x.kill();
+});
+
+// Found by the long run in a real Firefox, and then by the random sequences once they looked
+// for it (seeds 100250 and 300): one tab in sixty-odd runs was listed in one space and open in another.
+test("a record and its page in different spaces: the record follows the page, and a placeholder left in another space is made again in the record's", async () => {
+  const C2 = "firefox-container-2", NONE = "firefox-default";
+  const spaces = (ff, w, key) => ff.list(w.id).filter(t => ff.values.get(t.id)?.syncKey === key).map(t => t.cookieStoreId);
+  // Into a space, cut off: the page is in its space, the record and the other window's placeholder in none.
+  {
+    const ff = new FakeFirefox();
+    ff.store.syncedTabs = { a: entry("https://a.example/", { cookieStoreId: NONE }), here: entry("https://here.example/") };
+    const w = ff.addWindow({ focused: true }), v = ff.addWindow();
+    ff.addTab(w.id, { url: "https://here.example/", active: true, cookieStoreId: C1 }, { syncKey: "here", syncRole: "live" });
+    ff.addTab(w.id, { url: "https://a.example/", cookieStoreId: C1 }, { syncKey: "a", syncRole: "live" });
+    ff.addTab(v.id, { url: GHOST("ghost", "here"), active: true, cookieStoreId: C1 }, { syncKey: "here", syncRole: "ghost" });
+    ff.addTab(v.id, { url: GHOST("ghost", "a"), discarded: true, cookieStoreId: NONE }, { syncKey: "a", syncRole: "ghost" });
+    const x = await alone(ff);
+    assert.equal(ff.store.syncedTabs.a.cookieStoreId, C1, "the record is in the page's space");
+    assert.deepEqual([spaces(ff, w, "a"), spaces(ff, v, "a")], [[C1], [C1]], "and so is every tab of it, once in each window");
+    assert.equal(x.js("problems.join()"), "");
+    x.kill();
+  }
+  // On to another space, cut off either way: the page moved and the record did not, or the
+  // record and the page did and a placeholder did not.
+  for (const [recorded, page] of [[C1, C2], [C2, C2]]) {
+    const ff = new FakeFirefox();
+    ff.store.syncedTabs = { a: entry("https://a.example/", { cookieStoreId: recorded }), here: entry("https://here.example/") };
+    const w = ff.addWindow({ focused: true }), v = ff.addWindow();
+    ff.addTab(w.id, { url: "https://here.example/", active: true, cookieStoreId: C1 }, { syncKey: "here", syncRole: "live" });
+    ff.addTab(w.id, { url: "https://a.example/", cookieStoreId: page }, { syncKey: "a", syncRole: "live" });
+    ff.addTab(v.id, { url: GHOST("ghost", "here"), active: true, cookieStoreId: C1 }, { syncKey: "here", syncRole: "ghost" });
+    ff.addTab(v.id, { url: GHOST("ghost", "a"), discarded: true, cookieStoreId: C1 }, { syncKey: "a", syncRole: "ghost" });
+    const x = await alone(ff);
+    assert.equal(ff.store.syncedTabs.a.cookieStoreId, C2, `recorded in ${recorded}, the page in ${page}`);
+    assert.deepEqual([spaces(ff, w, "a"), spaces(ff, v, "a")], [[C2], [C2]]);
+    assert.equal(ff.store.syncedTabs.here.cookieStoreId, C1, "another tab is left as it is");
+    assert.equal(x.js("problems.join()"), "");
+    x.kill();
+  }
+  // In a folder of the space it is no longer in, it is out of the folder: a folder's tabs are its space's.
+  {
+    const ff = new FakeFirefox();
+    ff.store.syncedTabs = {
+      F: { group: true, own: true, name: "F", cookieStoreId: C1, parentKey: null, rank: 1, added: 1 },
+      a: entry("https://a.example/", { parentKey: "F", saved: { url: "https://a.example/", title: "a" } }), here: entry("https://here.example/"),
+    };
+    const w = ff.addWindow({ focused: true });
+    ff.addTab(w.id, { url: "https://here.example/", active: true, cookieStoreId: C1 }, { syncKey: "here", syncRole: "live" });
+    ff.addTab(w.id, { url: "https://a.example/", cookieStoreId: C2 }, { syncKey: "a", syncRole: "live" });
+    const x = await alone(ff);
+    assert.deepEqual([ff.store.syncedTabs.a.cookieStoreId, ff.store.syncedTabs.a.parentKey, ff.store.syncedTabs.a.saved], [C2, null, undefined]);
+    x.kill();
+  }
 });
 
 test("a tab closed just as it is synced leaves no record, and stops nothing", async () => {

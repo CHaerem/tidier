@@ -161,6 +161,18 @@ test("the command bar is drawn from the same names: no colours of its own, and d
   assert.doesNotMatch(read("commandbar/commandbar.js"), /["'][›⌕＋▾→]["']/);
 });
 
+test("every drawn icon a rule asks for is drawn, and each thing a live folder's row can say has its own", () => {
+  // A name that is not there is no error to Firefox: the mask is none, and the row shows a
+  // filled square where its icon should be.
+  const tokens = read("sidebar/tokens.css");
+  const drawn = new Set([...tokens.matchAll(/^\s*(--icon-[\w-]+):/gm)].map(m => m[1])); // and the sizes named so
+  for (const file of STYLES) {
+    for (const [, name] of read(file).matchAll(/var\((--icon-[\w-]+)\)/g)) assert.ok(drawn.has(name), `${file} asks for ${name}`);
+  }
+  const css = read("sidebar/sidebar.css"), words = sidebarPage()("PR_WORDS");
+  for (const what of Object.keys(words).filter(w => w !== "open")) assert.match(css, new RegExp(`\\.row \\.pr\\.${what} \\{[^}]*mask-image: var\\(--icon-`), what);
+});
+
 test("a class the sidebar puts on the whole page is no element's own class", () => {
   // A space switch once marked html with "new-space", which is also the round button for a
   // new space: until the mark went, the whole sidebar was laid out as that button.

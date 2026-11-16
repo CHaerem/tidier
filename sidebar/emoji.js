@@ -1,8 +1,28 @@
-// --- The icons to choose from, for a space ----------------------------------------------
-// A space's icon is an emoji (spacemenu.js). The system has a list of them, but where it is
-// kept is not something everybody knows (on a Mac: fn E), and it does not open from a menu.
-// So the space's menu has its own: a field to search in and the ones found, drawn in the
-// menu's place as any list in it is (menu.js).
+// --- An icon of its own, for a space and for a folder: an emoji at the start of its name ---
+// "🏠 Home". The name is the container's or the folder's own, so the icon goes wherever the
+// name goes (Firefox's own lists of containers, your other machines, a copy of Tidier's data)
+// and nothing more is stored. A space's is drawn in its dot's place on the bar, a folder's in
+// the place of the folder sign (sidebar.js), as Arc and Zen give both an icon. (A flag, a
+// keycap, or a picture with what joins and tints it.)
+const NAME_ICON = /^((?:\p{Regional_Indicator}{2}|[#*0-9]\uFE0F?\u20E3|\p{Extended_Pictographic}(?:\uFE0F|\p{Emoji_Modifier})?(?:\u200D\p{Extended_Pictographic}(?:\uFE0F|\p{Emoji_Modifier})?)*))\s*/u;
+function nameIcon(name) {
+  const m = NAME_ICON.exec(name ?? "");
+  return m ? { icon: m[1], rest: name.slice(m[0].length) } : { icon: "", rest: name ?? "" };
+}
+// The name with that icon, or with none ("").
+const withIcon = (name, icon) => `${icon} ${nameIcon(name).rest}`.trim();
+// A menu's Icon: chosen from a list to search in (below), drawn in the menu's place; under
+// it, the way back to no icon, for a name that has one and something after it (a name that
+// is only an emoji would be left with nothing). `set`: what to do with the one chosen.
+const iconMenu = (name, set) => [
+  { part: () => emojiPicker(set) },
+  ...(nameIcon(name).icon && nameIcon(name).rest ? [null, ["No icon", () => set("")]] : []),
+];
+
+// --- The icons to choose from ------------------------------------------------------------
+// The system has a list of emoji, but where it is kept is not something everybody knows (on
+// a Mac: fn E), and it does not open from a menu. So the menu has its own: a field to search
+// in and the ones found, drawn in the menu's place as any list in it is (menu.js).
 //
 // A few hundred, each with the English words it is found by; what a space is often for
 // comes first. Any other emoji can be typed or pasted in the field, the system's list
@@ -305,7 +325,7 @@ const EMOJI = `
 
 // Read when the list is first asked for, not when the sidebar loads: most days nobody
 // changes an icon. A sign that Firefox would draw as text by itself (✈, ⚙, ☁) gets the mark
-// that makes it a picture, which is also what makes it an icon to spaceIcon.
+// that makes it a picture, which is also what makes it an icon to nameIcon.
 let emojiRead = null;
 function emojiList() {
   emojiRead ??= EMOJI.trim().split("\n").map(line => {
@@ -320,7 +340,7 @@ function emojiList() {
 // word before the start of one ("fire": 🔥 before the fox of Firefox). An emoji typed or
 // pasted is itself the first one found, in the list or not. Nothing typed: all of them.
 function emojiSearch(text) {
-  const typed = spaceIcon(text.trim()).icon; // spacemenu.js
+  const typed = nameIcon(text.trim()).icon;
   const asked = text.toLowerCase().split(/\s+/).filter(Boolean);
   const found = emojiList().filter(e => asked.every(a => e.words.some(w => w.startsWith(a))));
   const whole = e => asked.some(a => e.words.includes(a));
@@ -332,7 +352,7 @@ function emojiSearch(text) {
 // stays in the field, as in the system's own list: typing searches, Enter takes the marked
 // one (the first found, once something is typed), ↓ and ↑ move the mark by a row, and after
 // them ← and → by one; before them ← and → are the field's own.
-function emojiPicker(space) {
+function emojiPicker(set) {
   const box = el("div", "picker"), field = el("input", "find"), grid = el("div", "found");
   field.placeholder = "Search, or type an emoji";
   field.setAttribute("aria-label", "Search for an icon, or type an emoji");
@@ -354,7 +374,7 @@ function emojiPicker(space) {
       b.tabIndex = -1; // the keyboard is the field's
       b.setAttribute("role", "option");
       if (name) b.title = name;
-      b.onclick = secondClick.acts(() => { closeMenu(); setSpaceIcon(space, icon); });
+      b.onclick = secondClick.acts(() => { closeMenu(); set(icon); });
       return b;
     }));
     if (!found.length) grid.append(el("div", "none", "No emoji by that name"));

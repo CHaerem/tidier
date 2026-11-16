@@ -123,7 +123,9 @@ be done, in order, is in [PLAN.md](PLAN.md).
    in Zen and Arc. A folder is an entry in Tidier's record with no tab of its own, so no
    tab event can delete it; a tab is in it by the record. Made, renamed, folded and
    deleted in the sidebar; deleting one keeps its tabs. A closed folder rests: its tabs
-   are hidden and unloaded (`foldrest.js`).
+   are hidden and unloaded (`foldrest.js`). A folder can have an icon of its own, as a
+   space can: *Icon* in its menu, an emoji from a list to search in, which is then what its
+   name starts with and is drawn in the folder sign's place (`sidebar/emoji.js`).
 4. **Live folders** (`livefolders.js`): folders filled from a GitHub pull request
    search, such as open pull requests in your company's organisation or your own
    repositories where you are author, assignee or asked for review. Refreshed every
@@ -132,7 +134,11 @@ be done, in order, is in [PLAN.md](PLAN.md).
    unloaded tabs take the new title. A pull request tab you close stays closed until it
    leaves the search. Each row's icon says what the pull request waits for, by shape and
    colour, with the words in its tooltip: your review, a draft, failing checks, a
-   conflict, changes asked for, approved, checks running, or simply open.
+   conflict, changes asked for, approved, checks running, or simply open. A folder can
+   instead be a search for issues (the open ones that are assigned to you or that you
+   wrote), or a feed (RSS or Atom): its newest entries, ten unless you say another number,
+   each an unloaded tab until you select it, and gone again when the feed has let it go.
+   An issue's row has a mark that says it is one, and a feed's entry a quiet one.
 5. **⇧⌘C copies the address** of the current tab, as in Arc and Zen
    (`shortcuts.js`), and a word at the top of the page says so. Every other way of copying says the same word, in the
    same place: Copy address and Copy as Markdown link in the menus, and the command bar's
@@ -147,6 +153,13 @@ be done, in order, is in [PLAN.md](PLAN.md).
    placeholder (its real page was in a window you closed) counts from when it became
    one. The time never counts from before archiving was first turned on. Change it on the
    settings page, or with `archiveAfterHours` in the extension storage (0 = off).
+   Before that, a tab not used for a while can be **unloaded** where it is, as in Zen
+   (`unloadidle.js`): it stays in the list and in every window and frees its memory, and
+   its page comes back when you select it. Off until you set a time on the settings page
+   (*Unload tabs not used for … hours*; quarters of an hour count). Tabs in folders are
+   unloaded too; essentials, the tab selected in each window, tabs playing sound or in a
+   call and pages with unsaved input stay loaded. Firefox itself unloads tabs only when the
+   whole machine is short of memory.
 7. **Saved tabs**, like Arc's pinned section and Zen's pinned tabs (in
    `tabsync.js`, the rules in `closeAction` in `common.js`): a tab in a
    folder is *saved*. Closing it while it is loaded (⌘W, or the ×) unloads it instead,
@@ -199,6 +212,24 @@ The extension only learns each folder's id, name and container, and the host
 only runs those searches; anything else is refused. For each pull request found it
 also asks GitHub what it waits for (review, checks, a conflict), which the rows show;
 if that question fails, the rows only tell a draft from an open one.
+
+An entry with `"what": "issues"` beside its search is a folder of issues. An entry with
+`"feed"` (the feed's address) in place of a search is a folder of that feed's newest
+entries, `"count"` of them (ten if it is not there, thirty at the most); it needs neither
+`gh` nor GitHub:
+
+```json
+{ "id": "own-issues", "name": "Issues", "container": "firefox-container-1", "search": "user:your-github-name", "what": "issues" },
+{ "id": "news", "name": "News", "container": "firefox-container-1", "feed": "https://example.org/feed.xml", "count": 10 }
+```
+
+(They are not in the example file, which a new machine starts from as it is.) The host fetches the feed itself (`native/feeds.py`), so Tidier needs no
+access to the feed's site, and the extension cannot name an address to fetch: only the ones
+in your file are. A feed is a stranger's words, so only http and https are followed, also
+after a redirect, no more than 2 MB is read, a feed that declares entities of its own is
+refused, and of each entry only a plain title and a web address are taken (the extension
+looks at the address once more itself). A page that is no feed, or a feed that does not
+answer, leaves the folder as it is and says so under the list.
 
 Install the host once (and again if this folder moves); it also creates the
 config file from the example if there is none:
@@ -440,7 +471,8 @@ it, and over another space's dot goes to that space, where a drop in the list pu
 Two fingers sideways on the trackpad, in the sidebar, take you to the space beside the
 one you are in (`sidebar/swipe.js`). The list follows the fingers, and the next space
 comes in beside it, drawn as it will be when you get there: its essentials, its folders
-and tabs where you left them, and the tab you will land on. A quick flick goes there at
+and tabs where you left them, and the tab you will land on. The bar follows too: the dot
+you are leaving lets go as far as the list has gone, and the next one takes over. A quick flick goes there at
 once; let go slowly, and it goes there if the list has come four tenths of the way, else
 back. At the first and the last space the list gives a little and comes back; nothing is
 made, and nothing wraps around. With less motion asked for in the system's settings
@@ -799,11 +831,15 @@ Not guaranteed:
 - `essentials.js` – essentials (pinned tabs) in every window.
 - `tabsync.js` – live/ghost tab sync. Roles and keys are stored per tab with
   `sessions.setTabValue`, so they survive a restart.
-- `livefolders.js` – live folders of GitHub pull requests (see above).
+- `pull.js` – what moves a page between windows: a placeholder you select pulls its page in, the
+  window it leaves shows it under a grey layer, and gets it back when the other has left it.
+- `livefolders.js` – live folders of GitHub pull requests, issues and feeds (see above); the
+  search and the feed are read by `native/github-prs.py` and `native/feeds.py`.
 - `firefoxsetup.js`, `sidebar/restart.js`, `native/firefox_setup.py` – the line that says Firefox
   must be started again to read its setup files, and its button.
 - `ghost.html` / `ghost.js` – placeholder page for ghosts, essential copies and never-loaded live tabs.
 - `archive.js` – archiving of unused tabs.
+- `unloadidle.js` – unloading tabs not used for a while, where they are.
 - `archivelist.js`, `sidebar/archived.js` – the list of archived and closed tabs, per space.
 - `shortcuts.js` – one table for every key, the command bar's and Claude's included; ⇧⌘C
   copies the address, and `pagenote.js` says so on the page. `keys-commands.js`, `settings/keys.js`, `sidebar/keys.js` and
@@ -955,6 +991,11 @@ scripts, on a fake Firefox (`tests/chaos_firefox.mjs`) that refuses what Firefox
 and checks after each what Tidier promises: no tab lost or doubled, every essential in
 every window, every tab in its space, nothing left in memory. A failure prints a line to
 run that one sequence again (`CHAOS_REPLAY='…'`, with `CHAOS_TRACE=1` for every call).
+`node --test` plays the first hundred or so; a long run (the line above, and from another
+seed with `CHAOS_FIRST`) finds what they do not, and `CHAOS_SURVEY=1` goes on past a failure
+and counts each kind. The sequences that have broken something are kept, each with what it
+was (`tests/fixtures/chaos_found.json`), and are played every time: a mend for one must not
+bring another back.
 `tests/soak.py` does the same slowly in a real test Firefox, clicking and dragging in the
 real sidebar, and also fails on memory that grows or on work while nothing happens.
 Restarts in it (`--restart-every N`) need Developer Edition (`TIDIER_FIREFOX`,
@@ -1005,7 +1046,9 @@ profile is deleted afterwards. It is built the same way every time, from:
 - test tabs in each space: essentials and ordinary tabs;
 - a stand-in for the live folders' native host (`tests/fake_github_host.py`),
   which answers from a file the test writes, so live folders are tested
-  everywhere without your `gh` login or GitHub.
+  everywhere without your `gh` login or GitHub. (The real host is tried by itself in
+  `tests/test_helper.py`, which `node --test` runs: with a stand-in for `gh`, and a feed
+  served from the machine it runs on.)
 
 The list of what it checks is at the top of `tests/smoke.py`. Each group of
 checks runs on its own; a check that crashes counts as failed. Run it after

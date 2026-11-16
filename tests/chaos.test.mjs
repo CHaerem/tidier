@@ -22,6 +22,7 @@
 // check, in which phase: "settled" (after the random use), "update" or "restart".
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { ChaosFirefox, randoms, REFUSED, isPlaceholder } from "./chaos_firefox.mjs";
 
 const SPACES = ["firefox-container-1", "firefox-container-2", "firefox-container-3"];
@@ -104,8 +105,10 @@ class World {
       this.closedAddresses.add(t.url);
       const on = this.ff.pages.get(t)?.url; // on its way there
       if (on) this.closedAddresses.add(on);
-      // (A ghost that has just been made is known to Tidier already, and closes its tab everywhere.)
-      if (isPlaceholder(on)) this.excused.add(new URLSearchParams(on.split("?")[1]).get("key"));
+      // (A ghost that has just been made is known to Tidier already, and closes its tab everywhere:
+      // one still loading, and one made unloaded, whose key Tidier has in memory by the time it
+      // hears of the close, on a machine where that takes a moment. Seed 1041.)
+      for (const u of [on, t.url]) if (isPlaceholder(u)) this.excused.add(new URLSearchParams(u.split("?")[1]).get("key"));
       return;
     }
     const e = all[key];
@@ -194,11 +197,24 @@ const OPS = {
   // ⌘⇧T: the last thing closed, a tab or a whole window.
   reopen: { weight: 4, run(W) {
     const closedAt = W.ff.closedItems[0]?.at, back = W.ff.reopenLast();
+    // Firefox started with no session a moment ago, and Tidier has not looked yet: what comes
+    // back now is all of the session it then sees, and a tab not in it is taken for closed
+    // before the quit (it is in the archive). With nothing back, the record is kept whole.
+    // Seeds 3638 and 106013.
+    if (back && W.clock.now - (W.noSessionAt ?? -Infinity) < 10000) for (const [key, e] of Object.entries(W.ff.store.syncedTabs ?? {})) if (!e.saved) W.excused.add(key);
     // A whole window brings back what it held when it closed, also what has been closed or pinned since.
     if (back?.order) for (const t of W.tabsOf(back)) W.broughtBack.add(t.url);
     // And a tab Tidier closed a moment ago, opening it elsewhere, cannot be told from what you
     // closed until Recently Closed has been told: no hand is that quick.
-    else if (back && W.clock.now - closedAt < 1000) W.broughtBack.add(back.url);
+    // (A placeholder that came back so is its tab's page, as far as what is doubled goes: seed 1828.)
+    else if (back && W.clock.now - closedAt < 1000) {
+      W.broughtBack.add(back.url);
+      const key = isPlaceholder(back.url) ? new URLSearchParams(back.url.split("?")[1]).get("key") : null;
+      for (const u of W.known.get(key)?.urls ?? []) W.broughtBack.add(u);
+    }
+    // And a page closed and pinned in one breath (its row's close and its pin, seed 1277) is
+    // an essential and is under Recently Closed too, from where it comes back as a tab.
+    else if (back && W.closedAddresses.has(back.url) && [...W.essentials.values()].includes(back.url)) W.broughtBack.add(back.url);
   } },
   // A sign-in popup: not a tab you keep.
   // (window.open from the page you are on: Firefox gives the popup that page's container, and
@@ -208,12 +224,18 @@ const OPS = {
     const from = W.ff.wins.get(W.ff.focused), opener = from && W.ff.activeOf(from);
     if (!opener) return; // no page to open it
     const space = opener?.cookieStoreId !== "firefox-default" ? opener?.cookieStoreId : W.x.js("activeSpace").get(from.id);
+    // (A window so new that it has no space yet has no page to open a popup either: without
+    // this the popup was outside any space, and its page a new tab after the next start.)
+    if (!space) return;
     W.ff.openWindow({ type: "popup", url: W.newUrl(), cookieStoreId: space });
   } },
   closePopup: { weight: 1, run(W) { for (const w of [...W.ff.wins.values()]) if (w.type !== "normal") W.ff.closeWindow(w.id); } },
   pin: { weight: 5, async run(W, { a, b }) {
     const w = pick(W.windows(), a);
-    const t = w && pick(W.tabsOf(w).filter(t => !t.pinned && !t.hidden && (isWeb(t.url) || isPlaceholder(t.url))), b);
+    // Not a page outside any space: Tidier opens it again in a space within a few calls to
+    // Firefox, and closes this tab. A pin in between is on a tab that is going, and the page
+    // is then both an essential and the new tab; no hand is that quick (seed 100368: 26 ms).
+    const t = w && pick(W.tabsOf(w).filter(t => !t.pinned && !t.hidden && (isPlaceholder(t.url) || (isWeb(t.url) && t.cookieStoreId !== NO_CONTAINER))), b);
     if (!t) return;
     if (W.keyOf(t)) W.excused.add(W.keyOf(t));
     W.ff.pinTab(t);
@@ -223,6 +245,9 @@ const OPS = {
     const t = w && pick(W.tabsOf(w).filter(t => t.pinned), b);
     if (!t) return;
     const key = W.value(t, "essentialKey");
+    // (A second copy of it unpinned before the first unpin has taken the others away is a
+    // tab of its own: two unpins, two tabs. Seed 1828, both in the same millisecond.)
+    if (key && W.goneEssentials.has(key) && W.essentials.has(key)) W.broughtBack.add(W.essentials.get(key));
     if (key) W.goneEssentials.add(key);
     else W.unpinnedUnknown = true; // pinned a moment ago: which essential goes cannot be told here
     W.ff.unpinTab(t);
@@ -260,6 +285,7 @@ const OPS = {
     if (!t) return;
     await W.closing(t);
     if (W.isLastShown(w, t)) W.windowClosing(w);
+    W.rowClosed = { key: W.keyOf(t), at: W.clock.now };
     W.ff.sidebarSays(w.id, { type: "close", tabId: item.id });
   } },
   space: { weight: 7, run(W, { a, b }) {
@@ -280,6 +306,10 @@ const OPS = {
     const w = pick(W.windows(), a), rows = w && W.shownRows(w.id), f = rows && pick(rows.folders, b);
     if (!f) return;
     W.excused.add(f.key);
+    // A row of it closed in the same breath (seed 106718: the same millisecond): its close is
+    // looked at after the folder has gone, when the tab is no saved tab any more, and closes
+    // as any tab does, into the archive. A moment later it would have been unloaded and kept.
+    if (W.rowClosed?.key && W.clock.now - W.rowClosed.at < 1000) W.excused.add(W.rowClosed.key);
     W.ff.sidebarSays(w.id, { type: "deleteFolder", key: f.key });
   } },
   renameFolder: { weight: 1, run(W, { a, b }) {
@@ -333,6 +363,7 @@ const OPS = {
     await W.hardStop();
     // With no session either, a tab not written yet is gone without a trace.
     if (a >= 0.85) for (const key of Object.keys(all)) if (!W.ff.store.syncedTabs?.[key]) W.excused.add(key);
+    if (a >= 0.85) W.noSessionAt = W.clock.now;
     W.x = W.ff.restart({ session: a < 0.85 });
   } },
   // A long time passes, and archiving looks at everything that is not in a folder.
@@ -424,6 +455,9 @@ async function check(W, phase, { strong }) {
       }
       const live = reps.filter(t => W.value(t, "syncRole") === "live");
       if (live.length > 1) bad("two-live", `${key} ${e.url} is live in ${live.map(t => t.id)}`);
+      // In the space the record says, each of them (the long run in a real Firefox saw one
+      // left in the space its tab had been moved from).
+      for (const t of reps) if (t.cookieStoreId !== e.cookieStoreId) bad("other-space", `${key} ${e.url} is of ${e.cookieStoreId}, and tab ${t.id} in window ${t.windowId} is in ${t.cookieStoreId}`);
       // None is fine, as long as nothing shows the page: a saved tab you closed, or tabs
       // brought back after a start with no session, have none until you select one.
       for (const t of reps) {
@@ -492,7 +526,10 @@ async function check(W, phase, { strong }) {
         const here = t.cookieStoreId === space || (t.cookieStoreId === NO_CONTAINER && (homes?.get(t.id) ?? space) === space);
         if (t.active && !here) bad("space-selected", `window ${w.id} is in ${space} but tab ${t.id} of ${t.cookieStoreId} is selected`);
         if (t.pinned) continue;
-        if (here && t.hidden) bad("space-hidden", `window ${w.id} in ${space}: tab ${t.id} ${t.url} is hidden`);
+        // (A closed folder's tabs rest: hidden in every window, but for the one you are on. foldrest.js.)
+        const rests = x.js("restsInFolder")(all, W.keyOf(t));
+        if (here && t.hidden && !rests) bad("space-hidden", `window ${w.id} in ${space}: tab ${t.id} ${t.url} is hidden`);
+        if (here && rests && !t.hidden && !t.active && strong) bad("fold-shown", `window ${w.id}: tab ${t.id} ${t.url} is in a closed folder and is shown`);
         if (!here && !t.hidden && !t.active) bad("space-shown", `window ${w.id} in ${space}: tab ${t.id} of ${t.cookieStoreId} is shown`);
       }
       // What the sidebar has drawn is what is true now.
@@ -508,8 +545,9 @@ async function check(W, phase, { strong }) {
 
   // Nothing you did not close is gone. After a hard stop the last moment's change may not have
   // been written; such a tab is then known again by its address.
-  // (Pinned, it is an essential now, at that address.)
-  const addresses = new Set([...Object.values(all).flatMap(e => [e.url, e.saved?.url].filter(Boolean)), ...W.essentials.values()]);
+  // (Pinned, it is an essential now, at that address: also one made since the last look,
+  // by a pin that waited in the queue until this check let it through.)
+  const addresses = new Set([...Object.values(all).flatMap(e => [e.url, e.saved?.url].filter(Boolean)), ...W.essentials.values(), ...list.map(e => e.url)]);
   // (A tab opened again in its space is the same page under a new key: what you did to the
   // new one goes for the old one.)
   for (const [key, k] of W.known) if (W.excused.has(key)) for (const u of k.urls) W.closedAddresses.add(u);
@@ -587,21 +625,30 @@ export async function play(seq, { trace = false } = {}) {
     await check(W, "settled", { strong: false });
     if (W.violations.length) return W.violations;
     // Nothing may be lost across an update, or a restart. All is written by now.
-    const a = logical(await W.read("getSynced()"), await W.read("getList()"));
+    const listBefore = await W.read("getList()");
+    const a = logical(await W.read("getSynced()"), listBefore);
     W.x = W.ff.update();
     await W.clock.run(5000);
     await check(W, "update", { strong: true });
     if (W.violations.length) return W.violations;
-    const b = logical(await W.read("getSynced()"), await W.read("getList()"));
+    const listAfter = await W.read("getList()");
+    const b = logical(await W.read("getSynced()"), listAfter);
     // A page outside any space is moved into one when Tidier starts (moveStragglers, isolation.js).
     for (const [key, t] of Object.entries(a.tabs)) if (t.cookieStoreId === "firefox-default" && b.tabs[key]) t.cookieStoreId = b.tabs[key].cookieStoreId;
-    if (W.ff.refusals === 0 && JSON.stringify(a) !== JSON.stringify(b)) W.bad("changed", `by an update: ${difference(a, b)}`);
+    // So is an essential outside any space (moveEssentialIntoSpace), and its place in the list
+    // is then among that space's essentials: the same ones, in another order (seed 102070).
+    const outside = list => Array.from(list).some(e => e.cookieStoreId === NO_CONTAINER);
+    const anyOrder = x => ({ ...x, essentials: [...x.essentials].sort() });
+    const same = (x, y, loose) => JSON.stringify(loose ? anyOrder(x) : x) === JSON.stringify(loose ? anyOrder(y) : y);
+    if (W.ff.refusals === 0 && !same(a, b, outside(listBefore))) W.bad("changed", `by an update: ${difference(a, b)}`);
     W.x = W.ff.restart();
     await W.clock.run(8000);
     await check(W, "restart", { strong: true });
     if (W.violations.length) return W.violations;
     const c = logical(await W.read("getSynced()"), await W.read("getList()"));
-    if (JSON.stringify(b) !== JSON.stringify(c)) W.bad("changed", `by a restart: ${difference(b, c)}`);
+    // (An essential outside any space whose copies were all unloaded stayed there through the
+    // update, and is moved now that Firefox has loaded one.)
+    if (!same(b, c, outside(listAfter))) W.bad("changed", `by a restart: ${difference(b, c)}`);
     return W.violations;
   } catch (err) {
     return [{ cat: "crash", msg: `crash: ${err?.stack ?? err}` }];
@@ -722,6 +769,17 @@ if (env.CHAOS_SURVEY) {
   });
 } else {
   test("random use breaks nothing Tidier promises", () => campaign());
+  // Each of these broke something once, in Tidier or in what this test took for a fault
+  // (`was`, in the file). A mend for one must not bring another back: one did, the night
+  // they were found, and only the next long run showed it.
+  test("the sequences that once broke something break nothing now", async () => {
+    const found = JSON.parse(readFileSync(new URL("./fixtures/chaos_found.json", import.meta.url), "utf8"));
+    assert.ok(found.length >= 20, `${found.length} sequences`);
+    for (const { was, seq } of found) {
+      const v = await play(seq);
+      if (v.length) assert.fail(`\nIt was: ${was}\n${describe(seq, v)}\n`);
+    }
+  });
   test("the same seed gives the same run", async () => {
     const seq = generate(7);
     const once = async () => {

@@ -91,10 +91,22 @@ async function showSpace(windowId) {
   const visible = t => shownInSpace(t, space) && !restsInFolder(all, syncKeyByTab.get(t.id)); // hiddenspaces.js, foldrest.js
   const show = tabs.filter(t => t.hidden && visible(t)).map(t => t.id);
   const hide = tabs.filter(t => !t.hidden && !visible(t) && !t.active).map(t => t.id);
-  if (show.length) await browser.tabs.show(show).catch(() => {});
+  if (show.length) await allOrEach(ids => browser.tabs.show(ids), show);
   // Without the permission (asked for in the sidebar) tabs.hide is not there.
   if (!hide.length || !browser.tabs.hide) return 0;
-  return (await browser.tabs.hide(hide).catch(() => []))?.length ?? 0;
+  return (await allOrEach(ids => browser.tabs.hide(ids), hide)).length;
+}
+// Firefox refuses a whole list if one tab in it has closed since it was looked up, as it
+// does for tabs.remove (removeTabs, common.js): ⌘W as the space changes, and the tabs of
+// the space you left all stayed shown, or those of the one you came to hidden. Then one by
+// one, so that only the one that is gone is left out. What was hidden, for tabs.hide.
+async function allOrEach(call, ids) {
+  try {
+    return (await call(ids)) ?? [];
+  } catch (err) {
+    const done = await Promise.all(ids.map(id => call([id]).catch(() => [])));
+    return done.flatMap(d => d ?? []);
+  }
 }
 
 // The tab to go back to in a space: the one you selected last there, in any window, an

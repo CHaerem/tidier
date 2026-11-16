@@ -150,10 +150,12 @@ const roomFor = list => { if (list.size >= ICONS_REMEMBERED) list.clear(); };
 // empty tile, as quiet as can be.
 const letterOf = title => (String(title || "").match(/\p{L}/u) ?? String(title || "").match(/\p{N}/u))?.[0] ?? "";
 // A live folder's pull request shows what it waits for where its icon would be (liveState,
-// livefolders.js): they would all have GitHub's mark. Said in words in its tooltip.
+// livefolders.js): they would all have GitHub's mark. Said in words in its tooltip. An
+// issue and a feed's entry say what they are, the entry quietly: it waits for nothing.
 const PR_WORDS = {
   review: "Waits for your review", draft: "A draft", failing: "Its checks fail", conflict: "Conflicts with its base branch",
   changes: "Changes are asked for", approved: "Approved", running: "Its checks are running", open: "Open",
+  issue: "An open issue", feed: "From this folder's feed",
 };
 function icon(item) {
   if (item.pr) return el("span", "pr " + (PR_WORDS[item.pr] ? item.pr : "open"));
@@ -493,7 +495,11 @@ function folder(f) {
     b.firstChild.title = f.name;
     b.firstChild.setAttribute("aria-label", f.name);
     b.firstChild.setAttribute("aria-expanded", String(!closed));
-    b.firstChild.replaceChildren(el("span", "chevron", "▾"), el("span", "title", f.name), ...soundMark(f), el("span", "count", closed && f.tabs.length ? String(f.tabs.length) : ""));
+    // Its own icon, if its name starts with one (nameIcon, emoji.js), in the folder sign's
+    // place, and its name without it. Open or closed then shows by its tabs and its count.
+    // A name that is only an emoji is a name: drawn as the icon too, it would be there twice.
+    const { icon: first, rest } = nameIcon(f.name), icon = rest ? first : "";
+    b.firstChild.replaceChildren(el("span", icon ? "chevron emoji" : "chevron", icon || "▾"), el("span", "title", icon ? rest : f.name), ...soundMark(f), el("span", "count", closed && f.tabs.length ? String(f.tabs.length) : ""));
   });
   place(box.lastChild, withRooms(box.lastChild, f.tabs.map(t => row(t, f.key))));
   return box;
@@ -504,7 +510,8 @@ function rename(key) {
   if (!box || box.classList.contains("renaming")) return;
   const head = box.firstChild, title = head.querySelector(".title");
   const input = el("input", "rename");
-  input.value = title.textContent;
+  // The whole name, its icon too, as a space's name is edited: the icon is part of it.
+  input.value = view.folders.find(f => f.key === key)?.name ?? title.textContent;
   box.classList.add("renaming");
   head.draggable = false;
   title.replaceWith(input);
@@ -624,8 +631,8 @@ function render(next) {
     b.setAttribute("aria-label", s.name);
     if (s.id === view.space) b.setAttribute("aria-current", "true"); else b.removeAttribute("aria-current");
     b.style.setProperty("--color", s.color);
-    // Its own icon, if its name starts with one (spaceIcon, spacemenu.js), in the dot's place.
-    const dot = b.querySelector(".dot"), { icon } = spaceIcon(s.name);
+    // Its own icon, if its name starts with one (nameIcon, emoji.js), in the dot's place.
+    const dot = b.querySelector(".dot"), { icon } = nameIcon(s.name);
     if (dot.textContent !== icon) dot.textContent = icon;
     dot.classList.toggle("emoji", !!icon);
     spaceSound(b, s);
