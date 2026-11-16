@@ -79,12 +79,21 @@ const keptIcon = (entry, tab) => {
 function setRole(tabId, key, role) {
   syncKeyByTab.set(tabId, key);
   syncRoleByTab.set(tabId, role);
-  return Promise.all([
+  // Whether it took: Firefox refuses a tab closed since, which is no error and must not stop
+  // the work on the other tabs (false). Any other refusal is passed on. Both answers are
+  // heard: with only the first, one refused for another reason hid that the tab had closed,
+  // and it stayed in these lists for good (its close was told before this, so nothing else
+  // would take it out).
+  return Promise.allSettled([
     browser.sessions.setTabValue(tabId, SYNC_KEY, key),
     browser.sessions.setTabValue(tabId, SYNC_ROLE, role),
-  // Whether it took: Firefox refuses a tab closed since, which is no error and must not stop
-  // the work on the other tabs (false). Any other refusal is passed on.
-  ]).then(() => true, err => { ifGone(err); forget(tabId); return false; }); // its close was told before this answer
+  ]).then(answers => {
+    const refused = answers.filter(a => a.status === "rejected").map(a => a.reason);
+    if (!refused.length) return true;
+    if (!refused.some(isGone)) throw refused[0];
+    forget(tabId);
+    return false;
+  });
 }
 
 function forget(tabId) {
@@ -246,7 +255,7 @@ browser.runtime.onMessage.addListener((msg, sender) => {
   }
   const lists = {
     toForget, tabsOnTheirWay, busy, keyByTab, ownMoves, ownPins, syncKeyByTab, syncRoleByTab,
-    syncBusy, pending, leftTabs, selectedNow, refreshTimers, lastRefresh, awaitingIcon, lastOrder, orderQueries, loadedSeen,
+    syncBusy, pending, cameBack, leftTabs, selectedNow, refreshTimers, lastRefresh, awaitingIcon, lastOrder, orderQueries, loadedSeen,
     activeSpace, newTabs, firstPage, showTimers, closedIn, sidebarPorts, viewTimers, viewRest, viewsBuilding, requestOfTab,
     unruled,
     earlyKeys,
@@ -384,6 +393,7 @@ async function titlesBack() {
 
 // A real tab that is not synced yet: register it and add ghosts elsewhere.
 async function register(tabId) {
+  cameBack.delete(tabId); // looked at now (below)
   let tab = await browser.tabs.get(tabId).catch(() => null);
   // A placeholder Tidier closed, reopened (⌘⇧T) in the moment before Recently Closed forgets
   // it: not a tab of its own. Taken back, so that the look over the tabs removes the double.
@@ -611,8 +621,15 @@ function registerSoon(tabId, ms = SETTLE_MS) {
 const settledIn = tab => tab.status === "complete" && isWeb(tab.url) && tab.cookieStoreId !== NO_CONTAINER
   && !newTabs.has(tab.id) && !firstPage.has(tab.id) && !reopening.has(tab.id); // spaces.js, isolation.js
 
+// A placeholder Firefox brought back (with its window, or by ⌘⇧T) is a stranger until Tidier
+// has looked at it. Closed by you before that, nothing here would know what it was, and it
+// would stay under Recently Closed, for ⌘⇧T to bring back with nothing to show. So its
+// address is kept from the moment it comes until Tidier looks at it (register), or it goes.
+// (Tidier's own new placeholders pass through here too, for that moment.)
+const cameBack = new Map(); // tabId -> its address
 browser.tabs.onCreated.addListener(tab => {
   if (!started || syncBusy.has(tab.id) || syncKeyByTab.has(tab.id)) return;
+  if (isGhostUrl(tab.url)) cameBack.set(tab.id, tab.url);
   registerSoon(tab.id);
 });
 
@@ -824,9 +841,11 @@ browser.tabs.onRemoved.addListener((tabId, info) => {
   awaitingIcon.delete(tabId);
   const place = info.isWindowClosing ? null : closedPlace(info.windowId, tabId);
   loadedSeen.delete(tabId);
-  const key = syncKeyByTab.get(tabId), role = syncRoleByTab.get(tabId);
+  const key = syncKeyByTab.get(tabId), role = syncRoleByTab.get(tabId), back = cameBack.get(tabId);
+  cameBack.delete(tabId);
   forget(tabId);
   if (info.isWindowClosing) lastOrder.delete(info.windowId); else noteOrder(info.windowId);
+  if (back && !key && !info.isWindowClosing) forgetClosed([back], FORGET_MS, false); // common.js
   // A tab Tidier closes itself has lost its key by now. A tab that is only marked
   // busy (just pulled in, say) and has its key was closed by you.
   syncBusy.delete(tabId);

@@ -1222,6 +1222,45 @@ test("a window closed while it is being filled is not an error", async () => {
   x.kill();
 });
 
+// Found by the random sequences (seed 100427).
+test("a placeholder that came back with its window and is closed before Tidier has looked at it is not left under Recently Closed", async () => {
+  const { ff, x, windows: [w] } = await chaosStart({ windows: 1 });
+  ff.openTab(w.id, { url: "https://a.example/", cookieStoreId: "firefox-container-1" });
+  await ff.clock.run(3000);
+  const { window: other } = ff.openWindow();
+  await ff.clock.idle(60000);
+  assert.ok(ff.list(other.id).some(t => isPlaceholder(t.url)), "the second window has its placeholder");
+  ff.closeWindow(other.id);
+  await ff.clock.run(1000);
+  const back = ff.reopenLast();
+  ff.closeTab(ff.list(back.id).find(t => isPlaceholder(t.url)).id); // in the same breath
+  await ff.clock.idle(60000);
+  assert.deepEqual(ff.closedItems.filter(c => c.kind === "tab" && isPlaceholder(c.state.url)).map(c => c.state.url), []);
+  assert.equal(x.js("cameBack").size, 0, "and nothing is kept of it");
+  assert.deepEqual([...x.js("problems")], []);
+  x.kill();
+});
+
+// Found by the random sequences (seed 323), with Firefox made to refuse a call now and then.
+test("a tab that has closed is forgotten also when Firefox refuses the first of the two values for another reason", async () => {
+  const { ff, x, windows: [w] } = await chaosStart({ windows: 1 });
+  const t = ff.openTab(w.id, { url: "https://a.example/", cookieStoreId: "firefox-container-1" });
+  await ff.clock.run(3000);
+  const key = ff.values.get(t.id).syncKey;
+  ff.closeTab(t.id);
+  await ff.clock.run(3000);
+  let asked = 0;
+  x.b.sessions.setTabValue = async id => { throw new Error(asked++ ? `Invalid tab ID: ${id}` : "refused for a reason of Firefox's own"); };
+  assert.equal(await ff.clock.settled(x.js("setRole")(t.id, key, "ghost")), false);
+  assert.equal(asked, 2, "both were asked");
+  assert.ok(!x.js("syncKeyByTab").has(t.id) && !x.js("syncRoleByTab").has(t.id), "and it is in neither list");
+  // A refusal that is not about a closed tab is still one.
+  x.b.sessions.setTabValue = async () => { throw new Error("refused for a reason of Firefox's own"); };
+  await assert.rejects(ff.clock.settled(x.js("setRole")(t.id, key, "ghost")), /Firefox's own/);
+  x.js("forget")(t.id);
+  x.kill();
+});
+
 test("a placeholder closed as a new window is being filled is not an error, and the window gets the rest", async () => {
   const { ff, x, windows: [w] } = await chaosStart({ windows: 1 });
   for (const site of ["a", "b", "c"]) ff.openTab(w.id, { url: `https://${site}.example/`, cookieStoreId: "firefox-container-1" });
