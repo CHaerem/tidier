@@ -229,11 +229,11 @@ function tile(item) {
     t.dataset.tab = item.id;
     t.setAttribute("role", "option"); // the essentials are a list to choose from (sidebar.html)
     t.draggable = true;
-    // A click on the essential you are on, when you have browsed on in it, takes it back to
-    // its own page, as in Arc: the tile is the way home. Not the later clicks of a double
-    // click, whose first one selected it: that would send away the page it had just shown.
+    // A click on the essential you are on, when it is off its own address, takes it back
+    // there, as in Arc: the tile is the way home. Not the later clicks of a double click,
+    // whose first one selected it: that would send away the page it had just shown.
     t.onclick = e => {
-      if (t.classList.contains("active") && t.classList.contains("away")) { if (e.detail <= 1) backToSaved(item.id); return; }
+      if (t.classList.contains("active") && t.classList.contains("off")) { if (e.detail <= 1) backToSaved(item.id); return; }
       showSelected(t);
       send({ type: "select", tabId: item.id });
     };
@@ -243,16 +243,16 @@ function tile(item) {
     t.ondragstart = e => startDrag(e, { kind: "essential", tabId: item.id });
     return t;
   }, { ...item, tip: undefined }, t => {
-    t.className = "tile" + (item.active ? " active" : "") + (item.loaded ? "" : " unloaded") + (item.away ? " away" : "");
+    t.className = "tile" + (item.active ? " active" : "") + (item.loaded ? "" : " unloaded") + (item.back ? " off" : "");
     // Named by its title alone: the tooltip with the address is its description.
     t.setAttribute("aria-label", item.title || "");
     t.setAttribute("aria-selected", String(!!item.active));
-    // Off its own page: a small stroke beside the icon of the one you are on, as a saved
-    // tab's row has, and under the mouse an arrow in the icon's place (sidebar.css). Last, so
-    // they are not in the way of what looks at a tile's parts.
-    t.replaceChildren(icon(item), ...soundMark(item), ...(item.away ? [el("span", "away"), el("span", "back")] : []));
+    // Off its own address: under the mouse an arrow in the icon's place, on the one you are
+    // on; and on another page, a small stroke beside its icon too, as a saved tab's row has
+    // (sidebar.css). Last, so they are not in the way of what looks at a tile's parts.
+    t.replaceChildren(icon(item), ...soundMark(item), ...(item.away ? [el("span", "away")] : []), ...(item.back ? [el("span", "back")] : []));
   });
-  setIf(e, "title", (item.tip || item.title) + (item.away && item.active ? "\nClick to go back to: " + item.away : ""));
+  setIf(e, "title", (item.tip || item.title) + (item.back && item.active ? "\nClick to go back to: " + item.back : ""));
   return e;
 }
 // A kept tab back on the address kept for it (backToSaved, tabactions.js).
@@ -303,13 +303,14 @@ function row(item, folderKey) {
     // A saved tab you have browsed on in: a small stroke between its icon and its title,
     // as a path has one. Out of the flow (sidebar.css), in the room that is there already,
     // so no title moves for it; last, so it is not in the way of what looks at a row's parts.
-    // And over its icon, under the mouse, the way back there, as in Arc and Zen (the row's
-    // click, above). No button: by its icon a row is also grabbed to be dragged, and ⌘-clicked
-    // to be picked, and both go on as on any row.
-    if (item.away) {
+    if (item.away) parts.push(el("span", "away"));
+    // And over its icon, under the mouse, the way back to its address, as in Arc and Zen (the
+    // row's click, above), also from further in on the same page. No button: by its icon a
+    // row is also grabbed to be dragged, and ⌘-clicked to be picked, and both go on as on any row.
+    if (item.back) {
       const back = el("span", "back");
-      back.title = "Back to: " + item.away;
-      parts.push(el("span", "away"), back);
+      back.title = "Back to: " + item.back;
+      parts.push(back);
     }
     e.replaceChildren(...parts);
   });

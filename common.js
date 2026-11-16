@@ -148,11 +148,20 @@ const sameSite = (a, b) => {
 const samePage = (a, b) => {
   try { const p = u => { const x = new URL(u); return x.origin + x.pathname + x.search; }; return p(a) === p(b); } catch (e) { return a === b; }
 };
+// The same address, to the letter: what comes after # too. Many a page is all in there (a
+// mailbox's messages, a console's every view), so the way back to a kept address is offered
+// whenever the address is another one, while only another page is marked (below).
+const sameAddress = (a, b) => {
+  try { return new URL(a).href === new URL(b).href; } catch (e) { return a === b; }
+};
 // A saved tab that is no longer on the page it was saved on: you browsed on in it. Closing
-// it takes it back there (unloadSaved, tabsync.js), and until then its row says so, and its
-// menu offers the way back and to save where it is instead (tabactions.js). By the record,
-// so every window's row says the same, loaded or not.
+// it takes it back there (unloadSaved, tabsync.js), and until then its row says so. By the
+// record, so every window's row says the same, loaded or not.
 const leftSaved = entry => !!entry?.saved && isWeb(entry.url) && !samePage(entry.url, entry.saved.url);
+// ... or no longer on the very address it was saved on, which may be the same page further
+// in: then its row and its menu offer the way back, and to save where it is instead
+// (tabactions.js, sidebar.js), with no mark.
+const offSaved = entry => !!entry?.saved && isWeb(entry.url) && !sameAddress(entry.url, entry.saved.url);
 
 // Placeholder page for ghosts and essential copies (see ghost.js). Asked for once:
 // it never changes while Tidier runs, and this is looked at for every tab in a view.

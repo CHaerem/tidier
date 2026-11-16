@@ -39,14 +39,22 @@ function tipAddress(url) {
   return bare.length > TIP_ADDRESS_MAX ? bare.slice(0, TIP_ADDRESS_MAX) + "…" : bare;
 }
 
-// What a kept tab has left, if it has left it, for its row or tile to say and to offer the
-// way back to (sidebar.js). A saved tab by its record (leftSaved, common.js), so every
-// window's row says the same: what the page it was saved on is called. An essential by this
-// window's copy, if that is the loaded one (offItsAddress, essentials.js): its own address,
-// since its tile's name is the essential's already.
-function awayFrom(t, entry) {
-  if (t.pinned) return isLoadedCopy(t) && offItsAddress(t, entry) ? tipAddress(entry.url) : undefined;
-  return leftSaved(entry) ? entry.saved.title || entry.saved.url : undefined;
+// What a kept tab has left, if it has left it, for its row or tile (sidebar.js). `back`: off
+// the very address kept for it, so the way back is offered; `away`: on another page too
+// (what comes after # is the same page, common.js), which is what is marked. Both are what
+// to call where it goes back to. A saved tab by its record, so every window's row says the
+// same: what the page it was saved on is called. An essential by this window's copy, if
+// that is the loaded one (offItsAddress, essentials.js): its own address, since its tile's
+// name is the essential's already.
+function keptAddress(t, entry) {
+  if (t.pinned) {
+    if (!isLoadedCopy(t) || !offItsAddress(t, entry)) return {};
+    const back = tipAddress(entry.url);
+    return { back, away: samePage(t.url, entry.url) ? undefined : back };
+  }
+  if (!offSaved(entry)) return {};
+  const back = entry.saved.title || entry.saved.url;
+  return { back, away: leftSaved(entry) ? back : undefined };
 }
 
 // Firefox's own spinner goes by the same thing (status is the tab's busy attribute). A
@@ -69,7 +77,7 @@ const tabItem = (t, title, entry) => ({
   blank: NEW_TAB_PAGES.has(t.url) || undefined, // an empty new tab: no page yet, so no letter of a name that is not one (sidebar.js icon)
   note: forYouNotes.get(syncKeyByTab.get(t.id)), // bridge.js
   pr: entry?.liveFolder ? entry.pr || "open" : undefined, // a live folder's row: what a pull request waits for, or that it is an issue or from a feed (liveState, livefolders.js)
-  away: awayFrom(t, entry),
+  ...keptAddress(t, entry),
 });
 
 // The icon in the record, for a placeholder that has none of its own (createRep,

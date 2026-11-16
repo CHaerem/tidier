@@ -1470,6 +1470,19 @@ def alone_way_back(m):
         check("a click on the essential you are on takes it back to its own page", r == {"back": True, "on": "way home", "active": True}, str(r))
         r = look("home")
         check("back on its page, the mark is gone", r.get("away") is False, str(r))
+        # Further in on the same page (what comes after #, as a mailbox on a message): no mark,
+        # but it is off its address, so the way back is there, on the tile and in its menu.
+        offered = sidebar_page(m, PAGE + """await go(args[0], args[1]); await until(async () => (await at(args[0])).on === "way home#message"); await wait(800);
+          return (await page.browser.runtime.sendMessage(obj({type: "tabMenu", tabIds: [args[0]]})))[0].away;""", ids["home"], m.pages + "/titled?way%20home#message")
+        pointer_away()
+        r = look("home")
+        check("further in on the same page, the tile you are on has no stroke, and its menu offers the way back", r.get("active") and r.get("away") is False and r.get("arrow") == 0 and r.get("icon") == 1 and offered is True, f"{r}, {offered}")
+        pointer_on(tile)
+        r = look("home")
+        check("under the mouse the arrow is there", r.get("arrow") == 1 and r.get("icon") == 0 and r.get("tip") == "Click to go back to: " + m.pages + "/titled", str(r))
+        sidebar_mouse(m, tile)
+        r = sidebar_page(m, PAGE + """const back = await until(async () => (await at(args[0])).on === "way home"); await wait(800); return {back, ...(await at(args[0]))};""", ids["home"])
+        check("and a click takes it back to its very address", r == {"back": True, "on": "way home", "active": True}, str(r))
         # A double click that selects it must not also send away the page it has just shown.
         sidebar_page(m, PAGE + """await go(args[0], args[2]); await until(async () => (await at(args[0])).on === "way further"); await select(args[1]); await wait(1000); return 1;""",
                      ids["home"], ids["other"], m.pages + "/titled?way%20further")

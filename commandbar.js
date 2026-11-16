@@ -438,7 +438,7 @@ function barListCommands() {
   const onFolder = action => ctx => folderCommand(ctx.windowId, ids(ctx), action);
   const folderLoaded = ctx => ctx.folderReals.filter(r => r.loaded), folderAddressed = ctx => ctx.folderReals.some(r => r.address);
   const plural = (n, one, many) => (n === 1 ? one : many.replace("#", n));
-  const away = ctx => [...ctx.view.essentials, ...ctx.view.folders.flatMap(f => f.tabs)].filter(row => row.away && ids(ctx).includes(row.id));
+  const away = ctx => [...ctx.view.essentials, ...ctx.view.folders.flatMap(f => f.tabs)].filter(row => row.back && ids(ctx).includes(row.id));
   return [
     ...Object.entries(SORT_WORDS).map(([by, word]) => ({ name: `sort-${by}`, label: sortLabel(word), when: ctx => sortGroups(ctx.view, ids(ctx)).length > 0, run: act("sort", { by }) })),
     { name: "move-top", label: ctx => barCount(ctx, "Move to the top", "Move # tabs to the top"), when: along, run: act("top") },
@@ -446,7 +446,7 @@ function barListCommands() {
     { name: "move-up", label: ctx => barCount(ctx, "Move up one place", "Move # tabs up one place"), when: along, run: act("step", { by: -1 }) },
     { name: "move-down", label: ctx => barCount(ctx, "Move down one place", "Move # tabs down one place"), when: along, run: act("step", { by: 1 }) },
     { name: "take-out", label: ctx => barCount(ctx, "Take out of its folder", "Take # tabs out of their folders"), when: inFolders, run: act("takeOut") },
-    // A saved tab or an essential you have browsed on in, as its row or tile says it (awayFrom, sidebar-view.js).
+    // A saved tab or an essential off the address kept for it, as its row or tile has it (keptAddress, sidebar-view.js).
     { name: "back-to-saved", label: ctx => barCount(ctx, "Back to saved address", "# tabs back to saved addresses"), when: ctx => away(ctx).length > 0, run: act("backToSaved") },
     { name: "save-here", label: "Save this address", when: ctx => ctx.picked.length === 1 && away(ctx).length > 0, run: act("saveHere") },
     { name: "folder-from-selection", label: ctx => barCount(ctx, "New folder with this tab", "New folder with these # tabs"),

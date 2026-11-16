@@ -69,10 +69,10 @@ async function tabMenuFacts(tabIds) {
     duplicates,
   }));
 }
-// Whether a kept tab is somewhere other than the address kept for it. A saved tab by its
-// record (leftSaved, common.js). An essential's address never follows its page, so it is
-// its loaded copy that says where it is; one that is not loaded is nowhere else.
-const awayFromSaved = r => (r.own.pinned ? r.loaded && offItsAddress(r.tab, r.entry) : leftSaved(r.entry));
+// Whether a kept tab is somewhere other than the address kept for it, what comes after # too.
+// A saved tab by its record (offSaved, common.js). An essential's address never follows its
+// page, so it is its loaded copy that says where it is; one that is not loaded is nowhere else.
+const awayFromSaved = r => (r.own.pinned ? r.loaded && offItsAddress(r.tab, r.entry) : offSaved(r.entry));
 
 browser.runtime.onMessage.addListener((msg, sender) => {
   if (msg?.type !== "tabMenu" || sender.id !== browser.runtime.id || !sender.url?.startsWith(browser.runtime.getURL(""))) return;

@@ -198,12 +198,13 @@ html.space-arriving :where(#tabs) .row { transition: none; }
 :is(.row, .tile):has(> .back) > :is(img, .letter) { transition: opacity var(--quick); }
 .row:hover:has(> .back) > :is(img, .letter) { opacity: 0; }
 /* An essential has both on the tile you are on only: a click on that one goes back, a click
- * on another selects it, where it was. */
+ * on another selects it, where it was. The stroke only on another page; the arrow whenever
+ * it is off its address. */
 .tile .away, .tile .back { position: absolute; top: 50%; left: 50%; pointer-events: none; opacity: 0; transition: opacity var(--quick); }
 .tile .away { width: 6px; height: 12px; margin: -6px 0 0 13px; background: var(--faint); mask: var(--icon-stroke) center / contain no-repeat; }
 .tile .back { margin: calc(var(--icon) / -2) 0 0 calc(var(--icon) / -2); color: var(--text); }
 .tile.active .away, .tile.active:hover .back { opacity: 1; }
-.tile.active.away:hover > :is(img, .letter) { opacity: 0; }
+.tile.active:hover:has(> .back) > :is(img, .letter) { opacity: 0; }
 .row .close:hover, .row .sound:hover, #new-folder:hover { background: var(--press); color: var(--text); }
 
 /* Sound: one place in from the end, where it always is, so the close button has the end to

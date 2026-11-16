@@ -847,6 +847,12 @@ test("the same page: what comes after # does not count, everything before it doe
   const x = await alone(ff);
   const same = x.js("samePage"), left = x.js("leftSaved");
   assert.equal(same("https://mail.example/u/0/#inbox", "https://mail.example/u/0/#inbox/123"), true);
+  const exact = x.js("sameAddress"), off = x.js("offSaved");
+  assert.equal(exact("https://mail.example/u/0/#inbox", "https://mail.example/u/0/#inbox/123"), false, "but not the same address");
+  assert.equal(exact("https://a.example", "https://a.example/"), true, "written two ways, one address");
+  assert.equal(off({ url: "https://a.example/a#x", saved: { url: "https://a.example/a" } }), true);
+  assert.equal(off({ url: "https://a.example/a", saved: { url: "https://a.example/a" } }), false);
+  assert.equal(off({ url: "about:blank", saved: { url: "https://a.example/a" } }), false);
   assert.equal(same("https://a.example/watch?v=1", "https://a.example/watch?v=2"), false);
   assert.equal(same("https://a.example/a", "https://a.example/b"), false);
   assert.equal(same("https://a.example/a", "https://b.example/a"), false);
@@ -879,10 +885,18 @@ test("a saved tab you browse on in is away from its address, in its row and in i
   assert.equal((await facts(saved.id)).away, false);
   ff.navigate(saved.id, "https://a.example/board#card-7", "Board");
   await wait(600);
-  assert.equal((await rowOf(saved.id)).away, undefined, "the part after # is the same page");
+  assert.equal((await rowOf(saved.id)).away, undefined, "the part after # is the same page: no mark");
+  assert.equal((await rowOf(saved.id)).back, "Board", "but it is off its address, and the way back is offered");
+  assert.equal((await facts(saved.id)).away, true, "in its menu too");
+  await act(x, saved.windowId, "backToSaved", [saved.id]);
+  assert.deepEqual(ff.log.filter(l => l[0] === "update-url").at(-1), ["update-url", saved.id, "https://a.example/board"]);
+  ff.navigate(saved.id, "https://a.example/board", "Board"); // (the page has its title again: the fake's own is its address)
+  await wait(600);
+  assert.deepEqual([(await rowOf(saved.id)).back, (await facts(saved.id)).away], [undefined, false]);
   ff.navigate(saved.id, "https://a.example/issue/7", "Issue 7");
   await wait(600);
   assert.equal((await rowOf(saved.id)).away, "Board", "the row knows what its saved page is called");
+  assert.equal((await rowOf(saved.id)).back, "Board");
   assert.equal((await rowOf(saved.id)).title, "Issue 7");
   assert.equal((await facts(saved.id)).away, true);
 
@@ -939,10 +953,15 @@ test("an essential on another address: back to its own, or that one saved instea
   const { x, w, tile, facts, tileOf } = await kept(ff);
   assert.equal((await facts(tile.id)).away, false);
   assert.equal((await tileOf(tile.id)).away, undefined);
-  ff.navigate(tile.id, "https://e.example/#inbox", "E");
+  // A mailbox on a message: the same page, so no mark, but off its address, so the way back is there.
+  ff.navigate(tile.id, "https://e.example/#inbox/message-7", "E");
   await wait(600);
-  assert.equal((await facts(tile.id)).away, false);
-  assert.equal((await tileOf(tile.id)).away, undefined, "the part after # is the same page");
+  assert.equal((await facts(tile.id)).away, true, "its menu offers the way back");
+  assert.deepEqual([(await tileOf(tile.id)).away, (await tileOf(tile.id)).back], [undefined, "https://e.example/"], "no mark, and a click on its tile goes back");
+  await act(x, w.id, "backToSaved", [tile.id]);
+  assert.deepEqual(ff.log.filter(l => l[0] === "update-url").at(-1), ["update-url", tile.id, "https://e.example/"]);
+  await wait(600);
+  assert.deepEqual([(await facts(tile.id)).away, (await tileOf(tile.id)).back], [false, undefined]);
   ff.navigate(tile.id, "https://e.example/channel/2?token=1", "Channel 2");
   await wait(600);
   assert.equal((await facts(tile.id)).away, true);
@@ -1024,7 +1043,8 @@ test("the command bar and the keys have the way back and Save this address, for 
 
 test("the row draws the mark and the line for closing only where they are true", () => {
   const page = readFileSync(new URL("../sidebar/sidebar.js", import.meta.url), "utf8"), css = readFileSync(new URL("../sidebar/sidebar.css", import.meta.url), "utf8");
-  assert.match(page, /if \(item\.away\) \{\s*const back = el\("span", "back"\);[^}]*parts\.push\(el\("span", "away"\), back\);/);
+  assert.match(page, /if \(item\.away\) parts\.push\(el\("span", "away"\)\);/);
+  assert.match(page, /if \(item\.back\) \{\s*const back = el\("span", "back"\);[^}]*parts\.push\(back\);/, "the way back wherever the address is another, the mark only on another page");
   assert.match(page, /item\.loaded && savedIn\(folderKey\) \? "close unloads" : "close"/, "a line only where the button unloads, as its tooltip says");
   assert.match(css, /\.row \.close\.unloads::before \{ mask-image: var\(--icon-line\); \}/);
   // Out of the flow, so no title moves for it, and it takes no click.
@@ -1038,7 +1058,8 @@ test("the way back is the row's icon and the tile you are on, and never a click 
   // No button, which would stop a drag by the icon and a ⌘-click there (drag.js, selection.js).
   assert.ok(!/el\("button", "back"\)/.test(page));
   // A tile: only the one you are on, and not the second click of the double click that selected it.
-  assert.match(page, /if \(t\.classList\.contains\("active"\) && t\.classList\.contains\("away"\)\) \{ if \(e\.detail <= 1\) backToSaved\(item\.id\); return; \}/);
+  assert.match(page, /if \(t\.classList\.contains\("active"\) && t\.classList\.contains\("off"\)\) \{ if \(e\.detail <= 1\) backToSaved\(item\.id\); return; \}/);
+  assert.match(page, /\(item\.back \? " off" : ""\)/);
   assert.match(css, /\.tile \.away, \.tile \.back \{[^}]*pointer-events: none; opacity: 0;/);
   assert.match(css, /\.tile\.active \.away, \.tile\.active:hover \.back \{ opacity: 1; \}/);
   // Out of the flow, over the icon: no title moves for it.

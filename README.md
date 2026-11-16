@@ -170,8 +170,10 @@ be done, in order, is in [PLAN.md](PLAN.md).
    or a middle click), or drag it out of the folder, which makes it an ordinary tab
    again. A saved tab you have browsed on in says so: a small stroke between its icon and
    its title, and the page it is saved on in its tooltip (what comes after # in an address
-   is the same page). Under the mouse an arrow takes its icon's place, and a click there
-   takes it back, as in Arc and Zen. Its menu has *Back to saved address*, which closing
+   is the same page, so it is not marked for that). Under the mouse an arrow takes its
+   icon's place, and a click there takes it back, as in Arc and Zen; the way back is there
+   whenever the address is another one, also further in on the same page (a mailbox on a
+   message, a console on one of its views, where the whole address is after the #). Its menu has *Back to saved address*, which closing
    it would also do, but with the page still loaded, and *Save this address*, which makes
    where it is now the page it goes back to (one line, with Undo); the command bar has
    both too, and they can be given keys on the settings page. An essential that has left
