@@ -544,12 +544,14 @@ short names, rules, and spaces with their names, colours, icons and order then g
 Firefox Sync's storage for add-ons. So does what you have chosen (`syncprefs.js`): the
 colour chosen for a space, and the settings that are about how Tidier behaves and not
 about a machine (the times for archiving and unloading, a page in fullscreen staying in
-its window, links from other apps in a small window). These are in an item of their own,
+its window, links from other apps in a small window), and the keys you gave Tidier's
+commands, among machines of the same kind (a key is written another way on a Mac than
+elsewhere). These are in an item of their own,
 each with the time it was chosen, the newest winning per thing; a setting nobody has
 touched is not there at all, so a machine with everything as it came overrules nothing.
 Ordinary tabs, what is open, icons, which folders are closed and which spaces are hidden
-stay on each machine, and so do the keys, every permission, and everything of the agents'
-space and its settings. No container number is shared: a space is matched to a container by
+stay on each machine, and so do every permission, which of Firefox's own keys are cleared
+(about:keyboard), and everything of the agents' space and its settings. No container number is shared: a space is matched to a container by
 name, so logins cannot mix. The newest change wins per thing; something merely missing
 never counts as deleted, and a page you have open is never closed by another machine.
 Turning it on takes a copy first. Firefox Sync must carry add-on data: tick Add-ons in its

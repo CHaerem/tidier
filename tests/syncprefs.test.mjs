@@ -3,6 +3,7 @@
 // numbered differently, with Firefox Sync between them as MDN describes it (firefoxSyncNow).
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { FakeFirefox, firefoxSyncNow, wait } from "./fake_firefox.mjs";
 
 const SETTINGS = { url: "moz-extension://tidier/settings/settings.html" };
@@ -138,5 +139,68 @@ test("turning sync off and on again agrees anew, and keeps what the other machin
   await turnOn(B.x);
   await syncAround(server, [A, B]);
   assert.deepEqual([(await chosen(A)).unload, (await chosen(B)).unload], [8, 8]);
+  A.x.kill(); B.x.kill();
+});
+
+// --- The keys ---------------------------------------------------------------------------------
+// Firefox's commands as they behave: a key set is the key had, and Tidier is told of the change.
+function withKeys(ff) {
+  const names = Object.keys(JSON.parse(readFileSync(new URL("../manifest.json", import.meta.url), "utf8")).commands);
+  ff.keys = Object.fromEntries(names.map(name => [name, ""]));
+  ff.adapt = b => {
+    const heard = [];
+    b.commands.onChanged = { addListener: f => heard.push(f) };
+    b.commands.getAll = async () => Object.entries(ff.keys).map(([name, shortcut]) => ({ name, shortcut }));
+    b.commands.update = async ({ name, shortcut }) => {
+      if (ff.refusedKeys?.includes(shortcut)) throw new Error(`Value "${shortcut}" must not include extension shortcuts`);
+      const oldShortcut = ff.keys[name];
+      ff.keys[name] = shortcut ?? "";
+      for (const f of heard) f({ name, newShortcut: ff.keys[name], oldShortcut });
+    };
+  };
+}
+async function twoWithKeys() {
+  const A = machine({ 1: "Work" }), B = machine({ 1: "Work" }), server = {};
+  withKeys(A.ff); withKeys(B.ff);
+  A.x = await boot(A.ff); B.x = await boot(B.ff);
+  await turnOn(A.x); await turnOn(B.x);
+  await syncAround(server, [A, B]);
+  return { A, B, server };
+}
+const setKey = (m, name, shortcut) => set(m, "settings:setKey", { name, shortcut });
+
+test("a key you give a command, and one you take away, are the same on the other machine; the keys as they came are nobody's choice", async () => {
+  const { A, B, server } = await twoWithKeys();
+  assert.equal(A.ff.keys["next-tab"], "Ctrl+MacCtrl+Down", "given at the first start");
+  assert.equal(server["p/1"], undefined, "and with every key as it came, nothing is written");
+  await setKey(A, "next-tab", "Alt+Shift+J");
+  await setKey(A, "new-folder", "");
+  await setKey(A, "move-top", "Alt+Shift+T"); // one that comes with no key
+  await syncAround(server, [A, B]);
+  assert.deepEqual([B.ff.keys["next-tab"], B.ff.keys["new-folder"], B.ff.keys["move-top"], B.ff.keys["previous-tab"]], ["Alt+Shift+J", "", "Alt+Shift+T", "Ctrl+MacCtrl+Up"]);
+  assert.deepEqual(Object.keys(server["p/1"]).sort(), ["key:mac:move-top", "key:mac:new-folder", "key:mac:next-tab"], "by the system, and only what was chosen");
+  // Back as it came, from the other machine.
+  await setKey(B, "next-tab", "MacCtrl+Ctrl+Down"); // (written the other way round: the same key)
+  await syncAround(server, [A, B]);
+  assert.equal(A.ff.keys["next-tab"].split("+").sort().join("+"), "Ctrl+Down+MacCtrl");
+  const writes = [A.ff.syncWrites, B.ff.syncWrites];
+  await syncAround(server, [A, B], 2);
+  assert.deepEqual([A.ff.syncWrites, B.ff.syncWrites], writes, "and then nothing more is written");
+  A.x.kill(); B.x.kill();
+});
+
+test("a key this Firefox refuses stays as it was here, and is not sent back as a choice made here", async () => {
+  const { A, B, server } = await twoWithKeys();
+  B.ff.refusedKeys = ["Alt+Shift+J"];
+  await setKey(A, "next-tab", "Alt+Shift+J");
+  await syncAround(server, [A, B]);
+  assert.equal(B.ff.keys["next-tab"], "Ctrl+MacCtrl+Down", "as it was");
+  assert.equal(A.ff.keys["next-tab"], "Alt+Shift+J", "and the machine that chose keeps its choice");
+  assert.equal(server["p/1"]["key:mac:next-tab"][0], "Alt+Shift+J");
+  // Once it can be set, it is.
+  B.ff.refusedKeys = [];
+  B.x.js("syncSoon")();
+  await syncAround(server, [A, B]);
+  assert.equal(B.ff.keys["next-tab"], "Alt+Shift+J");
   A.x.kill(); B.x.kill();
 });

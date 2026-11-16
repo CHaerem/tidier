@@ -74,6 +74,7 @@ part C).
 | Open a link in another space (context menu) | A | Done | checked: "Open link in" on a link's menu, which needs no access to pages; the tab menu has "Open a copy in space" |
 | Unload a whole space | S | Done | checked: the space's menu; essentials, the selected tab, sound, calls and unsaved input stay; a line says how many were unloaded |
 | The same essentials, folders and spaces on every machine, by sync | A | Done | checked in a test Firefox, off by default, on the settings page; real Firefox Sync between two machines is not tried yet |
+| What you have chosen is the same on every machine too: a space's colour, the settings, the keys | | Done | checked with two fake machines and in a test Firefox's storage.sync: an item of its own, each thing with the time it was chosen, the newest winning; a setting nobody touched is not written |
 | Hide a space on a given machine | | Done | checked: on the settings page, or for a machine in managed storage; hidden, not kept away |
 | Remove a space from every machine | | Later | today removing a container on one machine is local to it |
 | A page in fullscreen stays in its window when its tab is selected in another | – | Done | checked in a real fullscreen: the page is asked (with access to all websites), stays in it, its placeholder says so, a click on its row takes you to its window, and it comes once it has left fullscreen; a choice on the settings page |

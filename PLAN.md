@@ -285,8 +285,8 @@ with where it stands. In this order, the first five being the ones that are felt
 
 Then the small ones, in any order. A space's colour is done (`spacelook.js`, and the
 dotfiles take the window's tint from Tidier since 16 November), and sync carries a chosen
-colour and the settings (`syncprefs.js`). What sync does not carry yet: the keys, and the
-live folders' searches, which are in the helper's file. And then the rest of
+colour, the settings and the keys (`syncprefs.js`). What sync does not carry yet: the live
+folders' searches, which are in the helper's file. And then the rest of
 what FEATURES.md has as Later, starting with what is missed most in use.
 
 ## Choices made

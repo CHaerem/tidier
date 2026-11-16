@@ -249,20 +249,29 @@ def alone_sync_hide(m):
 
     # What you have chosen follows too (syncprefs.js), in an item of its own: a colour for a space and
     # a setting chosen on another machine are taken here, and one chosen here goes out beside them.
-    from_elsewhere({"p/1": {f"colour:{sid}": ["#2f6f4f", now], "unload": [3, now], "later": ["kept", 1]}})
+    system = m.js(H + "return Services.appinfo.OS === 'Darwin' ? 'mac' : Services.appinfo.OS === 'WINNT' ? 'win' : 'linux';")
+    from_elsewhere({"p/1": {f"colour:{sid}": ["#2f6f4f", now], "unload": [3, now], f"key:{system}:move-bottom": ["Alt+Shift+B", now], "later": ["kept", 1]}})
     r = ext_page(m, settings, """let got; for (let i = 0; i < 100; i++) { got = await page.browser.storage.local.get(page.JSON.parse('["spaceColours", "unloadAfterHours"]'));
-        if (got.unloadAfterHours === 3 && got.spaceColours?.["firefox-container-2"]) break; await wait(200); }
+        got.key = (await page.browser.commands.getAll()).find(c => c.name === "move-bottom")?.shortcut;
+        if (got.unloadAfterHours === 3 && got.spaceColours?.["firefox-container-2"] && got.key) break; await wait(200); }
       return JSON.parse(JSON.stringify(got));""")
-    check("a space's colour and a setting chosen on another machine are taken here, the colour on the container called that here",
-          r.get("unloadAfterHours") == 3 and r.get("spaceColours") == {"firefox-container-2": "#2f6f4f"}, str(r))
-    r = ext_page(m, settings, """await page.browser.runtime.sendMessage(page.JSON.parse('{"type": "settings:unloadHours", "hours": 5}'));
-      let item; for (let i = 0; i < 100; i++) { item = (await page.browser.storage.sync.get("p/1"))["p/1"]; if (item?.unload?.[0] === 5) break; await wait(200); }
-      return JSON.parse(JSON.stringify(item ?? null));""")
-    check("a setting changed here goes out with its time, and what this version does not know is left as it came",
-          bool(r) and r.get("unload", [None, 0])[0] == 5 and r["unload"][1] > now and r.get(f"colour:{sid}") == ["#2f6f4f", now] and r.get("later") == ["kept", 1], str(r))
+    check("a space's colour, a setting and a key chosen on another machine are taken here, the colour on the container called that here",
+          r.get("unloadAfterHours") == 3 and r.get("spaceColours") == {"firefox-container-2": "#2f6f4f"} and r.get("key") == "Alt+Shift+B", str(r))
+    r = ext_page(m, settings, """const tell = msg => page.browser.runtime.sendMessage(page.JSON.parse(JSON.stringify(msg)));
+      await tell({type: "settings:unloadHours", hours: 5});
+      const set = await tell({type: "settings:setKey", name: "move-top", shortcut: "Alt+Shift+T"});
+      let item; for (let i = 0; i < 100; i++) { item = (await page.browser.storage.sync.get("p/1"))["p/1"]; if (item?.unload?.[0] === 5 && item[args[0]]) break; await wait(200); }
+      return {set: JSON.parse(JSON.stringify(set ?? null)), item: JSON.parse(JSON.stringify(item ?? null))};""", f"key:{system}:move-top")
+    item = r.get("item") or {}
+    check("a setting and a key changed here go out with their time, and what this version does not know is left as it came",
+          item.get("unload", [None, 0])[0] == 5 and item["unload"][1] > now and item.get(f"key:{system}:move-top", [None])[0] == "Alt+Shift+T"
+          and item.get(f"colour:{sid}") == ["#2f6f4f", now] and item.get("later") == ["kept", 1], str(r))
     # As it was, for the groups after this one (and the other machine is told so too).
     sidebar_page(m, """send({type: "spaceColour", space: "firefox-container-2", colour: null}); await wait(500); return 1;""")
-    ext_page(m, settings, """await page.browser.runtime.sendMessage(page.JSON.parse('{"type": "settings:unloadHours", "hours": 0}')); await wait(7000); return 1;""")
+    ext_page(m, settings, """const tell = msg => page.browser.runtime.sendMessage(page.JSON.parse(JSON.stringify(msg)));
+      await tell({type: "settings:unloadHours", hours: 0});
+      for (const name of ["move-top", "move-bottom"]) await tell({type: "settings:setKey", name, shortcut: ""});
+      await wait(7000); return 1;""")
     r = ext_page(m, settings, """
       for (let i = 0; i < 100; i++) { const items = await page.browser.storage.sync.get(null); if (!Object.keys(items).some(k => k.endsWith(".77"))) break; await wait(200); }
       const items = await page.browser.storage.sync.get(null);
