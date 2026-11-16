@@ -117,7 +117,17 @@ async function createEssentials(windowId, items) { // [{ entry, index }]
       // (A key refused, the copy is still known by its address.)
       keyByTab.set(tab.id, entry.key);
       ownPins.add(tab.id);
-      await browser.tabs.update(tab.id, { pinned: true }).catch(() => {}).finally(() => ownPins.delete(tab.id));
+      let notPinned = null;
+      await browser.tabs.update(tab.id, { pinned: true }).catch(err => { notPinned = err; }).finally(() => ownPins.delete(tab.id));
+      // The pin refused, with the tab still there: for the same reason it gets no key, and what
+      // there is of it goes. The window gets its copy at the next look, not now: what Firefox
+      // refused it may refuse again.
+      if (notPinned && !isGone(notPinned)) {
+        keyByTab.delete(tab.id);
+        await removeTabs([tab.id], busy);
+        await forgetClosedPlaceholders("essential", [entry.key]);
+        continue;
+      }
       await tagTab(tab.id, entry.key);
       // Closed by you before it could be told apart: nothing brought it back.
       if (!keyByTab.has(tab.id)) closedAlready.push(entry.key);

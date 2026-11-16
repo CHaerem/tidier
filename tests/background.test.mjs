@@ -1873,6 +1873,48 @@ test("a copy still being made at an update is no essential you unpinned: the ess
   x.kill();
 });
 
+// (Seed 100391, with Firefox made to refuse a call now and then: the copy had its key and no pin.)
+test("a copy Firefox would not pin gets no key and goes: the essential stays, and the window has its copy after the next start", async () => {
+  const { ff, x, windows: [a] } = await chaosStart({ windows: 1 });
+  const t = ff.openTab(a.id, { url: "https://e.example/", cookieStoreId: C1 });
+  await ff.clock.run(3000);
+  ff.pinTab(t);
+  await ff.clock.idle(60000);
+  const update = x.b.tabs.update;
+  x.b.tabs.update = async (id, change) => { if (change.pinned) throw new Error("refused for a reason of Firefox's own"); return update(id, change); };
+  const { window: fresh } = ff.openWindow();
+  await ff.clock.idle(60000);
+  const copies = id => ff.list(id).filter(y => y.url.includes("kind=essential"));
+  assert.deepEqual(copies(fresh.id), [], "nothing is left of the copy that could not be pinned");
+  assert.deepEqual(ff.store.essentials.map(e => e.url), ["https://e.example/"]);
+  const again = ff.update();
+  await ff.clock.idle(60000);
+  assert.deepEqual(ff.store.essentials.map(e => e.url), ["https://e.example/"], "still an essential after an update");
+  assert.deepEqual(copies(fresh.id).map(y => y.pinned), [true], "and the window has its copy");
+  again.kill();
+});
+
+// Found by the random sequences (seed 429).
+test("a window closed while its tab is on its way to another space is not an error", async () => {
+  const { ff, x, windows: [a, b] } = await chaosStart();
+  // The only tab of its space in the second window, and selected: to see whether it can
+  // leave quietly, Tidier first makes a tab to step onto, in that window.
+  const t = ff.openTab(b.id, { url: "https://a.example/", cookieStoreId: C1, active: true });
+  await ff.clock.idle(60000);
+  ff.connectSidebar(b.id);
+  await ff.clock.run(1000);
+  // The window closes in the moment before Firefox is asked for that tab.
+  const create = x.b.tabs.create;
+  let closed = false;
+  x.b.tabs.create = given => { if (given.windowId === b.id && !given.url && !closed) { closed = true; ff.closeWindow(b.id); } return create(given); };
+  ff.sidebarSays(b.id, { type: "moveToSpace", tabId: t.id, space: "firefox-container-2" });
+  await ff.clock.idle(60000);
+  assert.ok(closed, "it was on its way");
+  assert.deepEqual([...x.js("problems")], []);
+  assert.ok(ff.wins.has(a.id));
+  x.kill();
+});
+
 test("a window opened while Tidier is starting gets its tabs when it has started", async () => {
   const ff = new ChaosFirefox();
   ff.store.syncedTabs = { a: entry("https://a.example/") };

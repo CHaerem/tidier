@@ -72,10 +72,13 @@ async function pageTab(tab, key) {
 async function leavesQuietly(live, key, leaving = []) {
   if (!live?.active || live.discarded || isGhostUrl(live.url)) return closesQuietly(key, live?.id);
   const last = await lastUsedIn(live.windowId, live.cookieStoreId, live.id, ...leaving) ?? await nextAfterClosing(live.windowId, live.cookieStoreId, live.id, ...leaving);
-  const step = last ?? await browser.tabs.create({ windowId: live.windowId, cookieStoreId: live.cookieStoreId, active: false });
-  await browser.tabs.update(step.id, { active: true });
+  // (createTab, common.js: nothing if the window closes meanwhile. A window you close at any
+  // moment is no error: the page then goes with it, which asks nothing either.)
+  const step = last ?? await createTab({ windowId: live.windowId, cookieStoreId: live.cookieStoreId, active: false });
+  if (!step) return closesQuietly(key, live.id);
+  await browser.tabs.update(step.id, { active: true }).catch(ifGone);
   if (await closesQuietly(key, live.id)) return true;
-  await browser.tabs.update(live.id, { active: true });
+  await browser.tabs.update(live.id, { active: true }).catch(ifGone);
   if (!last) await browser.tabs.remove(step.id).catch(() => {});
   return false;
 }
