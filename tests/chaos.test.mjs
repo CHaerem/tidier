@@ -22,6 +22,7 @@
 // check, in which phase: "settled" (after the random use), "update" or "restart".
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { ChaosFirefox, randoms, REFUSED, isPlaceholder } from "./chaos_firefox.mjs";
 
 const SPACES = ["firefox-container-1", "firefox-container-2", "firefox-container-3"];
@@ -239,6 +240,9 @@ const OPS = {
     const t = w && pick(W.tabsOf(w).filter(t => t.pinned), b);
     if (!t) return;
     const key = W.value(t, "essentialKey");
+    // (A second copy of it unpinned before the first unpin has taken the others away is a
+    // tab of its own: two unpins, two tabs. Seed 1828, both in the same millisecond.)
+    if (key && W.goneEssentials.has(key) && W.essentials.has(key)) W.broughtBack.add(W.essentials.get(key));
     if (key) W.goneEssentials.add(key);
     else W.unpinnedUnknown = true; // pinned a moment ago: which essential goes cannot be told here
     W.ff.unpinTab(t);
@@ -751,6 +755,17 @@ if (env.CHAOS_SURVEY) {
   });
 } else {
   test("random use breaks nothing Tidier promises", () => campaign());
+  // Each of these broke something once, in Tidier or in what this test took for a fault
+  // (`was`, in the file). A mend for one must not bring another back: one did, the night
+  // they were found, and only the next long run showed it.
+  test("the sequences that once broke something break nothing now", async () => {
+    const found = JSON.parse(readFileSync(new URL("./fixtures/chaos_found.json", import.meta.url), "utf8"));
+    assert.ok(found.length >= 20, `${found.length} sequences`);
+    for (const { was, seq } of found) {
+      const v = await play(seq);
+      if (v.length) assert.fail(`\nIt was: ${was}\n${describe(seq, v)}\n`);
+    }
+  });
   test("the same seed gives the same run", async () => {
     const seq = generate(7);
     const once = async () => {

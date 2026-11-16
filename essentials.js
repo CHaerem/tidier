@@ -455,6 +455,11 @@ async function reopenedEssential(tab) {
   keyByTab.set(tab.id, key);
   await dropDoubleCopies(tab.id, tab.windowId);
   await oneLoaded(key); // its load began before it was known as this essential
+  // Gone with its window meanwhile (brought back with ⌘⇧T, and the window closed at once):
+  // a closing window's tabs are forgotten as Firefox tells of them (onRemoved, above), and
+  // that was before this one was known here, so nothing else would forget it. (One closed
+  // by itself is still to be looked at, by onClosed, which needs its key.)
+  if (!(await browser.tabs.get(tab.id).catch(() => null)) && !(await browser.windows.get(tab.windowId).catch(() => null))) keyByTab.delete(tab.id);
 }
 
 // A container removed: its essentials go with it. Firefox refuses to create tabs
@@ -470,9 +475,6 @@ browser.contextualIdentities.onRemoved.addListener(({ contextualIdentity }) => {
 async function dropDoubleCopies(tabId, windowId) {
   const key = keyByTab.get(tabId);
   const tab = await browser.tabs.get(tabId).catch(() => null);
-  // (Closed meanwhile: its close was told before it was known here as this essential's, as
-  // one brought back with ⌘⇧T and closed again at once, so nothing else would forget it.)
-  if (!tab) keyByTab.delete(tabId);
   if (!key || !tab?.pinned) return;
   await tagTab(tabId, key); // a tab dragged from the tab bar may arrive without its sessions values
   // An unloaded copy arrives without its title (Firefox shows its address):

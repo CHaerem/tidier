@@ -991,6 +991,11 @@ scripts, on a fake Firefox (`tests/chaos_firefox.mjs`) that refuses what Firefox
 and checks after each what Tidier promises: no tab lost or doubled, every essential in
 every window, every tab in its space, nothing left in memory. A failure prints a line to
 run that one sequence again (`CHAOS_REPLAY='…'`, with `CHAOS_TRACE=1` for every call).
+`node --test` plays the first hundred or so; a long run (the line above, and from another
+seed with `CHAOS_FIRST`) finds what they do not, and `CHAOS_SURVEY=1` goes on past a failure
+and counts each kind. The sequences that have broken something are kept, each with what it
+was (`tests/fixtures/chaos_found.json`), and are played every time: a mend for one must not
+bring another back.
 `tests/soak.py` does the same slowly in a real test Firefox, clicking and dragging in the
 real sidebar, and also fails on memory that grows or on work while nothing happens.
 Restarts in it (`--restart-every N`) need Developer Edition (`TIDIER_FIREFOX`,
