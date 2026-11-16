@@ -208,12 +208,18 @@ const OPS = {
     const from = W.ff.wins.get(W.ff.focused), opener = from && W.ff.activeOf(from);
     if (!opener) return; // no page to open it
     const space = opener?.cookieStoreId !== "firefox-default" ? opener?.cookieStoreId : W.x.js("activeSpace").get(from.id);
+    // (A window so new that it has no space yet has no page to open a popup either: without
+    // this the popup was outside any space, and its page a new tab after the next start.)
+    if (!space) return;
     W.ff.openWindow({ type: "popup", url: W.newUrl(), cookieStoreId: space });
   } },
   closePopup: { weight: 1, run(W) { for (const w of [...W.ff.wins.values()]) if (w.type !== "normal") W.ff.closeWindow(w.id); } },
   pin: { weight: 5, async run(W, { a, b }) {
     const w = pick(W.windows(), a);
-    const t = w && pick(W.tabsOf(w).filter(t => !t.pinned && !t.hidden && (isWeb(t.url) || isPlaceholder(t.url))), b);
+    // Not a page outside any space: Tidier opens it again in a space within a few calls to
+    // Firefox, and closes this tab. A pin in between is on a tab that is going, and the page
+    // is then both an essential and the new tab; no hand is that quick (seed 100368: 26 ms).
+    const t = w && pick(W.tabsOf(w).filter(t => !t.pinned && !t.hidden && (isPlaceholder(t.url) || (isWeb(t.url) && t.cookieStoreId !== NO_CONTAINER))), b);
     if (!t) return;
     if (W.keyOf(t)) W.excused.add(W.keyOf(t));
     W.ff.pinTab(t);
@@ -492,7 +498,10 @@ async function check(W, phase, { strong }) {
         const here = t.cookieStoreId === space || (t.cookieStoreId === NO_CONTAINER && (homes?.get(t.id) ?? space) === space);
         if (t.active && !here) bad("space-selected", `window ${w.id} is in ${space} but tab ${t.id} of ${t.cookieStoreId} is selected`);
         if (t.pinned) continue;
-        if (here && t.hidden) bad("space-hidden", `window ${w.id} in ${space}: tab ${t.id} ${t.url} is hidden`);
+        // (A closed folder's tabs rest: hidden in every window, but for the one you are on. foldrest.js.)
+        const rests = x.js("restsInFolder")(all, W.keyOf(t));
+        if (here && t.hidden && !rests) bad("space-hidden", `window ${w.id} in ${space}: tab ${t.id} ${t.url} is hidden`);
+        if (here && rests && !t.hidden && !t.active && strong) bad("fold-shown", `window ${w.id}: tab ${t.id} ${t.url} is in a closed folder and is shown`);
         if (!here && !t.hidden && !t.active) bad("space-shown", `window ${w.id} in ${space}: tab ${t.id} of ${t.cookieStoreId} is shown`);
       }
       // What the sidebar has drawn is what is true now.
