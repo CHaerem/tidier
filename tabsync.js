@@ -370,7 +370,9 @@ async function reconcileAll({ firefoxStart = false } = {}) {
       all[key].cookieStoreId = keep.cookieStoreId;
       if (all[all[key].parentKey] && all[all[key].parentKey].cookieStoreId !== keep.cookieStoreId) all[key].parentKey = null;
     }
-    const astray = reps.filter(t => t.id !== keep.id && isGhostUrl(t.url) && t.cookieStoreId !== all[key].cookieStoreId);
+    // (So does an unloaded copy of the page itself there, which holds nothing: the tab as it
+    // was before it was opened again in its space, back with the session after a restart.)
+    const astray = reps.filter(t => t.id !== keep.id && (isGhostUrl(t.url) || t.discarded) && t.cookieStoreId !== all[key].cookieStoreId);
     for (const t of astray) { forget(t.id); await removeTabs([t.id], syncBusy); }
     if (astray.length) await forgetClosedReps(key, astray);
     for (const w of wins) {
