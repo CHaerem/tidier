@@ -2087,6 +2087,32 @@ test("a placeholder you close while Tidier is starting is back in its window, an
   x.kill();
 });
 
+// Found by the random sequences (seed 4014): looked at by its address, the stray was given
+// the essential's key, and the next look took it for an essential you had unpinned.
+test("an essential's placeholder that comes back unpinned while Tidier is starting goes, and the essential stays", async () => {
+  const { ff, windows: [a, b] } = await chaosStart();
+  const t = ff.openTab(a.id, { url: "https://e.example/", cookieStoreId: C1 });
+  await ff.clock.run(3000);
+  ff.pinTab(t);
+  await ff.clock.idle(60000);
+  const key = ff.store.essentials[0].key, placeholder = `moz-extension://tidier/ghost.html?kind=essential&key=${key}`;
+  const x = ff.update();
+  await ff.clock.run(1200);
+  assert.equal(x.js("started"), false, "Tidier is starting");
+  // ⌘⇧T in the other window, which you then leave: one Tidier closed before it was pinned, so
+  // with no key of its own and not pinned, and selected there, where Tidier looks at the tab
+  // a window is on (to remember it for its space).
+  const stray = ff.openTab(b.id, { url: placeholder, cookieStoreId: C1, active: true, restored: { tab: { url: placeholder, title: "Page e.example/" }, values: {} } });
+  await ff.clock.idle(60000);
+  assert.deepEqual(ff.store.essentials.map(e => e.url), ["https://e.example/"], "still an essential");
+  assert.notEqual(ff.values.get(stray.id)?.essentialKey, key, "and the stray, if it is still there, was not given its key");
+  const again = ff.update();
+  await ff.clock.idle(60000);
+  assert.deepEqual(ff.store.essentials.map(e => e.url), ["https://e.example/"], "and after the next start");
+  for (const w of [a, b]) assert.equal(ff.list(w.id).filter(y => y.pinned).length, 1, `one copy in window ${w.id}`);
+  again.kill();
+});
+
 test("a window opened while Tidier is starting gets its tabs when it has started", async () => {
   const ff = new ChaosFirefox();
   ff.store.syncedTabs = { a: entry("https://a.example/") };

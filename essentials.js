@@ -62,7 +62,11 @@ async function keyOf(tab) {
   const shown = placeholderOf(tab.url);
   const byAddress = shown.kind === "essential" && (await getList()).find(e => e.key === shown.key);
   const key = value ?? (byAddress && byAddress.cookieStoreId === tab.cookieStoreId ? shown.key : undefined);
-  if (key && !value) await tagTab(tab.id, key); // for the next start too
+  // Written on it for the next start too, if it is pinned. On one that is not, a key written
+  // says it was pinned once and you unpinned it (essentialsAgree), which takes the essential
+  // off the list: a stray placeholder (closed unfinished, and back with ⌘⇧T) looked at here by
+  // its address was given the key, and the next start read it so.
+  if (key && !value && tab.pinned) await tagTab(tab.id, key);
   else if (key) keyByTab.set(tab.id, key);
   return key;
 }

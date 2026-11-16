@@ -197,6 +197,11 @@ const OPS = {
   // ⌘⇧T: the last thing closed, a tab or a whole window.
   reopen: { weight: 4, run(W) {
     const closedAt = W.ff.closedItems[0]?.at, back = W.ff.reopenLast();
+    // Firefox started with no session a moment ago, and Tidier has not looked yet: what comes
+    // back now is all of the session it then sees, and a tab not in it is taken for closed
+    // before the quit (it is in the archive). With nothing back, the record is kept whole.
+    // Seeds 3638 and 106013.
+    if (back && W.clock.now - (W.noSessionAt ?? -Infinity) < 10000) for (const [key, e] of Object.entries(W.ff.store.syncedTabs ?? {})) if (!e.saved) W.excused.add(key);
     // A whole window brings back what it held when it closed, also what has been closed or pinned since.
     if (back?.order) for (const t of W.tabsOf(back)) W.broughtBack.add(t.url);
     // And a tab Tidier closed a moment ago, opening it elsewhere, cannot be told from what you
@@ -353,6 +358,7 @@ const OPS = {
     await W.hardStop();
     // With no session either, a tab not written yet is gone without a trace.
     if (a >= 0.85) for (const key of Object.keys(all)) if (!W.ff.store.syncedTabs?.[key]) W.excused.add(key);
+    if (a >= 0.85) W.noSessionAt = W.clock.now;
     W.x = W.ff.restart({ session: a < 0.85 });
   } },
   // A long time passes, and archiving looks at everything that is not in a folder.
