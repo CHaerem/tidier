@@ -484,6 +484,7 @@ async function dropDoubleCopies(tabId, windowId) {
   // An unloaded copy arrives without its title (Firefox shows its address):
   // its placeholder is loaded once more to set it, and unloads itself again.
   if (tab.discarded && isGhostUrl(tab.url)) await browser.tabs.update(tabId, { url: ghostUrl("essential", key) }).catch(() => {});
+  windowId = tab.windowId; // where it is now: dragged on to another window since this was asked for, its doubles are there
   const pinned = await browser.tabs.query({ windowId, pinned: true });
   const keys = await Promise.all(pinned.map(keyOf));
   const doubles = pinned.filter((t, i) => t.id !== tabId && keys[i] === key);
