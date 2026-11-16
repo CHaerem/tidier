@@ -493,7 +493,7 @@ async function onSyncedClosed(key, role, windowId, place) {
     unloaded: place ? place.unloaded : role !== "live",
   });
   if (action === "unload") await unloadSaved(key, windowId, place);
-  else { await noteArchived(entry, "closed"); await closeEverywhere(key); }
+  else { await noteArchived(entry, "closed"); await closeEverywhere(key, { ownPage: role === "live" }); }
 }
 
 // A saved tab you closed while it was loaded: it goes back to its saved
@@ -537,7 +537,12 @@ async function closesQuietly(key, liveId = liveTabId(key)) { // (a tab not in th
 
 // The tab was closed by you (not by closing its window): close it everywhere.
 // Live folder tabs closed by you are remembered (see livefolders.js).
-async function closeEverywhere(key, { dismiss = true } = {}) {
+// `ownPage`: what you closed was the page itself, which is then under Recently Closed for
+// ⌘⇧T to bring back. A placeholder that had taken the page over in that same moment (the
+// tab you landed on as the page closed) is a page too by now, and closed here it would be
+// there a second time: ⌘⇧T twice gave the page twice. (Closed by its placeholder, the
+// page closed here is the one ⌘⇧T brings back, and stays.)
+async function closeEverywhere(key, { dismiss = true, ownPage = false } = {}) {
   const all = await getSynced();
   if (dismiss) await noteLiveFolderDismissed(all[key]);
   delete all[key];
@@ -547,6 +552,7 @@ async function closeEverywhere(key, { dismiss = true } = {}) {
   reps.forEach(t => forget(t.id));
   await removeTabs(reps.map(t => t.id), syncBusy);
   await forgetClosedPlaceholders("ghost", [key]);
+  if (ownPage) await forgetClosedPages(reps.filter(t => isWeb(t.url)).map(t => t.url));
 }
 
 // Placeholders Firefox closed itself: it closes those loaded when Tidier updates.
