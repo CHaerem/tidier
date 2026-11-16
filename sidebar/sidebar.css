@@ -5,9 +5,9 @@ html { background: var(--frame); transition: background-color var(--tint-change)
 /* Light to dark is no change of tint: the text changes at once, and a surface still fading
  * would be light behind light text for a moment. So then nothing fades (sidebar.js). */
 html.scheme-change, html.scheme-change :is(*, ::before, ::after) { transition: none !important; }
-/* The tint comes from the space's own colour, so a new space has one too, and tidier.css
- * is not needed (a rule of its own there still wins). */
-:root { --frame: light-dark(color-mix(in srgb, var(--accent) 12%, #ececf0), color-mix(in srgb, var(--accent) 9%, #1f1f23)); }
+/* The tint comes from the space's own colour (tokens.css), so a new space has one too, and
+ * tidier.css is not needed (a rule of its own there still wins). */
+:root { --frame: var(--space-tint); }
 html, body { height: 100%; margin: 0; }
 body {
   display: flex; flex-direction: column; box-sizing: border-box;

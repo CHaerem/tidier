@@ -40,8 +40,14 @@ test("what moves stops for those who ask for no motion", () => {
   assert.match(read("sidebar/tokens.css"), /prefers-reduced-motion: reduce[^}]*transition: none !important; animation: none !important;/);
 });
 
-test("the surface stays a plain :root name, in the space's tint, which a tidier.css of one's own can override per space", () => {
-  assert.match(read("sidebar/tokens.css"), /:root \{[^}]*--frame: var\(--space-frame, light-dark\(#ececf0, #1f1f23\)\);/s);
+test("the surface stays a plain :root name, which the owner's tidier.css overrides per space", () => {
+  assert.match(read("sidebar/tokens.css"), /:root \{[^}]*--frame: light-dark\(#ececf0, #1f1f23\);/s);
+  // In the space's tint where a page is drawn on the window: one formula, with the numbers the window's theme has.
+  for (const page of ["sidebar/sidebar.css", "commandbar/commandbar.css"]) assert.match(read(page), /--frame: var\(--space-tint\);/, page);
+  const tint = read("sidebar/tokens.css").match(/--space-tint: light-dark\(oklch\(from var\(--accent\) ([\d.]+) min\(([\d.]+), calc\(c \* ([\d.]+)\)\) h\), oklch\(from var\(--accent\) ([\d.]+) min\(([\d.]+), calc\(c \* ([\d.]+)\)\) h\)\);/);
+  const js = read("spacelook.js").match(/const TINT = \{ light: \{ l: ([\d.]+), c: ([\d.]+), of: ([\d.]+) \}, dark: \{ l: ([\d.]+), c: ([\d.]+), of: ([\d.]+) \} \};/);
+  assert.ok(tint && js, "both are written as expected");
+  assert.deepEqual(tint.slice(1).map(Number), js.slice(1).map(Number));
   assert.match(read("sidebar/sidebar.css"), /html \{ background: var\(--frame\);/);
 });
 

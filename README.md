@@ -208,10 +208,17 @@ be done, in order, is in [PLAN.md](PLAN.md).
    around the page alike, light or dark as the system is. A container can only have one of
    Firefox's eight colours, so the chosen one is Tidier's own, on this machine (sync does
    not carry it yet). The window is tinted by a theme for that window alone, which Firefox
-   asks nothing for: it gives the frame its colour and Firefox's own colours for the rest,
-   and a smoke check holds those to what Firefox draws without a theme. For the frame to
-   take it, `userChrome.css` takes `--lwt-accent-color` as its surface; a `tidier.css` that
-   sets a tint per space keeps its own. A private window keeps Firefox's look.
+   asks nothing for: it gives the frame its colour and Firefox's own colours for the rest
+   (text, icons, the address bar and its list, panels), and a smoke check holds those to
+   what Firefox draws without a theme. What a theme has no say over is Firefox's accent:
+   with any theme it is the system's (blue on a Mac) and not Firefox's own purple, in
+   small marks such as the keyboard's focus ring and the badge on a result that is an
+   open tab. The tint is one formula, in Tidier's pages' style and in the theme
+   (`--space-tint` in `sidebar/tokens.css`, `tintsOf`), so the sidebar and the window
+   around it are one surface. For the frame to take it, `userChrome.css` takes
+   `--lwt-accent-color` as its surface; a `tidier.css` that sets a tint per space keeps
+   its own. A window has its tint as soon as Tidier's background part starts, by the
+   space kept with it. A private window keeps Firefox's look.
 
 Compact mode and the window's look are set up in the dotfiles (`userChrome.css`, Firefox
 settings, `about:keyboard`). Switching to a tab in another window needs no command: every

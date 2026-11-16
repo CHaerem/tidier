@@ -5,7 +5,7 @@ import time
 from testfirefox import EXT_ID
 from smokechecks.base import (
     CTRL, ENTER, ESC, H, SNAP_ALONE, check, choose, ext_page,
-    extension_message, in_sidebar, menu_on, no_problems, press, seen, sidebar_key, sidebar_mouse,
+    extension_message, in_sidebar, look_in_sidebar, menu_on, no_problems, press, seen, sidebar_key, sidebar_mouse,
     sidebar_page, sidebar_until, until,
 )
 from smokechecks.core import essentials
@@ -696,6 +696,28 @@ def alone_space_colour(m):
               try { return await (async () => { """ + WINDOW[len(H):] + """ })(); } finally { for (const [name, value] of theme) root.setAttribute(name, value); }""")
             same = {k: (r[k], plain[k]) for k in ("text", "icons", "field", "border", "side") if r[k] != plain[k]}
             check(f"with it, Firefox's text and icons are as without a theme ({scheme})", not plain["lwt"] and not same, f"{same}, without: {plain}")
+            # The pages drawn on the window work the tint out in their style (--space-tint, tokens.css),
+            # the window's theme has it from tintsOf: one surface, so the two must agree, as painted.
+            COLOURS = ["#37adff", "#51cd00", "#ffcb00", "#ff613d", "#ff4bda", "#af51f5", "#a1724e", "#8f8f9d", "#000000", "#ffffff", "#2f6f4f"]
+            painted = look_in_sidebar(m, """(colours) => colours.map(colour => {
+              const probe = doc.createElement("div"); probe.className = "own-accent"; probe.style.setProperty("--accent", colour); probe.style.background = "var(--space-tint)"; doc.body.append(probe);
+              const ctx = doc.createElement("canvas").getContext("2d"); ctx.fillStyle = css(probe).backgroundColor; ctx.fillRect(0, 0, 1, 1); probe.remove();
+              return [...ctx.getImageData(0, 0, 1, 1).data].slice(0, 3); })""", COLOURS)
+            given = sidebar_page(m, BG + "return args[0].map(c => [1, 3, 5].map(i => parseInt(bg.tintsOf(c)[args[1]].slice(i, i + 2), 16)));", COLOURS, scheme)
+            apart = {c: (p, g) for c, p, g in zip(COLOURS, painted or [], given) if max(abs(a - b) for a, b in zip(p, g)) > 1}
+            check(f"Tidier's pages work out the same tint as the window is given, for any colour ({scheme})", painted and len(painted) == len(COLOURS) and not apart, f"{apart or painted}")
+            # And with the address bar open, where a theme without colours for it gives black on white.
+            OPEN = """const w = main(), q = s => w.document.querySelector(s), cs = e => e ? w.getComputedStyle(e) : {};
+              return {typed: cs(q("#urlbar-input") ?? q(".urlbar-input")).color, chosen: cs(q(".urlbarView-row[selected]")).color, found: cs(q(".urlbarView-row:not([selected]) .urlbarView-title")).color};"""
+            m.js(H + """const w = main(); w.focus(); w.gURLBar.focus(); w.gURLBar.value = ""; await wait(200); w.gURLBar.search("exam");
+              for (let i = 0; i < 50 && !w.document.querySelector(".urlbarView-row[selected]"); i++) await wait(100); await wait(500); return 1;""")
+            themed = m.js(H + OPEN)
+            own = m.js(H + """const root = main().document.documentElement;
+              const theme = [...root.attributes].filter(a => a.name === "style" || a.name.startsWith("lwt")).map(a => [a.name, a.value]);
+              for (const [name] of theme) root.removeAttribute(name);
+              try { return await (async () => { """ + OPEN + """ })(); } finally { for (const [name, value] of theme) root.setAttribute(name, value); }""")
+            m.js(H + "const w = main(); w.gURLBar.view.close(); w.gURLBar.value = ''; w.gURLBar.blur(); await wait(400); return 1;")
+            check(f"in the open address bar too: what you type, and the list ({scheme})", themed == own and themed.get("typed") and themed.get("chosen"), f"with: {themed}, without: {own}")
             # A theme from elsewhere on the window: the tint comes back.
             sidebar_page(m, BG + "await page.browser.theme.reset(windowId); await wait(800); return 1;")
             again = m.js(WINDOW)
@@ -713,14 +735,14 @@ def alone_space_colour(m):
         choose(m, "Brown")
         BROWN = "rgb(161, 114, 78)"
         r = sidebar_until(m, """(id, want) => { const now = content.getComputedStyle(dot(id).querySelector(".dot")).backgroundColor;
-          return now === want ? {dot: now, surface: doc.documentElement.style.getPropertyValue("--space-frame")} : {wait: now}; }""", here, BROWN)
-        want = sidebar_page(m, BG + "const t = bg.tintsOf('#a1724e'); return {window: rgb(t.light), sidebar: `light-dark(${t.light}, ${t.dark})`};")
+          return now === want ? {dot: now, accent: doc.documentElement.style.getPropertyValue("--accent")} : {wait: now}; }""", here, BROWN)
+        want = sidebar_page(m, BG + "const t = bg.tintsOf('#a1724e'); return {window: rgb(t.light)};")
         for _ in range(50):
             w = m.js(WINDOW)
             if w["frame"] == want["window"]:
                 break
             time.sleep(0.1)
-        check("a colour from the list is the dot's, the sidebar's surface's and the window's", r.get("dot") == BROWN and r.get("surface") == want["sidebar"] and w["frame"] == want["window"], f"{r}, {w['frame']}, want {want}")
+        check("a colour from the list is the dot's, the one the sidebar makes its surface from, and the window's", r.get("dot") == BROWN and r.get("accent") == "#a1724e" and w["frame"] == want["window"], f"{r}, {w['frame']}, want {want}")
         menu_on(m, f"dot({json.dumps(here)})")
         sidebar_mouse(m, 'item("Colour")')
         sidebar_until(m, """() => doc.activeElement === doc.querySelector("#menu .find") || {wait: 1}""")

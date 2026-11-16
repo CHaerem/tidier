@@ -89,7 +89,7 @@ test("a colour chosen for a space is its dot's, its surface's and its window's, 
   await x.js("sidebarActionNow")(w.id, { type: "spaceColour", space: C1, colour: "#B5651D" });
   await wait(600);
   const s = await spaceIn(), tint = x.js("tintsOf")("#b5651d");
-  assert.deepEqual([s.color, s.ownColour, s.frame], ["#b5651d", true, `light-dark(${tint.light}, ${tint.dark})`]);
+  assert.deepEqual([s.color, s.ownColour], ["#b5651d", true]);
   assert.equal(ff.themes[w.id].colors.frame, tint.light);
   assert.deepEqual(ff.store.spaceColours, { [C1]: "#b5651d" });
   assert.equal(ff.identityUpdates ?? 0, 0, "the container keeps its own: it can only have one of Firefox's eight");
@@ -104,6 +104,23 @@ test("a colour chosen for a space is its dot's, its surface's and its window's, 
   assert.deepEqual(ff.store.spaceColours, {});
   assert.equal(ff.themes[w.id].colors.frame, y.js("tintsOf")("#37adff").light, "its container's colour again");
   y.kill();
+});
+
+test("a window has its tint as soon as this part starts, by the space kept with it, before Tidier has looked at the tabs", async () => {
+  const ff = new FakeFirefox();
+  const { w } = twoSpaces(ff);
+  ff.windowValues = { [`${w.id} space`]: C2 };
+  const x = ff.boot(); // not started: nothing has said that Firefox is ready
+  await wait(400);
+  assert.equal(x.started(), false);
+  assert.equal(ff.themes?.[w.id]?.colors.frame, x.js("tintsOf")("#51cd00").light, "Work's, as the window was left");
+  // A window that comes later, before Tidier has started too.
+  const later = ff.addWindow();
+  ff.windowValues[`${later.id} space`] = C1;
+  x.b.windows.onCreated.fire({ id: later.id, type: "normal", incognito: false });
+  await wait(300);
+  assert.equal(ff.themes?.[later.id]?.colors.frame, x.js("tintsOf")("#37adff").light);
+  x.kill();
 });
 
 test("a private window keeps Firefox's own look", async () => {

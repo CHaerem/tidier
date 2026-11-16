@@ -53,7 +53,9 @@ async function setSpaceColour(space, colour) {
 // --- The tint ------------------------------------------------------------------------------
 // A colour's own hue, at the lightness and the little chroma a surface has: what the
 // dotfiles had picked by hand for each space, from Firefox's colour for it (oklch, so that
-// every hue is as light as every other). A grey stays a grey.
+// every hue is as light as every other). A grey stays a grey. Tidier's own pages work out
+// the same in their style (--space-tint, sidebar/tokens.css, with these numbers), so the
+// sidebar and the window around it are one surface.
 const TINT = { light: { l: 0.935, c: 0.018, of: 0.12 }, dark: { l: 0.25, c: 0.027, of: 0.17 } };
 function tintsOf(hex) {
   const [, c, h] = oklchOf(hex);
@@ -91,17 +93,28 @@ const hexOf = rgb => "#" + rgb.map(v => v.toString(16).padStart(2, "0")).join(""
 // it draws the theme's colours instead, and black where the theme has none. tests/smokechecks
 // (alone_space_colour) compares the two, so a Firefox that changes its own is seen.
 const FIREFOX_LOOK = {
-  light: { text: "rgb(21, 20, 26)", tabs: "rgb(24, 14, 48)", icons: "rgb(117, 102, 159)", field: "rgba(255, 255, 255, 0.4)", fieldText: "rgb(62, 49, 95)", fieldBorder: "#d6d5da", pressed: "rgba(117, 102, 159, 0.4)", sidebarText: "rgb(21, 20, 26)" },
-  dark: { text: "rgb(252, 251, 255)", tabs: "rgb(242, 240, 248)", icons: "rgb(231, 225, 248)", field: "rgba(0, 0, 0, 0.2)", fieldText: "rgb(231, 225, 248)", fieldBorder: "#3f3e42", pressed: "rgba(182, 170, 217, 0.4)", sidebarText: "rgb(249, 249, 250)" },
+  light: {
+    text: "rgb(21, 20, 26)", tabs: "rgb(24, 14, 48)", icons: "rgb(117, 102, 159)", accent: "rgb(118, 78, 221)", pressed: "rgba(117, 102, 159, 0.4)", sidebarText: "rgb(21, 20, 26)",
+    field: "rgba(255, 255, 255, 0.4)", fieldText: "rgb(62, 49, 95)", fieldBorder: "#d6d5da", fieldOpen: "rgb(255, 255, 255)",
+    panel: "rgb(255, 255, 255)", panelText: "rgb(24, 14, 48)", panelBorder: "rgba(24, 14, 48, 0.24)", chosen: "rgba(62, 49, 95, 0.27)",
+  },
+  dark: {
+    text: "rgb(252, 251, 255)", tabs: "rgb(242, 240, 248)", icons: "rgb(231, 225, 248)", accent: "rgb(184, 156, 255)", pressed: "rgba(182, 170, 217, 0.4)", sidebarText: "rgb(249, 249, 250)",
+    field: "rgba(0, 0, 0, 0.2)", fieldText: "rgb(231, 225, 248)", fieldBorder: "#3f3e42", fieldOpen: "rgb(23, 21, 25)", // (its list's: the larger part)
+    panel: "rgb(23, 21, 25)", panelText: "rgb(242, 240, 248)", panelBorder: "rgba(242, 240, 248, 0.24)", chosen: "rgba(231, 225, 248, 0.32)",
+  },
 };
 function themeFor(frame, scheme) {
   const f = FIREFOX_LOOK[scheme];
   return {
     colors: {
       frame, frame_inactive: frame,
-      tab_background_text: f.tabs, toolbar_text: f.text, bookmark_text: f.text, icons: f.icons,
-      toolbar_field: f.field, toolbar_field_text: f.fieldText, toolbar_field_border: f.fieldBorder,
+      tab_background_text: f.tabs, toolbar_text: f.text, bookmark_text: f.text, icons: f.icons, icons_attention: f.accent,
       button_background_active: f.pressed, sidebar_text: f.sidebarText,
+      toolbar_field: f.field, toolbar_field_text: f.fieldText, toolbar_field_border: f.fieldBorder,
+      // The address bar while you type in it, its list, and Firefox's panels.
+      toolbar_field_focus: f.fieldOpen, toolbar_field_text_focus: f.fieldText, toolbar_field_border_focus: f.accent,
+      popup: f.panel, popup_text: f.panelText, popup_border: f.panelBorder, popup_highlight: f.chosen, popup_highlight_text: f.fieldText,
     },
     // Light or dark as the system is, as without a theme. Not the scheme these colours are for:
     // Tidier's own pages follow the window's scheme, so this page would then see the scheme it
@@ -137,21 +150,25 @@ browser.theme?.onUpdated?.addListener(({ theme, windowId }) => {
   tintShown.delete(windowId);
   if (activeSpace.has(windowId)) tintWindow(windowId, activeSpace.get(windowId)).catch(noteError);
 });
-// Light to dark: every window's tint is the other one now.
+// Every window, when what a tint is made of changes: light to dark, a colour chosen. And as
+// this part starts, before Tidier has: a window is plain until it has its theme (Firefox
+// keeps none for a window over a restart), so it gets it by the space kept with it
+// (SPACE_KEY, spaces.js), without waiting for the tabs to be looked at.
+const spaceKeptIn = async windowId => activeSpace.get(windowId) ?? await browser.sessions.getWindowValue(windowId, SPACE_KEY).catch(() => undefined);
 let tintAllTimer = null;
 function tintAllSoon() {
   clearTimeout(tintAllTimer);
   tintAllTimer = setTimeout(async () => {
     for (const w of await browser.windows.getAll({ windowTypes: ["normal"] }).catch(() => [])) {
-      if (!w.incognito && activeSpace.has(w.id)) await tintWindow(w.id, activeSpace.get(w.id));
+      const space = w.incognito ? null : await spaceKeptIn(w.id);
+      if (space) await tintWindow(w.id, space).catch(noteError);
     }
   }, 50);
 }
 darkScheme?.addEventListener("change", tintAllSoon);
-
-// What the sidebar shows as its surface, both ways, for a space's colour (sidebar.js).
-function frameOfSpace(colour) {
-  if (!hexColour(colour)) return null;
-  const { light, dark } = tintsOf(hexColour(colour));
-  return `light-dark(${light}, ${dark})`;
-}
+// A new window, at once: in the space of the window it was opened from (spaces.js sets that
+// in its own listener, before this one), or the one kept with a window that came back.
+browser.windows.onCreated.addListener(async win => {
+  const space = win.type === "normal" && !win.incognito && await spaceKeptIn(win.id);
+  if (space) tintWindow(win.id, space).catch(noteError);
+});

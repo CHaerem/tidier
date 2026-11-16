@@ -8,7 +8,7 @@
 /* The tint from the space's colour, as the sidebar's (sidebar.css); your
  * own tidier.css, keyed on html[data-space], still wins. */
 html {
-  --frame: light-dark(color-mix(in srgb, var(--accent) 12%, #ececf0), color-mix(in srgb, var(--accent) 9%, #1f1f23));
+  --frame: var(--space-tint);
   background: var(--frame);
 }
 html, body { height: 100%; margin: 0; }

@@ -32,9 +32,8 @@ async function spaceList(used) {
   const rank = new Map([...new Set(first)].map((id, i) => [id, i]));
   const resting = await bridgeRestingSpace(); // bridge.js
   const listed = s => used.has(s.id) || (s.id !== resting && (!Array.isArray(declared) || rank.has(s.id)));
-  // In the colour each has (spacelook.js): the one chosen in Tidier, else its container's. `frame`:
-  // the sidebar's surface in it, light and dark.
-  const coloured = s => { const color = spaceColour(s.id, s.color) ?? s.color; return { ...s, color, frame: frameOfSpace(color), ownColour: s.id in chosenColours }; };
+  // In the colour each has (spacelook.js): the one chosen in Tidier, else its container's.
+  const coloured = s => ({ ...s, color: spaceColour(s.id, s.color) ?? s.color, ownColour: s.id in chosenColours });
   return all.filter(listed).sort((a, b) => (rank.get(a.id) ?? Infinity) - (rank.get(b.id) ?? Infinity)).map(coloured);
 }
 

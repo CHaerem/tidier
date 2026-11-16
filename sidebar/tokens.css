@@ -18,11 +18,11 @@
 :root {
   color-scheme: light dark;
 
-  /* The surface. The window's own colour: the tint of the space's colour that the window
-   * has too (spacelook.js gives it to both; sidebar.js sets --space-frame). A tidier.css
-   * of one's own may set a tint per space, keyed on html[data-space], which is why this
-   * stays a plain :root rule it can override. */
-  --frame: var(--space-frame, light-dark(#ececf0, #1f1f23));
+  /* The surface. The window's own colour: a page that is drawn on the window takes the
+   * space's tint for it (--space-tint, below), as the window has (spacelook.js). A
+   * tidier.css of one's own may set a tint per space, keyed on html[data-space], which is
+   * why this stays a plain :root rule it can override. */
+  --frame: light-dark(#ececf0, #1f1f23);
 
   /* The one colour: the active space's, set by sidebar.js. For what must be found at
    * a glance (the active space, where a drop lands, the keyboard's place), not for decoration. */
@@ -157,6 +157,11 @@
 :root, .own-accent {
   --accent-soft: color-mix(in srgb, var(--accent) 16%, transparent);
   --accent-line: color-mix(in srgb, var(--accent) 62%, transparent);
+  /* The surface in the space's colour: its hue, at the lightness and the little chroma a
+   * surface has, so that every colour gives as light a surface as every other (in oklch;
+   * a grey stays a grey). The window has the same by a theme of its own (tintsOf,
+   * spacelook.js, with these numbers), and a smoke check holds the two together. */
+  --space-tint: light-dark(oklch(from var(--accent) 0.935 min(0.018, calc(c * 0.12)) h), oklch(from var(--accent) 0.25 min(0.027, calc(c * 0.17)) h));
   /* The space's name, wherever it is written: about as quiet as --muted, with a little of its colour. */
   --space-name: color-mix(in srgb, var(--accent) 28%, light-dark(rgb(28 25 23 / .72), rgb(255 252 248 / .62)));
 }
