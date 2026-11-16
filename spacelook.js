@@ -97,11 +97,13 @@ const FIREFOX_LOOK = {
     text: "rgb(21, 20, 26)", tabs: "rgb(24, 14, 48)", icons: "rgb(117, 102, 159)", accent: "rgb(118, 78, 221)", pressed: "rgba(117, 102, 159, 0.4)", sidebarText: "rgb(21, 20, 26)",
     field: "rgba(255, 255, 255, 0.4)", fieldText: "rgb(62, 49, 95)", fieldBorder: "#d6d5da", fieldOpen: "rgb(255, 255, 255)",
     panel: "rgb(255, 255, 255)", panelText: "rgb(24, 14, 48)", panelBorder: "rgba(24, 14, 48, 0.24)", chosen: "rgba(62, 49, 95, 0.27)",
+    edge: "rgba(201, 192, 227, 0.5)", sidebar: "rgb(255, 255, 255)",
   },
   dark: {
     text: "rgb(252, 251, 255)", tabs: "rgb(242, 240, 248)", icons: "rgb(231, 225, 248)", accent: "rgb(184, 156, 255)", pressed: "rgba(182, 170, 217, 0.4)", sidebarText: "rgb(249, 249, 250)",
     field: "rgba(0, 0, 0, 0.2)", fieldText: "rgb(231, 225, 248)", fieldBorder: "#3f3e42", fieldOpen: "rgb(23, 21, 25)", // (its list's: the larger part)
     panel: "rgb(23, 21, 25)", panelText: "rgb(242, 240, 248)", panelBorder: "rgba(242, 240, 248, 0.24)", chosen: "rgba(231, 225, 248, 0.32)",
+    edge: "rgba(63, 62, 66, 0.5)", sidebar: "rgb(28, 27, 34)",
   },
 };
 function themeFor(frame, scheme) {
@@ -110,7 +112,8 @@ function themeFor(frame, scheme) {
     colors: {
       frame, frame_inactive: frame,
       tab_background_text: f.tabs, toolbar_text: f.text, bookmark_text: f.text, icons: f.icons, icons_attention: f.accent,
-      button_background_active: f.pressed, sidebar_text: f.sidebarText,
+      button_background_active: f.pressed, sidebar: f.sidebar, sidebar_text: f.sidebarText, sidebar_border: f.edge,
+      toolbar_bottom_separator: f.edge, // the line around the page
       toolbar_field: f.field, toolbar_field_text: f.fieldText, toolbar_field_border: f.fieldBorder,
       // The address bar while you type in it, its list, and Firefox's panels.
       toolbar_field_focus: f.fieldOpen, toolbar_field_text_focus: f.fieldText, toolbar_field_border_focus: f.accent,

@@ -294,7 +294,8 @@ LOOK_IN_SIDEBAR = """
       const box = e => e.getBoundingClientRect(), clone = o => page.JSON.parse(JSON.stringify(o));
       // A colour as the page computes it, without a transition.
       const colour = value => { const probe = doc.createElement("i"); probe.style.color = value; doc.body.append(probe); const c = css(probe).color; probe.remove(); return c; };
-      const light = c => (c.startsWith("color(") ? 255 : 1) * (c.match(/[\\\\d.]+/g) ?? []).slice(0, 3).reduce((s, v) => s + Number(v), 0); // rgb() is 0-255, color(srgb) 0-1
+      // How light a colour is, as painted: it may be written as rgb(), color(srgb) or oklch().
+      const light = c => { const ctx = doc.createElement("canvas").getContext("2d"); ctx.fillStyle = c; ctx.fillRect(0, 0, 1, 1); const d = ctx.getImageData(0, 0, 1, 1).data; return d[0] + d[1] + d[2]; };
       Promise.resolve().then(() => (${source})(...${JSON.stringify(a)})).then(out => out, e => ({error: String(e)})).then(out => sendAsyncMessage(${JSON.stringify(tag)}, out));
     }`) + ")()", false);
     return answer;
