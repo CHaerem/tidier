@@ -1,12 +1,12 @@
 /* The settings page, on the same surface as the sidebar (tokens.css): one flat column,
  * with room to keep the subjects apart, no boxes and no lines. What can be changed or
  * pressed is a soft fill on the surface; white is kept for the one field you are in. */
-html { background: var(--frame); }
+html { background: var(--frame); } /* in the tint of the window's space, as the sidebar beside it (settings.js) */
 body {
   box-sizing: border-box; max-width: 540px; margin: 0 auto; padding: 56px 24px 64px;
   color: var(--text); line-height: 20px;
 }
-h1 { margin: 0 0 32px; font-size: var(--size-title); line-height: 26px; font-weight: 600; letter-spacing: -.01em; }
+h1 { margin: 0 0 28px; font-size: var(--size-title); line-height: 34px; font-weight: var(--weight-title); letter-spacing: -.01em; color: var(--heading); }
 h2 { margin: 0 0 2px; font-size: var(--size); line-height: 20px; font-weight: 600; }
 section { margin-bottom: 36px; }
 

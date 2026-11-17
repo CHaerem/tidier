@@ -88,6 +88,14 @@ function drawMovedNote() {
 // with a button: a click in a page of Tidier's is what lets it open the sidebar in that
 // window. Said, and taken back as you do it, until Firefox restarts.
 const thisWindow = browser.windows.getCurrent().then(w => w.id, () => null);
+// In the tint of this window's space, as the sidebar beside it (spaceLook, spacelook.js).
+thisWindow.then(windowId => windowId !== null && browser.runtime.sendMessage({ type: "spaceLook", windowId })).then(look => {
+  if (!look) return;
+  const root = document.documentElement;
+  root.dataset.space = look.space;
+  root.style.setProperty("--accent", look.accent);
+  root.style.setProperty("--frame", `light-dark(${look.light}, ${look.dark})`);
+}, () => {});
 async function sidebarsToOpen() {
   if (!state.afterMove && !movedNote) { $("windows-without").hidden = true; return; }
   const windows = (await browser.windows.getAll({ windowTypes: ["normal"] })).filter(w => !w.incognito);

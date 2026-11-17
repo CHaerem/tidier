@@ -175,3 +175,14 @@ browser.windows.onCreated.addListener(async win => {
   const space = win.type === "normal" && !win.incognito && await spaceKeptIn(win.id);
   if (space) tintWindow(win.id, space).catch(noteError);
 });
+
+// For a page of Tidier's own in a tab (the settings page): the tint of the window's space, as
+// the sidebar beside it has it. The page has no space of its own (it is in no container).
+browser.runtime.onMessage.addListener((msg, sender) => {
+  if (msg?.type !== "spaceLook" || sender.id !== browser.runtime.id || !sender.url?.startsWith(browser.runtime.getURL(""))) return;
+  return (async () => {
+    const space = await spaceKeptIn(msg.windowId);
+    const colour = space && spaceColour(space, await containerColour(space));
+    return colour ? { space, accent: colour, ...tintsOf(colour) } : null;
+  })();
+});

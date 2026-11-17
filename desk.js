@@ -61,10 +61,7 @@ async function deskView(windowId) {
         ...v.folders.flatMap(f => f.tabs.map(t => card(t, { folder: f.name }))),
         ...v.tabs.map(t => card(t, {})),
       ].filter(c => urlOf.has(c.id)); // (not the desk itself)
-      // The window's own tint (spacelook.js), as the page cannot be sure to work it out the
-      // same from the colour alone.
-      const hex = hexColour(s.color);
-      return { id: s.id, name: s.name, color: s.color, tint: hex ? tintsOf(hex) : null, cards };
+      return { id: s.id, name: s.name, color: s.color, cards };
     }),
     from: desks.get(windowId)?.from ?? null,
     pictures: typeof browser.tabs.captureTab === "function",

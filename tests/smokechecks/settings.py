@@ -392,6 +392,11 @@ def alone_settings(m):
       return {state: [doc.getElementById("sidebery-file") ? "export" : "", doc.getElementById("moved").hidden ? "" : "moved"].join(" "), spaces: doc.querySelectorAll("#spaces .line").length, hours: doc.getElementById("archive-hours").value,
               saved: await page.browser.runtime.sendMessage(page.JSON.parse(JSON.stringify({type: "settings:rules", rules: [{url: "smoke-rule", space: "firefox-container-2"}]})))};""")
     check("the settings page shows the spaces, the time for archiving, and where to take in Sidebery's export (no move here)", r["state"] == "export " and r["spaces"] >= 3 and r["hours"] == "12", str(r))
+    # In the window's own colour, as the sidebar beside it, though it is in no space of its own (spaceLook, spacelook.js).
+    surface = ext_page(m, "/settings/settings.html", """for (let i = 0; i < 30 && !doc.documentElement.dataset.space; i++) await wait(100);
+      return page.getComputedStyle(doc.documentElement).backgroundColor;""")
+    frame = m.js(H + """return main().getComputedStyle(main().document.documentElement).getPropertyValue("--lwt-accent-color").trim();""")
+    check("the settings page is in the tint of its window's space", bool(frame) and surface == frame, f"{surface} {frame}")
     r = m.js(H + """const w = main(); w.focus(); await wait(300);
       const space = w.gBrowser.selectedTab.userContextId === 2 ? 1 : w.gBrowser.selectedTab.userContextId;
       const t = w.gBrowser.addTrustedTab("about:blank", {userContextId: 1, inBackground: true}); await wait(300);

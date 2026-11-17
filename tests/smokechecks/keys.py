@@ -861,7 +861,8 @@ def alone_desk(m):
         const f = doc.getElementById("field"); f.value = "desk-t"; f.dispatchEvent(new (window.wrappedJSObject || window).Event("input"));
         await wait(100);
         const found = [...doc.querySelectorAll(".card:not([hidden]) .title .text")].map(t => t.textContent), picked = doc.querySelector(".card.selected .title .text")?.textContent ?? null;
-        return {spaces, selected, field, found, picked};
+        const surface = (window.wrappedJSObject || window).getComputedStyle(doc.documentElement).backgroundColor;
+        return {spaces, selected, field, found, picked, surface};
       })().then(r => done(JSON.parse(JSON.stringify(r))), e => done({error: String(e)}));"""})
     m.chrome()
     seen = seen.get("value", seen) if isinstance(seen, dict) else {}
@@ -872,6 +873,10 @@ def alone_desk(m):
           and any("desk-far" in s["cards"] and "desk-one" not in s["cards"] for s in names.values()) and all("tab" in s["count"] for s in names.values()), str(seen.get("spaces")))
     check("the card of the tab you were on is selected, and the keyboard is in the field", seen.get("field") == "field" and seen.get("selected") is not None, str({k: seen.get(k) for k in ("selected", "field")}))
     check("typing finds the tabs, the first of them selected", seen.get("found") == ["desk-two"] and seen.get("picked") == "desk-two", str({k: seen.get(k) for k in ("found", "picked")}))
+    # (The window's own colour, which its theme gives (spacelook.js): the sidebar's page works
+    # it out in its style, and Firefox reports such a colour as it was before it is worked out.)
+    frame = m.js(H + """const d = main().document.documentElement; return main().getComputedStyle(d).getPropertyValue("--lwt-accent-color").trim();""")
+    check("the desk is in the tint of the window's space, as the window around it", bool(frame) and seen.get("surface") == frame, f"{seen.get('surface')} {frame}")
     listed = sidebar_page(m, """await wait(300); return rows();""")
     check("the desk is no row of the sidebar's list", listed and not any("Every tab" in r for r in listed), str(listed))
     press(m, ENTER)

@@ -55,10 +55,7 @@ function cardOf(card) {
 }
 
 function draw(view) {
-  const here = view.spaces.find(s => s.id === view.space), root = document.documentElement.style;
-  if (here?.color) root.setProperty("--accent", here.color);
-  if (here?.tint) root.setProperty("--frame", `light-dark(${here.tint.light}, ${here.tint.dark})`);
-  if (view.space) document.documentElement.dataset.space = view.space;
+
   list.replaceChildren(...view.spaces.map(space => {
     const section = el("section", "space");
     section.dataset.space = space.id;
@@ -165,4 +162,12 @@ addEventListener("keydown", e => {
 // Typing anywhere on the desk goes into the field.
 addEventListener("focus", () => field.focus());
 
+// In the tint of the window's space, as the sidebar beside it (spaceLook, spacelook.js).
+browser.windows.getCurrent().then(w => send({ type: "spaceLook", windowId: w.id })).then(look => {
+  if (!look) return;
+  const root = document.documentElement;
+  root.dataset.space = look.space;
+  root.style.setProperty("--accent", look.accent);
+  root.style.setProperty("--frame", `light-dark(${look.light}, ${look.dark})`);
+}, () => {});
 send({ type: "desk:view" }).then(draw);

@@ -2,7 +2,7 @@
  * surface in the tint of the space you are in, as if the sidebar had opened up to fill the
  * window; each space under its name, large and light, as Zigzag names them; each tab a card,
  * which lifts as the selected row does. */
-html { --frame: var(--space-tint); background: var(--frame); } /* (the page sets the window's own tint, from desk.js, as it has it) */
+html { --frame: var(--space-tint); background: var(--frame); } /* (the page sets the window's own tint: spaceLook, spacelook.js) */
 body { margin: 0; color: var(--text); font: var(--size) / var(--line-height) var(--font); cursor: default; user-select: none; }
 
 /* The field, where the command bar has it and as wide: what you type finds a tab. */
@@ -20,7 +20,7 @@ body { margin: 0; color: var(--text); font: var(--size) / var(--line-height) var
 .space { margin-top: 28px; }
 .space[hidden] { display: none; }
 /* The name, large and light, and how many on its line, quietly. A click goes to the space. */
-.space > h2 { display: flex; align-items: baseline; gap: 10px; margin: 0 0 14px; font-weight: 300; font-size: 28px; line-height: 34px; letter-spacing: -.01em; color: var(--heading); }
+.space > h2 { display: flex; align-items: baseline; gap: 10px; margin: 0 0 14px; font-weight: var(--weight-title); font-size: var(--size-title); line-height: 34px; letter-spacing: -.01em; color: var(--heading); }
 .space > h2 .name { cursor: pointer; transition: color var(--quick); }
 .space > h2 .name:hover { color: var(--text); }
 .space > h2 .dot { align-self: center; width: 10px; height: 10px; border-radius: 50%; background: var(--color); }
