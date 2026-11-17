@@ -412,6 +412,26 @@ def alone_command_bar(m):
     print(f"INFO  the command bar is ready {ready} ms after the key", flush=True)
     r = bar_page(m, """return {focused: doc.activeElement?.id === "field" && doc.hasFocus(), rows: doc.querySelectorAll(".row").length};""")
     check("the key opens the bar, ready to type", r["focused"] and r["rows"] > 0, str(r))
+    # With nothing typed: every tab at once, space by space, the one you are in first.
+    empty = bar_page(m, """const rows = [...doc.querySelectorAll(".row")];
+      return {kinds: rows.map(r => r.dataset.kind), titles: rows.map(r => r.querySelector(".title").textContent), selected: rows.findIndex(r => r.classList.contains("selected"))};""")
+    heads = [i for i, k in enumerate(empty["kinds"]) if k == "space"]
+    check("with nothing typed the bar is every tab at once: each space under its name, the one you are in first, a tab selected",
+          len(heads) >= 2 and heads[0] == 0 and empty["kinds"][empty["selected"]] != "space", str(empty))
+    selected_row = """return [...doc.querySelectorAll(".row")].findIndex(r => r.classList.contains("selected"));"""
+    bar_keys(m, ["\ue014"])  # →
+    moved = bar_page(m, selected_row)
+    check("→ goes to the next space's tabs", moved is not None and moved >= heads[1] and (len(heads) < 3 or moved < heads[2]), f"{moved} {heads}")
+    bar_keys(m, ["\ue013"])  # ↑, onto that space's own row
+    on_head = bar_page(m, selected_row)
+    bar_keys(m, [ENTER])
+    went = wait_for_bar(m, False) and m.js(H + """for (let i = 0; i < 40 && main().gBrowser.selectedTab.userContextId === args[0]; i++) await wait(100); await wait(500);
+      return main().gBrowser.selectedTab.userContextId;""", start["space"])
+    check("Enter on a space's row goes to that space", on_head == heads[1] and went and went != start["space"], f"{on_head} {heads} {went}")
+    m.js(H + "main().focus(); return 1;")
+    press(m, str(start["space"]), CTRL)
+    m.js(H + """for (let i = 0; i < 40 && main().gBrowser.selectedTab.userContextId !== args[0]; i++) await wait(100); await wait(800); return 1;""", start["space"])
+    bar_open(m)
     # The dotfiles' stylesheet puts the panel where its floating address bar is: in the middle,
     # 18 % down, 760 px wide or seven tenths of a narrower window (Tidier gives it that width).
     place = m.js(BAR + """const w = main(), b = bar(), r = b.panel.getOuterScreenRect(), bar_ = w.document.getElementById("urlbar");
@@ -845,61 +865,6 @@ def alone_command_bar(m):
     m.js(H + "main().focus(); return 1;")
     press(m, "1", CTRL)
     time.sleep(1)
-
-
-def alone_desk(m):
-    # Every tab at once (desk.js, desk/): its key opens a page of Tidier's own next to the tab
-    # you are on, with each space under its name and every tab a card; typing finds one, Enter
-    # goes to it and the desk goes; Esc goes back where you were. It is no row of the list.
-    ALT = "\ue00a"
-    start = m.js(H + """const w = main(); w.focus(); await wait(300); const space = w.gBrowser.selectedTab.userContextId, far = [1, 2, 3].find(c => c !== space);
-      for (const [n, c] of [["desk-one", space], ["desk-two", space], ["desk-far", far]]) { w.gBrowser.addTrustedTab(args[0] + "/titled?" + n, {userContextId: c, inBackground: true}); await wait(300); }
-      for (let i = 0; i < 100 && !["desk-one", "desk-two", "desk-far"].every(n => w.gBrowser.tabs.some(t => t.label === n && key(w, t))); i++) await wait(100);
-      return {space, far, was: url(w.gBrowser.selectedTab)};""", m.pages)
-    open_desk = lambda: (press_in(m, "main()", "a", CMD, ALT), m.js(H + """for (let i = 0; i < 100 && !url(main().gBrowser.selectedTab).includes("/desk/desk.html"); i++) await wait(50); await wait(800);
-      return url(main().gBrowser.selectedTab).includes("/desk/desk.html");"""))[1]
-    opened = open_desk()
-    check("its key opens the desk in the window you are in", opened, str(opened))
-    into_page(m, "/desk/desk.html")
-    seen = m.cmd("WebDriver:ExecuteAsyncScript", {"script": """
-      const done = arguments[arguments.length - 1], doc = (window.wrappedJSObject || window).document, wait = ms => new Promise(r => setTimeout(r, ms));
-      (async () => {
-        for (let i = 0; i < 50 && !doc.querySelector(".card"); i++) await wait(100);
-        const spaces = [...doc.querySelectorAll(".space")].map(s => ({name: s.querySelector(".name").textContent, count: s.querySelector(".count").textContent, cards: [...s.querySelectorAll(".card .title .text")].map(t => t.textContent)}));
-        const selected = doc.querySelector(".card.selected .title .text")?.textContent ?? null;
-        const field = doc.activeElement?.id;
-        const f = doc.getElementById("field"); f.value = "desk-t"; f.dispatchEvent(new (window.wrappedJSObject || window).Event("input"));
-        await wait(100);
-        const found = [...doc.querySelectorAll(".card:not([hidden]) .title .text")].map(t => t.textContent), picked = doc.querySelector(".card.selected .title .text")?.textContent ?? null;
-        const surface = (window.wrappedJSObject || window).getComputedStyle(doc.documentElement).backgroundColor;
-        return {spaces, selected, field, found, picked, surface};
-      })().then(r => done(JSON.parse(JSON.stringify(r))), e => done({error: String(e)}));"""})
-    m.chrome()
-    seen = seen.get("value", seen) if isinstance(seen, dict) else {}
-    if "error" in seen:
-        print(f"INFO  the desk's page: {seen['error']}", flush=True)
-    names = {s["name"]: s for s in seen.get("spaces", [])}
-    check("each space under its name, with its tabs as cards, the far space's too", len(names) >= 2 and any("desk-one" in s["cards"] and "desk-two" in s["cards"] for s in names.values())
-          and any("desk-far" in s["cards"] and "desk-one" not in s["cards"] for s in names.values()) and all("tab" in s["count"] for s in names.values()), str(seen.get("spaces")))
-    check("the card of the tab you were on is selected, and the keyboard is in the field", seen.get("field") == "field" and seen.get("selected") is not None, str({k: seen.get(k) for k in ("selected", "field")}))
-    check("typing finds the tabs, the first of them selected", seen.get("found") == ["desk-two"] and seen.get("picked") == "desk-two", str({k: seen.get(k) for k in ("found", "picked")}))
-    # (The window's own colour, which its theme gives (spacelook.js): the sidebar's page works
-    # it out in its style, and Firefox reports such a colour as it was before it is worked out.)
-    frame = m.js(H + """const d = main().document.documentElement; return main().getComputedStyle(d).getPropertyValue("--lwt-accent-color").trim();""")
-    check("the desk is in the tint of the window's space, as the window around it", bool(frame) and seen.get("surface") == frame, f"{seen.get('surface')} {frame}")
-    listed = sidebar_page(m, """await wait(300); return rows();""")
-    check("the desk is no row of the sidebar's list", listed and not any("Every tab" in r for r in listed), str(listed))
-    press(m, ENTER)
-    r = m.js(H + """for (let i = 0; i < 60 && main().gBrowser.selectedTab.label !== "desk-two"; i++) await wait(100); await wait(500);
-      return {on: main().gBrowser.selectedTab.label, desk: main().gBrowser.tabs.some(t => url(t).includes("/desk/desk.html"))};""")
-    check("Enter goes to that tab, and the desk is gone", r == {"on": "desk-two", "desk": False}, str(r))
-    open_desk()
-    press(m, ESC)
-    r = m.js(H + """for (let i = 0; i < 60 && main().gBrowser.tabs.some(t => url(t).includes("/desk/desk.html")); i++) await wait(100); await wait(300);
-      return {on: main().gBrowser.selectedTab.label, desk: main().gBrowser.tabs.some(t => url(t).includes("/desk/desk.html"))};""")
-    check("Esc goes back to the tab you were on", r == {"on": "desk-two", "desk": False}, str(r))
-    m.js(H + """await removeWhere((w, t) => /titled\\?desk-/.test(url(t))); await wait(500); return 1;""")
-    no_problems(m, "after the desk")
 
 
 def alone_bar_edges(m):

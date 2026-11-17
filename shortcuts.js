@@ -85,8 +85,6 @@ const COMMANDS = [
   // to the bar as soon as Firefox lets go of it (customKeys.json in the dotfiles).
   { name: "command-bar", label: "Open or close the command bar", key: "Ctrl+Shift+K" },
   { name: "command-bar-t", label: "A second key for the command bar, such as ⌘T once Firefox lets go of it", key: "Ctrl+T" },
-  // Every tab at once (desk.js). Zigzag's ⇧⌘\ is no key Firefox lets an extension have.
-  { name: "desk", label: "Every tab at once", key: "Ctrl+Alt+A", action: oncePerPress(w => toggleDesk(w)) },
   // What the tab menu's More has (listactions.js). `key: ""`: listed on the settings page
   // with no key, for you to give one. Moving up and down is ⌥↑ and ⌥↓ in the sidebar too.
   { name: "sort-name", label: "Sort today's tabs or this folder by name", key: "", action: onPicked("sort", { by: "name" }) },

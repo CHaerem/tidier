@@ -706,6 +706,7 @@ async function barRunCommand(ctx, row, value) {
 
 async function barCarryOut(ctx, { row, inNewTab, value }) {
   if (row.kind === "command") return barRunCommand(ctx, row, value);
+  if (row.kind === "space") return row.space === ctx.space ? undefined : serial(() => switchSpace(ctx.windowId, row.space)); // a space's row, in the empty bar
   if (row.kind === "search") return isWeb(row.url) ? barOpenTab(ctx, row.url) : barSearch(ctx, row.query, row.engine); // (a site of Tidier's own has its address)
   if (row.kind === "folder") return serial(() => barGoToFolder(ctx, row.key));
   if (row.kind === "closed") return barReopenClosed(ctx, row);

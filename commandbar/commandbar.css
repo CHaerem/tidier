@@ -102,3 +102,9 @@ body { display: flex; flex-direction: column; overflow: hidden; color: var(--tex
 
 /* A repository's ⇥ says it can be gone into, on the row you are on: on all of them it would be a column of marks. */
 .row[data-kind=repo]:not(.selected) .key { visibility: hidden; }
+
+/* A space's row, in the empty bar's list of every tab: quiet, as the sidebar names its space,
+ * with how many tabs it has where a tab has its site. */
+.row[data-kind=space] { color: var(--muted); font-size: var(--size-small); margin-top: 6px; }
+.row[data-kind=space]:first-child { margin-top: 0; }
+.row[data-kind=space].selected { color: var(--text); }

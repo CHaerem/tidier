@@ -135,21 +135,24 @@ test("the rows never pass what fits, and the search and the quiet row are among 
   assert.ok(go.length <= 8);
 });
 
-test("with nothing typed: recent tabs of this space, not the one you are on, and the commands you use most", () => {
+test("with nothing typed: every tab at once, space by space, the one you are in first and the tab used last first in each", () => {
+  const spaces = [{ id: "s1", name: "Work" }, { id: "s2", name: "Home" }, { id: "s3", name: "Empty" }];
   const items = [
-    tab("Old", { here: true, lastUsed: NOW - 7200e3 }),
-    tab("New", { here: true, lastUsed: NOW - 60e3 }),
-    tab("Current", { here: true, current: true, lastUsed: NOW }),
-    tab("Elsewhere", { here: false, lastUsed: NOW }),
-    { kind: "folder", id: "f", title: "A folder", here: true },
+    tab("Old", { space: "s2", lastUsed: NOW - 7200e3 }),
+    tab("New", { space: "s2", lastUsed: NOW - 60e3 }),
+    tab("Current", { space: "s2", current: true, lastUsed: NOW }),
+    tab("Over there", { space: "s1", lastUsed: NOW }),
+    { kind: "essential", id: "e", title: "Mail", space: "s2", lastUsed: NOW - 3600e3 },
+    tab("No container", { space: null, lastUsed: NOW - 120e3 }),
+    { kind: "folder", id: "f", title: "A folder", space: "s2" },
     { kind: "closed", id: "c", title: "Closed", url: "https://c.example/", lastUsed: NOW },
-    ...["Most used", "Second", "Third", "Fourth"].map(title => ({ kind: "command", id: title, title })),
+    ...["Most used", "Second"].map(title => ({ kind: "command", id: title, title })),
   ];
-  assert.deepEqual(titles(emptyResults(items)), ["New", "Old", "Most used", "Second", "Third", "Fourth"]);
-  const crowded = [...Array.from({ length: 20 }, (_, i) => tab(`T${i}`, { here: true })), ...items.slice(-4)];
-  const rows = emptyResults(crowded);
-  assert.equal(rows.length, 8);
-  assert.equal([...rows].filter(r => r.kind === "command").length, 3);
+  const rows = [...emptyResults(items, spaces, "s2")];
+  assert.deepEqual(rows.map(r => r.title), ["Home", "New", "No container", "Mail", "Old", "Work", "Over there", "Empty", "Most used", "Second"]);
+  assert.deepEqual(rows.filter(r => r.kind === "space").map(r => [r.space, r.count]), [["s2", 4], ["s1", 1], ["s3", 0]]);
+  assert.equal(rows.length, 10, "as many rows as there are: the list scrolls");
+  assert.deepEqual([...resultsFor("", items, { spaces, space: "s2" })].map(r => r.title), rows.map(r => r.title));
 });
 
 test("⇥ completes: a site you are typing, else the address, else the title", () => {
@@ -178,9 +181,9 @@ test("a plain Enter never closes tabs for a word that is only somewhere in a com
   // The only match is never the row Enter takes: the search comes first.
   assert.equal(resultsFor("today", commands, { now: NOW })[0].kind, "search");
   assert.equal(resultsFor("today", commands, { now: NOW })[1].title, "Clear today's tabs");
-  // The empty bar of an empty space: whatever was used most, never what closes.
+  // The empty bar with no tabs at all: whatever was used most, never what closes.
   const used = [command("Clear today's tabs", 4, { careful: true }), command("New tab", 0), command("Go to Work", 3)];
-  assert.equal(emptyResults(used)[0].title, "New tab");
+  assert.equal(emptyResults(used, [{ id: "s1", name: "Work" }], "s1")[0].title, "New tab");
 });
 
 test("Copy page for Claude comes before Ask Claude, as in the table", () => {

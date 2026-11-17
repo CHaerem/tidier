@@ -125,24 +125,30 @@ function addressFrom(text) {
   return parsed(`${local ? "http" : "https"}://${t}`);
 }
 
-// With nothing typed: the tabs you used last in this space, and the commands you use most.
-// A command that closes tabs is never the first of them, so a plain Enter in an empty space
-// cannot clear it, however often you cleared before.
-function emptyResults(items) {
-  const recent = items.filter(i => (i.kind === "tab" || i.kind === "essential") && i.here && !i.current)
-    .sort((a, b) => (b.lastUsed ?? 0) - (a.lastUsed ?? 0));
+// With nothing typed: every tab at once, as the one place to go from (once a desk of its own,
+// as Zigzag has). Each space under a row with its name, the space you are in first, then the
+// others in the bar's order; in each, its tabs and essentials, the one used last first (the tab
+// you are on is the one you are least likely to be looking for). A space's row goes there.
+// Commands come after all of them: typing finds them sooner.
+// `spaces` as the bar has them, in its order; `space`, the one you are in.
+function emptyResults(items, spaces = [], space = null) {
   const commands = items.filter(i => i.kind === "command").sort((a, b) => !!a.careful - !!b.careful); // the background gives them most used first
-  const room = Math.min(3, commands.length);
-  const tabs = recent.slice(0, BAR_ROWS - room);
-  return [...tabs, ...commands.slice(0, BAR_ROWS - tabs.length)];
+  const tabs = items.filter(i => (i.kind === "tab" || i.kind === "essential") && !i.current);
+  const order = [...spaces.filter(s => s.id === space), ...spaces.filter(s => s.id !== space)];
+  const home = t => (order.some(o => o.id === t.space) ? t.space : space); // a tab without a container is the space you are in's
+  const rows = order.flatMap(s => {
+    const own = tabs.filter(t => home(t) === s.id).sort((a, b) => (b.lastUsed ?? 0) - (a.lastUsed ?? 0));
+    return [{ kind: "space", id: `space:${s.id}`, title: s.name, space: s.id, count: own.length, here: s.id === space }, ...own];
+  });
+  return [...(rows.some(r => r.kind !== "space") ? rows : []), ...commands];
 }
 
 // All the rows for what is typed, and an engine's first when the text names one.
 // `engine` is the name of Firefox's search engine, when the bar may know it; `engines` are
 // those a shortcut can name (engines.js).
-function resultsFor(query, items, { tail = [], now = Date.now(), engine = null, engines = [] } = {}) {
+function resultsFor(query, items, { tail = [], now = Date.now(), engine = null, engines = [], spaces = [], space = null } = {}) {
   const text = String(query ?? "").trim();
-  if (!text) return emptyResults(items);
+  if (!text) return emptyResults(items, spaces, space);
   const rows = plainResults(text, items, { tail, now, engine });
   const shortcut = shortcutIn(query, engines);
   if (shortcut?.search) return makeRoom([shortcut.search, ...rows]);

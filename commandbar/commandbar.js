@@ -103,13 +103,14 @@ function rowsNow() {
   if (step?.kind === "engine") return engineSearchRow(engines, step.row.engine, text);
   if (step?.kind === "repo") return repoRows(step.row.repo, text, [...(data?.items ?? []), ...found]);
   if (!data) return addressFrom(text) || shortcutIn(text, engines) ? resultsFor(text, [], { engine, engines }) : [];
-  return resultsFor(text, [...data.items, ...found], { tail: text.trim() ? askRow() : [], engine, engines });
+  return resultsFor(text, [...data.items, ...found], { tail: text.trim() ? askRow() : [], engine, engines, spaces: data.spaces, space: data.space });
 }
 
 // After the title: where it is (the space in words when it is not this one), what it is
 // when it is not an open tab, or a command's key.
 const KIND_WORD = { closed: "closed", bookmark: "bookmark", history: "history" };
 function second(row) {
+  if (row.kind === "space") return el("span", "site", row.count ? `${row.count} tab${row.count === 1 ? "" : "s"}` : "No tabs");
   if (row.kind === "command" || row.kind === "choice") return null; // a choice of space is the space itself
   const parts = [];
   const elsewhere = row.space && row.space !== data?.space && spaceOf(row.space);
@@ -127,7 +128,7 @@ function second(row) {
 
 // On the selected row, when Enter takes you to another space: that it does.
 function enterSays(row) {
-  if (step || row.kind === "command" || row.kind === "choice") return null;
+  if (step || row.kind === "command" || row.kind === "choice" || row.kind === "space") return null;
   const elsewhere = row.space && row.space !== data?.space && spaceOf(row.space);
   if (!elsewhere) return null;
   const how = row.kind === "closed" || row.kind === "archived" ? `Reopen in ${elsewhere.name}` : `Switch to ${elsewhere.name}`;
@@ -149,6 +150,7 @@ const letterOf = title => String(title ?? "").match(/[\p{L}\p{N}]/u)?.[0] ?? "·
 
 function picture(row) {
   const space = spaceOf(row.space);
+  if (row.kind === "space" && space) { const e = el("span", "icon space"); e.style.setProperty("--color", space.color); return e; }
   if ((row.kind === "command" && row.name === "go-to-space" || row.kind === "choice") && space) {
     const e = el("span", "icon space");
     e.style.setProperty("--color", space.color);
@@ -202,7 +204,8 @@ function select(i) {
 function update({ keepSelected = false } = {}) {
   const was = keepSelected ? rows[selected]?.id : null;
   rows = rowsNow();
-  const at = was ? rows.findIndex(r => r.id === was) : 0;
+  // (Not a space's row, when nothing is typed: the tab used last is what you most likely want.)
+  const at = was ? rows.findIndex(r => r.id === was) : rows.findIndex(r => r.kind !== "space");
   selected = Math.max(at, 0);
   draw();
 }
@@ -330,6 +333,11 @@ addEventListener("keydown", e => {
   switch (e.key) {
     case "ArrowDown": if (n) select((selected + 1) % n); break;
     case "ArrowUp": if (n) select((selected - 1 + n) % n); break;
+    // With nothing typed, ← and → go from space to space, as the arrows along the bar of dots.
+    case "ArrowRight": case "ArrowLeft":
+      if (field.value || step || !rows.some(r => r.kind === "space")) return;
+      select(nextSpaceRow(e.key === "ArrowRight" ? 1 : -1));
+      break;
     case "Enter": if (!e.repeat) choose(rows[selected], e.metaKey || e.ctrlKey); break; // held down, it would answer the question it has just brought up
     case "Escape": if (step) endStep(); else closeBar(true); break;
     case "Tab":
@@ -342,6 +350,14 @@ addEventListener("keydown", e => {
   }
   e.preventDefault();
 }, true);
+
+// The first tab of the next or previous space (or its row, where it has none).
+function nextSpaceRow(by) {
+  const heads = rows.map((r, i) => (r.kind === "space" ? i : -1)).filter(i => i >= 0);
+  const now = heads.filter(i => i <= selected).at(-1) ?? heads[0];
+  const head = heads[(heads.indexOf(now) + by + heads.length) % heads.length];
+  return rows[head + 1] && rows[head + 1].kind !== "space" && rows[head + 1].kind !== "command" ? head + 1 : head;
+}
 
 // A pointer that lies still must not take the selection from the keys: only a move counts.
 list.addEventListener("mousemove", e => {

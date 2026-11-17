@@ -84,12 +84,11 @@
 
   /* Type. The system's own: it loads instantly and reads as part of the Mac. Two sizes:
    * what you read as a line (a tab, a menu item, a notice) and what goes beside or above it
-   * (a count, an age, the space's name). A title (the settings page's, a space's on the desk)
-   * is the one larger thing on a page. */
+   * (a count, an age, the space's name). A title (the settings page's) is the one larger thing on a page. */
   --font: system-ui, -apple-system, sans-serif;
   --size: 13px;
   --size-small: 11.5px;
-  --size-title: 28px; /* large and light (--weight-title), as Zigzag names a space: the settings page's name, a space on the desk */
+  --size-title: 28px; /* large and light (--weight-title), as Zigzag names a space */
   --weight-title: 300;
   --line-height: 18px;
 

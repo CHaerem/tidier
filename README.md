@@ -445,25 +445,6 @@ The checks are in `tests/bridge.test.mjs` (what is allowed, on a fake Firefox),
 `tests/test_bridge.py` (the socket and the protocol, playing Firefox) and `alone_bridge` in
 `tests/smoke.py` (end to end, in a real Firefox; its checks are in `tests/smokechecks/`, a file for each area).
 
-## Every tab at once
-
-As Zigzag's desk (`desk.js`, `desk/`): ⌥⌘A, or *Every tab at once* in the command bar,
-opens every space of the window at once, each under its name, large and light, with how
-many tabs it has; its essentials as tiles, as in the sidebar, and every other tab as a card,
-with the folder it is in. Typing finds tabs (by title, address and folder), the arrows move
-between cards, Enter goes to one (a placeholder's page comes to this window, as a click in
-the sidebar does), and Esc goes back to the tab you were on. A click on a space's name goes
-to that space; the × on a card closes its tab, with Undo in the sidebar. A card shows a
-picture of its page once *Pictures of pages* is allowed on the settings page (Firefox gives
-pictures only together with access to all websites), and only of a page that is loaded:
-an unloaded tab has none to give, and its card shows its icon. The pictures are taken as the
-desk opens, those in sight first, and never kept.
-
-An extension cannot draw over the window, so the desk is a page of Tidier's own in a tab
-next to the one you were on, in the tint of the space you are in, as if the sidebar had
-opened up to fill the window. It goes as soon as you leave it, and it is no row of the
-list and no tab of any record (tab sync takes in only what is on the web).
-
 ## Keys and the command bar
 
 With Tidier alone, the keys follow what the sidebar shows (`shortcuts.js`,
@@ -478,7 +459,6 @@ With Tidier alone, the keys follow what the sidebar shows (`shortcuts.js`,
 - ⌥⌘N: a new folder
 - ⇧⌘K: the command bar, and ⌘T as well once `about:keyboard` has cleared Firefox's own ⌘T
 - ⌃⌘, and ⌃⌘.: back to the tab used before, and forward again, through this space's list (Arc's ⌃Tab, which no extension can have)
-- ⌥⌘A: every tab at once (below); Zigzag's ⇧⌘\ is no key Firefox gives an extension
 - ⇧⌘C: copy the address (a word at the top of the page says so, or the line in the sidebar where a page takes none; the menus' Copy address says the same); ⌃⇧S: show or hide the sidebar
 - ⌘Z, with the keyboard in the sidebar: what the quiet line offers to undo, while it shows
 - Copy page for Claude, Copy these tabs for Claude and Ask Claude about this page: no key
@@ -535,6 +515,13 @@ the sidebar, else on this one; a command that asks something says what for, ⌫ 
 field goes back, and one that closes tabs is never what a plain Enter takes for a word that
 is only somewhere in its name, nor moved up by use. Enter goes to a tab, or opens an
 address or a search in the active space; ⌘↵ opens a new tab instead.
+
+With nothing typed it is every tab at once, as Zigzag's desk, so that there is one place to
+go from rather than two: every space under a row with its name and how many tabs it has, the
+space you are in first and then the others in the bar's order, and in each its tabs and
+essentials, the one used last first (`emptyResults`, `commandbar/rank.js`). The tab used last
+is selected, so ⇧⌘K and Enter is Arc's way back; ← and → go from space to space; Enter on a
+space's row goes to that space. The commands come after all of them; typing finds them.
 
 Search shortcuts (`commandbar/engines.js`), as Zigzag's and Firefox's own: an engine's
 keyword offers it first (*Search YouTube* for "yt"), and ⇥ or Enter chooses it; what you
@@ -968,7 +955,6 @@ Not guaranteed:
 - `commandbar.js`, `commandbar/` (the bar's page, `first.js` for its first frame, and
   `rank.js`, what it shows for what you type, `engines.js`, its search shortcuts), `barkeys.js` (the keys typed before it
   has the keyboard), `sidebar/commandbar-link.js` – the command bar.
-- `desk.js`, `desk/` – every tab at once.
 - `spaces.js` – spaces: hiding, switching, new tabs and links, rules.
 - `spaceactions.js`, `sidebar/spacemenu.js` – a space's menu and what it does (rename,
   unload, clear).

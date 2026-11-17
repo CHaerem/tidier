@@ -97,8 +97,7 @@
       "keys-commands.js",
       "pagenote.js",
       "shortcuts.js",
-      "commandbar.js",
-      "desk.js"
+      "commandbar.js"
     ],
     "persistent": true
   },
@@ -117,7 +116,6 @@
     "space-5": { "description": "Go to the fifth space" },
     "command-bar": { "description": "Open or close the command bar" },
     "command-bar-t": { "description": "A second key for the command bar, such as ⌘T once Firefox lets go of it" },
-    "desk": { "description": "Every tab at once" },
     "next-tab": { "description": "Next tab" },
     "previous-tab": { "description": "Previous tab" },
     "next-space": { "description": "Next space" },
