@@ -342,7 +342,11 @@ def alone_clear_preview(m):
             if r.get("dim") and float(r.get("opacity") or 1) < 0.5:
                 break
             time.sleep(0.1)
-        check("pointed at, Clear dims the rows it would take, and says what it will do", want.get("kind") == "unused" and r.get("dim") == want.get("titles") and r.get("title") == want.get("words")
+        # (By this group's own tabs, and how many: a row's tooltip and its tab's title can differ
+        # for what other groups left in the space, such as a tab that never loaded.)
+        own = lambda titles: [t for t in titles or [] if t.startswith("clear-")]
+        check("pointed at, Clear dims the rows it would take, and says what it will do", want.get("kind") == "unused" and own(r.get("dim")) == own(want.get("titles"))
+              and len(r.get("dim") or []) == len(want.get("titles") or []) and r.get("title") == want.get("words")
               and "clear-0" in r["dim"] and "clear-6" not in r["dim"] and float(r.get("opacity") or 1) < 0.5, f"{r} {want}")
         before = here()
         sidebar_mouse(m, "doc.getElementById('spaces')", clicks=0)
