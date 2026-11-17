@@ -596,6 +596,39 @@ def alone_command_bar(m):
     check("a keyword of Tidier's own and words after it are a search on that site, first", rows and rows[0]["kind"] == "search" and rows[0]["url"] == "https://www.youtube.com/results?search_query=lofi", str(rows[:2]))
     bar_keys(m, [ESC])
     wait_for_bar(m, False)
+
+    # Your GitHub repositories (githubrepos.js, commandbar/repos.js), from the helper (the
+    # test's stand-in): the first bar asks, and shows them the next time.
+    data = json.load(open(m.fake_prs))
+    json.dump({**data, "asks": {**data.get("asks", {}), "repos": [{"url": "https://github.com/smoke-org/billing-api/pulls", "title": "smoke-org/billing-api", "repo": "smoke-org/billing-api", "waiting": 2, "recent": 4, "what": "repo"}]}}, open(m.fake_prs, "w"))
+    # (The bars above asked already, and the stand-in had none: that is kept for a quarter of an hour.)
+    sidebar_page(m, """await page.browser.storage.local.remove("githubRepos"); return 1;""")
+    bar_open(m)
+    bar_keys(m, [ESC])
+    wait_for_bar(m, False)
+    time.sleep(1)
+    bar_open(m)
+    bar_keys(m, "billing")
+    rows = bar_rows_until(m, lambda rows: any(x["kind"] == "repo" for x in rows))
+    repo = next((x for x in rows if x["kind"] == "repo"), None)
+    check("a repository you work in is found by a part of its name, with what waits for your review", repo and repo["title"] == "smoke-org/billing-api" and repo["url"] == "https://github.com/smoke-org/billing-api", str(rows))
+    note = bar_page(m, """return doc.querySelector(".row[data-kind=repo] .site")?.textContent ?? null;""")
+    check("its row says how many pull requests wait for your review", note == "2 to review", str(note))
+    bar_page(m, """doc.getElementById("field").select();""")
+    bar_keys(m, "smoke-org/billing")
+    bar_rows_until(m, lambda rows: rows and rows[0]["kind"] == "repo")
+    bar_keys(m, [TAB])
+    rows = bar_rows_until(m, lambda rows: len(rows) == 5)
+    step = bar_page(m, """return doc.getElementById("step").textContent;""")
+    check("⇥ goes into it: its pull requests, those waiting for you, issues, Actions and code", step == "smoke-org/billing-api" and [x["title"] for x in rows] == ["Pull requests", "Waiting for your review", "Issues", "Actions", "Code"]
+          and rows[0]["url"] == "https://github.com/smoke-org/billing-api/pulls", f"{step} {rows}")
+    bar_keys(m, "act")
+    rows = bar_rows_until(m, lambda rows: rows and rows[0]["title"] == "Actions")
+    check("what you type there finds its parts, and searches its code last", rows and rows[0]["url"] == "https://github.com/smoke-org/billing-api/actions" and rows[-1]["kind"] == "search" and "repo%3Asmoke-org%2Fbilling-api" in (rows[-1]["url"] or ""), str(rows))
+    bar_keys(m, [ESC])
+    bar_keys(m, [ESC])
+    wait_for_bar(m, False)
+
     m.js(SEARCH + """await s.setDefault(await s.getEngineByName(main().__engineBefore), s.CHANGE_REASON.UNKNOWN);
       for (const name of ["Smoke bar engine", "Smoke other engine"]) await s.removeEngine(await s.getEngineByName(name));
       await removeWhere((w, t) => /smoke-(engine|other)/.test(url(t) + t.label)); return 1;""")

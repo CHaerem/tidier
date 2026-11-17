@@ -2,8 +2,9 @@
 # Native messaging host for Tidier: its live folders, and its daily copy.
 #
 # A folder is a GitHub search for pull requests, or for issues ("what": "issues"),
-# which runs with the gh CLI and your existing gh login; or a feed ("feed": its
-# address, feeds.py), which needs neither. No GitHub token ever reaches the browser.
+# or for the repositories you work in ("what": "repos", repos()), which runs with the
+# gh CLI and your existing gh login; or a feed ("feed": its address, feeds.py), which
+# needs neither. No GitHub token ever reaches the browser.
 #
 # The folders are set up on Tidier's settings page, or in a local file here:
 # $XDG_CONFIG_HOME/tidier/live-folders.json (default ~/.config/tidier/), see
@@ -47,6 +48,15 @@ STATE = """{nodes(ids:%s){... on PullRequest{id viewerDidAuthor reviewDecision m
   commits(last:1){nodes{commit{statusCheckRollup{state}}}}}}}"""
 REVIEW = {"APPROVED": "approved", "CHANGES_REQUESTED": "changes", "REVIEW_REQUIRED": "wanted"}
 CHECKS = {"SUCCESS": "ok", "FAILURE": "failing", "ERROR": "failing", "PENDING": "running", "EXPECTED": "running"}
+# The repositories you work in: those of the pull requests you were in on lately (wrote,
+# reviewed, were asked for, commented on), and of those that wait for your review now.
+# GitHub has no list of "your" repositories in an organisation of hundreds; what you
+# touch is what you are responsible for, and needs no setting up.
+RECENT_DAYS, MOST_REPOS = 90, 30
+RECENT = "is:pr involves:@me archived:false updated:>={since}"
+WAITING = "is:open is:pr archived:false review-requested:@me"
+REPO_NAME = r"[A-Za-z0-9-]+/(?!\.\.?$)[\w.-]+"  # an owner, and a name that is no folder of a path
+REPOS_JQ = '{incomplete: .incomplete_results, repos: [.items[] | .repository_url | split("/") | .[-2:] | join("/")]}'
 
 
 def folders():
@@ -79,7 +89,8 @@ def asked(ask):
         return {"feed": feed, "count": ask.get("count")}
     if not isinstance(search, str) or len(search) > 300 or not all(QUALIFIER.fullmatch(word) for word in search.split()):
         return None
-    return {"search": " ".join(search.split()), "what": "issues" if ask.get("what") == "issues" else "prs"}
+    what = ask.get("what") if ask.get("what") in ("issues", "repos") else "prs"
+    return {"search": " ".join(search.split()), "what": what}
 
 
 def gh():
@@ -117,6 +128,28 @@ def states(ids):
             "conflict": n.get("mergeable") == "CONFLICTING",
         }
     return out
+
+
+def search_repos(q):
+    """The repository of each pull request the search finds, newest first, with a repeat for each; None if it fails."""
+    result = subprocess.run([gh(), "api", "-X", "GET", "search/issues", "-f", f"q={q}", "-f", "advanced_search=true",
+                             "-f", "sort=updated", "-f", "per_page=100", "--jq", REPOS_JQ], capture_output=True, text=True, timeout=30)
+    if result.returncode != 0:
+        raise RuntimeError(result.stderr.strip()[:300])
+    answer = json.loads(result.stdout or "{}")
+    if answer.get("incomplete") or not isinstance(answer.get("repos"), list):
+        raise RuntimeError("GitHub's search answered with only part of the result")
+    return [r for r in answer["repos"] if isinstance(r, str) and re.fullmatch(REPO_NAME, r)]
+
+
+def repos(search):
+    """Your repositories, those with pull requests waiting for your review first, then by how much happens there."""
+    since = time.strftime("%Y-%m-%d", time.gmtime(time.time() - RECENT_DAYS * 86400))
+    recent = search_repos(f"{RECENT.format(since=since)} {search}".strip())
+    waiting = search_repos(f"{WAITING} {search}".strip())
+    names = list(dict.fromkeys(waiting + recent))  # first seen, newest first
+    ranked = sorted(names, key=lambda r: (-waiting.count(r), -recent.count(r), names.index(r)))[:MOST_REPOS]
+    return [{"url": f"https://github.com/{r}/pulls", "title": r, "repo": r, "waiting": waiting.count(r), "recent": recent.count(r), "what": "repo"} for r in ranked]
 
 
 def read_message():
@@ -183,6 +216,12 @@ def main():
         return
     if not gh():
         send({"error": "gh not found"})
+        return
+    if folder.get("what") == "repos":
+        try:
+            send({"items": repos(folder["search"])})
+        except Exception as err:  # gh failed, a timeout, part of a result
+            send({"error": str(err)[:300]})
         return
     issues = folder.get("what") == "issues"
     try:

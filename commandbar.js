@@ -603,9 +603,9 @@ async function barArchivedItems(ctx) {
 // All the bar's page needs, once.
 async function barSnapshot(bar) {
   const ctx = bar.ctx = await barContext(bar.from);
-  const [tabs, archived, uses, stored, commands, { os }] = await Promise.all([
+  const [tabs, archived, uses, stored, commands, { os }, repos] = await Promise.all([
     barTabItems(ctx), barArchivedItems(ctx), barUses.get(), browser.storage.local.get(BAR_ASKED),
-    browser.commands.getAll(), browser.runtime.getPlatformInfo(),
+    browser.commands.getAll(), browser.runtime.getPlatformInfo(), githubRepos(), // githubrepos.js
   ]);
   // Only keys that work: one Firefox still has for itself (⌘D until about:keyboard clears it)
   // would be a promise the key does not keep (keys-commands.js).
@@ -618,7 +618,7 @@ async function barSnapshot(bar) {
   return {
     pressedAt: bar.pressedAt, space: ctx.space, color: space?.color ?? null, asked: !!stored[BAR_ASKED],
     spaces: ctx.spaces.map(s => ({ id: s.id, name: s.name, color: s.color })),
-    items: [...tabs, ...closed, ...archived.filter(a => !closedUrls.has(a.url)), ...barCommandRows(ctx, uses, shortcuts, os)],
+    items: [...tabs, ...closed, ...archived.filter(a => !closedUrls.has(a.url)), ...barCommandRows(ctx, uses, shortcuts, os), ...githubRepoItems(repos)],
   };
 }
 

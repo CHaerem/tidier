@@ -253,7 +253,7 @@ messaging host that calls the `gh` CLI with your existing login. No GitHub
 token is stored in the browser.
 
 **The folders are set up on the settings page**, under *Live folders*: a name, a space,
-what it is filled from (pull requests, issues, or a feed) and the search's words or the
+what it is filled from (pull requests, issues, your repositories, or a feed) and the search's words or the
 feed's address. With sync on they are the same on every machine (`syncprefs.js`), each
 in its own container of that space; a machine with no helper simply has none of them.
 A search is always among what is open and yours, which the host adds itself; the words
@@ -270,6 +270,22 @@ container (so its space) and a GitHub search (`org:…`, `user:…`, `repo:…`)
 Of those the extension only learns each folder's id, name and container. For each pull request found the host
 also asks GitHub what it waits for (review, checks, a conflict), which the rows show;
 if that question fails, the rows only tell a draft from an open one.
+
+**Your repositories.** A folder of `"what": "repos"` (*Your repositories* on the settings
+page) has a row for each GitHub repository you work in, named with how many of its pull
+requests wait for your review (*acme/app · 2 to review*, with the review mark as its icon),
+and opens its list of pull requests. The host finds them itself, with nothing to set up:
+the repositories of the pull requests you were in on in the last 90 days (wrote, reviewed,
+were asked for, commented on) and of those waiting for your review now, these first, then
+by how much happens there (`repos()` in `native/github-prs.py`; at most 30). GitHub has no
+list of "your" repositories in an organisation of hundreds; what you touch is what you are
+responsible for. The words narrow it as for any folder (`org:acme`). The command bar has
+them too (`githubrepos.js`, `commandbar/repos.js`): a part of a name finds one, Enter goes
+there, and ⇥ goes into it: its pull requests, those waiting for your review, issues, Actions
+and code as rows, what you type finds those and the tabs you have open in it, and the last
+row searches its code. The bar asks the host when it opens, at most once a quarter of an
+hour, and shows what it found the time before, so it never waits; a machine without the host
+has none. A host from before this answers no repositories: `git pull` where it is installed.
 
 An entry with `"what": "issues"` beside its search is a folder of issues. An entry with
 `"feed"` (the feed's address) in place of a search is a folder of that feed's newest

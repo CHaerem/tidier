@@ -1591,9 +1591,53 @@ test("a search by a site's address opens it in the active space, and one by Fire
   const opened = [...ff.tabs.values()].find(t => t.url === url);
   assert.ok(opened && opened.cookieStoreId === C1 && opened.windowId === w.id, JSON.stringify(opened));
   assert.equal(searches.length, 0);
-  const again = await openBar(ff, x, w.id);
+  const again = await openBar(ff, x, w.id); // (choosing closed the first)
   await again.tell({ type: "choose", row: { kind: "search", query: "lamp", engine: "Amazon.com" } });
   await wait(300);
   assert.deepEqual(searches.map(s => [s.query, s.engine, ff.tabs.get(s.tabId).cookieStoreId]), [["lamp", "Amazon.com", C1]]);
+  x.kill();
+});
+
+// --- Your GitHub repositories (githubrepos.js, commandbar/repos.js) --------------------
+test("a repository is found by a part of its name, with what waits for you, and its ⇥ goes into it", () => {
+  const repo = { kind: "repo", id: "repo:acme/billing-api", title: "acme/billing-api", repo: "acme/billing-api", url: "https://github.com/acme/billing-api", note: "2 to review" };
+  const rows = resultsFor("billing", [repo, tab("Billing notes", { lastUsed: NOW - 30 * 24 * 3600e3 })], { now: NOW });
+  assert.ok(rows.some(r => r.kind === "repo"), titles(rows).join(", "));
+  assert.equal(completionFor(repo, "bill"), "github.com/acme/billing-api", "⇥ is the page's own (commandbar.js goes in instead)");
+});
+
+test("inside a repository: its parts, what you have open in it, and a search of its code last", () => {
+  const ctxR = vm.createContext({ URL, encodeURIComponent });
+  for (const file of ["engines.js", "rank.js", "repos.js"]) vm.runInContext(readFileSync(new URL("../commandbar/" + file, import.meta.url), "utf8"), ctxR);
+  const empty = ctxR.repoRows("acme/billing-api", "", []);
+  assert.deepEqual([...empty].map(r => r.title), ["Pull requests", "Waiting for your review", "Issues", "Actions", "Code"]);
+  assert.equal(empty[0].url, "https://github.com/acme/billing-api/pulls");
+  assert.equal(empty[1].url, "https://github.com/acme/billing-api/pulls?q=is%3Apr%20is%3Aopen%20review-requested%3A%40me");
+  const open = tab("Fix rounding #12", { url: "https://github.com/acme/billing-api/pull/12" });
+  const elsewhere = tab("Fix rounding elsewhere", { url: "https://github.com/acme/other/pull/3" });
+  const rows = ctxR.repoRows("acme/billing-api", "rounding", [open, elsewhere], NOW);
+  assert.deepEqual([...rows].map(r => r.title), ["Fix rounding #12", "Search acme/billing-api for “rounding”"]);
+  assert.equal(rows.at(-1).url, "https://github.com/search?q=repo%3Aacme%2Fbilling-api%20rounding&type=code");
+  assert.equal(ctxR.repoRows("acme/billing-api", "act", [], NOW)[0].title, "Actions");
+});
+
+test("the bar has your repositories from the helper, asked at most once a quarter of an hour, and never waits for it", async () => {
+  const ff = new FakeFirefox();
+  const { w } = world(ff);
+  const x = await started(ff);
+  const asked = [];
+  x.b.runtime.sendNativeMessage = async (host, msg) => {
+    asked.push(msg);
+    if (msg.ask?.what === "repos") return { items: [{ repo: "acme/billing-api", waiting: 2, what: "repo" }, { repo: "bad name", waiting: 1 }] };
+    return null;
+  };
+  const first = await openBar(ff, x, w.id);
+  assert.ok(!first.sent[0].items.some(i => i.kind === "repo"), "the first time there is nothing yet, and the bar does not wait");
+  await wait(300);
+  await pressKey(ff, x, w.id); // the key closes it
+  const again = await openBar(ff, x, w.id);
+  const repos = again.sent[0].items.filter(i => i.kind === "repo");
+  assert.deepEqual([...repos].map(r => [r.title, r.url, r.note]), [["acme/billing-api", "https://github.com/acme/billing-api", "2 to review"]]);
+  assert.equal(asked.filter(m => m.ask?.what === "repos").length, 1, "asked once: the answer is new");
   x.kill();
 });

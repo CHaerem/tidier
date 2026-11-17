@@ -44,7 +44,7 @@ def main():
         ask = msg["ask"] if isinstance(msg["ask"], dict) else {}
         with open(os.environ["TIDIER_FAKE_PRS"] + ".asked", "a") as log:
             log.write(json.dumps(ask) + "\n")
-        items = data.get("asks", {}).get(ask.get("feed") or ask.get("search"))
+        items = data.get("asks", {}).get("repos" if ask.get("what") == "repos" else ask.get("feed") or ask.get("search"))
         reply = {"items": items} if items is not None else {"error": "not a search or a feed this helper answers"}
     elif msg.get("folder") in data.get("items", {}):
         reply = {"items": data["items"][msg["folder"]]}

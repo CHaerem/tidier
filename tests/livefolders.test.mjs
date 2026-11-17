@@ -34,6 +34,19 @@ async function start() {
   return { ff, x, w, search, rows, records };
 }
 
+test("a folder of your repositories: a row each, named with how many wait for your review, which its icon says too", async () => {
+  const { x, search, rows } = await start();
+  const repo = (name, waiting) => ({ url: `https://github.com/${name}/pulls`, title: name, repo: name, waiting, recent: 3, what: "repo" });
+  await search({ items: [repo("acme/app", 2), repo("acme/site", 0)] });
+  assert.deepEqual(await rows(), [["acme/app · 2 to review", "review"], ["acme/site", "repo"]]);
+  await search({ items: [repo("acme/app", 0), repo("acme/site", 1)] });
+  assert.deepEqual(await rows(), [["acme/app", "repo"], ["acme/site · 1 to review", "review"]], "the counts follow, while the tabs are not opened");
+  assert.equal(x.js("liveFolderFrom")({ id: "r1", name: "Repos", space: C1, what: "repos", search: "org:acme" })?.what, "repos");
+  assert.deepEqual({ ...x.js("liveAsk")({ what: "repos", search: "org:acme" }) }, { search: "org:acme", what: "repos" });
+  assert.deepEqual(x.errors, []);
+  x.kill();
+});
+
 test("an issue is named as a pull request is, and its row says it is an issue", async () => {
   const { x, search, rows, records } = await start();
   const issue = { url: "https://github.com/acme/app/issues/3", repo: "app", number: 3, title: "Three", what: "issue" };

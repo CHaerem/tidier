@@ -59,6 +59,7 @@ body { display: flex; flex-direction: column; overflow: hidden; color: var(--tex
 .icon { background: currentColor; mask: var(--mask) center / contain no-repeat; color: var(--muted); }
 .row.selected .icon { color: var(--text); }
 [data-icon="search"] { --mask: var(--icon-search); }
+[data-icon="repo"] { --mask: var(--icon-repo); }
 [data-icon="address"] { --mask: var(--icon-globe); }
 [data-icon="plus"] { --mask: var(--icon-plus); }
 [data-icon="close"] { --mask: var(--icon-close); }
@@ -98,3 +99,6 @@ body { display: flex; flex-direction: column; overflow: hidden; color: var(--tex
 .row.selected .enter { display: block; }
 .row.selected:has(.enter) .site { display: none; }
 .row .key { flex: none; color: var(--muted); font-size: var(--size-small); letter-spacing: .04em; }
+
+/* A repository's ⇥ says it can be gone into, on the row you are on: on all of them it would be a column of marks. */
+.row[data-kind=repo]:not(.selected) .key { visibility: hidden; }

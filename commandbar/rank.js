@@ -23,7 +23,7 @@ const EXACT_BONUS = HERE_BONUS + RECENT_BONUS + 30;
 // What is not open comes after what is, but can pass a weak match among the open tabs.
 const NOT_OPEN = new Set(["history", "bookmark", "archived", "closed"]);
 const NOT_OPEN_PENALTY = 150;
-const KIND_BONUS = { tab: 30, essential: 30, folder: 25, command: 20, bookmark: 10, history: 5, archived: 5, closed: 5 };
+const KIND_BONUS = { tab: 30, essential: 30, folder: 25, command: 20, repo: 15, bookmark: 10, history: 5, archived: 5, closed: 5 };
 
 // Accents and case do not matter. NFKD takes the accent off å and é, but ø, æ and their
 // like are letters of their own to Unicode, and Norwegian titles are full of them:

@@ -66,6 +66,7 @@
       "pull.js",
       "fullscreen.js",
       "livefolders.js",
+      "githubrepos.js",
       "firefoxsetup.js",
       "rulematch.js",
       "spaces.js",

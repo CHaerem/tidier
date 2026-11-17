@@ -27,14 +27,14 @@ const LIVE_REFRESH_MINUTES = 15;
 const liveFolderState = storedValue("liveFolders", () => ({})); // { [id]: { groupKey, dismissed: [url] } }
 
 // --- The folders set up on the settings page -------------------------------------------
-// { id, name, space, what: "prs" | "issues" | "feed", search | feed }. A search is what
+// { id, name, space, what: "prs" | "issues" | "repos" | "feed", search | feed }. A search is what
 // narrows within "open, and yours", which the helper adds: qualifiers alone (org:, repo:,
 // label:, -label:), so that no word of it can widen the search. The helper refuses anything
 // else (asked(), native/github-prs.py); refused here too, so that the settings page can say
 // so as it is typed.
 const LIVE_OWN = "liveOwnFolders";
 const liveOwn = storedValue(LIVE_OWN, () => []);
-const LIVE_KINDS = ["prs", "issues", "feed"];
+const LIVE_KINDS = ["prs", "issues", "repos", "feed"];
 const LIVE_QUALIFIERS = /^(-?[A-Za-z][A-Za-z-]*:[A-Za-z0-9_.@/*,<>=+-]+( |$))*$/;
 // A folder as it may be kept, or null for what is none.
 function liveFolderFrom(f) {
@@ -97,8 +97,12 @@ async function ensureFolderGroup(folder, state) {
   return state.groupKey;
 }
 
-// A feed's entry has only its title; what GitHub has is also told apart by where it is.
-const liveTitle = item => item.repo ? `${item.repo}#${item.number} ${item.title}` : String(item.title);
+// A feed's entry has only its title; what GitHub has is also told apart by where it is. A
+// repository is its name, and how many of its pull requests wait for your review.
+function liveTitle(item) {
+  if (item.what === "repo") return item.waiting > 0 ? `${item.repo} · ${item.waiting} to review` : String(item.repo);
+  return item.repo ? `${item.repo}#${item.number} ${item.title}` : String(item.title);
+}
 
 // What a pull request waits for, which its row shows as its icon (sidebar.js): a row of
 // GitHub's mark said nothing. One word, the most pressing first: someone waits for your
@@ -107,6 +111,7 @@ const liveTitle = item => item.repo ? `${item.repo}#${item.number} ${item.title}
 // nothing, and says only what it is.
 function liveState(item) {
   if (item.what === "issue" || item.what === "feed") return item.what;
+  if (item.what === "repo") return item.waiting > 0 ? "review" : "repo";
   const mine = item.mine !== false;
   if (!mine && item.asked) return "review";
   if (item.draft) return "draft";

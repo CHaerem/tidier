@@ -73,6 +73,7 @@ img { filter: drop-shadow(0 0 .6px light-dark(rgb(40 30 20 / .3), rgb(255 255 25
 .row .pr.conflict { background: var(--state-bad); mask-image: var(--icon-warning); }
 .row .pr.changes { background: var(--state-bad); mask-image: var(--icon-comment); }
 .row .pr.issue { mask-image: var(--icon-issue); }
+.row .pr.repo { background: var(--muted); mask-image: var(--icon-repo); }
 .row .pr.feed { background: var(--muted); mask-image: var(--icon-feed); }
 /* An unloaded tab is quieter, and wakes up under the mouse. */
 .unloaded :is(img, .letter) { opacity: .66; transition: opacity var(--quick); }

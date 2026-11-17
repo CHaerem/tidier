@@ -4,8 +4,8 @@
 (async () => {
   const list = $("live-folders"), status = $("live-state");
   const tell = msg => browser.runtime.sendMessage(msg);
-  const KINDS = [["prs", "Pull requests"], ["issues", "Issues"], ["feed", "A feed"]];
-  const HINTS = { prs: "org:your-company, or nothing for all of yours", issues: "org:your-company, or nothing for all of yours", feed: "https://…/feed.xml" };
+  const KINDS = [["prs", "Pull requests"], ["issues", "Issues"], ["repos", "Your repositories"], ["feed", "A feed"]];
+  const HINTS = { prs: "org:your-company, or nothing for all of yours", issues: "org:your-company, or nothing for all of yours", repos: "org:your-company, or nothing for all of yours", feed: "https://…/feed.xml" };
   let spaces = [];
 
   const read = line => {

@@ -155,7 +155,7 @@ const letterOf = title => (String(title || "").match(/\p{L}/u) ?? String(title |
 const PR_WORDS = {
   review: "Waits for your review", draft: "A draft", failing: "Its checks fail", conflict: "Conflicts with its base branch",
   changes: "Changes are asked for", approved: "Approved", running: "Its checks are running", open: "Open",
-  issue: "An open issue", feed: "From this folder's feed",
+  issue: "An open issue", feed: "From this folder's feed", repo: "A repository you work in",
 };
 function icon(item) {
   if (item.pr) return el("span", "pr " + (PR_WORDS[item.pr] ? item.pr : "open"));

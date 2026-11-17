@@ -137,6 +137,10 @@ answers = json.load(open(os.path.join(here, "answers.json")))
 if answers.get("fail"):
     sys.stderr.write(answers["fail"])
     sys.exit(1)
+for words, answer in answers.get("by_words", {}).items():  # a search of its own for these words
+    if any(words in arg for arg in sys.argv):
+        print(json.dumps(answer))
+        sys.exit(0)
 print(json.dumps(answers["states"] if "graphql" in sys.argv else answers["search"]))
 """
 
@@ -251,6 +255,27 @@ class Host(unittest.TestCase):
             self.answers({"fail": "gh: To get started with GitHub CLI, please run:  gh auth login"})
             self.assertIn("gh auth login", self.ask({"folder": folder})["error"])
         self.assertEqual(self.ask({"folder": "nobody's"}), {"error": "unknown folder"})
+
+    def test_your_repositories_are_those_of_your_recent_pull_requests_with_those_waiting_for_your_review_first(self):
+        # (What gh's --jq makes of GitHub's answer: a repository's name for each pull request.)
+        self.answers({"by_words": {
+            "involves:@me": {"incomplete": False, "repos": ["acme/site", "acme/site", "acme/app", "acme/site", "../etc"]},
+            "review-requested:@me": {"incomplete": False, "repos": ["acme/app", "acme/app", "acme/tools"]},
+        }})
+        got = self.ask({"ask": {"search": "org:acme", "what": "repos"}})
+        self.assertEqual([(i["repo"], i["waiting"], i["recent"], i["url"], i["what"]) for i in got["items"]], [
+            ("acme/app", 2, 1, "https://github.com/acme/app/pulls", "repo"),
+            ("acme/tools", 1, 0, "https://github.com/acme/tools/pulls", "repo"),
+            ("acme/site", 0, 3, "https://github.com/acme/site/pulls", "repo"),
+        ])
+        recent, waiting = self.asked()
+        self.assertTrue(any(a.startswith("q=is:pr involves:@me archived:false updated:>=") and a.endswith(" org:acme") for a in recent), recent)
+        self.assertIn("q=is:open is:pr archived:false review-requested:@me org:acme", waiting)
+        self.assertIn("sort=updated", recent)
+        # Only what narrows, as for any folder of the extension's own.
+        self.assertEqual(self.ask({"ask": {"search": "OR author:someone", "what": "repos"}}), {"error": "not a search or a feed this helper answers"})
+        self.answers({"by_words": {"involves:@me": {"incomplete": True, "repos": []}}, "search": {"incomplete": False, "repos": []}})
+        self.assertEqual(self.ask({"ask": {"search": "", "what": "repos"}}), {"error": "GitHub's search answered with only part of the result"})
 
     def test_a_folder_of_the_extensions_own_is_the_same_search_with_only_what_narrows(self):
         # No file at all: the folder is set up on Tidier's settings page, and described in the question.

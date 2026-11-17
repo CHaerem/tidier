@@ -115,6 +115,7 @@ part C).
 | Live folders set up in Tidier, and the same on every machine | | Done | checked: on the settings page (a name, a space, pull requests, issues or a feed, and the words that narrow the search); the helper is asked for those words alone and refuses any that could widen it; carried by sync; the helper must be pulled (`git pull`) where it is used |
 | Live folders for GitHub issues and feeds | Z | Done | checked: a folder of issues (`"what": "issues"`) or of a feed's newest entries (`"feed"`), set up in the helper's file as the pull requests are; the helper must be pulled (`git pull`) where it is used |
 | Live folders (GitHub pull requests) | A | Done | checked: each row's icon says what the pull request waits for (your review, draft, failing checks, conflict, changes asked for, approved, running, open) |
+| Your GitHub repositories, in a live folder and in the command bar | | Done | checked: found by the helper from the pull requests you were in on lately, those waiting for your review first; a row each, "acme/app · 2 to review"; in the command bar a part of the name finds one and ⇥ goes into it (pull requests, waiting for you, issues, Actions, code, and a search of its code); the helper must be pulled (`git pull`) where it is used |
 | Folder state (open/closed) kept per space and window | Z A S | Partly | kept per folder, the same in every window |
 
 ## Tabs that tidy themselves
