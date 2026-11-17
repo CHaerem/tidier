@@ -15,11 +15,12 @@ field.focus(); // typing works from here on, also before anything has come back
 let data = null; // what the background sent
 let found = []; // from history and bookmarks, for the text as it is
 let rows = [], selected = 0;
-let step = null; // a command asking something: { row, kind: "ask" | "list", text (what was typed before) }
+let step = null; // a command asking something, or an engine chosen: { row, kind: "ask" | "list" | "engine", text (what was typed before) }
 let asking = false; // a permission prompt is open, and must not close the bar
 let enterWaiting = null; // Enter before anything has come back
 let historyTimer = null, historySeq = 0;
 let engine = null; // the name of Firefox's search engine, once the bar may know it
+let engines = enginesFrom(); // what a search shortcut can name (engines.js): Firefox's too, once the bar may know them
 
 // As a panel in the window you are in, or as a window of its own (first.js). A panel is
 // closed by its page alone, and Firefox closes it when you click beside it.
@@ -62,7 +63,11 @@ browser.storage.managed.get("sidebarCSS").then(({ sidebarCSS }) => {
 }, () => {});
 
 // Which engine a search goes to, once the bar may ask (the permission comes with the first search).
-browser.search?.get().then(engines => { engine = engines.find(e => e.isDefault)?.name ?? null; if (data) update({ keepSelected: true }); }, () => {});
+browser.search?.get().then(all => {
+  engine = all.find(e => e.isDefault)?.name ?? null;
+  engines = enginesFrom(all);
+  if (data) update({ keepSelected: true });
+}, () => {});
 
 const el = (tag, cls, text) => {
   const e = document.createElement(tag);
@@ -95,8 +100,9 @@ function rowsNow() {
     const choices = step.row.list;
     return text.trim() ? rankResults(text, choices) : choices;
   }
-  if (!data) return addressFrom(text) ? resultsFor(text, [], { engine }) : [];
-  return resultsFor(text, [...data.items, ...found], { tail: text.trim() ? askRow() : [], engine });
+  if (step?.kind === "engine") return engineSearchRow(engines, step.row.engine, text);
+  if (!data) return addressFrom(text) || shortcutIn(text, engines) ? resultsFor(text, [], { engine, engines }) : [];
+  return resultsFor(text, [...data.items, ...found], { tail: text.trim() ? askRow() : [], engine, engines });
 }
 
 // After the title: where it is (the space in words when it is not this one), what it is
@@ -135,7 +141,7 @@ const COMMAND_ICONS = {
   "next-space": "go", "previous-space": "back", "claude-copy-page": "copy", "claude-copy-tabs": "copy", "claude-ask": "open",
 };
 const iconOfCommand = row => COMMAND_ICONS[row.name] ?? "go";
-const KIND_ICONS = { search: "search", address: "address", ask: "history", history: "history", bookmark: "bookmark" };
+const KIND_ICONS = { search: "search", engine: "search", address: "address", ask: "history", history: "history", bookmark: "bookmark" };
 
 // A page with no icon gets its first letter or digit, not a bracket: "(2) Inbox" is an I.
 const letterOf = title => String(title ?? "").match(/[\p{L}\p{N}]/u)?.[0] ?? "·";
@@ -175,6 +181,7 @@ function draw() {
     if (after) e.append(after);
     if (enter) e.append(enter);
     if (row.kind === "command" && row.shortcut) e.append(el("span", "key", row.shortcut));
+    if (row.kind === "engine") e.append(el("span", "key", "⇥"));
     return e;
   }));
   if (rows.length) field.setAttribute("aria-activedescendant", "row-" + selected);
@@ -251,6 +258,17 @@ function startStep(row, kind) {
   update();
 }
 
+// An engine chosen by its shortcut: what you type now is searched there, until ⌫ or Esc.
+function startEngine(row) {
+  step = { row, kind: "engine", text: field.value };
+  field.value = "";
+  field.placeholder = row.title;
+  stepLine.textContent = row.title;
+  stepLine.hidden = false;
+  lookUpMore();
+  update();
+}
+
 function endStep() {
   field.value = step.text;
   field.placeholder = PLACEHOLDER;
@@ -264,13 +282,14 @@ function endStep() {
 // Only what the background needs to know which row this was.
 const chosen = (row, more) => send({
   type: "choose", ...more,
-  row: { kind: row.kind, key: row.key, tabId: row.tabId, url: row.url, sessionId: row.sessionId, query: row.query, name: row.name, value: row.value, space: row.space, archived: row.archived },
+  row: { kind: row.kind, key: row.key, tabId: row.tabId, url: row.url, sessionId: row.sessionId, query: row.query, engine: row.engine, name: row.name, value: row.value, space: row.space, archived: row.archived },
 });
 
 async function searchFor(row) {
   // A permission without a prompt, but asked for here, in the key press: the manifest gets
-  // no new required permission, since that reaches machines before anyone looks.
-  if (!browser.search) {
+  // no new required permission, since that reaches machines before anyone looks. (A site of
+  // Tidier's own is searched by its address, and needs none.)
+  if (!browser.search && !row.url) {
     asking = true;
     const allowed = await browser.permissions.request({ permissions: ["search"] }).catch(() => false);
     asking = false;
@@ -282,6 +301,7 @@ async function searchFor(row) {
 function choose(row, inNewTab) {
   if (step?.kind === "ask") return row && chosen(step.row, { value: field.value.trim() }); // no row: nothing to do with an empty name
   if (step?.kind === "list") return row && chosen(step.row, { value: row.value });
+  if (step?.kind === "engine") return row && searchFor(row);
   if (!data) { enterWaiting = inNewTab; return; } // a moment: the rows are on their way
   // ⌘↵ with nothing typed is the shortest way to an empty new tab.
   if (inNewTab && !field.value.trim()) {
@@ -291,6 +311,7 @@ function choose(row, inNewTab) {
   if (!row) return;
   if (row.kind === "ask") return askForMore();
   if (row.kind === "search") return searchFor(row);
+  if (row.kind === "engine") return startEngine(row);
   if (row.kind === "command" && row.ask) return startStep(row, "ask");
   if (row.kind === "command" && row.list) return startStep(row, "list");
   chosen(row, { inNewTab });
@@ -308,7 +329,8 @@ addEventListener("keydown", e => {
     case "Enter": if (!e.repeat) choose(rows[selected], e.metaKey || e.ctrlKey); break; // held down, it would answer the question it has just brought up
     case "Escape": if (step) endStep(); else closeBar(true); break;
     case "Tab":
-      if (rows[selected] && !step) { field.value = completionFor(rows[selected], field.value); lookUpMore(); update(); }
+      if (rows[selected]?.kind === "engine" && !step) startEngine(rows[selected]);
+      else if (rows[selected] && !step) { field.value = completionFor(rows[selected], field.value); lookUpMore(); update(); }
       break;
     // ⌫ in an empty question goes back one step, as in Arc. Held down, it only empties the field.
     case "Backspace": if (step && !field.value && !e.repeat) { endStep(); break; } return;

@@ -137,12 +137,35 @@ function emptyResults(items) {
   return [...tabs, ...commands.slice(0, BAR_ROWS - tabs.length)];
 }
 
-// All the rows for what is typed: an address first, unless that very page is the best
-// match; a search first when nothing matches well, and always there at the end.
-// `engine` is the name of Firefox's search engine, when the bar may know it.
-function resultsFor(query, items, { tail = [], now = Date.now(), engine = null } = {}) {
+// All the rows for what is typed, and an engine's first when the text names one.
+// `engine` is the name of Firefox's search engine, when the bar may know it; `engines` are
+// those a shortcut can name (engines.js).
+function resultsFor(query, items, { tail = [], now = Date.now(), engine = null, engines = [] } = {}) {
   const text = String(query ?? "").trim();
   if (!text) return emptyResults(items);
+  const rows = plainResults(text, items, { tail, now, engine });
+  const shortcut = shortcutIn(query, engines);
+  if (shortcut?.search) return makeRoom([shortcut.search, ...rows]);
+  if (shortcut?.first) return makeRoom([...shortcut.offers, ...rows]);
+  if (shortcut) {
+    const after = rows.findIndex(r => r.id === "search") + 1;
+    return makeRoom([...rows.slice(0, after), ...shortcut.offers, ...rows.slice(after)]);
+  }
+  return rows;
+}
+
+// Rows put in among the others make room by the last of what was found: what you typed
+// itself (an address, a search, an engine) and the row asking for more stay.
+const KEPT_ROWS = new Set(["search", "address", "engine", "ask"]);
+function makeRoom(rows) {
+  const out = [...rows];
+  for (let i = out.length - 1; out.length > BAR_ROWS && i >= 0; i--) if (!KEPT_ROWS.has(out[i].kind)) out.splice(i, 1);
+  return out.slice(0, BAR_ROWS);
+}
+
+// An address first, unless that very page is the best match; a search first when nothing
+// matches well, and always there at the end.
+function plainResults(text, items, { tail, now, engine }) {
   const ranked = rankResults(text, items, now);
   const url = addressFrom(text);
   const search = { kind: "search", id: "search", title: engine ? `Search ${engine} for “${text}”` : `Search for “${text}”`, query: text };

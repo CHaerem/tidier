@@ -22,7 +22,7 @@ and writes PNGs at twice the size, as on a Retina screen:
                                  off the page it was saved on; -essential-away: an essential off its own)
     keys-*                       with the keyboard in the sidebar, for real: the cursor, a menu by key
     state-essentials-N-WIDTH     one, two and three essentials, at each width
-    bar-empty-SCHEME, bar-typed-SCHEME   the command bar's page
+    bar-empty-, bar-typed-, bar-shortcut-, bar-engine-SCHEME   the command bar's page
     window-no-container-, window-sidebar-closed-, window-bar-SCHEME   where the window meets other things
     settings-SCHEME              the settings page
     settings-in-full-SCHEME      with everything it can show, made up; -narrow- as narrow as it can be
@@ -808,19 +808,23 @@ def bar_scheme(m, scheme):
 
 
 def command_bar(cam):
-    """The command bar, empty and with something typed, in both schemes."""
+    """The command bar, empty and with something typed, and a search shortcut offered and
+    chosen, in both schemes. Each step's keys come after the one before."""
     m = cam.m
     if not cam.wanted("bar") or not open_bar(cam):
         return
     try:
-        for typed in ("", "spa"):
-            if typed:
+        for step, keys in (("empty", []), ("typed", list("spa")), ("shortcut", ["Backspace"] * 3 + list("yt")), ("engine", ["Tab", *"lofi"])):
+            if keys:
                 m.js(BAR_PANEL + """await inBar(`const tip = Cc["@mozilla.org/text-input-processor;1"].createInstance(Ci.nsITextInputProcessor);
                   tip.beginInputTransactionForTests(content);
-                  for (const key of ${JSON.stringify(args[0])}) { const e = new content.KeyboardEvent("", {key, code: "Key" + key.toUpperCase()}); tip.keydown(e); tip.keyup(e); }`);
-                  await wait(600); return 1;""", typed)
+                  for (const key of ${JSON.stringify(args[0])}) {
+                    const e = new content.KeyboardEvent("", {key, code: key.length > 1 ? key : "Key" + key.toUpperCase()}), flags = key.length > 1 ? tip.KEY_NON_PRINTABLE_KEY : 0;
+                    tip.keydown(e, flags); tip.keyup(e, flags);
+                  }`);
+                  await wait(600); return 1;""", keys)
             for scheme in SCHEMES:
-                name = f"bar-{'typed' if typed else 'empty'}-{scheme}"
+                name = f"bar-{step}-{scheme}"
                 if not cam.wanted(name):
                     continue
                 bar_scheme(m, scheme)

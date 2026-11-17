@@ -8,8 +8,8 @@ import vm from "node:vm";
 import { FakeFirefox, wait, GHOST } from "./fake_firefox.mjs";
 
 const ctx = vm.createContext({ URL });
-vm.runInContext(readFileSync(new URL("../commandbar/rank.js", import.meta.url), "utf8"), ctx);
-const { rankResults, resultsFor, emptyResults, addressFrom, completionFor } = ctx;
+for (const file of ["engines.js", "rank.js"]) vm.runInContext(readFileSync(new URL("../commandbar/" + file, import.meta.url), "utf8"), ctx);
+const { rankResults, resultsFor, emptyResults, addressFrom, completionFor, enginesFrom, shortcutIn, engineSearchRow } = ctx;
 const NOW = 1_800_000_000_000;
 const titles = rows => [...rows].map(r => r.title);
 const tab = (title, more = {}) => ({ kind: "tab", id: title, title, url: `https://site.example/${title.replace(/\W/g, "-")}`, lastUsed: NOW - 3600e3, ...more });
@@ -1511,5 +1511,89 @@ test("a Firefox that will not open the panel gets the bar as a window of its own
   await wait(50);
   assert.equal(stray.wasCut(), true, "its page closes it when it hears that");
   assert.equal(stray.sent.length, 0);
+  x.kill();
+});
+
+// --- Search shortcuts (engines.js) ---------------------------------------------------
+const FIREFOX_ENGINES = [
+  { name: "Google", isDefault: true, favIconUrl: "data:image/png;base64,AA" },
+  { name: "Wikipedia (en)", isDefault: false },
+  { name: "Amazon.com", isDefault: false, alias: "@AZ" },
+  { name: "YouTube", isDefault: false, alias: "tube", favIconUrl: "data:image/png;base64,BB" },
+];
+const ENGINES = enginesFrom(FIREFOX_ENGINES);
+const plainRows = rows => [...rows].map(r => ({ ...r }));
+
+test("a keyword alone is offered first, as an engine to choose; Tidier's own sites need no Firefox", () => {
+  const rows = resultsFor("gh", [tab("Ghost stories")], { now: NOW, engines: enginesFrom() });
+  assert.deepEqual(plainRows(rows)[0], { kind: "engine", id: "engine:GitHub", title: "Search GitHub", engine: "GitHub", icon: null });
+  assert.ok(rows.some(r => r.title === "Ghost stories"), "what it matches is still there");
+  assert.equal(resultsFor("gh ", [], { now: NOW, engines: enginesFrom() })[0].kind, "engine", "a space after it is no search yet");
+});
+
+test("a keyword and words after it search there at once, by the site's address or by Firefox's engine", () => {
+  const site = resultsFor("gh  tidier sync ", [], { now: NOW, engines: enginesFrom() })[0];
+  assert.equal(site.title, "Search GitHub for “tidier sync”");
+  assert.equal(site.url, "https://github.com/search?q=tidier%20sync");
+  const own = resultsFor("az lamp", [], { now: NOW, engines: ENGINES })[0];
+  assert.deepEqual([own.kind, own.engine, own.query, own.url], ["search", "Amazon.com", "lamp", undefined]);
+  const at = resultsFor("@wikipedia rome", [], { now: NOW, engines: ENGINES })[0];
+  assert.deepEqual([at.engine, at.query], ["Wikipedia (en)", "rome"]);
+});
+
+test("Firefox's engine of the same name wins over Tidier's site, with its own keyword and icon", () => {
+  assert.equal(shortcutIn("yt cats", ENGINES), null, "yt is Tidier's keyword for its own YouTube, which is gone");
+  const r = shortcutIn("tube cats", ENGINES).search;
+  assert.deepEqual([r.engine, r.icon, r.url], ["YouTube", "data:image/png;base64,BB", undefined]);
+  assert.equal(ENGINES.filter(e => e.name === "YouTube").length, 1);
+});
+
+test("@ lists the engines, and narrows them as you type", () => {
+  assert.deepEqual(titles(shortcutIn("@", ENGINES).offers), ["Search Google", "Search Wikipedia (en)", "Search Amazon.com", "Search YouTube", "Search GitHub"]);
+  assert.deepEqual(titles(shortcutIn("@a", ENGINES).offers), ["Search Amazon.com"]);
+  assert.equal(shortcutIn("@nothing", ENGINES), null);
+  assert.equal(resultsFor("@wi", [], { now: NOW, engines: ENGINES })[0].id, "engine:Wikipedia (en)");
+});
+
+test("an engine's name typed as a word is offered after the search, never first, and the default engine is not", () => {
+  const items = [tab("Wikipedia notes", { lastUsed: NOW })];
+  const rows = resultsFor("wikipedia", items, { now: NOW, engines: ENGINES });
+  assert.deepEqual(titles(rows), ["Wikipedia notes", "Search for “wikipedia”", "Search Wikipedia (en)"]);
+  const weak = resultsFor("amazon", [], { now: NOW, engines: ENGINES, engine: "Google" });
+  assert.deepEqual(titles(weak), ["Search Google for “amazon”", "Search Amazon.com"]);
+  assert.equal(shortcutIn("google", ENGINES), null);
+  assert.equal(shortcutIn("wikipedia rome", ENGINES), null, "only a keyword or @ searches at once: this is a search for both words");
+});
+
+test("an engine's rows make room by what was found, and the bar keeps its height", () => {
+  const many = Array.from({ length: 12 }, (_, i) => tab(`gh thing ${i}`, { lastUsed: NOW - i }));
+  const rows = resultsFor("gh", many, { now: NOW, engines: enginesFrom(), tail: [{ kind: "ask", id: "ask", title: "Also search" }] });
+  assert.equal(rows.length, 8);
+  assert.equal(rows[0].kind, "engine");
+  assert.deepEqual([...rows].slice(-2).map(r => r.kind), ["search", "ask"]);
+});
+
+test("with the engine chosen, the one row searches it for what you type, and none while nothing is typed", () => {
+  assert.deepEqual(plainRows(engineSearchRow(enginesFrom(), "YouTube", "  lofi ")), [{ kind: "search", id: "search:YouTube", title: "Search YouTube for “lofi”", query: "lofi", engine: "YouTube", icon: null, url: "https://www.youtube.com/results?search_query=lofi" }]);
+  assert.deepEqual(plainRows(engineSearchRow(enginesFrom(), "YouTube", " ")), []);
+});
+
+test("a search by a site's address opens it in the active space, and one by Firefox's engine names the engine", async () => {
+  const ff = new FakeFirefox();
+  const { w } = world(ff);
+  const x = await started(ff);
+  const searches = [];
+  x.b.search = { search: async s => { searches.push(s); } };
+  const page = await openBar(ff, x, w.id);
+  const url = "https://www.youtube.com/results?search_query=lofi";
+  await page.tell({ type: "choose", row: { kind: "search", query: "lofi", engine: "YouTube", url } });
+  await wait(300);
+  const opened = [...ff.tabs.values()].find(t => t.url === url);
+  assert.ok(opened && opened.cookieStoreId === C1 && opened.windowId === w.id, JSON.stringify(opened));
+  assert.equal(searches.length, 0);
+  const again = await openBar(ff, x, w.id);
+  await again.tell({ type: "choose", row: { kind: "search", query: "lamp", engine: "Amazon.com" } });
+  await wait(300);
+  assert.deepEqual(searches.map(s => [s.query, s.engine, ff.tabs.get(s.tabId).cookieStoreId]), [["lamp", "Amazon.com", C1]]);
   x.kill();
 });

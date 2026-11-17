@@ -553,6 +553,7 @@ def alone_command_bar(m):
     SEARCH = H + """const {SearchService: s} = ChromeUtils.importESModule("moz-src:///toolkit/components/search/SearchService.sys.mjs");"""
     m.js(SEARCH + """await s.init(); main().__engineBefore = (await s.getDefault()).name;
       await s.addUserEngine({name: "Smoke bar engine", url: args[0] + "/smoke-engine?q={searchTerms}", alias: ""});
+      await s.addUserEngine({name: "Smoke other engine", url: args[0] + "/smoke-other?q={searchTerms}", alias: "smk"});
       await s.setDefault(await s.getEngineByName("Smoke bar engine"), s.CHANGE_REASON.UNKNOWN); return 1;""", m.pages)
     bar_open(m)
     bar_keys(m, "smoke bar search words")
@@ -563,8 +564,41 @@ def alone_command_bar(m):
     r = m.js(BAR + """const w = main(); for (let i = 0; i < 80 && !url(w.gBrowser.selectedTab).includes("smoke-engine"); i++) await wait(100);
       const t = w.gBrowser.selectedTab; return {url: url(t), space: t.userContextId};""")
     check("a search opens with Firefox's default engine, in the active space, and asks nothing", closed and "smoke-engine" in r["url"] and "smoke" in r["url"].split("q=")[-1] and r["space"] == start["space"], str(r))
+    # Search shortcuts (commandbar/engines.js): an engine's keyword and ⇥ choose it, and what
+    # you type then is searched there; "@" lists them; Tidier's own sites know their address.
+    BACKSPACE = "\ue003"
+    bar_open(m)
+    bar_keys(m, "smk")
+    rows = bar_rows_until(m, lambda rows: rows and rows[0]["kind"] == "engine")
+    check("an engine's keyword alone offers it first", rows and rows[0]["title"] == "Search Smoke other engine" and rows[0]["selected"], str(rows[:2]))
+    bar_keys(m, [TAB])
+    chip = bar_page(m, """return {field: doc.getElementById("field").value, step: doc.getElementById("step").hidden ? null : doc.getElementById("step").textContent, rows: doc.querySelectorAll(".row").length};""")
+    check("⇥ chooses the engine: the field is empty for what to search, and the line above names the engine", chip == {"field": "", "step": "Search Smoke other engine", "rows": 0}, str(chip))
+    bar_keys(m, [BACKSPACE])
+    back = bar_page(m, """return {field: doc.getElementById("field").value, step: doc.getElementById("step").hidden};""")
+    check("⌫ in the empty field goes back to the keyword", back == {"field": "smk", "step": True}, str(back))
+    bar_keys(m, [TAB])
+    bar_keys(m, "smoke cats")
+    rows = bar_rows_until(m, lambda rows: rows and rows[0]["kind"] == "search")
+    check("what you type then is one row: a search there", [(x["kind"], x["title"]) for x in rows] == [("search", "Search Smoke other engine for “smoke cats”")], str(rows))
+    bar_keys(m, [ENTER])
+    closed = wait_for_bar(m, False)
+    r = m.js(BAR + """const w = main(); for (let i = 0; i < 80 && !url(w.gBrowser.selectedTab).includes("smoke-other"); i++) await wait(100);
+      const t = w.gBrowser.selectedTab; return {url: url(t), space: t.userContextId};""")
+    check("Enter searches that engine, not the default one, in the active space", closed and "smoke-other?q=smoke" in r["url"] and r["space"] == start["space"], str(r))
+    bar_open(m)
+    bar_keys(m, "@smoke")
+    rows = bar_rows_until(m, lambda rows: len(rows) > 1 and rows[1]["kind"] == "engine")
+    check("@ lists the engines whose name starts so", [x["title"] for x in rows if x["kind"] == "engine"] == ["Search Smoke bar engine", "Search Smoke other engine"], str(rows))
+    bar_page(m, """doc.getElementById("field").select();""")
+    bar_keys(m, "yt lofi")
+    rows = bar_rows_until(m, lambda rows: rows and rows[0]["url"] and "youtube" in rows[0]["url"])
+    check("a keyword of Tidier's own and words after it are a search on that site, first", rows and rows[0]["kind"] == "search" and rows[0]["url"] == "https://www.youtube.com/results?search_query=lofi", str(rows[:2]))
+    bar_keys(m, [ESC])
+    wait_for_bar(m, False)
     m.js(SEARCH + """await s.setDefault(await s.getEngineByName(main().__engineBefore), s.CHANGE_REASON.UNKNOWN);
-      await s.removeEngine(await s.getEngineByName("Smoke bar engine")); await removeWhere((w, t) => url(t).includes("smoke-engine") || t.label.includes("smoke-engine")); return 1;""")
+      for (const name of ["Smoke bar engine", "Smoke other engine"]) await s.removeEngine(await s.getEngineByName(name));
+      await removeWhere((w, t) => /smoke-(engine|other)/.test(url(t) + t.label)); return 1;""")
     bar_open(m)
     bar_keys(m, "smoke-bar-one")
     bar_rows_until(m, lambda rows: rows and rows[0]["kind"] == "tab")

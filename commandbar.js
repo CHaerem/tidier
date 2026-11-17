@@ -637,13 +637,14 @@ async function barOpenTab(ctx, url) {
 }
 
 // A search you asked for here stays here, also where a rule knows the search engine's
-// address. Firefox's default engine, whichever that is: only Firefox itself can read
-// that, and the tab must exist first, as search.search cannot pick a container.
-async function barSearch(ctx, query) {
+// address. Firefox's default engine, whichever that is, or the one a shortcut named
+// (commandbar/engines.js): only Firefox itself can read their addresses, and the tab must
+// exist first, as search.search cannot pick a container.
+async function barSearch(ctx, query, engine) {
   if (!browser.search) return; // the bar's page asks for the permission first
   const props = await barNewTabProps(ctx, "about:blank");
   const tab = await openUnruled(props);
-  await browser.search.search({ query, tabId: tab.id });
+  await browser.search.search({ query, tabId: tab.id, ...(engine ? { engine } : {}) });
 }
 
 // Selecting this window's copy of the tab does the rest, as a click in the sidebar does:
@@ -705,7 +706,7 @@ async function barRunCommand(ctx, row, value) {
 
 async function barCarryOut(ctx, { row, inNewTab, value }) {
   if (row.kind === "command") return barRunCommand(ctx, row, value);
-  if (row.kind === "search") return barSearch(ctx, row.query);
+  if (row.kind === "search") return isWeb(row.url) ? barOpenTab(ctx, row.url) : barSearch(ctx, row.query, row.engine); // (a site of Tidier's own has its address)
   if (row.kind === "folder") return serial(() => barGoToFolder(ctx, row.key));
   if (row.kind === "closed") return barReopenClosed(ctx, row);
   if (row.kind === "archived") return barReopenArchived(ctx, row);

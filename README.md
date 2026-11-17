@@ -496,6 +496,16 @@ field goes back, and one that closes tabs is never what a plain Enter takes for 
 is only somewhere in its name, nor moved up by use. Enter goes to a tab, or opens an
 address or a search in the active space; ⌘↵ opens a new tab instead.
 
+Search shortcuts (`commandbar/engines.js`), as Zigzag's and Firefox's own: an engine's
+keyword offers it first (*Search YouTube* for "yt"), and ⇥ or Enter chooses it; what you
+type then is searched there, and ⌫ in the empty field goes back. A keyword with words after
+it ("yt lofi", "@wikipedia rome") is that search at once, and "@" alone lists the engines.
+The engines are Firefox's own, by the keyword you gave one in its settings and by "@" and
+the first word of its name, once the bar may use the search permission; YouTube ("yt") and
+GitHub ("gh") come with Tidier, searched by their address, unless Firefox has an engine by
+that name. An engine's name typed as a word ("wikipedia") is offered too, after the search,
+as it may as well be the start of a tab's title.
+
 Firefox takes a moment (some 30 ms) to open the bar and give it the keyboard. What you type
 before that is caught where it went and handed to the bar (`barkeys.js`, in pages while
 Tidier has the access to all websites, and in its sidebar), so nothing lands in the page.
@@ -916,7 +926,7 @@ Not guaranteed:
   `sidebar/keyrename.js` – what the keys do, the settings page's Keys
   section, and keys in the sidebar.
 - `commandbar.js`, `commandbar/` (the bar's page, `first.js` for its first frame, and
-  `rank.js`, what it shows for what you type), `barkeys.js` (the keys typed before it
+  `rank.js`, what it shows for what you type, `engines.js`, its search shortcuts), `barkeys.js` (the keys typed before it
   has the keyboard), `sidebar/commandbar-link.js` – the command bar.
 - `spaces.js` – spaces: hiding, switching, new tabs and links, rules.
 - `spaceactions.js`, `sidebar/spacemenu.js` – a space's menu and what it does (rename,
