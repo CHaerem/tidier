@@ -490,11 +490,12 @@ settings page's Keys section; a key you change stays that way. ⌥⌘ and an arr
 **⌘1 to ⌘9, ⌘D and ⌘T are Firefox's own** until they are cleared in `about:keyboard`.
 Until then ⌘D and ⌘T never reach Tidier, and ⌘1 to ⌘9 act twice with the keyboard in a
 page: Firefox's goes to the window's first tabs, which are every space's essentials, so ⌘1
-in one workplace went to the other's Mail. They are to be cleared in the dotfiles'
-`customKeys.json`, now that no browser needs them as Firefox has them for Sidebery (not
-done yet; the test Firefox also takes a `customKeys-alone.json` beside it, if there is one).
-No extension can read `about:keyboard`, so the dotfiles are also to hand Tidier the same
-keys in managed storage (`firefoxKeys`); the test Firefox does so already. A key Firefox still has is dashed on the
+in one workplace went to the other's Mail. The dotfiles' `customKeys.json` clears all of them
+(⌘T since 16 November, ⌘1 to ⌘9 and ⌘D since 17 November; the test Firefox also takes a
+`customKeys-alone.json` beside it, if there is one), and Firefox reads it only as it starts:
+the restart line says so (`firefoxsetup.js`). No extension can read `about:keyboard`, so the
+dotfiles also hand Tidier the same keys in managed storage (`firefoxKeys`, written by
+`home/firefox.nix`, after a switch); the test Firefox does so too. A key Firefox still has is dashed on the
 settings page, with a line saying so, and the command bar does not show it.
 
 In the sidebar, with the keyboard there: ↑ and ↓ go through the list, and in the essentials'
