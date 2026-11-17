@@ -98,6 +98,16 @@ def alone_shortcuts(m):
         press(m, DOWN, CMD, CTRL)
     check("⌃⌘↓ pressed quickly goes just as far", selects(order[3]), str(order))
 
+    # Back and forward through the tabs used recently, as Arc's ⌃Tab (stepRecent, listactions.js).
+    go("2", CMD)
+    selects(order[1])
+    go("4", CMD)
+    selects(order[3])
+    go(",", CMD, CTRL)
+    back = selects(order[1])
+    go(".", CMD, CTRL)
+    check("⌃⌘, goes back to the tab used before, and ⌃⌘. forward again", back and selects(order[3]), str(order))
+
     go("1", CMD)
     check("⌘1 goes to this space's first essential", selects(order[0]), str(order))
     go("3", CMD)

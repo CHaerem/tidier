@@ -477,6 +477,7 @@ With Tidier alone, the keys follow what the sidebar shows (`shortcuts.js`,
 - ⌘D: make this tab an essential, or an ordinary tab again
 - ⌥⌘N: a new folder
 - ⇧⌘K: the command bar, and ⌘T as well once `about:keyboard` has cleared Firefox's own ⌘T
+- ⌃⌘, and ⌃⌘.: back to the tab used before, and forward again, through this space's list (Arc's ⌃Tab, which no extension can have)
 - ⌥⌘A: every tab at once (below); Zigzag's ⇧⌘\ is no key Firefox gives an extension
 - ⇧⌘C: copy the address (a word at the top of the page says so, or the line in the sidebar where a page takes none; the menus' Copy address says the same); ⌃⇧S: show or hide the sidebar
 - ⌘Z, with the keyboard in the sidebar: what the quiet line offers to undo, while it shows

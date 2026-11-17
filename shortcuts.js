@@ -108,8 +108,9 @@ const COMMANDS = [
   { name: "close-others", label: "Close other tabs", key: "", action: onPicked("closeOthers") },
   { name: "close-above", label: "Close tabs above", key: "", action: onPicked("closeAbove") },
   { name: "close-below", label: "Close tabs below", key: "", action: onPicked("closeBelow") },
-  { name: "recent-back", label: "Back to the tab used before", key: "", action: inQueue(w => stepRecent(w, 1)) },
-  { name: "recent-forward", label: "Forward to the tab used after", key: "", action: inQueue(w => stepRecent(w, -1)) },
+  // Arc's ⌃Tab, which no extension can have: ⌃⌘, and ⌃⌘. (< and > on the same keys).
+  { name: "recent-back", label: "Back to the tab used before", key: "Ctrl+MacCtrl+Comma", action: inQueue(w => stepRecent(w, 1)) },
+  { name: "recent-forward", label: "Forward to the tab used after", key: "Ctrl+MacCtrl+Period", action: inQueue(w => stepRecent(w, -1)) },
   // What makes something, or loads every page of a folder or space again, is once per press:
   // a key held down would do it again and again.
   { name: "folder-new-tab", label: "New tab in this folder", key: "", action: oncePerPress(async w => folderCommand(w, await pickedIn(w), "newTab")) },
