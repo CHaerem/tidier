@@ -163,7 +163,9 @@ be done, in order, is in [PLAN.md](PLAN.md).
    Before that, a tab not used for a while can be **unloaded** where it is, as in Zen
    (`unloadidle.js`): it stays in the list and in every window and frees its memory, and
    its page comes back when you select it. Off until you set a time on the settings page
-   (*Unload tabs not used for … hours*; quarters of an hour count). Tabs in folders are
+   (*Unload tabs not used for … hours*; quarters of an hour count). With that on, a crowd
+   counts too, as in Zigzag: with more than twenty pages loaded, a tab unseen for a quarter
+   of an hour goes as well, the longest unseen first, until twenty are left. Tabs in folders are
    unloaded too; essentials, the tab selected in each window, tabs playing sound or in a
    call and pages with unsaved input stay loaded. Firefox itself unloads tabs only when the
    whole machine is short of memory.

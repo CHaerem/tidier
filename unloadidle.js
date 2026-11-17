@@ -14,6 +14,11 @@
 //
 // Looked at on the beat archiving already has (the "archive" alarm), so there is no timer
 // of its own; with no time set it does nothing at all.
+//
+// Many pages loaded at once weigh more than a few old ones, so a crowd counts too, as in
+// Zigzag: with more than UNLOAD_CROWD pages loaded, a tab unseen for a quarter of an hour
+// goes as well, the longest unseen first, until the crowd is down to that.
+const UNLOAD_CROWD = 20, UNLOAD_CROWDED_MS = 15 * 60e3;
 
 const UNLOAD_MOST_HOURS = 24 * 365;
 // The time as it may be set: hours from 0 (never) up, with halves and quarters, else null,
@@ -30,11 +35,18 @@ async function unloadIdleTabs({ now = Date.now() } = {}) {
   const hours = unloadHours((await browser.storage.local.get("unloadAfterHours")).unloadAfterHours);
   if (!hours) return 0;
   // Every window's tabs, so that a placeholder selected in one counts for its page in another.
-  const idle = unloadable(await browser.tabs.query({ pinned: false })) // spaceactions.js
-    .filter(t => isWeb(t.url) && now - (t.lastAccessed || now) >= hours * 3600e3);
+  const all = await browser.tabs.query({});
+  let awake = all.filter(t => isWeb(t.url) && !t.discarded).length; // essentials too: they weigh as much
+  const unseen = t => now - (t.lastAccessed || now);
+  const idle = [];
+  for (const t of unloadable(all.filter(t => !t.pinned)).filter(t => isWeb(t.url)).sort((a, b) => unseen(b) - unseen(a))) { // spaceactions.js
+    if (unseen(t) < hours * 3600e3 && !(awake > UNLOAD_CROWD && unseen(t) >= UNLOAD_CROWDED_MS)) continue;
+    idle.push(t);
+    awake--;
+  }
   if (!idle.length) return 0;
   const unloaded = await unloadPages(idle);
-  if (unloaded) trace(`unloaded ${unloaded} tab${unloaded === 1 ? "" : "s"} not used for ${hours} h`);
+  if (unloaded) trace(`unloaded ${unloaded} tab${unloaded === 1 ? "" : "s"} not used for ${hours} h, or for a while with many loaded`);
   return unloaded;
 }
 

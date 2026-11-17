@@ -111,3 +111,33 @@ test("the time is hours from 0 up, by quarters, and an answer that is none chang
   assert.equal((await x.js("settingsAction")({ type: "settings:get" })).unloadHours, 0);
   x.kill();
 });
+
+test("with more than twenty pages loaded, a tab unseen for a quarter of an hour goes too, the longest unseen first, until twenty are left", async () => {
+  const ff = new FakeFirefox();
+  ff.store.unloadAfterHours = 8;
+  // here, there and 22 more: 24 loaded, so four of the eligible go, the oldest four.
+  const ages = Object.fromEntries(Array.from({ length: 22 }, (_, i) => [`t${i}`, { ago: (i < 6 ? 0.5 + i / 10 : 0.1) }]));
+  const { tabs } = session(ff, ages);
+  const x = await start(ff);
+  assert.equal(await x.js("unloadIdleTabs")({ now: NOW }), 4);
+  const gone = Object.entries(loaded(tabs)).filter(([, on]) => !on).map(([name]) => name).sort();
+  assert.deepEqual(gone, ["t2", "t3", "t4", "t5"], "the four unseen longest; a tab unseen for minutes stays");
+  assert.equal(await x.js("unloadIdleTabs")({ now: NOW }), 0, "and then twenty are left, which is no crowd");
+  x.kill();
+});
+
+test("a crowd of tabs used in the last quarter of an hour stays loaded, and with no time set the crowd is left alone too", async () => {
+  const ff = new FakeFirefox();
+  ff.store.unloadAfterHours = 8;
+  const { tabs } = session(ff, Object.fromEntries(Array.from({ length: 25 }, (_, i) => [`t${i}`, { ago: 0.2 }])));
+  const x = await start(ff);
+  assert.equal(await x.js("unloadIdleTabs")({ now: NOW }), 0);
+  assert.equal(await x.js("unloadIdleTabs")({ now: NOW + 0.1 * HOUR }), 7, "a few minutes later they have been unseen long enough: down to twenty");
+  assert.equal(Object.values(loaded(tabs)).filter(Boolean).length, 20);
+  x.kill();
+  const off = new FakeFirefox();
+  session(off, Object.fromEntries(Array.from({ length: 25 }, (_, i) => [`t${i}`, { ago: 3 }])));
+  const y = await start(off);
+  assert.equal(await y.js("unloadIdleTabs")({ now: NOW }), 0);
+  y.kill();
+});
