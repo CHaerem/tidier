@@ -312,6 +312,66 @@ def hand_spot(m, body, *args):
     return {**p, "x": o["x"] + p["x"], "y": o["y"] + p["y"]}
 
 
+def alone_clear_preview(m):
+    # The sidebar's Clear shows what it takes before it is clicked (clearPlan, quiet.js;
+    # sidebar/note.js), as Zigzag's does: pointed at, the rows it would take go quiet and it says
+    # what it will do; a click takes those and no others, and not a click that comes as the
+    # pointer only passes over it. With a real pointer, in the real sidebar.
+    space = m.js(H + "return main().gBrowser.selectedTab.userContextId;")
+    names = [f"clear-{n}" for n in range(7)]
+    m.js(H + """const w = main();
+      for (const n of args[0]) { const t = w.gBrowser.addTrustedTab(args[1] + "/titled?" + n, {userContextId: args[2], inBackground: true}); await wait(400); }
+      for (let i = 0; i < 100 && !args[0].every(n => w.gBrowser.tabs.some(t => url(t).endsWith(n) && key(w, t))); i++) await wait(100);
+      // The newest is the one you are on, and the oldest two were used, longer ago than the rest.
+      w.gBrowser.selectedTab = w.gBrowser.tabs.find(t => url(t).endsWith(args[0].at(-1))); await wait(1200); return 1;""", names, m.pages, space)
+    sidebar_page(m, """send({type: "newFolder", space: args[0], name: "Clear folder"}); await wait(1500); return 1;""", f"firefox-container-{space}")
+    reach = "doc.querySelector('#tabs > .divider .clear')"  # the button, at the end of the area it shows in
+    SHOWN = """() => ({dim: [...doc.querySelectorAll("#tabs .row.about-to-clear")].map(r => r.title.split("\\n")[0]).sort(),
+      title: doc.querySelector("#tabs > .divider .clear")?.title, opacity: [...doc.querySelectorAll("#tabs .row.about-to-clear")].map(r => content.getComputedStyle(r).opacity)[0]})"""
+    plan = lambda: sidebar_page(m, """const p = await page.browser.runtime.sendMessage(page.JSON.parse(JSON.stringify({type: "clearPlan", windowId: args[0], space: args[1]})));
+      const tabs = await Promise.all(p.tabIds.map(id => page.browser.tabs.get(id))); return {...p, titles: tabs.map(t => t.title).sort()};""",
+      m.js(H + "const {ExtensionParent} = ChromeUtils.importESModule('resource://gre/modules/ExtensionParent.sys.mjs'); return ExtensionParent.apiManager.global.windowTracker.getId(main());"), f"firefox-container-{space}")
+    here = lambda: sorted(m.js(H + """return main().gBrowser.tabs.filter(t => /\\/titled\\?clear-/.test(url(t)) || t.label.startsWith("clear-")).map(t => t.label);"""))
+    try:
+        want = plan()
+        sidebar_mouse(m, "doc.getElementById('spaces')", clicks=0)
+        sidebar_mouse(m, reach, clicks=0)
+        r = {}
+        for _ in range(30):  # (the rows fade to it)
+            r = in_sidebar(m, SHOWN)
+            if r.get("dim") and float(r.get("opacity") or 1) < 0.5:
+                break
+            time.sleep(0.1)
+        check("pointed at, Clear dims the rows it would take, and says what it will do", want.get("kind") == "unused" and r.get("dim") == want.get("titles") and r.get("title") == want.get("words")
+              and "clear-0" in r["dim"] and "clear-6" not in r["dim"] and float(r.get("opacity") or 1) < 0.5, f"{r} {want}")
+        before = here()
+        sidebar_mouse(m, "doc.getElementById('spaces')", clicks=0)
+        sidebar_mouse(m, reach, clicks=1)  # in the same breath as it comes: a hand on its way past it
+        time.sleep(1.5)
+        check("a click that comes as the pointer reaches it closes nothing", here() == before, f"{here()} {before}")
+        time.sleep(0.5)
+        sidebar_mouse(m, reach, clicks=1)
+        for _ in range(50):
+            if len(here()) < len(before):
+                break
+            time.sleep(0.1)
+        after = here()
+        check("a click takes the rows it showed, and no others", sorted(set(before) - set(after)) == [t for t in want.get("titles", []) if t in before] and "clear-6" in after, f"{before} -> {after}, {want}")
+        nxt = None
+        for _ in range(30):
+            nxt = in_sidebar(m, SHOWN)
+            if nxt.get("title", "").startswith("Close the other"):
+                break
+            time.sleep(0.1)
+        check("still pointed at, it then shows what the next click takes: the rest but the tab you are on", (nxt.get("title") or "").startswith("Close the other") and "clear-6" not in nxt.get("dim", []), str(nxt))
+    finally:
+        sidebar_mouse(m, "doc.getElementById('spaces')", clicks=0)
+        sidebar_page(m, """const key = [...doc.querySelectorAll("#tabs .folder .head")].find(h => h.title === "Clear folder")?.dataset.folderHead;
+          if (key) send({type: "deleteFolder", key}); await wait(800); return 1;""")
+        m.js(H + """await removeWhere((w, t) => /\\/titled\\?clear-/.test(url(t))); await wait(800); return 1;""")
+    no_problems(m, "after Clear showed what it takes")
+
+
 def alone_hand(m):
     m.js(H + """const w = main(); w.focus(); for (const t of [...w.gBrowser.tabs]) if (/sidebar\\/sidebar\\.html|settings\\/settings\\.html/.test(url(t))) w.gBrowser.removeTab(t);
       Services.prefs.setBoolPref("general.autoScroll", true); // Firefox's own default on a Mac, which the dotfiles leave

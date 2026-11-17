@@ -226,6 +226,18 @@ be done, in order, is in [PLAN.md](PLAN.md).
    `--lwt-accent-color` as its surface; a `tidier.css` that sets a tint per space keeps
    its own. A window has its tint as soon as Tidier's background part starts, by the
    space kept with it. A private window keeps Firefox's look.
+11. **Clear shows what it takes** (`quiet.js`, `sidebar/note.js`), as Zigzag's does. The
+   sidebar's Clear, near the line between the folders and today's tabs, takes first only the
+   tabs you have drifted away from, and keeps those you are working with: the tabs are
+   ranked by when each was last used, and kept down to the biggest gap in that line (at
+   least three times as long, among the newest twelve; every age counts as at least ten
+   minutes and an eighth of the thirteenth newest's), or the newest five where there is no
+   such gap. Once there are none, its next click takes all but the tab you are on.
+   Pointed at, the rows it would take go quiet and it says what it will do (*Close 3 tabs
+   you haven't used in a while*); a click takes those and no others, and a click that comes
+   in the third of a second as the pointer reaches it counts for nothing. *Clear today's
+   tabs* in the menus and the command bar takes all of today's tabs but the one you are on,
+   as it is named.
 
 Compact mode and the window's look are set up in the dotfiles (`userChrome.css`, Firefox
 settings, `about:keyboard`). Switching to a tab in another window needs no command: every

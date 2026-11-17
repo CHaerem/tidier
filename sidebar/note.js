@@ -13,6 +13,7 @@
   // button you tabbed to would do nothing.
   const ownKeys = e => e.stopPropagation();
   act.onkeydown = ownKeys;
+  const CLEAR_ARMS_MS = 350, CLEAR_NEXT_MS = 400; // see clear, below
 
   // The line has a room of its own between the list and the bar, so it lies over no row
   // and no row's ×. The list ends above it; the rows do not move, only less of the list
@@ -117,9 +118,34 @@
     if (undo(e)) e.preventDefault();
   });
 
+  // What a click takes is shown first (clearPlan, quiet.js): the rows dim, and the button says
+  // it. A click takes those and no others. It is asked again as the list changes under it, and
+  // after a click, for the next one.
+  let plan = null, asked = 0, armedAt = 0;
+  const showPlan = () => {
+    for (const r of document.querySelectorAll("#tabs .about-to-clear")) r.classList.remove("about-to-clear");
+    const button = document.querySelector("#tabs > .divider .clear");
+    if (!plan || !button) return;
+    for (const id of plan.tabIds) document.querySelector(`#tabs [data-tab="${Number(id)}"]`)?.classList.add("about-to-clear");
+    button.title = plan.words || "Nothing to clear";
+  };
+  const askPlan = async () => {
+    const mine = ++asked, windowId = await sidebarWindow;
+    const got = await browser.runtime.sendMessage({ type: "clearPlan", windowId, space: view.space }).catch(() => null);
+    if (mine !== asked) return; // asked again meanwhile, or let go of
+    plan = got;
+    showPlan();
+  };
+  const dropPlan = () => { asked++; plan = null; showPlan(); };
   const clear = e => {
+    // Shown just now under a pointer on its way to the row beside it: not yet a click on Clear.
+    // (Zigzag waits as long: it counts a click once the button has been there a third of a second.)
+    if (e?.detail && performance.now() - armedAt < CLEAR_ARMS_MS) return;
     undoNext = !e?.detail; // Clear goes once it has nothing more to clear, and with it the keyboard
-    send({ type: "clearSpace", space: view.space });
+    send({ type: "clearSpace", space: view.space, ...(plan?.tabIds.length ? { tabIds: plan.tabIds } : {}) });
+    dropPlan();
+    // Still pointed at, it shows what the next click would take, once this one is done.
+    setTimeout(() => { if (document.querySelector("#tabs > .divider .clear-reach:hover")) askPlan(); }, CLEAR_NEXT_MS);
   };
 
   // Clear shows only with the pointer near the line between folders and today's tabs.
@@ -133,6 +159,10 @@
       button.tabIndex = -1; // inside the list, which is one stop for Tab (keys.js); by key it is the list's menu's Clear
       button.onclick = secondClick.acts(clear); // the rows below go, and a second click would reach what comes up
       button.onkeydown = ownKeys;
+      reach.onpointerenter = () => { armedAt = performance.now(); askPlan(); };
+      reach.onpointerleave = dropPlan;
+      button.onfocus = askPlan;
+      button.onblur = dropPlan;
       reach.oncontextmenu = e => openMenu(e, listMenu());
       reach.append(button);
       divider.append(reach);
@@ -145,5 +175,6 @@
   port.onMessage.addListener(next => {
     drawNote(next.note && next.note.id !== undone ? next.note : null);
     drawClear();
+    if (plan) askPlan(); // the rows were drawn again: what it takes may have changed, and their marks are gone
   });
 }

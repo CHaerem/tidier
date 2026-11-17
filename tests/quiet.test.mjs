@@ -2,6 +2,7 @@
 // what comes back, and what must stay put. What is drawn is in the smoke test
 // (alone_quiet_undo).
 import { test } from "node:test";
+import { readFileSync } from "node:fs";
 import assert from "node:assert/strict";
 import { FakeFirefox, wait, realSleep, GHOST } from "./fake_firefox.mjs";
 
@@ -860,4 +861,102 @@ test("quiet.js comes after spaces.js, whose listener for a new tab it follows", 
   const { readFileSync } = await import("node:fs");
   const { scripts } = JSON.parse(readFileSync(new URL("../manifest.json", import.meta.url), "utf8")).background;
   assert.ok(scripts.indexOf("quiet.js") > scripts.indexOf("spaces.js"));
+});
+
+// --- What the sidebar's Clear takes, shown before it is clicked (clearPlan) ------------------
+const MIN = 60e3, HOUR = 60 * MIN, NOW = Date.now();
+
+test("the line of last uses is cut at its biggest gap among the newest twelve, else after the newest five", async () => {
+  const ff = new FakeFirefox();
+  const x = ff.boot(), keeps = ages => x.js("clearKeeps")(ages.map(a => a * MIN));
+  assert.equal(keeps([0, 2, 5, 8, 240, 300, 600]), 4, "a burst of work, then hours away: the burst stays");
+  assert.equal(keeps([0, 1, 2, 3]), 4, "seconds or minutes apart is no gap: all of them, under five");
+  assert.equal(keeps([0, 1, 2, 3, 4, 5, 6, 7, 8]), 5, "and with no gap, the newest five");
+  assert.equal(keeps([0, 30, 60, 90, 120, 150, 180]), 5, "evenly spread is no gap either: an eighth of the oldest counts as the least of ages");
+  assert.equal(keeps([0, 2, 600, 700, 800]), 2, "the tab you are on and one used with it, then hours away");
+  assert.equal(keeps([0, 40, 50, 200, 230]), 3, "of two gaps the bigger one; with two as big, the later, which keeps more");
+  assert.equal(keeps([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 5000]), 5, "only the newest twelve are looked at");
+  assert.equal(keeps([]), 0);
+  x.kill();
+});
+
+// A window with today's tabs last used `ago` minutes back, the first of them the one you are on.
+async function lastUsed(ago, more = {}) {
+  const ff = new FakeFirefox();
+  ff.store.syncedTabs = { F: folder("Work", 1), kept: entry(addr("kept"), { parentKey: "F", saved: { url: addr("kept"), title: "K" } }) };
+  const w = ff.addWindow({ focused: true });
+  for (const [k, m] of Object.entries(ago)) {
+    ff.store.syncedTabs[k] = entry(addr(k));
+    ff.addTab(w.id, { url: addr(k), title: k, active: m === 0, cookieStoreId: C1, lastAccessed: NOW - m * MIN }, { syncKey: k, syncRole: "live" });
+  }
+  ff.addTab(w.id, { url: addr("kept"), title: "kept", cookieStoreId: C1, lastAccessed: NOW - 5000 * MIN }, { syncKey: "kept", syncRole: "live" });
+  more.before?.(ff, w);
+  const x = await alone(ff);
+  const plan = async () => JSON.parse(JSON.stringify(await x.send({ type: "clearPlan", windowId: w.id, space: C1 }, { url: "moz-extension://tidier/sidebar/sidebar.html" })));
+  const named = ids => ids.map(id => ff.values.get(id)?.syncKey ?? ff.tabs.get(id)?.url).sort();
+  return { ff, x, w, plan, named };
+}
+
+test("pointed at, Clear says it takes the tabs you have drifted away from, and which they are", async () => {
+  const { x, plan, named } = await lastUsed({ on: 0, a: 3, b: 7, old1: 600, old2: 700, old3: 800 });
+  const p = await plan();
+  assert.equal(p.kind, "unused");
+  assert.deepEqual(named(p.tabIds), ["old1", "old2", "old3"], "not the tab you are on, those used minutes ago, or a tab in a folder");
+  assert.equal(p.words, "Close 3 tabs you haven't used in a while");
+  x.kill();
+});
+
+test("a click takes what it showed, and no other; the next one, the rest but the tab you are on", async () => {
+  const { ff, x, w, plan, named } = await lastUsed({ on: 0, a: 3, b: 7, old1: 600, old2: 700 });
+  const port = sidebar(x, w.id);
+  const first = await plan();
+  // Meanwhile a tab you had not used for long is selected and left again: it is used now, but
+  // the click takes what was shown.
+  port.send({ type: "clearSpace", space: C1, tabIds: first.tabIds });
+  await wait(1000);
+  assert.deepEqual(keysOf(ff, w.id).sort(), ["a", "b", "kept", "on"]);
+  assert.deepEqual([...new Set(said(port))], ["2 tabs closed"]);
+  const next = await plan();
+  assert.deepEqual([next.kind, named(next.tabIds), next.words], ["others", ["a", "b"], "Close the other 2 tabs"]);
+  port.send({ type: "clearSpace", space: C1, tabIds: next.tabIds });
+  await wait(1000);
+  assert.deepEqual(keysOf(ff, w.id).sort(), ["kept", "on"]);
+  assert.deepEqual(await plan(), { kind: null, tabIds: [], words: "" }, "and then there is nothing to take");
+  x.kill();
+});
+
+test("tabs used together are kept together, and a tab selected in another window is never taken", async () => {
+  const { x, plan, named } = await lastUsed({ on: 0, a: 1, b: 2, c: 3, d: 4, e: 5, f: 6 }, {
+    before: (ff, w) => {
+      ff.store.syncedTabs.there = entry(addr("there"));
+      const other = ff.addWindow();
+      ff.addTab(w.id, { url: GHOST("ghost", "there"), title: "there", discarded: true, cookieStoreId: C1 }, { syncKey: "there", syncRole: "ghost" });
+      ff.addTab(other.id, { url: addr("there"), title: "there", active: true, cookieStoreId: C1, lastAccessed: NOW - 9000 * MIN }, { syncKey: "there", syncRole: "live" });
+    },
+  });
+  const p = await plan();
+  assert.equal(p.kind, "unused", "used within minutes of each other, with no gap: the newest five stay");
+  assert.deepEqual(named(p.tabIds), ["d", "e", "f"], "shown in another window, it is in use, and counts as the newest");
+  x.kill();
+});
+
+test("a placeholder's own time says nothing: its page's does, and with no page, when it came", async () => {
+  const { x, plan, named } = await lastUsed({ on: 0, a: 2 }, {
+    before: (ff, w) => {
+      ff.store.syncedTabs.ghosted = entry(addr("ghosted"), { added: NOW - 600 * MIN });
+      ff.addTab(w.id, { url: GHOST("ghost", "ghosted"), title: "ghosted", discarded: true, cookieStoreId: C1, lastAccessed: NOW }, { syncKey: "ghosted", syncRole: "live" });
+    },
+  });
+  assert.deepEqual(named((await plan()).tabIds), ["ghosted"]);
+  x.kill();
+});
+
+test("the sidebar's Clear shows what it takes, waits a moment before it counts a click, and the menus' Clear takes all", () => {
+  const note = readFileSync(new URL("../sidebar/note.js", import.meta.url), "utf8"), css = readFileSync(new URL("../sidebar/sidebar.css", import.meta.url), "utf8");
+  assert.match(note, /reach\.onpointerenter = \(\) => \{ armedAt = performance\.now\(\); askPlan\(\); \};/);
+  assert.match(note, /if \(e\?\.detail && performance\.now\(\) - armedAt < CLEAR_ARMS_MS\) return;/);
+  assert.match(note, /send\(\{ type: "clearSpace", space: view\.space, \.\.\.\(plan\?\.tabIds\.length \? \{ tabIds: plan\.tabIds \} : \{\}\) \}\);/);
+  assert.match(css, /:where\(#tabs\) \.row\.about-to-clear \{ opacity: \.38; \}/);
+  const menu = readFileSync(new URL("../sidebar/spacemenu.js", import.meta.url), "utf8");
+  assert.match(menu, /const clearItem = \(space = view\.space\) => \["Clear today's tabs", \(\) => send\(\{ type: "clearSpace", space \}\)\];/, "named for all of today's tabs, it takes all of them");
 });

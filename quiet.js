@@ -173,15 +173,18 @@ function endCloseGroup(group) {
 // page with unsaved input stays, without asking (closesQuietly, tabsync.js). A new tab
 // page has nothing to lose, and goes. Any other page without a record, such as Firefox's
 // own settings, could not come back with Undo, and stays.
-async function clearSpace(windowId, space) {
+//
+// `only`: these tabs of them, and no others (the sidebar's Clear, which has shown which it
+// takes: clearPlan, below).
+async function clearSpace(windowId, space, only = null) {
   const all = await getSynced();
   const tabs = await tabsNow(windowId);
-  const drawn = (await browser.tabs.query({ windowId })).filter(t => !t.pinned && (t.cookieStoreId === space || t.cookieStoreId === NO_CONTAINER));
+  const drawn = (await browser.tabs.query({ windowId })).filter(t => !t.pinned && (t.cookieStoreId === space || t.cookieStoreId === NO_CONTAINER) && (!only || only.includes(t.id)));
   const items = [];
   let stayed = 0;
   for (const t of drawn) {
     const key = syncKeyByTab.get(t.id), entry = all[key];
-    if (entry ? entry.group || storedInFolder(all, key) : !NEW_TAB_PAGES.has(t.url)) continue;
+    if (!clearable(all, key, t)) continue;
     const selected = await browser.tabs.query({ active: true });
     if (selected.some(s => s.id === t.id || (entry && syncKeyByTab.get(s.id) === key))) continue;
     if (!entry) { await browser.tabs.remove(t.id).catch(() => {}); continue; }
@@ -196,6 +199,62 @@ async function clearSpace(windowId, space) {
   // (Clear clicked again, with only those left, must not take away the Undo of the first.)
   else if (stayed && !quietNotes.get(windowId)?.undo) say(windowId, `${stayed === 1 ? "1 tab" : `${stayed} tabs`} with unsaved input stayed`);
 }
+
+// What Clear may take at all: a tab of today's, or an empty new tab.
+const clearable = (all, key, t) => (all[key] ? !all[key].group && !storedInFolder(all, key) : NEW_TAB_PAGES.has(t.url));
+
+// --- What the sidebar's Clear takes, shown before it is clicked --------------------------
+// As Zigzag's Clear (an Arc-like browser): its first click takes only the tabs you have drifted
+// away from, and keeps those you are working with; once there are none, it takes all but
+// the one you are on. Pointed at, the rows it would take dim, and it says what it will do.
+//
+// "Drifted away" has no fixed age: you may have been gone a week or ten minutes. The tabs,
+// the one you are on included, are ranked by when each was last used, and kept down to the
+// biggest gap in that line, a gap of at least three times, among the newest twelve: a burst of
+// tabs used together, then a long pause. Every age counts as at least ten minutes and an
+// eighth of the thirteenth newest's, so seconds apart is no gap. With no such gap, the newest
+// five are kept. (Zigzag's own numbers: TabManager.swift, keptByActivity.)
+const CLEAR_SHORTEST_MS = 10 * 60e3, CLEAR_LOOKS_AT = 12, CLEAR_JUMP = 3, CLEAR_KEEPS = 5;
+function clearKeeps(ages) {
+  const sorted = [...ages].sort((a, b) => a - b);
+  const span = sorted[Math.min(CLEAR_LOOKS_AT, sorted.length - 1)] ?? 0;
+  const floored = sorted.map(a => Math.max(a, CLEAR_SHORTEST_MS, span / 8));
+  let best = 0, at = -1;
+  for (let i = 0; i + 1 < Math.min(floored.length, CLEAR_LOOKS_AT); i++) {
+    const jump = floored[i + 1] / floored[i];
+    if (jump >= CLEAR_JUMP && jump >= best) { best = jump; at = i; } // (an equal gap later on keeps more)
+  }
+  return at >= 0 ? at + 1 : Math.min(CLEAR_KEEPS, sorted.length);
+}
+// When a tab was last used: its page's own time, as archiving reads it (archive.js), never
+// before it came into the record. A placeholder's own time says nothing.
+function lastUsedOf(entry, reps, tab) {
+  const pages = reps.filter(t => !isGhostUrl(t.url));
+  return Math.max(entry?.added || 0, ...pages.map(t => t.lastAccessed || 0), entry ? 0 : tab.lastAccessed || 0);
+}
+// { kind: "unused" | "others" | null, tabIds, words }: what a click would take in this window.
+async function clearPlan(windowId, space, now = Date.now()) {
+  const all = await getSynced(), every = await browser.tabs.query({});
+  const reps = repsByKey(every); // tabsync.js
+  const selected = every.filter(t => t.active);
+  const drawn = every.filter(t => t.windowId === windowId && !t.pinned && (t.cookieStoreId === space || t.cookieStoreId === NO_CONTAINER));
+  const rows = drawn.filter(t => clearable(all, syncKeyByTab.get(t.id), t)).map(t => {
+    const key = syncKeyByTab.get(t.id);
+    const on = selected.some(s => s.id === t.id || (key && syncKeyByTab.get(s.id) === key));
+    return { id: t.id, on, age: on ? 0 : now - lastUsedOf(all[key], key ? reps.get(key) ?? [] : [], t) };
+  });
+  const others = rows.filter(r => !r.on);
+  if (!others.length) return { kind: null, tabIds: [], words: "" };
+  const keeps = clearKeeps(rows.map(r => r.age)), line = [...rows].sort((a, b) => a.age - b.age);
+  const unused = line.slice(keeps).filter(r => !r.on);
+  const n = list => (list.length === 1 ? "1 tab" : `${list.length} tabs`);
+  if (unused.length) return { kind: "unused", tabIds: unused.map(r => r.id), words: `Close ${n(unused)} you haven't used in a while` };
+  return { kind: "others", tabIds: others.map(r => r.id), words: others.length === 1 ? "Close the other tab" : `Close the other ${others.length} tabs` };
+}
+browser.runtime.onMessage.addListener((msg, sender) => {
+  if (msg?.type !== "clearPlan" || sender.id !== browser.runtime.id || !sender.url?.startsWith(browser.runtime.getURL(""))) return;
+  return clearPlan(msg.windowId, msg.space);
+});
 
 // --- Undo ------------------------------------------------------------------------
 // A tab brought back is not a new tab: no rule may send it to another space, nor may it

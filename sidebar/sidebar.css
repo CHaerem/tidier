@@ -573,6 +573,9 @@ html[data-dragging="tab"] #essentials:empty + #space-name:not(:empty).drop-into:
 }
 .clear-reach:hover .clear, .clear:focus-visible { opacity: 1; }
 .clear:hover { color: var(--text); }
+/* What Clear would take, while it is pointed at (note.js): those rows go quiet, the rest
+ * stays as it is, so you see what stays before you click. */
+:where(#tabs) .row.about-to-clear { opacity: .38; }
 /* Several tabs picked (selection.js): a soft tint of the space's colour, apart from the
  * selected tab's light and the keys' outline. Rows that are together read as one block. */
 .row.picked, .tile.picked { --pick: color-mix(in srgb, var(--accent) 20%, transparent); background: var(--pick); }
