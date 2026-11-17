@@ -24,6 +24,7 @@ and writes PNGs at twice the size, as on a Retina screen:
     state-essentials-N-WIDTH     one, two and three essentials, at each width
     bar-empty-, bar-typed-, bar-shortcut-, bar-engine-SCHEME   the command bar's page
     window-no-container-, window-sidebar-closed-, window-bar-SCHEME   where the window meets other things
+    window-desk-SCHEME           every tab at once
     settings-SCHEME              the settings page
     settings-in-full-SCHEME      with everything it can show, made up; -narrow- as narrow as it can be
 
@@ -916,6 +917,26 @@ def sidebar_closed(cam):
     in_sidebar(m, """await until(() => doc.documentElement.dataset.space, "the sidebar again");""")
 
 
+def desk(cam):
+    """Every tab at once (desk.js): the desk in the window, with the sidebar beside it."""
+    m = cam.m
+    if not cam.wanted("desk"):
+        return
+    select(m, on_tab(PERSONAL), PERSONAL["ctx"])
+    m.js(CHROME + """w.focus(); gB.selectedBrowser.focus(); await wait(200); return 1;""")
+    keys = [{"type": "keyDown", "value": c} for c in ("\ue03d", "\ue00a", "a")] + [{"type": "keyUp", "value": c} for c in ("a", "\ue00a", "\ue03d")]
+    m.cmd("WebDriver:PerformActions", {"actions": [{"type": "key", "id": "kb", "actions": keys}]})
+    m.cmd("WebDriver:ReleaseActions")
+    there = m.js(CHROME + """for (let i = 0; i < 100 && !gB.selectedTab.linkedBrowser.currentURI.spec.includes("/desk/desk.html"); i++) await wait(50);
+      await wait(1500); return gB.selectedTab.linkedBrowser.currentURI.spec.includes("/desk/desk.html");""")
+    if not there:
+        print("(the desk did not open: no picture of it)", flush=True)
+        return
+    cam.shoot("window-desk", whole_window=True)
+    m.js(CHROME + """const t = gB.tabs.find(x => x.linkedBrowser.currentURI.spec.includes("/desk/desk.html")); if (t) gB.removeTab(t); await wait(600); return 1;""")
+    select(m, on_tab(PERSONAL), PERSONAL["ctx"])
+
+
 def scrolled(cam):
     select(cam.m, on_tab(WORK), WORK["ctx"])
     # With the scrollbar, as while you scroll: here it stays, unlike everywhere else (main).
@@ -1277,7 +1298,7 @@ def placeholder_on_show(cam):
 
 
 STEPS = (space_by_space, hover, hover_more, menus, more_menus, folders_closed, live_closed, folder_rename, marks, keyboard, agent_note, notices, space_rename, quiet_lines, picked, bar_marks,
-         little_window, little_window_real, command_bar, window_edges, archived, scrolled, swipe, away, under_the_hand, folder_icons, away_mark, restart_line, live_kinds, empty_spaces, few_essentials, icons_that_vanish, settings,
+         little_window, little_window_real, command_bar, window_edges, desk, archived, scrolled, swipe, away, under_the_hand, folder_icons, away_mark, restart_line, live_kinds, empty_spaces, few_essentials, icons_that_vanish, settings,
          moved, no_space, placeholder_on_show)
 
 

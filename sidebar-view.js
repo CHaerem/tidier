@@ -139,7 +139,7 @@ async function viewFor(windowId, apart) {
 
   // A tab without a container (a new tab) belongs to the space you are in.
   const all = await getSynced();
-  const here = tabs.filter(t => !t.pinned && shownInSpace(t, space) && !reopening.has(t.id)); // hiddenspaces.js
+  const here = tabs.filter(t => !t.pinned && shownInSpace(t, space) && !reopening.has(t.id) && !deskTab(t)); // hiddenspaces.js; desk.js: no tab of the list
   const folders = foldersOf(all, space).map(f => ({ key: f.key, name: f.name, collapsed: !!f.collapsed, live: f.live || null, tabs: [] }));
   const byKey = new Map(folders.map(f => [f.key, f]));
   const rowKey = await rowKeys(here);

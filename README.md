@@ -445,6 +445,25 @@ The checks are in `tests/bridge.test.mjs` (what is allowed, on a fake Firefox),
 `tests/test_bridge.py` (the socket and the protocol, playing Firefox) and `alone_bridge` in
 `tests/smoke.py` (end to end, in a real Firefox; its checks are in `tests/smokechecks/`, a file for each area).
 
+## Every tab at once
+
+As Zigzag's desk (`desk.js`, `desk/`): ⌥⌘A, or *Every tab at once* in the command bar,
+opens every space of the window at once, each under its name, large and light, with how
+many tabs it has; its essentials as tiles, as in the sidebar, and every other tab as a card,
+with the folder it is in. Typing finds tabs (by title, address and folder), the arrows move
+between cards, Enter goes to one (a placeholder's page comes to this window, as a click in
+the sidebar does), and Esc goes back to the tab you were on. A click on a space's name goes
+to that space; the × on a card closes its tab, with Undo in the sidebar. A card shows a
+picture of its page once *Pictures of pages* is allowed on the settings page (Firefox gives
+pictures only together with access to all websites), and only of a page that is loaded:
+an unloaded tab has none to give, and its card shows its icon. The pictures are taken as the
+desk opens, those in sight first, and never kept.
+
+An extension cannot draw over the window, so the desk is a page of Tidier's own in a tab
+next to the one you were on, in the tint of the space you are in, as if the sidebar had
+opened up to fill the window. It goes as soon as you leave it, and it is no row of the
+list and no tab of any record (tab sync takes in only what is on the web).
+
 ## Keys and the command bar
 
 With Tidier alone, the keys follow what the sidebar shows (`shortcuts.js`,
@@ -458,6 +477,7 @@ With Tidier alone, the keys follow what the sidebar shows (`shortcuts.js`,
 - ⌘D: make this tab an essential, or an ordinary tab again
 - ⌥⌘N: a new folder
 - ⇧⌘K: the command bar, and ⌘T as well once `about:keyboard` has cleared Firefox's own ⌘T
+- ⌥⌘A: every tab at once (below); Zigzag's ⇧⌘\ is no key Firefox gives an extension
 - ⇧⌘C: copy the address (a word at the top of the page says so, or the line in the sidebar where a page takes none; the menus' Copy address says the same); ⌃⇧S: show or hide the sidebar
 - ⌘Z, with the keyboard in the sidebar: what the quiet line offers to undo, while it shows
 - Copy page for Claude, Copy these tabs for Claude and Ask Claude about this page: no key
@@ -946,6 +966,7 @@ Not guaranteed:
 - `commandbar.js`, `commandbar/` (the bar's page, `first.js` for its first frame, and
   `rank.js`, what it shows for what you type, `engines.js`, its search shortcuts), `barkeys.js` (the keys typed before it
   has the keyboard), `sidebar/commandbar-link.js` – the command bar.
+- `desk.js`, `desk/` – every tab at once.
 - `spaces.js` – spaces: hiding, switching, new tabs and links, rules.
 - `spaceactions.js`, `sidebar/spacemenu.js` – a space's menu and what it does (rename,
   unload, clear).
