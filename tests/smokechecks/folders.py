@@ -216,7 +216,7 @@ def alone_live_folders(m):
       space.value = "firefox-container-1"; type(text, "org:smoke -label:wip"); await wait(2500);
       return {first, refused, why: line.querySelector(".rule-problem").hidden, state: doc.getElementById("live-state").textContent,
         kept: JSON.parse(JSON.stringify((await page.browser.storage.local.get("liveOwnFolders")).liveOwnFolders ?? []))};""")
-    check("Add a live folder gives a line to fill in, with the keyboard in its name", r.get("first", {}).get("focus") and r["first"]["kinds"] == ["Pull requests", "Issues", "A feed"] and "org:" in r["first"]["hint"], str(r.get("first")))
+    check("Add a live folder gives a line to fill in, with the keyboard in its name", r.get("first", {}).get("focus") and r["first"]["kinds"] == ["Pull requests", "Issues", "Your repositories", "A feed"] and "org:" in r["first"]["hint"], str(r.get("first")))
     check("a search with a word that could widen it is not kept, and the line says so", r.get("refused", {}).get("kept") == 0 and r["refused"]["hidden"] is False and "narrow" in r["refused"]["why"], str(r.get("refused")))
     kept = r.get("kept") or [{}]
     check("words that narrow are kept, as typed", len(kept) == 1 and [kept[0].get(k) for k in ("name", "space", "what", "search")] == ["Mine to do", "firefox-container-1", "prs", "org:smoke -label:wip"] and r["why"] is True, str(r))
