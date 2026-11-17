@@ -508,6 +508,23 @@ def alone_setup_files(m):
         sidebar_until(m, """() => !doc.getElementById("restart").hidden && !doc.getElementById("restart").classList.contains("going")""")
         r = in_sidebar(m, line)
         check("and comes back when another file has changed too", asked == {"files": ["user.js", "userChrome.css"]} and r["shown"] and "user.js and userChrome.css" in r["tip"], f"{asked} {r}")
+        # Firefox's keys (customKeys.json) count where the file is a link, as the dotfiles make
+        # it, and not where Firefox wrote it itself (about:keyboard, which needs no restart).
+        keys = os.path.join(profile, "customKeys.json")
+        own = os.path.exists(keys) and not os.path.islink(keys)
+        if own:
+            os.utime(keys)
+            asked = extension_message(m, {"type": "firefoxSetup:check"})
+            check("Firefox's own key file, newer, asks for nothing", asked == {"files": ["user.js", "userChrome.css"]}, str(asked))
+            linked = keys + ".dotfiles"
+            os.rename(keys, linked)
+            os.symlink(linked, keys)
+            try:
+                asked = extension_message(m, {"type": "firefoxSetup:check"})
+                check("a key file linked from elsewhere, changed since Firefox started, asks for a restart", asked == {"files": ["customKeys.json", "user.js", "userChrome.css"]}, str(asked))
+            finally:
+                os.remove(keys)
+                os.rename(linked, keys)
     finally:
         # As they were, for the groups after this one: the line takes a row's room under the list.
         for path, st in was.items():

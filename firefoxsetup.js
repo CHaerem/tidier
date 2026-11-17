@@ -1,6 +1,8 @@
 // Firefox must be started again to read its setup files, and Tidier says so, with a button.
 //
-// Firefox reads user.js and its stylesheets (userChrome.css) only as it starts. The
+// Firefox reads user.js, its stylesheets (userChrome.css) and its keys (customKeys.json,
+// where the dotfiles link it) only as it starts. Until then a key the dotfiles took from
+// Firefox for Tidier (⌘T, for the command bar) is still Firefox's in the first window. The
 // dotfiles change them on their own, a quarter of an hour after a push, and nothing says
 // that the Firefox you are in still runs on the old ones. After the update that made the
 // command bar a panel in the window, which needs the new stylesheet to stand where it

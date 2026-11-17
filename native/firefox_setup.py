@@ -17,8 +17,11 @@ again; this program is outside Firefox, and can do both, for the one Firefox tha
 It only ever acts on its own parent process, found by its process id, and only if that is
 a Firefox: nothing is done by an app's name, so no other Firefox on the machine is touched.
 
-Not customKeys.json: Firefox writes that file itself when you change a key in
-about:keyboard, which needs no restart.
+customKeys.json (Firefox's keys, about:keyboard) too, but only where it is a link, as the
+dotfiles make it: Firefox reads it as it starts as well, and until then a key taken from
+Firefox there (Cmd-T, for Tidier's command bar) is still Firefox's in the first window.
+Where Firefox has written it itself, as a change in about:keyboard does, it is a file of
+its own, and that change needed no restart.
 """
 import ctypes
 import ctypes.util
@@ -30,6 +33,7 @@ import sys
 import time
 
 FILES = ("user.js", os.path.join("chrome", "userChrome.css"), os.path.join("chrome", "userContent.css"))
+LINKED_ONLY = ("customKeys.json",)
 PROFILES = os.path.expanduser("~/Library/Application Support/Firefox/Profiles")
 QUIT_WAIT_S = 90  # a question Firefox asks before it quits is yours to answer: this long, and no longer
 
@@ -83,7 +87,7 @@ def changed(pid=None):
         return {"error": "not started by a Firefox"}
     newer = set()
     for profile in profiles(fx["argv"]):
-        for name in FILES:
+        for name in FILES + tuple(n for n in LINKED_ONLY if os.path.islink(os.path.join(profile, n))):
             try:
                 # (Followed through a link: the dotfiles link these files to their checkout.)
                 if os.path.getmtime(os.path.join(profile, name)) > since + 1:
