@@ -355,10 +355,13 @@ def alone_clear_preview(m):
         check("a click that comes as the pointer reaches it closes nothing", here() == before, f"{here()} {before}")
         time.sleep(0.5)
         sidebar_mouse(m, reach, clicks=1)
-        for _ in range(50):
-            if len(here()) < len(before):
+        # (Until all it showed have gone: on a slow machine they close one after another.)
+        going = [t for t in want.get("titles", []) if t in before]
+        for _ in range(80):
+            if not set(going) & set(here()):
                 break
             time.sleep(0.1)
+        time.sleep(0.5)  # and a moment more, for any it should not have taken
         after = here()
         check("a click takes the rows it showed, and no others", sorted(set(before) - set(after)) == [t for t in want.get("titles", []) if t in before] and "clear-6" in after, f"{before} -> {after}, {want}")
         nxt = None
