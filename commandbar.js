@@ -27,10 +27,10 @@ const BAR_PAGE = "commandbar/commandbar.html";
 // narrower window), so the two are one thing in two guises. Its height is the page's own
 // (commandbar.css): a field and eight rows. Firefox gives a panel 800 px at the most.
 const BAR_PANEL_WIDTH = 760, BAR_PANEL_SHARE = 0.7;
-// As a window: a field and eight rows of the sidebar's height, under a title bar on a Mac.
+// As a window: a field and ten rows (commandbar.css), under a title bar on a Mac.
 // It never changes while the bar is open, so nothing jumps while you type. As wide as the
 // window allows, with some of it showing on both sides.
-const BAR_WIDTH = 640, BAR_MIN_WIDTH = 360, BAR_SIDES = 48, BAR_HEIGHT = 380;
+const BAR_WIDTH = 640, BAR_MIN_WIDTH = 360, BAR_SIDES = 48, BAR_HEIGHT = 470;
 const BAR_OPEN_LIMIT_MS = 10000; // a bar that never came must not take the key for good
 const BAR_GONE_MS = 500; // a panel is gone a few milliseconds after its page is told; what you chose does not wait longer
 // Firefox shows no panel from a toolbar button it cannot show: a toolbar hidden by a

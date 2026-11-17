@@ -63,11 +63,26 @@
     0 2px 4px light-dark(rgb(40 30 20 / .06), rgb(0 0 0 / .24)),
     0 10px 28px light-dark(rgb(40 30 20 / .14), rgb(0 0 0 / .4));
 
+  /* Glass, as Apple's liquid glass: what floats or is chosen is a pane you see the surface
+   * through, lit along its top edge, with a soft sheen falling from it, rather than a flat
+   * card. Every lifted thing takes the same three: its fill (--selected for what is chosen,
+   * --raised for what opens above the surface), --glass-sheen laid over that fill, and
+   * --glass-edge in its shadow; a tile at rest only the edge. The fills keep the space's tint, so glass in one
+   * space is that space's glass. A pane over text in its own page (a menu over the list) is
+   * whole: Firefox blurs nothing behind it there, and the list would show through its items.
+   * Nor can the command bar be see-through (commandbar.css); the dotfiles' stylesheet blurs
+   * and dims the window behind it instead. */
+  --glass-sheen: linear-gradient(to bottom, light-dark(rgb(255 255 255 / .5), rgb(255 255 255 / .07)), transparent 60%);
+  --glass-edge:
+    inset 0 1px 0 light-dark(rgb(255 255 255 / .95), rgb(255 255 255 / .16)),
+    inset 0 0 0 .5px light-dark(rgb(255 255 255 / .6), rgb(255 255 255 / .09));
+
   /* Shape. --radius is the same as the page card's and the address bar's corners
    * (userChrome.css's --zen-radius), so the sidebar's corners rhyme with the window's. */
   --radius-sm: 6px;
   --radius: 10px;
   --radius-lg: 13px;
+  --radius-glass: 18px; /* a pane that floats: the command bar, a menu */
 
   /* The grid. A row is 8 + icon + 11, then the title, so the icons stand under the
    * address bar's shield and the titles under its text; a folder's tabs are indented by
@@ -173,8 +188,8 @@
   --hover: light-dark(rgb(40 30 20 / .06), rgb(255 255 255 / .085));
   --press: light-dark(rgb(40 30 20 / .1), rgb(255 255 255 / .13));
   --selected: light-dark(rgb(40 30 20 / .09), rgb(255 255 255 / .12));
-  background: var(--raised);
-  box-shadow: var(--shadow-raised);
+  background: var(--glass-sheen), var(--raised);
+  box-shadow: var(--shadow-raised), var(--glass-edge);
   color: var(--text);
 }
 

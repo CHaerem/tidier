@@ -129,7 +129,7 @@ test("typing the address of an open tab goes to that tab", () => {
 test("the rows never pass what fits, and the search and the quiet row are among them", () => {
   const many = Array.from({ length: 30 }, (_, i) => tab(`Report ${i}`));
   const rows = resultsFor("report", many, { now: NOW, tail: [{ kind: "ask", id: "ask", title: "Ask" }] });
-  assert.equal(rows.length, 8);
+  assert.equal(rows.length, 10);
   assert.deepEqual([...rows].slice(-2).map(r => r.kind), ["search", "ask"]);
   const go = resultsFor("report.example", many, { now: NOW });
   assert.ok(go.length <= 8);
@@ -1571,7 +1571,7 @@ test("an engine's name typed as a word is offered after the search, never first,
 test("an engine's rows make room by what was found, and the bar keeps its height", () => {
   const many = Array.from({ length: 12 }, (_, i) => tab(`gh thing ${i}`, { lastUsed: NOW - i }));
   const rows = resultsFor("gh", many, { now: NOW, engines: enginesFrom(), tail: [{ kind: "ask", id: "ask", title: "Also search" }] });
-  assert.equal(rows.length, 8);
+  assert.equal(rows.length, 10);
   assert.equal(rows[0].kind, "engine");
   assert.deepEqual([...rows].slice(-2).map(r => r.kind), ["search", "ask"]);
 });

@@ -6,7 +6,7 @@
 // to each other in what it finds, so a result never makes you wonder why it is there;
 // one or two letters must start a word, or nearly everything would match them.
 
-const BAR_ROWS = 8; // what fits in the window; it never scrolls or changes size
+const BAR_ROWS = 10; // what fits in the bar (--bar-rows, commandbar.css); it never changes size
 const SHORT_TOKEN = 3; // shorter than this, a word only matches at the start of a word
 const GOOD_MATCH = 500; // from here a result is what you meant, not just a match in the middle of a word
 

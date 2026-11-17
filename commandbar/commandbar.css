@@ -6,30 +6,39 @@
  * panel, a small window of its own, which the page fills. */
 
 /* The tint from the space's colour, as the sidebar's (sidebar.css); your
- * own tidier.css, keyed on html[data-space], still wins. */
+ * own tidier.css, keyed on html[data-space], still wins.
+ *
+ * A pane of glass (tokens.css): the raised colour, with the sheen and the lit edge drawn on
+ * the body, which fills the page. It cannot be see-through: Firefox gives its panel the
+ * page's colour as painted (canvasBackgroundColor, ext-browser-content.js), which is a
+ * see-through colour laid over its own, never the window behind. What makes the bar fill the
+ * screen is the dotfiles' stylesheet, which blurs and dims the window while it is open. */
 html {
   --frame: var(--space-tint);
-  background: var(--frame);
+  --row: 34px; /* more air than the sidebar's list: this is the one place to go from */
+  --bar-rows: 10;
+  background: var(--raised);
 }
+body { background: var(--glass-sheen); box-shadow: var(--glass-edge); border-radius: inherit; }
 html, body { height: 100%; margin: 0; }
 /* A panel takes its size from the page, and Firefox measures the body: a field and eight
  * rows, whatever is typed, so nothing jumps, and as wide as the window says (first.js). */
-html.panel, html.panel body { width: var(--panel-width); height: calc(53px + 2 * var(--pad) + 8 * (var(--row) + var(--row-gap))); }
+html.panel, html.panel body { width: var(--panel-width); height: calc(65px + 2 * var(--pad) + var(--bar-rows) * (var(--row) + var(--row-gap))); }
 html.panel { overflow: hidden; }
 body { display: flex; flex-direction: column; overflow: hidden; color: var(--text); cursor: default; user-select: none; }
 
 /* The icons stand in one column with the rows' icons, and what you type starts where
  * their titles do. */
 #top {
-  flex: none; height: 52px; display: flex; align-items: center; gap: var(--icon-gap);
-  padding: 0 calc(var(--pad) * 2); border-bottom: 1px solid var(--line);
+  flex: none; height: 64px; display: flex; align-items: center; gap: calc(var(--icon-gap) + 2px);
+  padding: 0 calc(var(--pad) * 2 + 2px); border-bottom: 1px solid var(--line);
 }
 #field {
   flex: 1; min-width: 0; height: 100%; padding: 0; border: 0; outline: 0; background: none;
-  color: inherit; font: 18px / 1.2 var(--font); letter-spacing: -.01em; caret-color: var(--accent);
+  color: inherit; font: 300 22px / 1.2 var(--font); letter-spacing: -.01em; caret-color: var(--accent);
 }
 #field::placeholder { color: var(--faint); }
-#top .icon { color: var(--muted); }
+#top .icon { color: var(--muted); width: 18px; height: 18px; }
 
 /* A command's question says what it is for, as a line under the field. */
 #step {
@@ -45,7 +54,7 @@ body { display: flex; flex-direction: column; overflow: hidden; color: var(--tex
   display: flex; align-items: center; gap: var(--icon-gap);
   padding: 0 var(--pad); border-radius: var(--radius);
 }
-.row.selected { background: var(--selected); box-shadow: var(--shadow-card); }
+.row.selected { background: var(--glass-sheen), var(--selected); box-shadow: var(--shadow-card), var(--glass-edge); }
 
 /* Icons: the page's own, else its first letter as in the sidebar, else one drawn here. */
 .row img, .row .letter, .icon { flex: none; width: var(--icon); height: var(--icon); }
