@@ -9,7 +9,10 @@
 # the chain's five (ALONE_SHARDS in tests/smoke.py) and the core groups. A push is
 # judged in about the time of the longest part, not of all of them in a row.
 # Every Monday, and by hand (Actions → Smoke test → Run workflow): also the newest
-# Firefox, which is what yours updates to.
+# Firefox, which is what yours updates to, and Nightly, about four weeks ahead of
+# Developer Edition: what Firefox is changing (its window's parts, which the dotfiles'
+# stylesheet names; its keys; its panels) shows there first. Nightly is Firefox at work,
+# so its parts never fail the run or hold back a release; a failure there opens an issue.
 #
 # The Firefox files come from the private dotfiles repository, read with a
 # read-only deploy key (secret DOTFILES_DEPLOY_KEY, set up once with
@@ -73,13 +76,17 @@ jobs:
     needs: unit
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ${{ inputs.runner || 'macos-15' }}
+    continue-on-error: ${{ matrix.firefox == 'latest-nightly' }}
+    permissions:
+      contents: read
+      issues: write # (for Nightly's issue, below)
     # A part takes 10 to 15 minutes on a Mac, and GitHub's runner is slower; twice that
     # with the second try, and GitHub cancels silently at the limit.
     timeout-minutes: 90
     strategy:
       fail-fast: false
       matrix:
-        firefox: ${{ fromJSON(github.event_name == 'push' && '["latest-devedition"]' || '["latest-devedition", "latest"]') }}
+        firefox: ${{ fromJSON(github.event_name == 'push' && '["latest-devedition"]' || '["latest-devedition", "latest", "latest-nightly"]') }}
         part: ["alone-1", "alone-2", "alone-3", "alone-4", "alone-5", "core"]
     steps:
       - name: Check out Tidier
@@ -118,3 +125,19 @@ jobs:
           python3 -I tidier/tests/smoke.py --part ${{ matrix.part }} && exit 0
           echo "::warning::The smoke test (${{ matrix.part }}) failed on its first try in Firefox ${{ matrix.firefox }}; trying once more"
           python3 -I tidier/tests/smoke.py --part ${{ matrix.part }}
+      # One open issue says what Nightly broke, and each failing part adds to it: read
+      # it before Developer Edition reaches the same Firefox.
+      - name: Say what Nightly broke
+        if: failure() && matrix.firefox == 'latest-nightly'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          VERSION: ${{ steps.firefox.outputs.firefox-version }}
+          RUN: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          PART: ${{ matrix.part }}
+        run: |
+          title="The smoke test fails in Firefox Nightly"
+          line="Firefox $VERSION, $PART: $RUN"
+          open=$(gh issue list --state open --search "\"$title\" in:title" --json number --jq '.[0].number')
+          if [ -n "$open" ]; then gh issue comment "$open" --body "$line"
+          else gh issue create --title "$title" --body "Something in Nightly breaks Tidier or the dotfiles' layout, weeks before Developer Edition and your Firefox have it. $line"; fi
