@@ -1171,11 +1171,13 @@ container).
 
 ### On GitHub
 
-`.github/workflows/smoke.yml` runs the unit tests first, on a quick Linux runner,
-and then the same smoke test on GitHub, in a headless Firefox on a macOS runner. On each
+`.github/workflows/smoke.yml` runs the unit tests on a quick Linux runner, and beside
+them the same smoke test on GitHub, in a headless Firefox on a macOS runner. On each
 push that is Firefox Developer Edition (the Beta, about four weeks ahead, so a Firefox
 change that would break something shows up before it reaches you), in six parts, each on
-a runner of its own at the same time: the chain's five and the core groups. Every Monday
+a runner of its own at the same time: the chain's five and the core groups. On a push to
+main Mozilla signs the version meanwhile (`tools/release.py --sign`), so that the release
+after a passing run only fetches it. Every Monday
 and when started by hand it is also the newest Firefox, which is what yours updates to.
 Developer Edition allows unsigned add-ons, so there Tidier is installed for
 real and the test also quits and restarts Firefox to check the restored

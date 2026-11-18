@@ -68,8 +68,9 @@ tests/smoke.py                                # everything, eight Firefoxes at o
 - Commit and push as separate commands; a push may be refused by the
   permission check, and then the user pushes.
 - A push to main runs the smoke test on GitHub (Developer Edition, in six
-  parts; the newest Firefox too every Monday); when it passes, the Release workflow signs the extension on AMO
-  and publishes it with `updates.json`, and Firefox updates itself. A smoke
+  parts; the newest Firefox and Nightly too every Monday), while AMO signs the version; when
+  the test passes, the Release workflow fetches the signed extension and publishes it with
+  `updates.json`, and Firefox updates itself. A smoke
   test that fails on its first try gets one more in the same job, and a warning.
 - The version is `1.6.<number of commits>` (tools/release.py). A commit gets a
   release only if it changes what goes into the extension: not the documents,

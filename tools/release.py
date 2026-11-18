@@ -23,6 +23,8 @@ Re-running is safe: a version that AMO already has is not uploaded again,
 and a version that already has a release is skipped.
 
   tools/release.py --dry-run DIR   build the .xpi and updates.json into DIR only
+  tools/release.py --sign          have AMO sign it, and no more: run beside the smoke test
+                                   (smoke.yml), so that the release after it only fetches it
 """
 import base64, hashlib, hmac, json, os, shutil, subprocess, sys, time, uuid, zipfile
 import urllib.error, urllib.request
@@ -214,6 +216,8 @@ def main():
     unsigned_dir = os.path.join(out, "unsigned")
     os.makedirs(unsigned_dir, exist_ok=True)
     signed = sign(build(unsigned_dir, ver), ver, out)
+    if sys.argv[1:] == ["--sign"]:
+        print(f"AMO has signed {ver}; the release fetches it once the smoke test has passed"); return
     release(ver, [signed, fixed_name(signed, out), updates_json(out, ver)], tag)
     print(f"Released Tidier {ver}")
 

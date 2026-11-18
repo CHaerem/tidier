@@ -7,7 +7,10 @@
 # about four weeks ahead, so a Firefox change that breaks something shows up before it
 # reaches you. The test runs in six parts, each on a runner of its own at the same time:
 # the chain's five (ALONE_SHARDS in tests/smoke.py) and the core groups. A push is
-# judged in about the time of the longest part, not of all of them in a row.
+# judged in about the time of the longest part, not of all of them in a row, and the unit
+# tests run beside them rather than before. (GitHub gives an account five Mac runners at
+# once, so the sixth part can wait for one; four parts of the chain were tried, and the
+# groups put together anew then failed on what others had left behind.)
 # Every Monday, and by hand (Actions → Smoke test → Run workflow): also the newest
 # Firefox, which is what yours updates to, and Nightly, about four weeks ahead of
 # Developer Edition: what Firefox is changing (its window's parts, which the dotfiles'
@@ -51,8 +54,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # The unit tests once, on a quick Linux runner, before any Firefox starts: a mistake
-  # they catch shows in a few minutes instead of after the smoke test's hour.
+  # The unit tests once, on a quick Linux runner, beside the Firefoxes: a mistake they
+  # catch shows in a few minutes, and the parts need not wait for them to start.
   # They run Tidier on a fake Firefox whose clock runs 100 times fast. A runner can be
   # slower than a Mac, so that the work between two steps takes longer than a short
   # wait there (300 ms is 3 ms): seen 2026-11-09. A quarter of that speed leaves room.
@@ -71,9 +74,30 @@ jobs:
         env:
           TIDIER_TEST_SCALE: "25"
 
+  # Mozilla signs the new version while the smoke test runs (tools/release.py --sign), which
+  # takes it some minutes, so that the release after a passing run (release.yml) only has to
+  # fetch it. A version signed for a run that then fails goes nowhere: it is unlisted, and
+  # Firefox updates from the GitHub Release's updates.json alone. Whatever goes wrong here
+  # holds nothing back: the release signs it then, as it always did.
+  sign:
+    name: Sign on addons.mozilla.org
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0  # all commits (the version) and tags (the last release)
+          persist-credentials: false
+      - name: Sign
+        env:
+          AMO_JWT_ISSUER: ${{ secrets.AMO_JWT_ISSUER }}
+          AMO_JWT_SECRET: ${{ secrets.AMO_JWT_SECRET }}
+        run: python3 -I tools/release.py --sign
+
   smoke:
     name: Firefox ${{ matrix.firefox }}, ${{ matrix.part }}
-    needs: unit
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ${{ inputs.runner || 'macos-15' }}
     continue-on-error: ${{ matrix.firefox == 'latest-nightly' }}
