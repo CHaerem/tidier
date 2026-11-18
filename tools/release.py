@@ -25,8 +25,15 @@ and a version that already has a release is skipped.
   tools/release.py --dry-run DIR   build the .xpi and updates.json into DIR only
   tools/release.py --sign          have AMO sign it, and no more: run beside the smoke test
                                    (smoke.yml), so that the release after it only fetches it
+  tools/release.py --rollback VER  release what is checked out (the release before VER) again,
+                                   as VER.1: VER failed the whole smoke test after it went out
+                                   on the quick part, and Firefox only ever updates upwards
+
+A push to main is released once the quick part of the smoke test has passed (smoke.yml); the
+whole test goes on after it, and rolls the release back if it fails. The version released is
+written to GITHUB_OUTPUT as `released`, for that.
 """
-import base64, hashlib, hmac, json, os, shutil, subprocess, sys, time, uuid, zipfile
+import base64, hashlib, hmac, json, os, re, shutil, subprocess, sys, time, uuid, zipfile
 import urllib.error, urllib.request
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -197,7 +204,34 @@ def release(ver, files, tag):
                     "--title", f"Tidier {ver}", "--notes", commits or "-", "--latest"], check=True)
 
 
+def out_dir():
+    out = os.environ.get("RUNNER_TEMP") or os.path.join(ROOT, "web-ext-artifacts")
+    os.makedirs(os.path.join(out, "unsigned"), exist_ok=True)
+    return out
+
+
+def said(ver):
+    """The version released, for the steps after this one (smoke.yml's rollback)."""
+    if os.environ.get("GITHUB_OUTPUT"):
+        with open(os.environ["GITHUB_OUTPUT"], "a") as f:
+            f.write(f"released={ver}\n")
+
+
+def rollback(bad):
+    """What is checked out, released again as bad.1: newer than bad, so Firefox takes it."""
+    if not re.fullmatch(r"\d+\.\d+\.\d+", bad):
+        raise SystemExit(f"--rollback takes a version such as 1.6.700, not {bad!r}")
+    ver, out = f"{bad}.1", out_dir()
+    signed = sign(build(os.path.join(out, "unsigned"), ver), ver, out)
+    subprocess.run(["gh", "release", "create", f"v{ver}", signed, fixed_name(signed, out), updates_json(out, ver), "--repo", REPO,
+                    "--target", git("rev-parse", "HEAD"), "--title", f"Tidier {ver}",
+                    "--notes", f"Back to {git('describe', '--tags', '--abbrev=0')}: {bad} failed the whole smoke test after it went out.", "--latest"], check=True)
+    print(f"Released Tidier {ver}, back to what came before {bad}")
+
+
 def main():
+    if len(sys.argv) == 3 and sys.argv[1] == "--rollback":
+        return rollback(sys.argv[2])
     ver = version()
     if len(sys.argv) == 3 and sys.argv[1] == "--dry-run":
         out = sys.argv[2]
@@ -211,14 +245,12 @@ def main():
         print(f"{ver} is not newer than the last release {tag}; no release"); return
     if not changed_since(tag):
         print(f"Nothing in the extension has changed since {tag}; no release"); return
-    out = os.environ.get("RUNNER_TEMP") or os.path.join(ROOT, "web-ext-artifacts")
-    os.makedirs(out, exist_ok=True)
-    unsigned_dir = os.path.join(out, "unsigned")
-    os.makedirs(unsigned_dir, exist_ok=True)
-    signed = sign(build(unsigned_dir, ver), ver, out)
+    out = out_dir()
+    signed = sign(build(os.path.join(out, "unsigned"), ver), ver, out)
     if sys.argv[1:] == ["--sign"]:
         print(f"AMO has signed {ver}; the release fetches it once the smoke test has passed"); return
     release(ver, [signed, fixed_name(signed, out), updates_json(out, ver)], tag)
+    said(ver)
     print(f"Released Tidier {ver}")
 
 

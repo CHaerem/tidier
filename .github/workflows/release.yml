@@ -1,5 +1,8 @@
-# Release: when the smoke test has passed for a push to main, tools/release.py
-# signs the extension on addons.mozilla.org and puts it on a GitHub Release.
+# Release: a push to main is released by smoke.yml itself, once the quick part of the smoke
+# test has passed (its release job; the whole test runs after it and rolls it back if it
+# fails). This is the way back for a commit that was not: when the whole smoke test has
+# passed, tools/release.py signs the extension on addons.mozilla.org and puts it on a GitHub
+# Release, and does nothing if that is done already.
 # Firefox finds it through update_url in manifest.json and updates itself,
 # usually within a day (or at once with "Check for updates" in about:addons).
 # Nothing happens if nothing in the extension changed.

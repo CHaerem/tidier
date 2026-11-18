@@ -74,11 +74,11 @@ jobs:
         env:
           TIDIER_TEST_SCALE: "25"
 
-  # Mozilla signs the new version while the smoke test runs (tools/release.py --sign), which
-  # takes it some minutes, so that the release after a passing run (release.yml) only has to
-  # fetch it. A version signed for a run that then fails goes nowhere: it is unlisted, and
-  # Firefox updates from the GitHub Release's updates.json alone. Whatever goes wrong here
-  # holds nothing back: the release signs it then, as it always did.
+  # Mozilla signs the new version while the quick part runs (tools/release.py --sign), which
+  # takes it some minutes, so that the release after it only has to fetch it. A version signed
+  # for a run that then fails goes nowhere: it is unlisted, and Firefox updates from the GitHub
+  # Release's updates.json alone. Whatever goes wrong here holds nothing back: the release
+  # signs it then.
   sign:
     name: Sign on addons.mozilla.org
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
@@ -96,9 +96,101 @@ jobs:
           AMO_JWT_SECRET: ${{ secrets.AMO_JWT_SECRET }}
         run: python3 -I tools/release.py --sign
 
+  # The quick part (QUICK in tests/smoke.py: tabs in every window, spaces, folders, moves, a
+  # new tab), about five minutes. A push to main is released as soon as it has passed, with
+  # the unit tests; the whole smoke test runs after it, and rolls the release back if it fails
+  # (rollback, below). Firefox updates within minutes of the push, not of the whole test.
+  quick:
+    name: Firefox latest-devedition, quick
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ${{ inputs.runner || 'macos-15' }}
+    timeout-minutes: 30
+    steps:
+      - name: Check out Tidier
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: tidier
+          persist-credentials: false
+      - name: Check out dotfiles (main, or the branch asked for)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: CHaerem/dotfiles
+          ref: ${{ inputs.dotfiles || 'main' }}
+          ssh-key: ${{ secrets.DOTFILES_DEPLOY_KEY }}
+          path: dotfiles
+          persist-credentials: false
+      - name: Install Firefox
+        id: firefox
+        uses: browser-actions/setup-firefox@0bc507ddf224827e3b1af68e014d5e42ab93e795 # v1.7.2
+        with:
+          firefox-version: latest-devedition
+      - name: Smoke test, quick part
+        env:
+          TIDIER_FIREFOX: ${{ steps.firefox.outputs.firefox-path }}
+          TIDIER_DOTFILES: ${{ github.workspace }}/dotfiles/home/firefox
+        run: |
+          python3 -I tidier/tests/smoke.py --part quick && exit 0
+          echo "::warning::The quick part failed on its first try; trying once more"
+          python3 -I tidier/tests/smoke.py --part quick
+
+  release:
+    name: Release
+    needs: [unit, quick, sign]
+    if: ${{ !cancelled() && github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.unit.result == 'success' && needs.quick.result == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: write
+    outputs:
+      released: ${{ steps.release.outputs.released }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Sign and release
+        id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          AMO_JWT_ISSUER: ${{ secrets.AMO_JWT_ISSUER }}
+          AMO_JWT_SECRET: ${{ secrets.AMO_JWT_SECRET }}
+        run: python3 -I tools/release.py
+
+  # The release went out on the quick part and the whole test then failed: the release before
+  # it goes out again, newer (tools/release.py --rollback), so that Firefox takes it, and an
+  # issue says which version and which run. The next push that passes is released as usual.
+  rollback:
+    name: Roll the release back
+    needs: [release, smoke]
+    if: ${{ always() && needs.release.outputs.released != '' && needs.smoke.result == 'failure' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: write
+      issues: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Release the one before again
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          AMO_JWT_ISSUER: ${{ secrets.AMO_JWT_ISSUER }}
+          AMO_JWT_SECRET: ${{ secrets.AMO_JWT_SECRET }}
+          BAD: ${{ needs.release.outputs.released }}
+          RUN: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          good=$(git tag --list 'v*' --sort=-v:refname | grep -vx "v$BAD" | head -1)
+          git checkout -q "$good"
+          python3 -I tools/release.py --rollback "$BAD"
+          gh issue create --title "Tidier $BAD was rolled back" --body "It went out on the quick part of the smoke test, and the whole test then failed: $RUN. Firefox goes back to what $good had, as $BAD.1; the next push that passes is released as usual."
+
   smoke:
     name: Firefox ${{ matrix.firefox }}, ${{ matrix.part }}
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    needs: quick  # (first on a Mac runner: GitHub gives five at once)
+    if: ${{ !cancelled() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) }}
     runs-on: ${{ inputs.runner || 'macos-15' }}
     continue-on-error: ${{ matrix.firefox == 'latest-nightly' }}
     permissions:

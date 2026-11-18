@@ -200,6 +200,14 @@ ALONE_SHARDS = (
 
 assert {g for shard in ALONE_SHARDS for g in shard} == set(ALONE_GROUPS), "every group of the chain is in a part"
 
+# The quick part (--part quick), which a push to main is released on (smoke.yml), the whole
+# test still running after it and rolling the release back if it fails: in about five minutes,
+# what matters most every day: tabs in every window, spaces, folders and moves, in the order
+# the first part has them, and a new tab. (Not the command bar: in a Firefox this young,
+# Firefox's note about hidden tabs opens while its checks type, and takes the keys.)
+QUICK = (alone_setup, alone_second_window, alone_spaces, alone_keys, alone_folders, alone_moves, alone_drag, alone_archive,
+         alone_new_tab, alone_idle, alone_end)
+
 
 # The core of tab sync, essentials and saved tabs, each group on its own, in test Firefoxes
 # where Tidier may not hide tabs: as on a browser moved over from Sidebery by itself, before
@@ -339,9 +347,9 @@ def main():
     elif "--part" in args:
         # One part of the whole, so that GitHub can run each on a runner of its own: the core
         # groups, the chain in one Firefox (alone), or one of its parts in a Firefox of its
-        # own (alone-1 to alone-5: ALONE_SHARDS).
+        # own (alone-1 to alone-5: ALONE_SHARDS); or the quick part a release goes out on (QUICK).
         part = args[args.index("--part") + 1]
-        parts = ["core", "alone"] + [f"alone-{i + 1}" for i in range(len(ALONE_SHARDS))]
+        parts = ["core", "alone", "quick"] + [f"alone-{i + 1}" for i in range(len(ALONE_SHARDS))]
         if part not in parts:
             raise SystemExit(f"--part is one of {', '.join(parts)}")
         print(f"Testing {xpi or EXT_DIR} in a test Firefox: the {part} part", flush=True)
@@ -349,6 +357,8 @@ def main():
             run_groups(set(GROUPS), xpi, port)
         elif part == "alone":
             run_alone(set(ALONE_GROUPS), xpi, port)
+        elif part == "quick":
+            run_alone(set(QUICK), xpi, port, order=QUICK)
         else:
             shard = ALONE_SHARDS[int(part.split("-")[1]) - 1]
             run_alone(set(shard), xpi, port, order=shard)

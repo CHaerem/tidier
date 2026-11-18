@@ -1175,9 +1175,13 @@ container).
 them the same smoke test on GitHub, in a headless Firefox on a macOS runner. On each
 push that is Firefox Developer Edition (the Beta, about four weeks ahead, so a Firefox
 change that would break something shows up before it reaches you), in six parts, each on
-a runner of its own at the same time: the chain's five and the core groups. On a push to
-main Mozilla signs the version meanwhile (`tools/release.py --sign`), so that the release
-after a passing run only fetches it. Every Monday
+a runner of its own at the same time: the chain's five and the core groups. A push to main
+is released before that, on the quick part (`--part quick`, `QUICK`: tabs in every window,
+spaces, folders, moves and a new tab, about five minutes) and the unit tests, with Mozilla
+signing the version meanwhile (`tools/release.py --sign`): Firefox has it some ten minutes
+after the push. The whole test runs after it, and if it fails the release before goes out
+again, as the failed version and `.1` (`tools/release.py --rollback`), with an issue saying
+so: Firefox only ever updates upwards. Every Monday
 and when started by hand it is also the newest Firefox, which is what yours updates to.
 Developer Edition allows unsigned add-ons, so there Tidier is installed for
 real and the test also quits and restarts Firefox to check the restored
