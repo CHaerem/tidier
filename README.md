@@ -716,7 +716,8 @@ on a site wins. With Tidier that guess counts for nothing, and its login never g
 (Isolation, below); the dotfiles' `browser.link.force_default_user_context_id_for_external_opens`
 turns it off in Firefox itself. The link opens as a tab in the window you use, in the
 rule's space or else the one you are in. A link to a page that is in your list already (a
-pull request in a live folder, say) goes to its row instead. Turned on on the settings page
+pull request in a live folder, or the address a saved tab is saved on) goes to its row
+instead, and the row shows that page again if you had gone on from it in that tab. Turned on on the settings page
 (it is off until you do), Tidier opens such a link in a small window of its own
 (`littlewindow.js`) instead, in the same space, to read and close, or to keep with one
 click. The same link twice (a double click in the other app) brings its small window to

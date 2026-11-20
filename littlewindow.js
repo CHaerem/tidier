@@ -167,20 +167,44 @@ async function toLittleShowing(url, space, tabId) {
 // new tab goes. Opened once more it was a second copy of the page, in a window of its own,
 // beside the one in the list. Only the very page, in the space the link belongs to: another
 // space has another sign-in. Returns whether there was one.
+// The row is the page's by what it stands for, too: a live folder's pull request, or the
+// address a saved tab is saved on. You may have gone on in that tab since (to the pull
+// request's Files changed, or another page altogether), and then selecting it showed that
+// page, not the one the link is for: so the row is taken to the link (listedGoesTo).
 async function toListed(url, space, tab) {
   if (!isWeb(url)) return false;
   const at = withoutFragment(url), all = await getSynced();
   for (const [key, e] of Object.entries(all)) {
-    if (e.group || e.cookieStoreId !== space || ![e.url, e.liveUrl].some(u => u && withoutFragment(u) === at)) continue;
+    if (e.group || e.cookieStoreId !== space || ![e.url, e.liveUrl, e.saved?.url].some(u => u && withoutFragment(u) === at)) continue;
     const here = (await repsNow(key)).find(t => t.windowId === tab.windowId);
     if (!here || here.id === tab.id) continue;
-    if (!await browser.tabs.update(here.id, { active: true }).catch(() => null)) continue;
+    if (!await listedGoesTo(key, here, url)) continue;
     toForget.set(url, Date.now() + FORGET_MS); // closed by Tidier: ⌘⇧T must bring back what you closed (common.js)
     setTimeout(forgetClosedNow, FORGET_MS + 100);
     await browser.tabs.remove(tab.id).catch(() => {});
     return true;
   }
   return false;
+}
+
+// The row `here` of `key` selected, on the link's address if its page is another one now.
+// The page is in one window only (tabsync.js): where `here` is a placeholder, it is the live
+// tab elsewhere that goes to the link, and selecting `here` brings it in (pull.js); with no
+// live tab anywhere, the record does, and the placeholder opens it (openPlaceholder). The
+// same page with no # in the link is left as it is: loading it again would lose where you
+// were on it, and a # of the link's own is only where to scroll.
+async function listedGoesTo(key, here, url) {
+  const now = (await getSynced())[key];
+  const goes = !!now && withoutFragment(now.url) !== withoutFragment(url) || url.includes("#") && !sameAddress(now?.url, url);
+  if (!goes) return !!await browser.tabs.update(here.id, { active: true }).catch(() => null);
+  if (syncRoleByTab.get(here.id) !== "ghost") return !!await browser.tabs.update(here.id, { active: true, url }).catch(() => null);
+  const live = liveTabId(key);
+  if (live !== undefined) await browser.tabs.update(live, { url }).catch(() => {});
+  else {
+    const all = await getSynced();
+    if (all[key]) { all[key].url = url; saveSynced(all); }
+  }
+  return !!await browser.tabs.update(here.id, { active: true }).catch(() => null);
 }
 
 // A rule's space, if it still exists: a window opened in a removed container is refused,
