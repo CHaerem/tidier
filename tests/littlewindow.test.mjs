@@ -3,7 +3,7 @@
 // (alone_little_window); the fake only plays back what was seen there.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { FakeFirefox, wait } from "./fake_firefox.mjs";
+import { FakeFirefox, wait, GHOST } from "./fake_firefox.mjs";
 
 const C1 = "firefox-container-1", C2 = "firefox-container-2", NONE = "firefox-default";
 const LINK = "https://link.example/page";
@@ -301,6 +301,74 @@ test("a link to a page that is in your list already goes to its row: no small wi
   linkFromOutside(ff, x, w.id, { url: "https://old.example/other" });
   await wait(400);
   assert.equal(popups(ff).length, 1);
+  x.kill();
+});
+
+// A row whose tab you have gone on in: the link's page is shown there, not where you went.
+const PR = "https://github.example/o/r/pull/7";
+function onPullRequest(ff, { now, saved = false } = {}) {
+  const { w } = session(ff);
+  const pr = ff.addTab(w.id, { url: now, title: "Files", cookieStoreId: C1 }, { syncKey: "pr", syncRole: "live" });
+  // A saved tab is one in a folder of your own (storedInFolder, common.js).
+  if (saved) ff.store.syncedTabs.folder = { title: "Work", cookieStoreId: C1, parentKey: null, group: true, added: 1 };
+  ff.store.syncedTabs.pr = { url: now, title: "Files", cookieStoreId: C1, parentKey: saved ? "folder" : null, group: false, added: 1,
+    ...(saved ? { saved: { url: PR, title: "Pull request" } } : { liveFolder: "f", liveUrl: PR }) };
+  return { w, pr };
+}
+
+test("a link to a live folder's pull request you went on from in its tab shows the pull request there", async () => {
+  const ff = new FakeFirefox();
+  const { w, pr } = onPullRequest(ff, { now: `${PR}/files` });
+  const x = await start(ff);
+  const t = linkFromOutside(ff, x, w.id, { url: PR });
+  await wait(400);
+  assert.equal(popups(ff).length, 0);
+  assert.ok(!ff.tabs.has(t.id), "the new tab goes");
+  assert.ok(ff.tabs.get(pr.id).active, "its row is selected");
+  assert.equal(ff.tabs.get(pr.id).url, PR, "and shows the page the link is for");
+  x.kill();
+});
+
+test("a link to the address a saved tab is saved on takes the tab back there, from wherever you went", async () => {
+  const ff = new FakeFirefox();
+  const { w, pr } = onPullRequest(ff, { now: "https://elsewhere.example/", saved: true });
+    ff.store.littleWindow = false;
+  const x = await start(ff);
+  const t = linkFromOutside(ff, x, w.id, { url: `${PR}#issuecomment-1` });
+  await wait(400);
+  assert.ok(!ff.tabs.has(t.id));
+  assert.ok(ff.tabs.get(pr.id).active);
+  assert.equal(ff.tabs.get(pr.id).url, `${PR}#issuecomment-1`, "the link's # too: where it points on the page");
+  assert.equal(ff.list(w.id).length, 3);
+  x.kill();
+});
+
+test("a row already on the link's page is only selected, not loaded again", async () => {
+  const ff = new FakeFirefox();
+  const { w, pr } = onPullRequest(ff, { now: `${PR}#discussion` });
+  const x = await start(ff);
+  linkFromOutside(ff, x, w.id, { url: PR });
+  await wait(400);
+  assert.ok(ff.tabs.get(pr.id).active);
+  assert.equal(ff.tabs.get(pr.id).url, `${PR}#discussion`, "where you were on it stays");
+  assert.ok(!ff.log.some(([what, id]) => what === "update-url" && id === pr.id));
+  x.kill();
+});
+
+test("where the row here is a placeholder, the page in the other window goes to the link and comes here", async () => {
+  const ff = new FakeFirefox();
+  const { w } = session(ff);
+  const other = ff.addWindow({});
+  const live = ff.addTab(other.id, { url: `${PR}/files`, title: "Files", active: true, cookieStoreId: C1 }, { syncKey: "pr", syncRole: "live" });
+  ff.addTab(w.id, { url: GHOST("ghost", "pr"), discarded: true, cookieStoreId: C1 }, { syncKey: "pr", syncRole: "ghost" });
+  ff.store.syncedTabs.pr = { url: live.url, title: "Files", cookieStoreId: C1, parentKey: null, group: false, added: 1, liveFolder: "f", liveUrl: PR };
+  const x = await start(ff);
+  const t = linkFromOutside(ff, x, w.id, { url: PR });
+  await wait(1500);
+  assert.ok(!ff.tabs.has(t.id));
+  assert.ok(ff.log.some(([what, id, url]) => what === "update-url" && id === live.id && url === PR), "the page itself goes to the link");
+  const shown = ff.list(w.id).find(tab => tab.active);
+  assert.equal(shown?.url, PR, "and this window shows it");
   x.kill();
 });
 
